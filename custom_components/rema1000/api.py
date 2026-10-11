@@ -313,6 +313,7 @@ class Offer:
         quantity = data.get("quantity") or {}
         size = quantity.get("size") or {}
         unit = (quantity.get("unit") or {}).get("symbol")
+        unit = {"pcs": "stk."}.get(unit, unit) if unit else unit
         pieces = (quantity.get("pieces") or {}).get("from")
         parts: list[str] = []
         if pieces and pieces != 1:

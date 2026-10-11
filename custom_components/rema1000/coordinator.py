@@ -67,7 +67,8 @@ class RemaShoppingListCoordinator(DataUpdateCoordinator[ShoppingList]):
                 product_id=item.get("product_id"),
                 name=item.get("name"),
             )
-        await self.async_request_refresh()
+        # Refresh right away (not debounced) so HA shows the change at once.
+        await self.async_refresh()
 
 
 @dataclass
