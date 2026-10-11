@@ -115,7 +115,11 @@ _DIFFERENT_WORDS = {
     "chips",
 }
 # First parts of compound words that make it another product (hvidløg is not løg).
-_DIFFERENT_PREFIXES = {"hvid", "perle", "hvidløgs", "rød", "forårs", "sukker"}
+_DIFFERENT_PREFIXES = {
+    "hvid", "perle", "hvidløgs", "rød", "forårs", "sukker",
+    # kakaomælk, havremælk, kærnemælk … are not mælk
+    "kakao", "chokolade", "kokos", "mandel", "havre", "soja", "kærne",
+}  # fmt: skip
 # Words in product names that say nothing about what the product is.
 _NEUTRAL_WORDS = {
     "rema",
@@ -1030,19 +1034,32 @@ class MealPlanner:
             line["note"] = "Ingen sikker vare fundet – tilføjes som fritekst"
             return
 
-        def cost(product: Product) -> float:
+        def package_cost(product: Product) -> float:
             return packages_needed(line["amount"], line["unit"], product) * (product.price or 0)
+
+        cost = package_cost
 
         def fit(product: Product) -> tuple[float, bool]:
             return cost(product) * penalty.get(product.id, 1.0), not product.is_advertised
 
         settings = self.store.settings
         if line.get("prefer") == "relevance":
-            # Typed by a person ("mælk"): the best-named product in REMA's own
-            # order, not the cheapest of everything called something with mælk.
+            # Typed by a person ("letmælk"): only products named close to it,
+            # then the lowest price per litre/kilo, so 1 L beats a 250 ml carton.
             best_fit = min(penalty.get(p.id, 1.0) for p in candidates)
-            candidates = [p for p in candidates if penalty.get(p.id, 1.0) <= best_fit + 0.01]
-            cheapest = candidates[0]
+            candidates = [p for p in candidates if penalty.get(p.id, 1.0) <= best_fit + 0.5]
+            unit = next((p.compare_unit for p in candidates if p.compare_unit_price), None)
+
+            def unit_cost(product: Product) -> float:
+                if unit is None:
+                    return product.price or 0
+                if product.compare_unit == unit and product.compare_unit_price:
+                    return product.compare_unit_price
+                return math.inf  # cannot be compared per litre/kilo
+
+            cost = unit_cost
+            # min() keeps REMA's own order on ties.
+            cheapest = min(candidates, key=lambda p: (cost(p), not p.is_advertised))
         else:
             cheapest = min(candidates, key=fit)
         # An organic alternative must be the same kind of product, not just organic.
@@ -1244,7 +1261,8 @@ def parse_quick_add(text: str) -> tuple[int, str]:
 
     '500 g mel' stays as text.
     """
-    text = (text or "").strip()
+    # Shortcuts can wrap the text in quotes or <...>.
+    text = (text or "").strip().strip("<>\"'“”„«»").strip()
     text = _NUMBER_WORD.sub(lambda m: str(_NUMBER_WORDS[m.group(1).lower()]), text)
     if match := _QUICK_COUNT.match(text):
         return max(1, int(match.group(1))), match.group(2)
