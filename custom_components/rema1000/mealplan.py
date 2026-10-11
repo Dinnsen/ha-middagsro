@@ -1226,14 +1226,26 @@ class MealPlanner:
 
 
 _QUICK_COUNT = re.compile(
-    r"^\s*(\d{1,2})\s*(?:x|×|\*|stk\.?|pk\.?)?\s+(?!(?:g|gr|kg|gram|l|ml|dl|cl|liter)\b)(.+?)\s*$",
+    r"^\s*(\d{1,2})\s*"
+    r"(?:x|×|\*|stk\.?|styk(?:ker)?|pk\.?|pakk(?:e|er)|pos(?:e|er)|dås(?:e|er)|flask(?:e|er)|bakk(?:e|er))?"
+    r"\s+(?!(?:g|gr|kg|gram|l|ml|dl|cl|liter)\b)(.+?)\s*$",
     re.IGNORECASE,
 )
+# Siri and Assist often write small numbers as words.
+_NUMBER_WORDS = {
+    "en": 1, "et": 1, "to": 2, "tre": 3, "fire": 4, "fem": 5, "seks": 6,
+    "syv": 7, "otte": 8, "ni": 9, "ti": 10, "elleve": 11, "tolv": 12,
+}  # fmt: skip
+_NUMBER_WORD = re.compile(rf"^\s*({'|'.join(_NUMBER_WORDS)})(?=\s)", re.IGNORECASE)
 
 
 def parse_quick_add(text: str) -> tuple[int, str]:
-    """'3 x æg', '3x æg', '3 stk æg' and '3 æg' -> (3, 'æg'); '500 g mel' stays as text."""
+    """'3 x æg', '3x æg', '3 stk æg', '3 æg' and 'tre æg' -> (3, 'æg').
+
+    '500 g mel' stays as text.
+    """
     text = (text or "").strip()
+    text = _NUMBER_WORD.sub(lambda m: str(_NUMBER_WORDS[m.group(1).lower()]), text)
     if match := _QUICK_COUNT.match(text):
         return max(1, int(match.group(1))), match.group(2)
     if re.match(r"^\s*\d+\s*[x×*]\S", text):  # '3xæg'

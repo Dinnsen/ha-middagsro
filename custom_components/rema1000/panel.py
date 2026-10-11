@@ -13,6 +13,7 @@ from .const import DOMAIN
 
 PANEL_URL = "rema1000"
 STATIC_URL = "/rema1000_static"
+APP_URL = "/rema1000_app"
 WEBCOMPONENT = "rema1000-panel"
 _STATIC_KEY = f"{DOMAIN}_static_registered"
 
@@ -21,7 +22,11 @@ async def async_register_panel(hass: HomeAssistant) -> None:
     """Serve the panel files and add the panel to the sidebar."""
     if not hass.data.get(_STATIC_KEY):
         await hass.http.async_register_static_paths(
-            [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "frontend"), True)]
+            [
+                StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "frontend"), True),
+                # Home-screen web app; not cached, so the launcher can change.
+                StaticPathConfig(APP_URL, str(Path(__file__).parent / "app"), False),
+            ]
         )
         hass.data[_STATIC_KEY] = True
 

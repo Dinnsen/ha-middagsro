@@ -1,0 +1,15 @@
+{
+  "name": "REMA 1000",
+  "short_name": "REMA 1000",
+  "description": "Madplan og indkøbsliste fra Home Assistant",
+  "lang": "da",
+  "start_url": "/rema1000_app/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "/rema1000_app/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/rema1000_app/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
