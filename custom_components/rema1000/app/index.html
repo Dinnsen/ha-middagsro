@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="REMA 1000">
+<meta name="theme-color" content="#ffffff">
+<link rel="manifest" href="manifest.json?v=1">
+<link rel="apple-touch-icon" href="apple-touch-icon.png?v=1">
+<link rel="icon" href="icon-192.png?v=1">
+<title>REMA 1000</title>
+<!-- REMA 1000 som app på hjemmeskærmen: logger ind med Home Assistant og viser
+     samme panel som i sidebaren, i fuld skærm og i dit Home Assistant-tema. -->
+<style>
+  html, body { margin: 0; height: 100%; background: var(--primary-background-color); color: var(--primary-text-color);
+    font-family: var(--ha-font-family-body, -apple-system, system-ui, Roboto, sans-serif); }
+  /* The phone's status bar area, painted like the panel's header. */
+  #top { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); z-index: 5;
+    background: var(--rema-statusbar, var(--app-header-background-color, var(--card-background-color))); }
+  /* Scroll inside this box so the panel's sticky header stays below the notch. */
+  #wrap { position: fixed; top: env(safe-area-inset-top, 0px); left: 0; right: 0; bottom: 0; overflow-y: auto;
+    -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+  #msg { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; padding: 24px; text-align: center; }
+  #msg img { width: 72px; height: 72px; border-radius: 16px; }
+  #msg button { font: inherit; font-weight: 600; border: 0; border-radius: 999px; padding: 10px 20px; cursor: pointer;
+    background: var(--primary-color); color: var(--text-primary-color, #fff); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="top"></div>
+<div id="msg"><img src="icon-192.png?v=1" alt=""><div>Åbner REMA 1000 …</div></div>
+<div id="wrap" hidden></div>
+<script type="module">
+import {
+  getAuth, createConnection, ERR_INVALID_AUTH,
+} from "https://cdn.jsdelivr.net/npm/home-assistant-js-websocket@9.4.0/+esm";
+
+const KEY = "rema1000-hass-tokens";
+const root = document.documentElement;
+const msg = document.getElementById("msg");
+const wrap = document.getElementById("wrap");
+
+function say(text, retry) {
+  msg.hidden = false;
+  wrap.hidden = true;
+  msg.querySelector("div").textContent = text;
+  msg.querySelector("button")?.remove();
+  if (retry) {
+    const button = document.createElement("button");
+    button.textContent = "Prøv igen";
+    button.onclick = () => location.reload();
+    msg.appendChild(button);
+  }
+}
+
+const read = (key) => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
+
+// ------------------------------------------------------------------ theme
+// Home Assistant's own defaults, so the panel looks right before (and without) a theme.
+const BASE = {
+  light: {
+    "primary-color": "#009ac7", "accent-color": "#ff9800", "text-primary-color": "#ffffff",
+    "primary-text-color": "#141414", "secondary-text-color": "#5e5e5e", "disabled-text-color": "#bdbdbd",
+    "primary-background-color": "#fafafa", "secondary-background-color": "#e5e5e5",
+    "card-background-color": "#ffffff", "divider-color": "rgba(0, 0, 0, .12)",
+    "error-color": "#db4437", "warning-color": "#ffa600", "success-color": "#43a047", "info-color": "#039be5",
+  },
+  dark: {
+    "primary-color": "#009ac7", "accent-color": "#ff9800", "text-primary-color": "#ffffff",
+    "primary-text-color": "#e1e1e1", "secondary-text-color": "#9b9b9b", "disabled-text-color": "#6f6f6f",
+    "primary-background-color": "#111111", "secondary-background-color": "#282828",
+    "card-background-color": "#1c1c1c", "divider-color": "rgba(225, 225, 225, .12)",
+    "error-color": "#ef5350", "warning-color": "#ffa600", "success-color": "#43a047", "info-color": "#039be5",
+  },
+};
+const darkQuery = matchMedia("(prefers-color-scheme: dark)");
+let themes = null;
+let selected = null;
+let applied = [];
+
+function luminance(color) {
+  const probe = document.createElement("span");
+  probe.style.color = color;
+  document.body.appendChild(probe);
+  const rgb = getComputedStyle(probe).color.match(/[\d.]+/g)?.map(Number) || [0, 0, 0];
+  probe.remove();
+  return (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255;
+}
+
+function applyTheme() {
+  let name = selected?.theme;
+  const dark = typeof selected?.dark === "boolean" ? selected.dark : darkQuery.matches;
+  if (!name || name === "default") name = (dark && themes?.default_dark_theme) || themes?.default_theme;
+  const theme = (name && themes?.themes?.[name]) || {};
+  const { modes, ...flat } = theme;
+  const vars = { ...BASE[dark ? "dark" : "light"], ...flat, ...(modes?.[dark ? "dark" : "light"] || {}) };
+  if (selected?.primaryColor) vars["primary-color"] = selected.primaryColor;
+  if (selected?.accentColor) vars["accent-color"] = selected.accentColor;
+  for (const key of applied) root.style.removeProperty(`--${key}`);
+  applied = Object.keys(vars);
+  for (const [key, value] of Object.entries(vars)) root.style.setProperty(`--${key}`, String(value));
+  root.style.colorScheme = dark ? "dark" : "light";
+  // The status bar text is white: give it a dark enough band behind it.
+  const header = getComputedStyle(root).getPropertyValue("--app-header-background-color").trim()
+    || getComputedStyle(root).getPropertyValue("--card-background-color").trim();
+  root.style.setProperty("--rema-statusbar", luminance(header) > 0.6 ? "var(--primary-color)" : header);
+  document.querySelector('meta[name="theme-color"]').content = header;
+}
+
+// ------------------------------------------------------------------ start
+async function start() {
+  applyTheme();
+  let auth;
+  try {
+    auth = await getAuth({
+      hassUrl: location.origin,
+      saveTokens: (tokens) => { try { localStorage.setItem(KEY, JSON.stringify(tokens)); } catch {} },
+      loadTokens: async () => read(KEY) || read("hassTokens"),
+    });
+  } catch (err) {
+    if (err === ERR_INVALID_AUTH) {
+      try { localStorage.removeItem(KEY); } catch {}
+      location.replace(location.pathname);
+      return;
+    }
+    say("Kunne ikke logge ind i Home Assistant.", true);
+    return;
+  }
+  if (location.search.includes("auth_callback")) history.replaceState(null, "", location.pathname);
+
+  let conn;
+  try {
+    conn = await createConnection({ auth });
+  } catch (err) {
+    if (err === ERR_INVALID_AUTH) {
+      try { localStorage.removeItem(KEY); } catch {}
+      location.replace(location.pathname);
+      return;
+    }
+    say("Home Assistant svarer ikke. Tjek forbindelsen.", true);
+    return;
+  }
+  const ws = (message) => conn.sendMessagePromise(message);
+
+  // The theme you chose in Home Assistant (in this browser, else your profile, else the default).
+  try { themes = await ws({ type: "frontend/get_themes" }); } catch {}
+  selected = read("selectedTheme");
+  if (!selected) {
+    try { selected = (await ws({ type: "frontend/get_user_data", key: "selectedTheme" }))?.value || null; } catch {}
+  }
+  applyTheme();
+  darkQuery.addEventListener("change", applyTheme);
+  conn.subscribeEvents(async () => {
+    try { themes = await ws({ type: "frontend/get_themes" }); applyTheme(); } catch {}
+  }, "themes_updated").catch(() => {});
+
+  let panel;
+  try {
+    panel = (await ws({ type: "get_panels" })).rema1000;
+  } catch {}
+  const custom = panel?.config?._panel_custom;
+  if (!custom?.module_url) {
+    say("REMA 1000-integrationen er ikke sat op i Home Assistant.", true);
+    return;
+  }
+  try {
+    await import(custom.module_url);
+  } catch {
+    say("Panelet kunne ikke hentes.", true);
+    return;
+  }
+  const element = document.createElement(custom.name || "rema1000-panel");
+  element.panel = panel;
+  element.narrow = innerWidth < 870;
+  element.hass = { callWS: ws, connection: conn, auth };
+  addEventListener("resize", () => { element.narrow = innerWidth < 870; });
+  wrap.appendChild(element);
+  wrap.hidden = false;
+  msg.hidden = true;
+}
+
+start();
+</script>
+</body>
+</html>

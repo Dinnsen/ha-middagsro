@@ -15,6 +15,8 @@ Et **REMA 1000-panel** i sidebaren samler det hele:
 - **Historik:** Tidligere madplaner.
 - **Indstillinger:** Startdag, budget, økologi (udelukkende / foretrækkes hvis højst x % dyrere / ligeglad), krav til æg (skrabe-, frilands- eller økologiske), økologisk mælk og økologisk frugt og grønt, ting der skal undgås, allergier, familiens medlemmer, vegetar- og restedage, faste dage (fx rugbrødsdag), maks. tid på hverdage, basisvarer, faste ugevarer og familiens favoritretter med hyppighed.
 
+**App på hjemmeskærmen:** Åbn `https://<din-home-assistant>/rema1000_app/index.html` i Safari eller Chrome, log ind og vælg *Del → Føj til hjemmeskærm*. Så åbner panelet i fuld skærm med REMA-ikon og dit Home Assistant-tema. Linket står også under Indstillinger i panelet.
+
 Slå **automatik** til, så laves næste uges madplan, når den nye tilbudsavis udkommer – og sendes evt. direkte til REMA-listen.
 
 Hvis indkøbslisten bliver over budget, beder integrationen AI'en om en billigere plan én gang og beholder den billigste.
@@ -23,7 +25,7 @@ Hvis indkøbslisten bliver over budget, beder integrationen AI'en om en billiger
 
 - **Madplan** (sensor), **Madplan** (kalender) og knapperne **Lav madplan** og **Send madplan til indkøbsliste**.
 - **Indkøbsliste** (`todo`): Din primære REMA-liste, den der vises i appen. Tilføj, kryds af, ret antal og slet – ændringer vises i appen og omvendt. Det du tilføjer (også via Assist) matches automatisk med en REMA-vare; findes der ingen sikker match, tilføjes det som tekst. Skriv `3 x mælk` for at tilføje 3 stk.
-- **Tilføj vare** (`text`): Skriv fx `letmælk` eller `2 x rugbrød` – varen matches med REMA's sortiment og lægges på listen, ellers tilføjes den som tekst. Feltet tømmes bagefter, og attributterne viser hvad der blev tilføjet.
+- **Tilføj vare** (`text`): Skriv fx `letmælk`, `2 x rugbrød` eller `tre poser chips` – varen matches med REMA's sortiment og lægges på listen, ellers tilføjes den som tekst. Feltet tømmes bagefter, og attributterne viser hvad der blev tilføjet.
 - **Dagens ret** (sensor): Dagens aftensmad fra madplanen med ingredienser, tid og morgendagens ret som attributter.
 - **Indkøbsliste i alt** (sensor): Anslået pris for det, der mangler at blive købt.
 - **Aktuel og næste tilbudsavis** (sensorer): Hvornår avisen gælder fra/til, og hvornår integrationen første gang så næste uges avis.

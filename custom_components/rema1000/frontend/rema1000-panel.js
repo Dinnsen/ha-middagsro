@@ -1044,6 +1044,12 @@ class Rema1000Panel extends HTMLElement {
           <button class="btn primary small" data-action="add-fav">Tilføj</button>
         </div>
         <ul class="favs">${favs || "<li class='muted'>Ingen favoritter endnu.</li>"}</ul>
+      </div>
+
+      <div class="card">
+        <h1>App på hjemmeskærmen</h1>
+        <p class="muted">Åbn linket i Safari (eller Chrome), log ind og vælg Del › Føj til hjemmeskærm. Så åbner REMA 1000 i fuld skærm i dit tema.</p>
+        <p><a href="${esc(`${location.origin}/rema1000_app/index.html`)}" target="_blank" rel="noopener">${esc(`${location.origin}/rema1000_app/index.html`)}</a></p>
       </div>`;
   }
 }
@@ -1062,6 +1068,7 @@ const STYLE = `
     --rema-subtle: var(--secondary-background-color);
     --rema-tint: color-mix(in srgb, var(--rema-accent) 12%, transparent); }
   * { box-sizing: border-box; }
+  a { color: var(--rema-accent); overflow-wrap: anywhere; }
   .toolbar { display: flex; align-items: center; gap: 8px; height: var(--header-height, 56px); padding: 0 12px;
     background: var(--app-header-background-color, var(--card-background-color)); color: var(--app-header-text-color, inherit);
     border-bottom: 1px solid var(--divider-color); position: sticky; top: 0; z-index: 3; }
