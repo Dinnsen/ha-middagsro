@@ -313,6 +313,13 @@ class Rema1000Panel extends HTMLElement {
         if (!confirm("Slet denne favorit?")) return;
         this._run(() => this._ws("rema1000/favorite/delete", { favorite_id: arg }), "Favoritten er slettet.");
       },
+      recipe: () =>
+        this._run(async () => {
+          const day = this._plan.days[this._day];
+          const updated = await this._ws("rema1000/recipe", { plan_id: this._plan.id, date: day.date });
+          this._plan.days[this._day] = updated;
+          if (!this._viewingLatest) this._plan = await this._ws("rema1000/plan", { plan_id: this._plan.id });
+        }, "Opskriften er lavet igen."),
       refresh: () => this._load(),
     };
     actions[action]?.();
@@ -629,6 +636,10 @@ class Rema1000Panel extends HTMLElement {
         </div>
         <p class="muted">${esc(dateLabel(day.date))}${day.servings ? ` · ${day.servings} personer` : ""}${day.active_minutes ? ` · ${day.active_minutes} min aktiv` : ""}${day.total_minutes ? ` · ${day.total_minutes} min i alt` : ""}${type ? ` · ${esc(type)}` : ""}</p>
         ${leftovers}
+        ${day.recipe_error || (!day.steps.length && !day.uses_leftovers_from && day.type !== "rester")
+          ? `<div class="banner warn">Opskriften kunne ikke laves${day.recipe_error ? `: ${esc(day.recipe_error)}` : ""}
+             <button class="btn small" data-action="recipe" ${this._busy ? "disabled" : ""}>Prøv igen</button></div>`
+          : ""}
         <div class="recipe-grid">
           <section>
             <h2>Ingredienser</h2>
@@ -638,6 +649,7 @@ class Rema1000Panel extends HTMLElement {
             <h2>Sådan gør du</h2>
             <ol class="steps">${steps || "<li>Ingen trin</li>"}</ol>
             ${day.tip ? `<p class="tip">💡 ${esc(day.tip)}</p>` : ""}
+            <p><button class="link" data-action="recipe" ${this._busy ? "disabled" : ""}>Lav opskriften igen</button></p>
           </section>
         </div>
       </div>`;
