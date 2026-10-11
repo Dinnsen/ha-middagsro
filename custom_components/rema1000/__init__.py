@@ -27,6 +27,7 @@ PLATFORMS: list[Platform] = [
     Platform.BUTTON,
     Platform.CALENDAR,
     Platform.SENSOR,
+    Platform.TEXT,
     Platform.TODO,
 ]
 

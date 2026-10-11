@@ -22,7 +22,9 @@ Hvis indkøbslisten bliver over budget, beder integrationen AI'en om en billiger
 ## Funktioner
 
 - **Madplan** (sensor), **Madplan** (kalender) og knapperne **Lav madplan** og **Send madplan til indkøbsliste**.
-- **Indkøbsliste** (`todo`): Din primære REMA-liste, den der vises i appen. Tilføj, kryds af, ret antal og slet – ændringer vises i appen og omvendt. Skriv `3 x mælk` for at tilføje 3 stk.
+- **Indkøbsliste** (`todo`): Din primære REMA-liste, den der vises i appen. Tilføj, kryds af, ret antal og slet – ændringer vises i appen og omvendt. Det du tilføjer (også via Assist) matches automatisk med en REMA-vare; findes der ingen sikker match, tilføjes det som tekst. Skriv `3 x mælk` for at tilføje 3 stk.
+- **Tilføj vare** (`text`): Skriv fx `letmælk` eller `2 x rugbrød` – varen matches med REMA's sortiment og lægges på listen, ellers tilføjes den som tekst. Feltet tømmes bagefter, og attributterne viser hvad der blev tilføjet.
+- **Dagens ret** (sensor): Dagens aftensmad fra madplanen med ingredienser, tid og morgendagens ret som attributter.
 - **Indkøbsliste i alt** (sensor): Anslået pris for det, der mangler at blive købt.
 - **Aktuel og næste tilbudsavis** (sensorer): Hvornår avisen gælder fra/til, og hvornår integrationen første gang så næste uges avis.
 - **Handlinger:**

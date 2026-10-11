@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.event import async_track_time_change
+from homeassistant.util import dt as dt_util
 
 from .api import Catalog
+from .const import DOMAIN
 from .coordinator import RemaConfigEntry, RemaOffersCoordinator, RemaShoppingListCoordinator
 from .entity import RemaEntity
 from .mealplan import signal_plans_updated
@@ -31,8 +35,81 @@ async def async_setup_entry(
             RemaCatalogSensor(data.offers, entry, "current_catalog"),
             RemaCatalogSensor(data.offers, entry, "upcoming_catalog"),
             RemaMealPlanSensor(data.shopping_list, entry),
+            RemaDinnerTodaySensor(entry),
         ]
     )
+
+
+class RemaDinnerTodaySensor(SensorEntity):
+    """Today's dinner from the meal plan (the newest plan wins)."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "dinner_today"
+
+    def __init__(self, entry: RemaConfigEntry) -> None:
+        """Initialize the sensor."""
+        self._entry = entry
+        self._attr_unique_id = f"{entry.unique_id}_dinner_today"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, str(entry.unique_id))},
+            entry_type=DeviceEntryType.SERVICE,
+        )
+
+    def _day(self, offset: int = 0) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        """(day, plan) for today + offset days."""
+        wanted = (dt_util.now().date() + timedelta(days=offset)).isoformat()
+        for plan in self._entry.runtime_data.store.plans:  # newest first
+            for day in plan.get("days", []):
+                if day.get("date") == wanted:
+                    return day, plan
+        return None
+
+    @property
+    def native_value(self) -> str | None:
+        """The dish, or nothing if today is not planned."""
+        found = self._day()
+        return found[0]["dish"][:255] if found else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Details for dashboards and voice."""
+        found = self._day()
+        tomorrow = self._day(1)
+        attrs: dict[str, Any] = {"tomorrow": tomorrow[0]["dish"] if tomorrow else None}
+        if found:
+            day, plan = found
+            attrs |= {
+                "date": day["date"],
+                "type": day.get("type"),
+                "leftovers": bool(day.get("uses_leftovers_from")),
+                "makes_leftovers": bool(day.get("makes_leftovers")),
+                "servings": day.get("servings"),
+                "active_minutes": day.get("active_minutes"),
+                "total_minutes": day.get("total_minutes"),
+                "ingredients": [
+                    f"{i['amount']} {i['name']}".strip() for i in day.get("ingredients", [])
+                ],
+                "steps": len(day.get("steps", [])),
+                "tip": day.get("tip") or None,
+                "plan": plan.get("title"),
+            }
+        return attrs
+
+    async def async_added_to_hass(self) -> None:
+        """Update when plans change and at midnight."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, signal_plans_updated(self._entry.entry_id), self._refresh
+            )
+        )
+        self.async_on_remove(
+            async_track_time_change(self.hass, self._refresh, hour=0, minute=0, second=5)
+        )
+
+    @callback
+    def _refresh(self, *_: Any) -> None:
+        self.async_write_ha_state()
 
 
 class RemaMealPlanSensor(RemaEntity[RemaShoppingListCoordinator], SensorEntity):
