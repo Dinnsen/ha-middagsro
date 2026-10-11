@@ -74,6 +74,44 @@ _UNIT_BASE = {
     "stk": ("stk", 1),
     "stk.": ("stk", 1),
     "pcs": ("stk", 1),
+    "pk": ("stk", 1),
+    "pakke": ("stk", 1),
+    "pakker": ("stk", 1),
+    "dåse": ("stk", 1),
+    "dåser": ("stk", 1),
+    "pose": ("stk", 1),
+    "poser": ("stk", 1),
+    "bakke": ("stk", 1),
+    "bakker": ("stk", 1),
+    "flaske": ("stk", 1),
+    "flasker": ("stk", 1),
+    "glas": ("stk", 1),
+}
+# REMA abbreviates some words in product names.
+_ABBREVIATIONS = {"hk": "hakket", "øko": "økologisk", "økologiske": "økologisk"}
+# Words in product names that say nothing about what the product is.
+_NEUTRAL_WORDS = {
+    "rema",
+    "og",
+    "med",
+    "i",
+    "af",
+    "til",
+    "en",
+    "et",
+    "dansk",
+    "danske",
+    "økologisk",
+    "kl",
+    "stk",
+    "gr",
+    "g",
+    "kg",
+    "ltr",
+    "ml",
+    "fedt",
+    "frisk",
+    "friske",
 }
 
 
@@ -116,12 +154,38 @@ def packages_needed(amount: float | None, unit: str | None, product: Product) ->
     if not amount or amount <= 0:
         return 1
     need = to_base(amount, unit)
+    if need and need[0] == "stk":
+        # Pieces, cans and packs: one package each.
+        return max(1, min(20, math.ceil(need[1])))
     size = package_size(product.underline)
     if need and size and need[0] == size[0] and size[1] > 0:
         return max(1, min(20, math.ceil(need[1] / size[1] - 0.05)))
-    if need and need[0] == "stk" and not size:
-        return max(1, min(20, math.ceil(need[1])))
     return 1
+
+
+def _tokens(text: str) -> list[str]:
+    """Lower-case words of a product name, with REMA's abbreviations expanded."""
+    return [_ABBREVIATIONS.get(w, w) for w in re.findall(r"[a-zæøå]+", text.lower())]
+
+
+def name_rank(search_words: list[str], product_name: str) -> tuple[int, int, int]:
+    """How well a product name fits the searched words (higher is better).
+
+    Whole words beat compound words ("broccoli" beats "broccoliblanding"),
+    "løg" does not match "hvidløg", and extra words ("søde kartofler",
+    "oksekød 35% grønt") count against the product.
+    """
+    name = _tokens(product_name)
+    prefix = sum(1 for w in search_words if any(t.startswith(w) for t in name))
+    exact = sum(1 for w in search_words if w in name)
+    extras = sum(
+        1
+        for t in name
+        if t not in _NEUTRAL_WORDS
+        and len(t) > 1
+        and not any(t.startswith(w) or w.startswith(t) for w in search_words)
+    )
+    return prefix, exact, -extras
 
 
 def extract_json(data: Any) -> dict[str, Any]:
@@ -203,7 +267,10 @@ def build_prompt(
     for fixed in s["fixed_days"]:
         matching = [d for d in dates if d.weekday() == fixed["weekday"]]
         for day in matching:
-            out.append(f"- {WEEKDAYS_DA[day.weekday()]} {day.isoformat()}: {fixed['text']}")
+            out.append(
+                f"- {WEEKDAYS_DA[day.weekday()]} {day.isoformat()}: {fixed['text']} "
+                '(fast dag – tæller ikke som restedag, type "fast")'
+            )
     out.append(
         f"- Mandag til fredag højst {s['max_cook_minutes_weekday']} minutters aktiv tilberedning."
     )
@@ -266,6 +333,9 @@ def build_prompt(
         "",
         "Lav KUN overblikket nu – opskrifterne skrives bagefter. Hold svaret kort og præcist; "
         "summary højst én sætning.",
+        "Retternes navne skal passe til ingredienserne (kyllingefrikadeller kræver hakket "
+        "kylling). Indkøbslisten skal indeholde ALLE ingredienser til alle retter, og mængderne "
+        "skal dække dobbelte portioner på dage, der laver rester.",
         "",
         "INDKØBSLISTE: Saml alle ingredienser på tværs af dagene. Angiv for hver vare: navn, "
         "mængde som tal, enhed (g, kg, ml, l eller stk), et søgeord til REMA 1000's varesøgning "
@@ -812,16 +882,18 @@ class MealPlanner:
         priced = [p for p in products[:12] if p.price]
         if not priced:
             return []
-        words = [w for w in re.findall(r"\w+", line["search"].lower()) if len(w) > 2]
-
-        def score(product: Product) -> int:
-            name = product.name.lower()
-            return sum(1 for word in words if word in name)
-
-        best_score = max((score(p) for p in priced), default=0)
-        relevant = [p for p in priced if score(p) == best_score] if best_score else priced[:3]
+        words = [w for w in _tokens(line["search"]) if len(w) > 1 and w not in _NEUTRAL_WORDS]
+        ranks = {p.id: name_rank(words, p.name) for p in priced}
+        best = max(ranks.values())
+        # If nothing matches by name, trust REMA's own search ranking.
+        relevant = priced[:3] if best[0] == 0 else [p for p in priced if ranks[p.id] == best]
         anchor = relevant[0].department
         relevant = [p for p in relevant if p.department == anchor] or relevant
+        # The AI built the dish on an offer: prefer the products that are on offer.
+        if line.get("offer"):
+            on_offer = [p for p in relevant if p.is_advertised or p.is_campaign]
+            if on_offer:
+                relevant = on_offer
         for allergy in self.store.settings["allergies"]:
             marker = FREE_FROM.get(allergy)
             if marker:
