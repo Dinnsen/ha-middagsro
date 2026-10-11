@@ -175,6 +175,23 @@ async def ws_send(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
 
 
 @websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/recipe",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("date"): str,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_recipe(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    """Write one day's recipe again."""
+    planner = _entry(hass, msg).runtime_data.planner
+    day = await planner.async_regenerate_recipe(msg["plan_id"], msg["date"])
+    connection.send_result(msg["id"], day)
+
+
+@websocket_api.websocket_command(
     {vol.Required("type"): "rema1000/plan/delete", ENTRY: str, vol.Required("plan_id"): str}
 )
 @websocket_api.async_response
@@ -208,6 +225,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_favorite_delete,
         ws_generate,
         ws_send,
+        ws_recipe,
         ws_plan_delete,
         ws_search,
     ):

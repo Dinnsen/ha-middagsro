@@ -54,6 +54,7 @@ ALLERGY_DA = {
 FREE_FROM = {"gluten": "GLUTENFRI", "lactose": "LAKTOSEFRI", "milk": "LAKTOSEFRI"}
 
 MAX_AI_ROUNDS = 2  # first try + one retry if the list is over budget
+RECIPE_CONCURRENCY = 3
 SEARCH_CONCURRENCY = 4
 
 _SIZE_MULTI = re.compile(
@@ -263,8 +264,8 @@ def build_prompt(
 
     out += [
         "",
-        "OPSKRIFTER: Skriv til en uerfaren kok: præcise mængder til hele husstanden, korte "
-        "nummererede trin med tid i minutter, aktiv tid og samlet tid.",
+        "Lav KUN overblikket nu – opskrifterne skrives bagefter. Hold svaret kort og præcist; "
+        "summary højst én sætning.",
         "",
         "INDKØBSLISTE: Saml alle ingredienser på tværs af dagene. Angiv for hver vare: navn, "
         "mængde som tal, enhed (g, kg, ml, l eller stk), et søgeord til REMA 1000's varesøgning "
@@ -289,9 +290,6 @@ def build_prompt(
                         "servings": 4,
                         "active_minutes": 20,
                         "total_minutes": 35,
-                        "ingredients": [{"name": "laksefilet", "amount": "600 g"}],
-                        "steps": [{"text": "Tænd ovnen på 200 grader.", "minutes": 1}],
-                        "tip": "Kort tip til børnefamilien",
                     }
                 ],
                 "shopping": [
@@ -310,6 +308,65 @@ def build_prompt(
             ensure_ascii=False,
         ),
         f"days skal have præcis {len(dates)} elementer i datoorden.",
+    ]
+    return "\n".join(out)
+
+
+def build_recipe_prompt(
+    *, settings: dict[str, Any], day: dict[str, Any], plan: dict[str, Any]
+) -> str:
+    """Instructions for the recipe of one dinner."""
+    s = settings
+    current = date.fromisoformat(day["date"])
+    out = [
+        "Du er en erfaren dansk kok, der skriver opskrifter til en børnefamilie.",
+        f"Skriv opskriften på aftensmaden {WEEKDAYS_DA[current.weekday()]} {day['date']}: "
+        f"{day['dish']}.",
+        "",
+        "HUSSTAND (mængderne skal passe til alle; børn spiser mindre):",
+        *_household_lines(s),
+    ]
+    if day.get("makes_leftovers"):
+        out.append(
+            "Lav dobbelt portion – halvdelen spises som rester dagen efter. Mængderne skal "
+            "dække begge dage."
+        )
+    allergies = [ALLERGY_DA[a] for a in s["allergies"]]
+    if s["allergies_other"].strip():
+        allergies.append(s["allergies_other"].strip())
+    if allergies:
+        out.append(f"Allergier – må ALDRIG indgå: {', '.join(allergies)}.")
+    avoid = [AVOID_DA[a] for a in s["avoid"]]
+    if s["avoid_other"].strip():
+        avoid.append(s["avoid_other"].strip())
+    if avoid:
+        out.append(f"Undgå helt: {', '.join(avoid)}.")
+    if current.weekday() < 5:
+        out.append(f"Højst {s['max_cook_minutes_weekday']} minutters aktiv tilberedning.")
+    shopping = ", ".join(
+        f"{line['name']} ({line['amount']:g} {line['unit']})"
+        if line.get("amount") and line.get("unit") and line["unit"] != "pk"
+        else line["name"]
+        for line in plan.get("shopping", [])
+    )
+    out += [
+        f"Ugens indkøb (brug disse varer og basisvarerne; tilføj ikke nye dyre varer): {shopping}.",
+        f"Basisvarer: {s['pantry'].strip() or 'salt og peber'}.",
+        "",
+        "Skriv til en uerfaren kok: præcise mængder, højst 10 korte trin med minutter, og ét "
+        "kort tip, der gør det nemt for børnefamilien.",
+        "",
+        "SVARFORMAT: Svar KUN med gyldig JSON uden markdown og uden forklaring, præcis sådan:",
+        json.dumps(
+            {
+                "ingredients": [{"name": "laksefilet", "amount": "600 g"}],
+                "steps": [{"text": "Tænd ovnen på 200 grader.", "minutes": 1}],
+                "tip": "Kort tip",
+                "active_minutes": 20,
+                "total_minutes": 35,
+            },
+            ensure_ascii=False,
+        ),
     ]
     return "\n".join(out)
 
@@ -417,28 +474,113 @@ class MealPlanner:
             _LOGGER.warning("Could not load offers for the meal plan: %s", err)
             return catalog, []
 
-    async def _async_ask_ai(self, prompt: str) -> dict[str, Any]:
+    async def _async_ask_ai(self, prompt: str, task_name: str) -> dict[str, Any]:
         from homeassistant.components.ai_task import async_generate_data  # noqa: PLC0415
 
         entity_id = self._ai_entity()
-        result = await async_generate_data(
-            self.hass, task_name="REMA 1000 madplan", entity_id=entity_id, instructions=prompt
-        )
+
+        async def ask(instructions: str) -> Any:
+            try:
+                result = await async_generate_data(
+                    self.hass, task_name=task_name, entity_id=entity_id, instructions=instructions
+                )
+            except HomeAssistantError as err:
+                if "MAX_TOKENS" in str(err).upper():
+                    raise HomeAssistantError(
+                        f"{err} – AI'ens svar blev for langt. Hæv 'Maksimalt antal tokens' i "
+                        "AI-opgavens indstillinger (fx 8000), eller lav en kortere madplan."
+                    ) from err
+                raise
+            return result.data
+
         try:
-            return extract_json(result.data)
+            return extract_json(await ask(prompt))
         except ValueError:
             _LOGGER.debug("AI answer was not valid JSON, asking again")
-        result = await async_generate_data(
-            self.hass,
-            task_name="REMA 1000 madplan",
-            entity_id=entity_id,
-            instructions=prompt
-            + "\n\nDit forrige svar var ikke gyldig JSON. Svar nu KUN med selve JSON-objektet.",
-        )
         try:
-            return extract_json(result.data)
+            return extract_json(
+                await ask(
+                    prompt + "\n\nDit forrige svar var ikke gyldig JSON. Svar nu KUN med selve "
+                    "JSON-objektet."
+                )
+            )
         except ValueError as err:
-            raise HomeAssistantError(f"AI'en svarede ikke med en gyldig madplan: {err}") from err
+            raise HomeAssistantError(f"AI'en svarede ikke med gyldig JSON: {err}") from err
+
+    # ------------------------------------------------------------- recipes
+
+    @staticmethod
+    def _is_leftovers(day: dict[str, Any]) -> bool:
+        return bool(day.get("uses_leftovers_from")) or day.get("type") == "rester"
+
+    async def _async_recipe(self, day: dict[str, Any], plan: dict[str, Any]) -> None:
+        """Fill in ingredients and steps for one day."""
+        day.pop("recipe_error", None)
+        if self._is_leftovers(day):
+            source = day.get("uses_leftovers_from")
+            previous = next(
+                (d for d in plan["days"] if d["date"] == source),
+                None,
+            ) or next(
+                (
+                    d
+                    for d in reversed(plan["days"])
+                    if d["date"] < day["date"] and not self._is_leftovers(d)
+                ),
+                None,
+            )
+            dish = previous["dish"] if previous else "gårsdagens ret"
+            day["steps"] = [{"text": f"Varm resten af {dish} op, og server den.", "minutes": 10}]
+            day["ingredients"] = []
+            day["total_minutes"] = day["total_minutes"] or 15
+            day["active_minutes"] = day["active_minutes"] or 5
+            return
+        prompt = build_recipe_prompt(settings=self.store.settings, day=day, plan=plan)
+        try:
+            raw = await self._async_ask_ai(prompt, f"REMA 1000 opskrift {day['date']}")
+        except HomeAssistantError as err:
+            _LOGGER.warning("Could not write the recipe for %s: %s", day["date"], err)
+            day["recipe_error"] = str(err)
+            return
+        cleaned = self._clean_days(
+            [{**raw, "date": day["date"]}], [date.fromisoformat(day["date"])]
+        )[0]
+        day["ingredients"] = cleaned["ingredients"]
+        day["steps"] = cleaned["steps"]
+        day["tip"] = cleaned["tip"]
+        if cleaned["active_minutes"]:
+            day["active_minutes"] = cleaned["active_minutes"]
+        if cleaned["total_minutes"]:
+            day["total_minutes"] = cleaned["total_minutes"]
+
+    async def _async_add_recipes(self, plan: dict[str, Any]) -> None:
+        """Write all recipes, a few at a time."""
+        semaphore = asyncio.Semaphore(RECIPE_CONCURRENCY)
+        cooking = [d for d in plan["days"] if not self._is_leftovers(d)]
+        done = 0
+
+        async def one(day: dict[str, Any]) -> None:
+            nonlocal done
+            async with semaphore:
+                await self._async_recipe(day, plan)
+            done += 1 if day in cooking else 0
+            self._set_status("generating", f"Skriver opskrifter ({done}/{len(cooking)}) …")
+
+        self._set_status("generating", f"Skriver opskrifter (0/{len(cooking)}) …")
+        await asyncio.gather(*(one(day) for day in plan["days"]))
+
+    async def async_regenerate_recipe(self, plan_id: str, day_date: str) -> dict[str, Any]:
+        """Write one day's recipe again."""
+        plan = self.store.get_plan(plan_id)
+        day = next((d for d in plan["days"] if d["date"] == day_date), None) if plan else None
+        if plan is None or day is None:
+            raise HomeAssistantError("Dagen findes ikke i madplanen")
+        await self._async_recipe(day, plan)
+        await self.store.async_save()
+        self._notify()
+        if day.get("recipe_error"):
+            raise HomeAssistantError(day["recipe_error"])
+        return day
 
     async def async_generate(self, start: date) -> dict[str, Any]:
         """Make, price and store a plan. Returns the plan."""
@@ -468,7 +610,7 @@ class MealPlanner:
                 recent_dishes=recent,
                 feedback=feedback,
             )
-            raw = await self._async_ask_ai(prompt)
+            raw = await self._async_ask_ai(prompt, "REMA 1000 madplan")
             self._set_status("generating", "Finder varer og priser i REMA 1000 …")
             plan = await self._async_build_plan(raw, dates, catalog, offers)
             if best is None or plan["total"] < best["total"]:
@@ -489,6 +631,7 @@ class MealPlanner:
 
         assert best is not None
         best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
+        await self._async_add_recipes(best)
         await self.store.async_add_plan(best)
         self._notify()
         return best
