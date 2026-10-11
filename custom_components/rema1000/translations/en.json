@@ -1,0 +1,82 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Log in to REMA 1000",
+        "description": "Use the same e-mail and password as on rema1000.dk and in the REMA 1000 app. Items are always added to your primary shopping list, the one shown in the app.",
+        "data": {
+          "email": "E-mail",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Log in to REMA 1000 again",
+        "description": "The login for {email} no longer works. Enter the current password.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach REMA 1000. Try again later.",
+      "invalid_auth": "Wrong e-mail or password.",
+      "unknown": "Unexpected error. See the log for details."
+    },
+    "abort": {
+      "already_configured": "This REMA 1000 account is already set up.",
+      "reauth_successful": "Logged in again.",
+      "wrong_account": "The login belongs to a different REMA 1000 account."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "current_catalog": { "name": "Current offer catalogue" },
+      "list_total": { "name": "Shopping list total" },
+      "upcoming_catalog": { "name": "Next offer catalogue" }
+    },
+    "todo": {
+      "shopping_list": { "name": "Shopping list" }
+    }
+  },
+  "exceptions": {
+    "entry_not_found": { "message": "No loaded REMA 1000 account was found." },
+    "entry_required": { "message": "More than one REMA 1000 account is set up. Choose which one to use." },
+    "item_not_found": { "message": "Item {uid} is no longer on the shopping list." },
+    "update_failed": { "message": "REMA 1000 could not be updated: {error}" }
+  },
+  "selector": {
+    "catalog": {
+      "options": {
+        "current": "Current",
+        "upcoming": "Next"
+      }
+    }
+  },
+  "services": {
+    "search_products": {
+      "name": "Search products",
+      "description": "Searches the REMA 1000 catalogue and returns prices, offers and organic labels.",
+      "fields": {
+        "config_entry_id": { "name": "Account", "description": "Only needed if more than one REMA 1000 account is set up." },
+        "query": { "name": "Search", "description": "What to search for." },
+        "limit": { "name": "Max results", "description": "How many products to return." }
+      }
+    },
+    "add_items": {
+      "name": "Add to shopping list",
+      "description": "Adds products or free-text items to the primary REMA 1000 shopping list.",
+      "fields": {
+        "config_entry_id": { "name": "Account", "description": "Only needed if more than one REMA 1000 account is set up." },
+        "items": { "name": "Items", "description": "List of items, each with product_id or name, and an optional amount." }
+      }
+    },
+    "get_offers": {
+      "name": "Get offers",
+      "description": "Returns the offers in the current or next REMA 1000 tilbudsavis.",
+      "fields": {
+        "config_entry_id": { "name": "Account", "description": "Only needed if more than one REMA 1000 account is set up." },
+        "catalog": { "name": "Tilbudsavis", "description": "The current or the next tilbudsavis." }
+      }
+    }
+  }
+}

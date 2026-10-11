@@ -1,0 +1,16 @@
+target-version = "py313"
+line-length = 100
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PL", "ASYNC"]
+ignore = [
+  "PLR0912", "PLR0913", "PLR0915", "PLR2004",
+  "RUF001",  # × is used on purpose in shopping list lines
+  "RUF012",
+]
+
+[lint.isort]
+force-sort-within-sections = true
+known-first-party = ["homeassistant"]
+combine-as-imports = true
+split-on-trailing-comma = false

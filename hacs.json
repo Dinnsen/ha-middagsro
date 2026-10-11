@@ -1,0 +1,6 @@
+{
+  "name": "REMA 1000",
+  "homeassistant": "2026.1.0",
+  "country": ["DK"],
+  "render_readme": true
+}

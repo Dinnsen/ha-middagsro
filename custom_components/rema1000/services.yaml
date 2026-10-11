@@ -1,0 +1,45 @@
+search_products:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: rema1000
+    query:
+      required: true
+      example: "letmælk"
+      selector:
+        text:
+    limit:
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 100
+          mode: box
+
+add_items:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: rema1000
+    items:
+      required: true
+      example: '[{"product_id": 20494, "amount": 2}, {"name": "Sæbe", "amount": 1}]'
+      selector:
+        object:
+
+get_offers:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: rema1000
+    catalog:
+      default: current
+      selector:
+        select:
+          translation_key: catalog
+          options:
+            - current
+            - upcoming

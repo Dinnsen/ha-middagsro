@@ -1,0 +1,145 @@
+"""Data update coordinators for REMA 1000."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+import logging
+from typing import Any
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.storage import Store
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+
+from .api import Catalog, RemaAuthError, RemaClient, RemaError, ShoppingList
+from .const import DOMAIN, LIST_SCAN_INTERVAL, OFFERS_SCAN_INTERVAL, STORAGE_VERSION
+
+_LOGGER = logging.getLogger(__name__)
+
+
+@dataclass
+class RemaRuntimeData:
+    """Objects kept for a config entry while it is loaded."""
+
+    client: RemaClient
+    shopping_list: RemaShoppingListCoordinator
+    offers: RemaOffersCoordinator
+
+
+type RemaConfigEntry = ConfigEntry[RemaRuntimeData]
+
+
+class RemaShoppingListCoordinator(DataUpdateCoordinator[ShoppingList]):
+    """Keep the primary shopping list in sync."""
+
+    config_entry: RemaConfigEntry
+
+    def __init__(self, hass: HomeAssistant, entry: RemaConfigEntry, client: RemaClient) -> None:
+        """Initialize the coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            config_entry=entry,
+            name=f"{DOMAIN} shopping list",
+            update_interval=LIST_SCAN_INTERVAL,
+        )
+        self.client = client
+
+    async def _async_update_data(self) -> ShoppingList:
+        """Fetch the primary list. It is looked up every time so a change of
+        primary list in the app is followed automatically."""
+        try:
+            return await self.client.async_get_primary_list()
+        except RemaAuthError as err:
+            raise ConfigEntryAuthFailed(str(err)) from err
+        except RemaError as err:
+            raise UpdateFailed(str(err)) from err
+
+    async def async_add_items(self, items: list[dict[str, Any]]) -> None:
+        """Add items ({product_id|name, amount}) to the primary list."""
+        shopping_list = await self.client.async_get_primary_list()
+        for item in items:
+            await self.client.async_add_to_list(
+                shopping_list,
+                amount=int(item.get("amount") or 1),
+                product_id=item.get("product_id"),
+                name=item.get("name"),
+            )
+        await self.async_request_refresh()
+
+
+@dataclass
+class OffersData:
+    """Tilbudsaviser for REMA 1000."""
+
+    current: Catalog | None = None
+    upcoming: Catalog | None = None
+    catalogs: list[Catalog] = field(default_factory=list)
+    first_seen: dict[str, str] = field(default_factory=dict)
+
+
+class RemaOffersCoordinator(DataUpdateCoordinator[OffersData]):
+    """Track the current and next tilbudsavis.
+
+    The first time a catalogue is seen is stored, so we learn when REMA
+    publishes next week's avis.
+    """
+
+    config_entry: RemaConfigEntry
+
+    def __init__(self, hass: HomeAssistant, entry: RemaConfigEntry, client: RemaClient) -> None:
+        """Initialize the coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            config_entry=entry,
+            name=f"{DOMAIN} offers",
+            update_interval=OFFERS_SCAN_INTERVAL,
+        )
+        self.client = client
+        self._store: Store[dict[str, Any]] = Store(
+            hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.catalogs"
+        )
+        self._first_seen: dict[str, str] | None = None
+
+    async def _async_update_data(self) -> OffersData:
+        """Fetch catalogues from Tjek."""
+        if self._first_seen is None:
+            stored = await self._store.async_load() or {}
+            self._first_seen = dict(stored.get("first_seen") or {})
+        try:
+            catalogs = await self.client.async_get_catalogs()
+        except RemaError as err:
+            raise UpdateFailed(str(err)) from err
+
+        now = datetime.now(UTC)
+        changed = False
+        for catalog in catalogs:
+            if catalog.id not in self._first_seen:
+                self._first_seen[catalog.id] = now.isoformat()
+                changed = True
+                _LOGGER.info(
+                    "Ny REMA 1000 tilbudsavis fundet: %s (gyldig %s - %s)",
+                    catalog.label,
+                    catalog.valid_from,
+                    catalog.valid_to,
+                )
+        if changed:
+            await self._store.async_save({"first_seen": self._first_seen})
+
+        running = [
+            c for c in catalogs if c.valid_from and c.valid_to and c.valid_from <= now <= c.valid_to
+        ]
+        future = sorted(
+            (c for c in catalogs if c.valid_from and c.valid_from > now),
+            key=lambda c: c.valid_from or now,
+        )
+        current = max(running, key=lambda c: c.offer_count or 0) if running else None
+        return OffersData(
+            current=current,
+            upcoming=future[0] if future else None,
+            catalogs=catalogs,
+            first_seen=dict(self._first_seen),
+        )
