@@ -1,17 +1,58 @@
 {
   "entity": {
     "sensor": {
-      "current_catalog": { "default": "mdi:newspaper-variant-outline" },
-      "list_total": { "default": "mdi:cash" },
-      "upcoming_catalog": { "default": "mdi:newspaper-plus" }
+      "current_catalog": {
+        "default": "mdi:newspaper-variant-outline"
+      },
+      "list_total": {
+        "default": "mdi:cash"
+      },
+      "upcoming_catalog": {
+        "default": "mdi:newspaper-plus"
+      },
+      "meal_plan": {
+        "default": "mdi:food-variant",
+        "state": {
+          "generating": "mdi:progress-clock",
+          "error": "mdi:alert-circle-outline",
+          "sent": "mdi:cart-check"
+        }
+      }
     },
     "todo": {
-      "shopping_list": { "default": "mdi:cart-outline" }
+      "shopping_list": {
+        "default": "mdi:cart-outline"
+      }
+    },
+    "button": {
+      "generate_meal_plan": {
+        "default": "mdi:chef-hat"
+      },
+      "send_meal_plan": {
+        "default": "mdi:cart-arrow-right"
+      }
+    },
+    "calendar": {
+      "meal_plan": {
+        "default": "mdi:silverware-fork-knife"
+      }
     }
   },
   "services": {
-    "add_items": { "service": "mdi:cart-plus" },
-    "get_offers": { "service": "mdi:sale" },
-    "search_products": { "service": "mdi:magnify" }
+    "add_items": {
+      "service": "mdi:cart-plus"
+    },
+    "get_offers": {
+      "service": "mdi:sale"
+    },
+    "search_products": {
+      "service": "mdi:magnify"
+    },
+    "generate_meal_plan": {
+      "service": "mdi:chef-hat"
+    },
+    "send_meal_plan": {
+      "service": "mdi:cart-arrow-right"
+    }
   }
 }

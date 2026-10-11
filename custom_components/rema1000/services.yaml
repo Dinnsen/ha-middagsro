@@ -43,3 +43,28 @@ get_offers:
           options:
             - current
             - upcoming
+
+generate_meal_plan:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: rema1000
+    start_date:
+      example: "2026-10-18"
+      selector:
+        date:
+    send:
+      default: false
+      selector:
+        boolean:
+
+send_meal_plan:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: rema1000
+    plan_id:
+      selector:
+        text:

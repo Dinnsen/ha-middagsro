@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -15,6 +15,10 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import Catalog, RemaAuthError, RemaClient, RemaError, ShoppingList
 from .const import DOMAIN, LIST_SCAN_INTERVAL, OFFERS_SCAN_INTERVAL, STORAGE_VERSION
+
+if TYPE_CHECKING:
+    from .mealplan import MealPlanner
+    from .storage import RemaPlanStore
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,6 +30,8 @@ class RemaRuntimeData:
     client: RemaClient
     shopping_list: RemaShoppingListCoordinator
     offers: RemaOffersCoordinator
+    store: RemaPlanStore
+    planner: MealPlanner
 
 
 type RemaConfigEntry = ConfigEntry[RemaRuntimeData]

@@ -6,12 +6,14 @@ from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .api import Catalog
 from .coordinator import RemaConfigEntry, RemaOffersCoordinator, RemaShoppingListCoordinator
 from .entity import RemaEntity
+from .mealplan import signal_plans_updated
 
 PARALLEL_UPDATES = 0
 
@@ -28,8 +30,66 @@ async def async_setup_entry(
             RemaListTotalSensor(data.shopping_list, entry),
             RemaCatalogSensor(data.offers, entry, "current_catalog"),
             RemaCatalogSensor(data.offers, entry, "upcoming_catalog"),
+            RemaMealPlanSensor(data.shopping_list, entry),
         ]
     )
+
+
+class RemaMealPlanSensor(RemaEntity[RemaShoppingListCoordinator], SensorEntity):
+    """Status of the newest meal plan."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["none", "generating", "error", "draft", "sent"]
+
+    def __init__(self, coordinator: RemaShoppingListCoordinator, entry: RemaConfigEntry) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, "meal_plan")
+        self._entry = entry
+
+    @property
+    def available(self) -> bool:
+        """The plan is stored locally, so it is always available."""
+        return True
+
+    @property
+    def native_value(self) -> str:
+        """Generating/error while working, else the newest plan's status."""
+        data = self._entry.runtime_data
+        if data.planner.status["state"] in ("generating", "error"):
+            return data.planner.status["state"]
+        plan = data.store.latest_plan
+        return plan["status"] if plan else "none"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Describe the newest plan."""
+        data = self._entry.runtime_data
+        plan = data.store.latest_plan
+        attrs: dict[str, Any] = {"message": data.planner.status.get("message")}
+        if plan:
+            attrs |= {
+                "title": plan["title"],
+                "start_date": plan["start_date"],
+                "end_date": plan["end_date"],
+                "total": plan["total"],
+                "budget": plan["budget"],
+                "over_budget": plan.get("over_budget", False),
+                "dinners": {day["date"]: day["dish"] for day in plan["days"]},
+            }
+        return attrs
+
+    async def async_added_to_hass(self) -> None:
+        """Update when plans change."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, signal_plans_updated(self._entry.entry_id), self._plans_updated
+            )
+        )
+
+    @callback
+    def _plans_updated(self) -> None:
+        self.async_write_ha_state()
 
 
 class RemaListTotalSensor(RemaEntity[RemaShoppingListCoordinator], SensorEntity):

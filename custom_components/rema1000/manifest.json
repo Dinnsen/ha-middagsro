@@ -1,12 +1,23 @@
 {
   "domain": "rema1000",
   "name": "REMA 1000",
-  "codeowners": ["@Dinnsen"],
+  "after_dependencies": [
+    "ai_task"
+  ],
+  "codeowners": [
+    "@Dinnsen"
+  ],
   "config_flow": true,
+  "dependencies": [
+    "frontend",
+    "http",
+    "panel_custom",
+    "websocket_api"
+  ],
   "documentation": "https://github.com/Dinnsen/ha-rema1000",
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/Dinnsen/ha-rema1000/issues",
   "requirements": [],
-  "version": "0.1.1"
+  "version": "0.2.0"
 }

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import voluptuous as vol
-
 from homeassistant.core import (
     HomeAssistant,
     ServiceCall,
@@ -28,10 +26,29 @@ from .const import (
     ATTR_QUERY,
     DOMAIN,
     SERVICE_ADD_ITEMS,
+    SERVICE_GENERATE_MEAL_PLAN,
     SERVICE_GET_OFFERS,
     SERVICE_SEARCH_PRODUCTS,
+    SERVICE_SEND_MEAL_PLAN,
 )
 from .coordinator import RemaConfigEntry
+from .mealplan import parse_date
+from .schema import vol
+
+
+def _ensure_list(value: Any) -> list[Any]:
+    """Accept a single item as a list of one."""
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
+def _product_or_name(value: dict[str, Any]) -> dict[str, Any]:
+    """Each item needs a product_id or a name."""
+    if not value.get(ATTR_PRODUCT_ID) and not value.get(ATTR_NAME):
+        raise vol.Invalid("Each item needs product_id or name")
+    return value
+
 
 _ITEM_SCHEMA = vol.All(
     vol.Schema(
@@ -43,7 +60,7 @@ _ITEM_SCHEMA = vol.All(
             ),
         }
     ),
-    cv.has_at_least_one_key(ATTR_PRODUCT_ID, ATTR_NAME),
+    _product_or_name,
 )
 
 SEARCH_SCHEMA = vol.Schema(
@@ -56,7 +73,20 @@ SEARCH_SCHEMA = vol.Schema(
 ADD_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
-        vol.Required(ATTR_ITEMS): vol.All(cv.ensure_list, [_ITEM_SCHEMA]),
+        vol.Required(ATTR_ITEMS): vol.All(_ensure_list, [_ITEM_SCHEMA]),
+    }
+)
+GENERATE_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
+        vol.Optional("start_date"): cv.string,
+        vol.Optional("send", default=False): cv.boolean,
+    }
+)
+SEND_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
+        vol.Optional("plan_id"): cv.string,
     }
 )
 OFFERS_SCHEMA = vol.Schema(
@@ -143,6 +173,24 @@ def async_setup_services(hass: HomeAssistant) -> None:
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(DOMAIN, SERVICE_ADD_ITEMS, add_items, schema=ADD_SCHEMA)
+
+    async def generate_meal_plan(call: ServiceCall) -> None:
+        entry = _get_entry(hass, call)
+        entry.runtime_data.planner.async_start_generation(
+            parse_date(call.data.get("start_date")), send=call.data["send"]
+        )
+
+    async def send_meal_plan(call: ServiceCall) -> None:
+        entry = _get_entry(hass, call)
+        try:
+            await entry.runtime_data.planner.async_send(call.data.get("plan_id"))
+        except RemaError as err:
+            raise _error(err) from err
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_GENERATE_MEAL_PLAN, generate_meal_plan, schema=GENERATE_SCHEMA
+    )
+    hass.services.async_register(DOMAIN, SERVICE_SEND_MEAL_PLAN, send_meal_plan, schema=SEND_SCHEMA)
     hass.services.async_register(
         DOMAIN,
         SERVICE_GET_OFFERS,
