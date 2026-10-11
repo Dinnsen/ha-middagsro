@@ -1098,6 +1098,10 @@ class MealPlanner:
         best = max(fit[0] for fit in fits.values())
         if best == 0:
             return [], penalty  # nothing is called what we searched for
+        if line.get("prefer") == "relevance" and best < len(words):
+            # Typed by a person: every word must fit, or "kage til Anna" could
+            # become anything with "ana" in it. Free text is the safe answer.
+            return [], penalty
         relevant = [p for p in priced if fits[p.id][0] == best]
         # Stay in the department of the best-fitting product (fish, not cold cuts).
         anchor = min(relevant, key=lambda p: penalty.get(p.id, 1.0)).department
