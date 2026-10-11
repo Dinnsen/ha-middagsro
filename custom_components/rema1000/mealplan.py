@@ -74,21 +74,47 @@ _UNIT_BASE = {
     "stk": ("stk", 1),
     "stk.": ("stk", 1),
     "pcs": ("stk", 1),
-    "pk": ("stk", 1),
-    "pakke": ("stk", 1),
-    "pakker": ("stk", 1),
-    "dåse": ("stk", 1),
-    "dåser": ("stk", 1),
-    "pose": ("stk", 1),
-    "poser": ("stk", 1),
-    "bakke": ("stk", 1),
-    "bakker": ("stk", 1),
-    "flaske": ("stk", 1),
-    "flasker": ("stk", 1),
-    "glas": ("stk", 1),
+    "pk": ("pack", 1),
+    "pakke": ("pack", 1),
+    "pakker": ("pack", 1),
+    "dåse": ("pack", 1),
+    "dåser": ("pack", 1),
+    "pose": ("pack", 1),
+    "poser": ("pack", 1),
+    "bakke": ("pack", 1),
+    "bakker": ("pack", 1),
+    "flaske": ("pack", 1),
+    "flasker": ("pack", 1),
+    "glas": ("pack", 1),
 }
 # REMA abbreviates some words in product names.
 _ABBREVIATIONS = {"hk": "hakket", "øko": "økologisk", "økologiske": "økologisk"}
+# Extra words that make a product something else than what was asked for.
+_DIFFERENT_WORDS = {
+    "søde",
+    "grønt",
+    "grøntsager",
+    "blanding",
+    "mix",
+    "pålæg",
+    "marineret",
+    "krydret",
+    "kryddret",
+    "paneret",
+    "panerede",
+    "røget",
+    "citronpeber",
+    "chili",
+    "sauce",
+    "dressing",
+    "salat",
+    "suppe",
+    "juice",
+    "snack",
+    "chips",
+}
+# First parts of compound words that make it another product (hvidløg is not løg).
+_DIFFERENT_PREFIXES = {"hvid", "perle", "hvidløgs"}
 # Words in product names that say nothing about what the product is.
 _NEUTRAL_WORDS = {
     "rema",
@@ -154,13 +180,16 @@ def packages_needed(amount: float | None, unit: str | None, product: Product) ->
     if not amount or amount <= 0:
         return 1
     need = to_base(amount, unit)
-    if need and need[0] == "stk":
-        # Pieces, cans and packs: one package each.
+    if need is None:
+        return 1
+    if need[0] == "pack":  # cans, packs, bags: one package each
         return max(1, min(20, math.ceil(need[1])))
     size = package_size(product.underline)
-    if need and size and need[0] == size[0] and size[1] > 0:
+    if size and need[0] == size[0] and size[1] > 0:
         return max(1, min(20, math.ceil(need[1] / size[1] - 0.05)))
-    return 1
+    if need[0] == "stk" and size is None:
+        return max(1, min(20, math.ceil(need[1])))  # loose items sold per piece
+    return 1  # e.g. 8 pitabrød from one 375 g bag
 
 
 def _tokens(text: str) -> list[str]:
@@ -168,24 +197,36 @@ def _tokens(text: str) -> list[str]:
     return [_ABBREVIATIONS.get(w, w) for w in re.findall(r"[a-zæøå]+", text.lower())]
 
 
-def name_rank(search_words: list[str], product_name: str) -> tuple[int, int, int]:
-    """How well a product name fits the searched words (higher is better).
+def name_fit(search_words: list[str], product_name: str) -> tuple[int, float]:
+    """How well a product name fits the searched words.
 
-    Whole words beat compound words ("broccoli" beats "broccoliblanding"),
-    "løg" does not match "hvidløg", and extra words ("søde kartofler",
-    "oksekød 35% grønt") count against the product.
+    Returns (number of searched words found, price penalty factor). Danish
+    compound words count as a match ("skrabeæg" is æg, "laksefileter" is laks),
+    but cost a little more than the plain word. Words that make it a different
+    product ("søde kartofler", "oksekød 35% grønt", "broccoliblanding",
+    "hvidløg" for løg) cost a lot, so they are only chosen if nothing else fits.
     """
-    name = _tokens(product_name)
-    prefix = sum(1 for w in search_words if any(t.startswith(w) for t in name))
-    exact = sum(1 for w in search_words if w in name)
-    extras = sum(
-        1
-        for t in name
-        if t not in _NEUTRAL_WORDS
-        and len(t) > 1
-        and not any(t.startswith(w) or w.startswith(t) for w in search_words)
-    )
-    return prefix, exact, -extras
+    name = [t for t in _tokens(product_name) if len(t) > 1]
+    matched = 0
+    penalty = 1.0
+    for word in search_words:
+        if word in name:
+            matched += 1
+            continue
+        compound = next((t for t in name if t.startswith(word) or t.endswith(word)), None)
+        if compound is None:
+            continue
+        matched += 1
+        rest = compound[len(word) :] if compound.startswith(word) else compound[: -len(word)]
+        # Danish joins compounds with -e- or -s- (laks-e-pålæg, hvidløg-s-...).
+        parts = {rest, rest.strip("es")}
+        different = parts & (_DIFFERENT_WORDS | _DIFFERENT_PREFIXES)
+        penalty += 5.0 if different else 0.15
+    for token in name:
+        if token in _NEUTRAL_WORDS or any(word in token or token in word for word in search_words):
+            continue
+        penalty += 5.0 if token in _DIFFERENT_WORDS else 0.15
+    return matched, penalty
 
 
 def extract_json(data: Any) -> dict[str, Any]:
@@ -338,7 +379,9 @@ def build_prompt(
         "skal dække dobbelte portioner på dage, der laver rester.",
         "",
         "INDKØBSLISTE: Saml alle ingredienser på tværs af dagene. Angiv for hver vare: navn, "
-        "mængde som tal, enhed (g, kg, ml, l eller stk), et søgeord til REMA 1000's varesøgning "
+        "mængde som tal, enhed (g, kg, ml eller l når muligt; pk for pakker, dåser og poser, fx "
+        "3 pk hakkede tomater; stk kun for løse enkeltvarer, fx 10 stk æg eller 2 stk "
+        "peberfrugt), et søgeord til REMA 1000's varesøgning "
         '(1-3 ord, fx "hakket oksekød", "laks", "broccoli"), kategori (Frugt & grønt, Kød, '
         "Fisk, Mejeri, Brød, Kolonial, Frost eller Andet) og evt. tilbuddets id. Udelad basisvarer.",
         "",
@@ -853,7 +896,7 @@ class MealPlanner:
                 line["note"] = "Ingen vare fundet – tilføjes som fritekst"
             return
 
-        candidates = self._candidates(line, products)
+        candidates, penalty = self._candidates(line, products)
         if not candidates:
             line["note"] = "Ingen vare fundet – tilføjes som fritekst"
             return
@@ -861,10 +904,18 @@ class MealPlanner:
         def cost(product: Product) -> float:
             return packages_needed(line["amount"], line["unit"], product) * (product.price or 0)
 
+        def fit(product: Product) -> tuple[float, bool]:
+            return cost(product) * penalty.get(product.id, 1.0), not product.is_advertised
+
         settings = self.store.settings
-        cheapest = min(candidates, key=lambda p: (cost(p), not p.is_advertised))
-        organic = [p for p in candidates if p.is_organic]
-        best_organic = min(organic, key=cost) if organic else None
+        cheapest = min(candidates, key=fit)
+        # An organic alternative must be the same kind of product, not just organic.
+        organic = [
+            p
+            for p in candidates
+            if p.is_organic and penalty.get(p.id, 1.0) <= penalty.get(cheapest.id, 1.0) + 0.5
+        ]
+        best_organic = min(organic, key=fit) if organic else None
         chosen = cheapest
         if settings["organic"] == "only":
             if best_organic:
@@ -877,23 +928,39 @@ class MealPlanner:
                 chosen = best_organic
         self._apply(line, chosen, packages_needed(line["amount"], line["unit"], chosen))
 
-    def _candidates(self, line: dict[str, Any], products: list[Product]) -> list[Product]:
-        """Keep the products that really are what the line asks for."""
+    def _candidates(
+        self, line: dict[str, Any], products: list[Product]
+    ) -> tuple[list[Product], dict[int, float]]:
+        """Products that really are what the line asks for, and a price penalty
+        for each (extra words in the name make a product a worse fit)."""
         priced = [p for p in products[:12] if p.price]
         if not priced:
-            return []
+            return [], {}
         words = [w for w in _tokens(line["search"]) if len(w) > 1 and w not in _NEUTRAL_WORDS]
-        ranks = {p.id: name_rank(words, p.name) for p in priced}
-        best = max(ranks.values())
-        # If nothing matches by name, trust REMA's own search ranking.
-        relevant = priced[:3] if best[0] == 0 else [p for p in priced if ranks[p.id] == best]
-        anchor = relevant[0].department
-        relevant = [p for p in relevant if p.department == anchor] or relevant
-        # The AI built the dish on an offer: prefer the products that are on offer.
+        fits = {p.id: name_fit(words, p.name) for p in priced}
+        penalty = {pid: fit[1] for pid, fit in fits.items()}
+
+        # The AI built the dish on an offer: if a matching product is on offer, use it.
         if line.get("offer"):
-            on_offer = [p for p in relevant if p.is_advertised or p.is_campaign]
+            on_offer = [
+                p
+                for p in priced
+                if (p.is_advertised or p.is_campaign)
+                and any(w in "".join(_tokens(p.name)) for w in words)
+            ]
             if on_offer:
-                relevant = on_offer
+                return self._free_from(on_offer), penalty
+
+        best = max(fit[0] for fit in fits.values())
+        # If nothing matches by name, trust REMA's own search ranking.
+        relevant = priced[:3] if best == 0 else [p for p in priced if fits[p.id][0] == best]
+        # Stay in the department of the best-fitting product (fish, not cold cuts).
+        anchor = min(relevant, key=lambda p: penalty.get(p.id, 1.0)).department
+        relevant = [p for p in relevant if p.department == anchor] or relevant
+        return self._free_from(relevant), penalty
+
+    def _free_from(self, relevant: list[Product]) -> list[Product]:
+        """Prefer gluten-free / lactose-free products when the family needs them."""
         for allergy in self.store.settings["allergies"]:
             marker = FREE_FROM.get(allergy)
             if marker:
