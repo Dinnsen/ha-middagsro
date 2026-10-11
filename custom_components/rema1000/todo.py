@@ -140,7 +140,7 @@ class RemaShoppingListEntity(RemaEntity[RemaShoppingListCoordinator], TodoListEn
                 translation_key="update_failed",
                 translation_placeholders={"error": str(err)},
             ) from err
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_refresh()
 
     async def async_delete_todo_items(self, uids: list[str]) -> None:
         """Delete lines."""
@@ -153,4 +153,4 @@ class RemaShoppingListEntity(RemaEntity[RemaShoppingListCoordinator], TodoListEn
                 translation_key="update_failed",
                 translation_placeholders={"error": str(err)},
             ) from err
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_refresh()

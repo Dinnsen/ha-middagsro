@@ -55,7 +55,8 @@ class RemaConfigFlow(ConfigFlow, domain=DOMAIN):
             _LOGGER.exception("Unexpected error while logging in to REMA 1000")
             return None, {"base": "unknown"}
         finally:
-            await session.close()
+            # Release the session without closing HA's shared connector.
+            session.detach()
         return user_id, {}
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
