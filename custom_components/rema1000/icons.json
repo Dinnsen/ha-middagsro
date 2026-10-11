@@ -1,0 +1,17 @@
+{
+  "entity": {
+    "sensor": {
+      "current_catalog": { "default": "mdi:newspaper-variant-outline" },
+      "list_total": { "default": "mdi:cash" },
+      "upcoming_catalog": { "default": "mdi:newspaper-plus" }
+    },
+    "todo": {
+      "shopping_list": { "default": "mdi:cart-outline" }
+    }
+  },
+  "services": {
+    "add_items": { "service": "mdi:cart-plus" },
+    "get_offers": { "service": "mdi:sale" },
+    "search_products": { "service": "mdi:magnify" }
+  }
+}

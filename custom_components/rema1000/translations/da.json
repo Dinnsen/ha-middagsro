@@ -1,0 +1,82 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Log ind på REMA 1000",
+        "description": "Brug samme e-mail og adgangskode som på rema1000.dk og i REMA 1000-appen. Varer tilføjes altid til din primære indkøbsliste, den der vises i appen.",
+        "data": {
+          "email": "E-mail",
+          "password": "Adgangskode"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Log ind på REMA 1000 igen",
+        "description": "Login for {email} virker ikke længere. Indtast den nuværende adgangskode.",
+        "data": {
+          "password": "Adgangskode"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Kunne ikke få forbindelse til REMA 1000. Prøv igen senere.",
+      "invalid_auth": "Forkert e-mail eller adgangskode.",
+      "unknown": "Uventet fejl. Se loggen for detaljer."
+    },
+    "abort": {
+      "already_configured": "Denne REMA 1000-konto er allerede sat op.",
+      "reauth_successful": "Logget ind igen.",
+      "wrong_account": "Login hører til en anden REMA 1000-konto."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "current_catalog": { "name": "Aktuel tilbudsavis" },
+      "list_total": { "name": "Indkøbsliste i alt" },
+      "upcoming_catalog": { "name": "Næste tilbudsavis" }
+    },
+    "todo": {
+      "shopping_list": { "name": "Indkøbsliste" }
+    }
+  },
+  "exceptions": {
+    "entry_not_found": { "message": "Der blev ikke fundet en indlæst REMA 1000-konto." },
+    "entry_required": { "message": "Der er sat flere REMA 1000-konti op. Vælg hvilken der skal bruges." },
+    "item_not_found": { "message": "Varen {uid} er ikke længere på indkøbslisten." },
+    "update_failed": { "message": "REMA 1000 kunne ikke opdateres: {error}" }
+  },
+  "selector": {
+    "catalog": {
+      "options": {
+        "current": "Aktuel",
+        "upcoming": "Næste"
+      }
+    }
+  },
+  "services": {
+    "search_products": {
+      "name": "Søg efter varer",
+      "description": "Søger i REMA 1000's sortiment og returnerer priser, tilbud og økologi-mærker.",
+      "fields": {
+        "config_entry_id": { "name": "Konto", "description": "Kun nødvendig, hvis der er sat flere REMA 1000-konti op." },
+        "query": { "name": "Søgning", "description": "Hvad der skal søges efter." },
+        "limit": { "name": "Maks. resultater", "description": "Hvor mange varer der returneres." }
+      }
+    },
+    "add_items": {
+      "name": "Tilføj til indkøbsliste",
+      "description": "Tilføjer varer eller fritekst til den primære REMA 1000-indkøbsliste.",
+      "fields": {
+        "config_entry_id": { "name": "Konto", "description": "Kun nødvendig, hvis der er sat flere REMA 1000-konti op." },
+        "items": { "name": "Varer", "description": "Liste af varer, hver med product_id eller name og evt. amount." }
+      }
+    },
+    "get_offers": {
+      "name": "Hent tilbud",
+      "description": "Returnerer tilbuddene i den aktuelle eller næste REMA 1000-tilbudsavis.",
+      "fields": {
+        "config_entry_id": { "name": "Konto", "description": "Kun nødvendig, hvis der er sat flere REMA 1000-konti op." },
+        "catalog": { "name": "Tilbudsavis", "description": "Den aktuelle eller den næste tilbudsavis." }
+      }
+    }
+  }
+}
