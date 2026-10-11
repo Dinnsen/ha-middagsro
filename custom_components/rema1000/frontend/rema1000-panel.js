@@ -35,11 +35,20 @@ const FREQ_LABELS = {
   inspiration: "Til inspiration",
 };
 const TYPE_LABELS = { normal: "", vegetar: "Vegetar", rester: "Rester", fast: "Fast dag" };
+const EGG_LABELS = {
+  caged: "Skrabeæg (alle æg)",
+  free_range: "Mindst frilandsæg",
+  organic: "Kun økologiske æg",
+};
+const onOffer = (p) =>
+  Boolean(p.is_advertised || p.is_campaign || (p.normal_price && p.price && p.price < p.normal_price - 0.01));
+const validTo = (iso) => (iso && !iso.startsWith("2099") ? shortDate(iso.slice(0, 10)) : "");
 const STATUS_LABELS = { draft: "Klar", sent: "Sendt", generating: "Laves", error: "Fejl" };
 const TABS = [
   ["plan", "Madplan"],
   ["recipes", "Opskrifter"],
   ["shopping", "Indkøb"],
+  ["favorites", "Favoritter"],
   ["history", "Historik"],
   ["settings", "Indstillinger"],
 ];
@@ -82,6 +91,10 @@ class Rema1000Panel extends HTMLElement {
     this._startDate = null;
     this._checked = {}; // ingredient/step ticks per plan+day
     this._timers = {};
+    this._favs = null; // REMA favourite products
+    this._favsLoading = false;
+    this._favsError = null;
+    this._favFilter = "";
     this._wake = null;
     this._wakeWanted = false;
     this._onVisibility = () => {
@@ -197,7 +210,20 @@ class Rema1000Panel extends HTMLElement {
       tab: () => {
         this._tab = arg;
         if (arg !== "recipes") this._releaseWake();
+        if (arg === "favorites" && !this._favs && !this._favsLoading) this._loadFavs();
         this._render();
+      },
+      "fav-refresh": () => this._loadFavs(true),
+      "fav-add": () =>
+        this._run(
+          () => this._ws("rema1000/list/add", { product_id: Number(arg), amount: 1 }),
+          "Tilføjet til REMA-listen."
+        ),
+      "clear-list": () => {
+        const count = this._state?.rema_list?.items?.length || 0;
+        if (!count) return this._say("REMA-listen er allerede tom.");
+        if (!confirm(`Fjern alle ${count} varer fra REMA-listen? Listen er delt, så den bliver også tom i appen.`)) return;
+        this._run(() => this._ws("rema1000/list/clear"), "REMA-listen er tømt.");
       },
       generate: () =>
         this._run(async () => {
@@ -332,6 +358,12 @@ class Rema1000Panel extends HTMLElement {
       this._startDate = el.value;
       return;
     }
+    if (ds.bind === "favfilter") {
+      this._favFilter = el.value;
+      const list = this.shadowRoot.querySelector("#fav-all");
+      if (list) list.innerHTML = this._favRows();
+      return;
+    }
     if (ds.bind === "search") {
       this._search.query = el.value;
       if (ev.type === "change") this._doSearch();
@@ -364,6 +396,19 @@ class Rema1000Panel extends HTMLElement {
       this._dirty = true;
       if (ev.type === "change" && (el.type === "radio" || el.tagName === "SELECT")) this._render();
     }
+  }
+
+  async _loadFavs(force = false) {
+    this._favsLoading = true;
+    this._favsError = null;
+    this._render();
+    try {
+      this._favs = await this._ws("rema1000/favorites", { force });
+    } catch (err) {
+      this._favsError = err?.message || String(err);
+    }
+    this._favsLoading = false;
+    this._render();
   }
 
   async _doSearch() {
@@ -478,6 +523,7 @@ class Rema1000Panel extends HTMLElement {
         plan: () => this._planView(),
         recipes: () => this._recipesView(),
         shopping: () => this._shoppingView(),
+        favorites: () => this._favoritesView(),
         history: () => this._historyView(),
         settings: () => this._settingsView(),
       }[this._tab]();
@@ -708,9 +754,85 @@ class Rema1000Panel extends HTMLElement {
       : "<li class='muted'>Listen er tom.</li>";
     return `${planHtml}
       <div class="card">
-        <h2>På REMA-listen lige nu${rema ? ` (${esc(rema.name)})` : ""}</h2>
+        <div class="row between wrap">
+          <h2>På REMA-listen lige nu${rema ? ` (${esc(rema.name)})` : ""}</h2>
+          <button class="btn small danger" data-action="clear-list" ${this._busy || !rema?.items?.length ? "disabled" : ""}>Tøm kurv</button>
+        </div>
         <ul class="rema">${remaItems}</ul>
         ${rema ? `<p class="muted">Anslået pris for det, der mangler: ${kr(rema.total)}</p>` : ""}
+      </div>`;
+  }
+
+  _productCard(p) {
+    const sale = onOffer(p);
+    const until = validTo(p.price_valid_to);
+    return `<div class="prod">
+      ${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy">` : '<span class="noimg">?</span>'}
+      <div class="prod-body">
+        <b>${esc(p.name)}</b>
+        <span class="muted small">${esc(p.underline || "")}</span>
+        <span class="prod-price">
+          <b class="${sale ? "sale" : ""}">${kr(p.price)}</b>
+          ${sale && p.normal_price && p.normal_price > p.price ? `<s class="muted">${kr(p.normal_price)}</s>` : ""}
+        </span>
+        <span>${p.is_advertised ? '<span class="badge offer">Avisvare</span>' : sale ? '<span class="badge offer">Tilbud</span>' : ""}
+          ${p.is_organic ? '<span class="badge eco">Øko</span>' : ""}
+          ${sale && until ? `<span class="muted small">til ${esc(until)}</span>` : ""}</span>
+      </div>
+      <button class="btn small primary" data-action="fav-add" data-arg="${esc(p.id)}" ${this._busy ? "disabled" : ""}>+ Tilføj</button>
+    </div>`;
+  }
+
+  _favRows() {
+    const filter = this._favFilter.trim().toLowerCase();
+    const rows = (this._favs || [])
+      .filter((p) => !filter || `${p.name} ${p.underline || ""}`.toLowerCase().includes(filter))
+      .map(
+        (p) => `<li class="fav-row">
+          <div class="what"><b>${esc(p.name)}</b><span class="muted small">${esc(p.underline || "")}</span></div>
+          <span class="${onOffer(p) ? "sale" : ""}">${kr(p.price)}</span>
+          <button class="btn small" data-action="fav-add" data-arg="${esc(p.id)}">+ Tilføj</button>
+        </li>`
+      )
+      .join("");
+    return rows || "<li class='muted'>Ingen favoritter matcher.</li>";
+  }
+
+  _favoritesView() {
+    if (this._favsLoading && !this._favs) {
+      return `<div class="card center"><span class="spinner"></span> Henter dine favoritter fra REMA 1000 …</div>`;
+    }
+    if (this._favsError && !this._favs) {
+      return `<div class="card"><h2>Favoritterne kunne ikke hentes</h2><p>${esc(this._favsError)}</p>
+        <button class="btn" data-action="fav-refresh">Prøv igen</button></div>`;
+    }
+    const favs = this._favs || [];
+    const now = favs.filter(onOffer);
+    const next = favs.filter((p) => !onOffer(p) && p.upcoming_is_advertised && p.upcoming_price);
+    const nextFrom = next[0]?.upcoming_from ? shortDate(next[0].upcoming_from.slice(0, 10)) : "";
+    return `
+      <div class="card">
+        <div class="row between wrap">
+          <div><h1>Dine favoritter</h1>
+          <p class="muted">Varer du har markeret med hjerte i REMA 1000-appen – ${favs.length} i alt.</p></div>
+          <button class="btn small" data-action="fav-refresh" ${this._favsLoading ? "disabled" : ""}>
+            ${this._favsLoading ? '<span class="spinner small"></span>' : "Opdatér"}</button>
+        </div>
+        <h2>På tilbud nu (${now.length})</h2>
+        ${now.length ? `<div class="prod-grid">${now.map((p) => this._productCard(p)).join("")}</div>` : '<p class="muted">Ingen af dine favoritter er på tilbud lige nu.</p>'}
+        ${next.length
+          ? `<h2>På tilbud i næste avis${nextFrom ? ` (fra ${esc(nextFrom)})` : ""} (${next.length})</h2>
+             <div class="prod-grid">${next
+               .map((p) => this._productCard({ ...p, price: p.upcoming_price, normal_price: p.price, is_advertised: true, price_valid_to: null }))
+               .join("")}</div>`
+          : ""}
+      </div>
+      <div class="card">
+        <details>
+          <summary>Alle favoritter (${favs.length})</summary>
+          <input class="grow filter" type="search" data-bind="favfilter" value="${esc(this._favFilter)}" placeholder="Filtrér, fx mælk">
+          <ul class="favlist" id="fav-all">${this._favRows()}</ul>
+        </details>
       </div>`;
   }
 
@@ -834,6 +956,17 @@ class Rema1000Panel extends HTMLElement {
             .join("")}
         </div>
         ${f.organic === "prefer" ? `<label class="field inline">Højst så mange % dyrere end den billigste ${num("organic_max_extra_pct", f.organic_max_extra_pct, 0, 500)}</label>` : ""}
+
+        <h2>Krav til varer</h2>
+        <p class="muted small">Gælder uanset pris. Findes der ingen vare, der opfylder kravet, vælges den billigste med en note.</p>
+        <div class="grid">
+          <label class="field">Æg
+            <select data-path="egg_min">${Object.entries(EGG_LABELS)
+              .map(([v, l]) => `<option value="${v}" ${f.egg_min === v ? "selected" : ""}>${l}</option>`)
+              .join("")}</select></label>
+        </div>
+        <label class="check"><input type="checkbox" data-path="milk_organic" ${f.milk_organic ? "checked" : ""}> Mælk skal være økologisk</label>
+        <label class="check"><input type="checkbox" data-path="produce_organic" ${f.produce_organic ? "checked" : ""}> Frugt og grønt skal være økologisk</label>
 
         <h2>Undgå</h2>
         <div class="checks">${opts.avoid.map((k) => check("avoid", k, AVOID_LABELS)).join("")}</div>
@@ -1000,6 +1133,17 @@ const STYLE = `
     border: none; border-radius: 10px; padding: 8px 10px; cursor: pointer; color: var(--primary-text-color); }
   .result img { width: 40px; height: 40px; object-fit: contain; background: #fff; border-radius: 6px; }
   .result span { display: flex; flex-direction: column; flex: 1; }
+  .prod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+  .prod { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--divider-color);
+    border-radius: 12px; background: var(--secondary-background-color, rgba(0,0,0,.02)); }
+  .prod img, .prod .noimg { width: 100%; height: 110px; object-fit: contain; background: #fff; border-radius: 8px; }
+  .prod-body { display: flex; flex-direction: column; gap: 3px; flex: 1; }
+  .prod-price { display: flex; gap: 8px; align-items: baseline; font-size: 17px; }
+  .sale { color: var(--rema-red); font-weight: 700; }
+  .favlist { list-style: none; padding: 0; margin: 8px 0 0; }
+  .fav-row { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--divider-color); }
+  .fav-row .what { flex: 1; }
+  .filter { width: 100%; margin-top: 10px; }
   .sticky { position: sticky; bottom: 0; background: var(--card-background-color); padding: 12px 0; border-top: 1px solid var(--divider-color); }
   .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #323232; color: #fff;
     padding: 12px 20px; border-radius: 10px; z-index: 10; max-width: 90vw; box-shadow: 0 4px 12px rgba(0,0,0,.3); }

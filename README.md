@@ -10,9 +10,10 @@ Et **REMA 1000-panel** i sidebaren samler det hele:
 
 - **Madplan:** Ugens aftensmad lavet af den AI, du har sat op i Home Assistant (AI Task – fx Google, OpenAI eller Anthropic). Retterne bygges op om ugens tilbud.
 - **Opskrifter:** Ingredienser og trin i stor skrift, afkrydsning, timere og en knap, der holder skærmen tændt, mens du laver mad.
-- **Indkøb:** Den billigste REMA-vare til hver ingrediens efter dine økologi-regler, med pris, tilbud og samlet budget. Send listen til REMA 1000-appen med ét tryk.
+- **Indkøb:** Den billigste REMA-vare til hver ingrediens efter dine økologi-regler, med pris, tilbud og samlet budget. Send listen til REMA 1000-appen med ét tryk, og tøm REMA-listen, når I har handlet.
+- **Favoritter:** Dine favoritvarer fra REMA-appen – dem på tilbud nu og i næste avis vises øverst og kan tilføjes til listen med ét tryk.
 - **Historik:** Tidligere madplaner.
-- **Indstillinger:** Startdag, budget, økologi (udelukkende / foretrækkes hvis højst x % dyrere / ligeglad), ting der skal undgås, allergier, familiens medlemmer, vegetar- og restedage, faste dage (fx rugbrødsdag), maks. tid på hverdage, basisvarer, faste ugevarer og familiens favoritretter med hyppighed.
+- **Indstillinger:** Startdag, budget, økologi (udelukkende / foretrækkes hvis højst x % dyrere / ligeglad), krav til æg (skrabe-, frilands- eller økologiske), økologisk mælk og økologisk frugt og grønt, ting der skal undgås, allergier, familiens medlemmer, vegetar- og restedage, faste dage (fx rugbrødsdag), maks. tid på hverdage, basisvarer, faste ugevarer og familiens favoritretter med hyppighed.
 
 Slå **automatik** til, så laves næste uges madplan, når den nye tilbudsavis udkommer – og sendes evt. direkte til REMA-listen.
 
