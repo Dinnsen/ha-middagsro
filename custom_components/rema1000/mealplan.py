@@ -91,6 +91,7 @@ _UNIT_BASE = {
 _ABBREVIATIONS = {"hk": "hakket", "øko": "økologisk", "økologiske": "økologisk"}
 # Extra words that make a product something else than what was asked for.
 _DIFFERENT_WORDS = {
+    "løse",
     "søde",
     "grønt",
     "grøntsager",
@@ -114,7 +115,7 @@ _DIFFERENT_WORDS = {
     "chips",
 }
 # First parts of compound words that make it another product (hvidløg is not løg).
-_DIFFERENT_PREFIXES = {"hvid", "perle", "hvidløgs"}
+_DIFFERENT_PREFIXES = {"hvid", "perle", "hvidløgs", "rød", "forårs", "sukker"}
 # Words in product names that say nothing about what the product is.
 _NEUTRAL_WORDS = {
     "rema",
@@ -192,9 +193,32 @@ def packages_needed(amount: float | None, unit: str | None, product: Product) ->
     return 1  # e.g. 8 pitabrød from one 375 g bag
 
 
+_ACCENTS = str.maketrans("éèêëáàâíìîïóòôúùûüç", "eeeeaaaiiiiooouuuuc")
+
+
 def _tokens(text: str) -> list[str]:
     """Lower-case words of a product name, with REMA's abbreviations expanded."""
-    return [_ABBREVIATIONS.get(w, w) for w in re.findall(r"[a-zæøå]+", text.lower())]
+    words = re.findall(r"[a-zæøå]+", text.lower().translate(_ACCENTS))
+    return [_ABBREVIATIONS.get(w, w) for w in words]
+
+
+def search_queries(line: dict[str, Any]) -> list[str]:
+    """What to search REMA for, best guess first.
+
+    REMA names minced meat "HK. ...KØD", so "kyllingefars" is also tried as
+    "hakket kylling", and the line's own name is tried last.
+    """
+    queries = [line["search"]]
+    for word in _tokens(line["search"]):
+        if word.endswith("fars") and len(word) > 4:
+            meat = word[:-4].rstrip("e")
+            queries.append(f"hakket {meat}")
+    queries.append(line["name"])
+    unique: list[str] = []
+    for query in queries:
+        if query and query.lower() not in (q.lower() for q in unique):
+            unique.append(query)
+    return unique
 
 
 def name_fit(search_words: list[str], product_name: str) -> tuple[int, float]:
@@ -877,6 +901,9 @@ class MealPlanner:
         line.update(product=None, packages=1, cost=None, note=None)
         try:
             products = await self.client.async_search_products(line["search"], 15)
+            if not line.get("product_id") and not line.get("must_have"):
+                await self._async_match_by_name(line, products)
+                return
             if not products and line["search"] != line["name"]:
                 products = await self.client.async_search_products(line["name"], 15)
         except RemaError as err:
@@ -896,9 +923,24 @@ class MealPlanner:
                 line["note"] = "Ingen vare fundet – tilføjes som fritekst"
             return
 
-        candidates, penalty = self._candidates(line, products)
+    async def _async_match_by_name(self, line: dict[str, Any], first: list[Product]) -> None:
+        """Try the search terms in turn until a product matches by name."""
+        candidates: list[Product] = []
+        penalty: dict[int, float] = {}
+        for idx, query in enumerate(search_queries(line)):
+            if idx == 0:
+                products = first
+            else:
+                try:
+                    products = await self.client.async_search_products(query, 15)
+                except RemaError:
+                    continue
+            candidates, penalty = self._candidates(line, products, query)
+            if candidates:
+                break
         if not candidates:
-            line["note"] = "Ingen vare fundet – tilføjes som fritekst"
+            # Better a free-text line than a wrong product.
+            line["note"] = "Ingen sikker vare fundet – tilføjes som fritekst"
             return
 
         def cost(product: Product) -> float:
@@ -929,14 +971,16 @@ class MealPlanner:
         self._apply(line, chosen, packages_needed(line["amount"], line["unit"], chosen))
 
     def _candidates(
-        self, line: dict[str, Any], products: list[Product]
+        self, line: dict[str, Any], products: list[Product], query: str
     ) -> tuple[list[Product], dict[int, float]]:
         """Products that really are what the line asks for, and a price penalty
         for each (extra words in the name make a product a worse fit)."""
         priced = [p for p in products[:12] if p.price]
         if not priced:
             return [], {}
-        words = [w for w in _tokens(line["search"]) if len(w) > 1 and w not in _NEUTRAL_WORDS]
+        words = [w for w in _tokens(query) if len(w) > 1 and w not in _NEUTRAL_WORDS]
+        if not words:
+            return [], {}
         fits = {p.id: name_fit(words, p.name) for p in priced}
         penalty = {pid: fit[1] for pid, fit in fits.items()}
 
@@ -952,8 +996,9 @@ class MealPlanner:
                 return self._free_from(on_offer), penalty
 
         best = max(fit[0] for fit in fits.values())
-        # If nothing matches by name, trust REMA's own search ranking.
-        relevant = priced[:3] if best == 0 else [p for p in priced if fits[p.id][0] == best]
+        if best == 0:
+            return [], penalty  # nothing is called what we searched for
+        relevant = [p for p in priced if fits[p.id][0] == best]
         # Stay in the department of the best-fitting product (fish, not cold cuts).
         anchor = min(relevant, key=lambda p: penalty.get(p.id, 1.0)).department
         relevant = [p for p in relevant if p.department == anchor] or relevant
