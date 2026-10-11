@@ -64,6 +64,7 @@ class RemaShoppingListEntity(RemaEntity[RemaShoppingListCoordinator], TodoListEn
     def __init__(self, coordinator: RemaShoppingListCoordinator, entry: RemaConfigEntry) -> None:
         """Initialize the entity."""
         super().__init__(coordinator, entry, "shopping_list")
+        self._entry = entry
         self._update_items()
 
     @callback
@@ -98,12 +99,11 @@ class RemaShoppingListEntity(RemaEntity[RemaShoppingListCoordinator], TodoListEn
         )
 
     async def async_create_todo_item(self, item: TodoItem) -> None:
-        """Add a free-text line. '3 x mælk' adds 3 of 'mælk'."""
-        amount, name = split_amount(item.summary or "")
-        if not name:
+        """Add a line, matched to a REMA product when one fits ('3 x mælk' adds 3)."""
+        if not (item.summary or "").strip():
             return
         try:
-            await self.coordinator.async_add_items([{"name": name, "amount": amount}])
+            await self._entry.runtime_data.planner.async_quick_add(item.summary)
         except RemaError as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,

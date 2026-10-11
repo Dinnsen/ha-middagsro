@@ -1037,7 +1037,14 @@ class MealPlanner:
             return cost(product) * penalty.get(product.id, 1.0), not product.is_advertised
 
         settings = self.store.settings
-        cheapest = min(candidates, key=fit)
+        if line.get("prefer") == "relevance":
+            # Typed by a person ("mælk"): the best-named product in REMA's own
+            # order, not the cheapest of everything called something with mælk.
+            best_fit = min(penalty.get(p.id, 1.0) for p in candidates)
+            candidates = [p for p in candidates if penalty.get(p.id, 1.0) <= best_fit + 0.01]
+            cheapest = candidates[0]
+        else:
+            cheapest = min(candidates, key=fit)
         # An organic alternative must be the same kind of product, not just organic.
         organic = [
             p
@@ -1125,6 +1132,44 @@ class MealPlanner:
 
     # ------------------------------------------------------------- sending
 
+    async def async_quick_add(self, text: str) -> dict[str, Any]:
+        """Add something typed by a person: a matching REMA product, else free text."""
+        amount, name = parse_quick_add(text)
+        if not name:
+            raise HomeAssistantError("Skriv hvad der skal på listen")
+        line: dict[str, Any] = {
+            "name": name,
+            "search": name,
+            "amount": amount,
+            "unit": "pk",
+            "category": None,
+            "offer": None,
+            "must_have": False,
+            "product_id": None,
+            "prefer": "relevance",
+        }
+        await self._async_match(line)
+        product = line.get("product")
+        if product:
+            await self._add_items([{"product_id": product["id"], "amount": line["packages"]}])
+            added = (
+                f"{line['packages']} × {product['name']}"
+                if line["packages"] > 1
+                else product["name"]
+            )
+            if product.get("underline"):
+                added += f" ({product['underline'].split('/')[0].strip()})"
+        else:
+            await self._add_items([{"name": name, "amount": amount}])
+            added = f"{amount} × {name}" if amount > 1 else name
+        return {
+            "text": text,
+            "added": added,
+            "product_id": product["id"] if product else None,
+            "free_text": product is None,
+            "note": line.get("note"),
+        }
+
     async def async_send(self, plan_id: str | None = None) -> dict[str, Any]:
         """Put a plan's shopping list on the primary REMA list."""
         plan = self.store.get_plan(plan_id) if plan_id else self.store.latest_plan
@@ -1174,6 +1219,23 @@ class MealPlanner:
         """Stop a running generation (on unload)."""
         if self._task and not self._task.done():
             self._task.cancel()
+
+
+_QUICK_COUNT = re.compile(
+    r"^\s*(\d{1,2})\s*(?:x|×|\*|stk\.?|pk\.?)?\s+(?!(?:g|gr|kg|gram|l|ml|dl|cl|liter)\b)(.+?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_quick_add(text: str) -> tuple[int, str]:
+    """'3 x æg', '3x æg', '3 stk æg' and '3 æg' -> (3, 'æg'); '500 g mel' stays as text."""
+    text = (text or "").strip()
+    if match := _QUICK_COUNT.match(text):
+        return max(1, int(match.group(1))), match.group(2)
+    if re.match(r"^\s*\d+\s*[x×*]\S", text):  # '3xæg'
+        count, rest = re.match(r"^\s*(\d+)\s*[x×*](.+)$", text).groups()
+        return max(1, int(count)), rest.strip()
+    return 1, text
 
 
 def plan_summary(plan: dict[str, Any]) -> dict[str, Any]:

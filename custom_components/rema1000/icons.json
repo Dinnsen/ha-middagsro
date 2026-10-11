@@ -17,6 +17,9 @@
           "error": "mdi:alert-circle-outline",
           "sent": "mdi:cart-check"
         }
+      },
+      "dinner_today": {
+        "default": "mdi:silverware-fork-knife"
       }
     },
     "todo": {
@@ -35,6 +38,11 @@
     "calendar": {
       "meal_plan": {
         "default": "mdi:silverware-fork-knife"
+      }
+    },
+    "text": {
+      "quick_add": {
+        "default": "mdi:cart-plus"
       }
     }
   },

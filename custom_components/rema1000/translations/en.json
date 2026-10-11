@@ -48,6 +48,9 @@
           "draft": "Ready",
           "sent": "Sent to shopping list"
         }
+      },
+      "dinner_today": {
+        "name": "Dinner today"
       }
     },
     "todo": {
@@ -66,6 +69,11 @@
     "calendar": {
       "meal_plan": {
         "name": "Meal plan"
+      }
+    },
+    "text": {
+      "quick_add": {
+        "name": "Add to shopping list"
       }
     }
   },
