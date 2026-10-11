@@ -16,6 +16,7 @@ STORE_VERSION = 1
 MAX_PLANS = 52
 
 ORGANIC_MODES = ("only", "prefer", "none")
+EGG_LEVELS = ("caged", "free_range", "organic")  # skrabeæg < frilandsæg < økologiske æg
 FAVORITE_FREQUENCIES = ("weekly", "biweekly", "monthly", "on_offer", "inspiration")
 AVOID_OPTIONS = ("meat", "pork", "beef", "fish", "shellfish", "animal_products", "spicy")
 ALLERGY_OPTIONS = (
@@ -62,6 +63,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "no_repeat_weeks": 3,
     "pantry": "salt, peber, olie, smør, mel, sukker, eddike, bouillon",
     "wishes": "Sund, varieret og børnevenlig mad, som er let at lave og hurtig at rydde op efter.",
+    "egg_min": "caged",
+    "milk_organic": False,
+    "produce_organic": False,
     "auto_generate": False,
     "auto_send": False,
 }
@@ -98,6 +102,10 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
     settings["ai_task_entity"] = settings["ai_task_entity"] or None
     settings["auto_generate"] = bool(settings["auto_generate"])
     settings["auto_send"] = bool(settings["auto_send"])
+    if settings["egg_min"] not in EGG_LEVELS:
+        settings["egg_min"] = "caged"
+    settings["milk_organic"] = bool(settings["milk_organic"])
+    settings["produce_organic"] = bool(settings["produce_organic"])
     settings["household"] = [
         {
             "role": "child" if member.get("role") == "child" else "adult",

@@ -106,6 +106,13 @@ def _float(value: Any) -> float | None:
         return None
 
 
+def _name_of(value: Any) -> str | None:
+    """Department/category is an object with a name, or sometimes just a name."""
+    if isinstance(value, dict):
+        return value.get("name")
+    return str(value) if value else None
+
+
 def split_amount(text: str) -> tuple[int, str]:
     """Split '3 x mælk' into (3, 'mælk'). Plain text gives amount 1."""
     if match := _AMOUNT_PREFIX.match(text):
@@ -230,6 +237,20 @@ class Product:
         def _price(entry: dict[str, Any]) -> float:
             return _float(entry.get("price")) or float("inf")
 
+        if not data.get("prices") and isinstance(data.get("pricing"), dict):
+            # Some endpoints (shopping lists, favourites) give one "pricing" block.
+            pricing = data["pricing"]
+            active = [
+                {
+                    "price": pricing.get("price"),
+                    "is_advertised": pricing.get("is_advertised"),
+                    "is_campaign": pricing.get("is_on_discount"),
+                    "ending_at": pricing.get("price_changes_on"),
+                }
+            ]
+            if pricing.get("normal_price") not in (None, pricing.get("price")):
+                active.append({"price": pricing.get("normal_price")})
+
         best = min(active, key=_price) if active else None
         regular = [p for p in active if not p.get("is_campaign") and not p.get("is_advertised")]
         normal = max(regular, key=_price) if regular else best
@@ -237,8 +258,10 @@ class Product:
 
         labels = [str(label.get("name")) for label in data.get("labels") or [] if label.get("name")]
         underline = data.get("underline")
-        organic = any("økolog" in label.lower() for label in labels) or (
-            bool(underline) and "ØKOLOGISK" in str(underline).upper()
+        organic = (
+            any("økolog" in label.lower() for label in labels)
+            or (bool(underline) and "ØKOLOGISK" in str(underline).upper())
+            or bool(re.search(r"(^|[^A-ZÆØÅ])ØKO", str(data.get("name") or "").upper()))
         )
         images = data.get("images") or []
         image = None
@@ -249,8 +272,8 @@ class Product:
             id=int(data["id"]),
             name=str(data.get("name") or ""),
             underline=underline,
-            department=(data.get("department") or {}).get("name"),
-            category=(data.get("category") or {}).get("name"),
+            department=_name_of(data.get("department")),
+            category=_name_of(data.get("category")),
             price=_float(best.get("price")) if best else None,
             normal_price=_float(normal.get("price")) if normal else None,
             compare_unit=best.get("compare_unit") if best else None,
@@ -367,6 +390,7 @@ class RemaClient:
         self._user_id: int | None = None
         self._lock = asyncio.Lock()
         self._tjek: tuple[str, str] | None = None
+        self._favorites: tuple[float, list[Product]] | None = None
 
     @property
     def user_id(self) -> int | None:
@@ -683,6 +707,49 @@ class RemaClient:
                 products.append(Product.from_api(entry, now))
             except (KeyError, TypeError, ValueError) as err:
                 _LOGGER.debug("Skipping product that could not be read: %s", err)
+        return products
+
+    async def async_get_favorites(self, force: bool = False) -> list[Product]:
+        """The account's favourite products (the hearts in the app), with prices.
+
+        Cached for 15 minutes; the list can be a few hundred products long.
+        """
+        if not force and self._favorites and time.monotonic() - self._favorites[0] < 900:
+            return self._favorites[1]
+        await self._async_ensure_token()
+        now = datetime.now(UTC)
+        products: list[Product] = []
+        seen: set[int] = set()
+        page = 1
+        while page <= 40:
+            data = await self._async_request(
+                "GET",
+                f"/v3/users/{self._user_id}/favorites",
+                params={"include": "product", "page": page, "per_page": 100},
+            )
+            entries = list((data or {}).get("data") or [])
+            for entry in entries:
+                raw = entry.get("product") if isinstance(entry, dict) else None
+                if isinstance(raw, dict) and isinstance(raw.get("data"), dict):
+                    raw = raw["data"]  # some APIs wrap includes in {"data": ...}
+                if not isinstance(raw, dict):
+                    raw = entry if isinstance(entry, dict) and entry.get("name") else None
+                if not raw or not raw.get("id") or not raw.get("name"):
+                    continue
+                try:
+                    product = Product.from_api(raw, now)
+                except (KeyError, TypeError, ValueError) as err:
+                    _LOGGER.debug("Skipping favourite that could not be read: %s", err)
+                    continue
+                if product.id not in seen:
+                    seen.add(product.id)
+                    products.append(product)
+            pagination = ((data or {}).get("meta") or {}).get("pagination") or {}
+            last_page = pagination.get("last_page") or page
+            if not entries or page >= last_page:
+                break
+            page += 1
+        self._favorites = (time.monotonic(), products)
         return products
 
     # ------------------------------------------------------------ offers (Tjek)

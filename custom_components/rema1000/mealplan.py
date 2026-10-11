@@ -276,6 +276,36 @@ def _num(value: Any, default: float | None = None) -> float | None:
 # ------------------------------------------------------------------ prompt
 
 
+_EGG_LEVEL = {"caged": 0, "free_range": 1, "organic": 2}
+_NOT_EGGS = {"pålæg", "indlæg", "tillæg", "oplæg", "pålægs"}
+_NOT_DAIRY_MILK = ("kokos", "mandel", "havre", "soja", "ris", "kakao", "kærne")
+
+
+def egg_level(product: Product) -> int:
+    """0 = skrabeæg (or unknown), 1 = frilandsæg, 2 = økologiske æg."""
+    text = f"{product.name} {product.underline or ''}".upper()
+    if product.is_organic or re.search(r"(^|[^A-ZÆØÅ])ØKO", text):
+        return 2
+    if "FRILAND" in text:
+        return 1
+    return 0
+
+
+def line_kind(line: dict[str, Any]) -> str | None:
+    """Is a shopping line eggs, (dairy) milk or fruit & vegetables?"""
+    tokens = _tokens(f"{line.get('search') or ''} {line.get('name') or ''}")
+    if any(t == "æg" or (t.endswith("æg") and t not in _NOT_EGGS) for t in tokens):
+        return "egg"
+    if any(
+        "mælk" in t and "chokolade" not in t and not t.startswith(_NOT_DAIRY_MILK) for t in tokens
+    ):
+        return "milk"
+    category = str(line.get("category") or "").lower()
+    if "frugt" in category or "grønt" in category:
+        return "produce"
+    return None
+
+
 def _household_lines(settings: dict[str, Any]) -> list[str]:
     lines = []
     for member in settings["household"]:
@@ -351,6 +381,13 @@ def build_prompt(
         "none": "Vælg de billigste varer; økologi er ikke et krav.",
     }[s["organic"]]
     out.append(f"- Økologi: {organic}")
+    if s["egg_min"] != "caged":
+        eggs = "mindst frilandsæg" if s["egg_min"] == "free_range" else "økologiske æg"
+        out.append(f"- Æg skal være {eggs}.")
+    if s["milk_organic"]:
+        out.append("- Mælk skal være økologisk.")
+    if s["produce_organic"]:
+        out.append("- Frugt og grønt skal være økologisk.")
     if feedback:
         out.append(f"- VIGTIGT fra sidste forsøg: {feedback}")
 
@@ -923,10 +960,36 @@ class MealPlanner:
                 line["note"] = "Ingen vare fundet – tilføjes som fritekst"
             return
 
-    async def _async_match_by_name(self, line: dict[str, Any], first: list[Product]) -> None:
+    def _requirement(
+        self, line: dict[str, Any]
+    ) -> tuple[Callable[[Product], bool], str, list[str]] | None:
+        """The family's rule for this kind of item: (test, label, extra searches)."""
+        settings = self.store.settings
+        kind = line_kind(line)
+        if kind == "egg" and settings["egg_min"] != "caged":
+            level = _EGG_LEVEL[settings["egg_min"]]
+            if level == 1:
+                return (
+                    lambda p: egg_level(p) >= 1,
+                    "frilandsæg eller økologiske æg",
+                    ["frilandsæg", "økologiske æg"],
+                )
+            return lambda p: egg_level(p) >= 2, "økologiske æg", ["økologiske æg", "øko æg"]
+        if (kind == "milk" and settings["milk_organic"]) or (
+            kind == "produce" and settings["produce_organic"]
+        ):
+            label = "økologisk mælk" if kind == "milk" else "økologisk frugt og grønt"
+            search = line["search"]
+            return lambda p: p.is_organic, label, [f"økologisk {search}", f"øko {search}"]
+        return None
+
+    async def _async_search_candidates(
+        self,
+        line: dict[str, Any],
+        first: list[Product],
+        require: Callable[[Product], bool] | None,
+    ) -> tuple[list[Product], dict[int, float]]:
         """Try the search terms in turn until a product matches by name."""
-        candidates: list[Product] = []
-        penalty: dict[int, float] = {}
         for idx, query in enumerate(search_queries(line)):
             if idx == 0:
                 products = first
@@ -935,9 +998,33 @@ class MealPlanner:
                     products = await self.client.async_search_products(query, 15)
                 except RemaError:
                     continue
-            candidates, penalty = self._candidates(line, products, query)
+            candidates, penalty = self._candidates(line, products, query, require)
             if candidates:
-                break
+                return candidates, penalty
+        return [], {}
+
+    async def _async_match_by_name(self, line: dict[str, Any], first: list[Product]) -> None:
+        """Choose the best product by name, the family's rules and price."""
+        requirement = self._requirement(line)
+        require = requirement[0] if requirement else None
+        note: str | None = None
+        candidates, penalty = await self._async_search_candidates(line, first, require)
+        if not candidates and requirement:
+            # None of the usual results meet the rule: search for it directly.
+            for query in requirement[2]:
+                try:
+                    products = await self.client.async_search_products(query, 15)
+                except RemaError:
+                    continue
+                for words in (line["search"], line["name"]):
+                    candidates, penalty = self._candidates(line, products, words, require)
+                    if candidates:
+                        break
+                if candidates:
+                    break
+            if not candidates:
+                candidates, penalty = await self._async_search_candidates(line, first, None)
+                note = f"Ingen vare opfylder kravet om {requirement[1]} – billigste valgt"
         if not candidates:
             # Better a free-text line than a wrong product.
             line["note"] = "Ingen sikker vare fundet – tilføjes som fritekst"
@@ -969,13 +1056,19 @@ class MealPlanner:
             if cost(best_organic) <= limit + 0.001:
                 chosen = best_organic
         self._apply(line, chosen, packages_needed(line["amount"], line["unit"], chosen))
+        if note:
+            line["note"] = note
 
     def _candidates(
-        self, line: dict[str, Any], products: list[Product], query: str
+        self,
+        line: dict[str, Any],
+        products: list[Product],
+        query: str,
+        require: Callable[[Product], bool] | None = None,
     ) -> tuple[list[Product], dict[int, float]]:
         """Products that really are what the line asks for, and a price penalty
         for each (extra words in the name make a product a worse fit)."""
-        priced = [p for p in products[:12] if p.price]
+        priced = [p for p in products[:12] if p.price and (require is None or require(p))]
         if not priced:
             return [], {}
         words = [w for w in _tokens(query) if len(w) > 1 and w not in _NEUTRAL_WORDS]

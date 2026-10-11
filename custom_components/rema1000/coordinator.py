@@ -76,6 +76,14 @@ class RemaShoppingListCoordinator(DataUpdateCoordinator[ShoppingList]):
         # Refresh right away (not debounced) so HA shows the change at once.
         await self.async_refresh()
 
+    async def async_clear(self) -> int:
+        """Remove every item from the primary list. Returns how many."""
+        shopping_list = await self.client.async_get_primary_list()
+        ids = [item.id for item in shopping_list.items]
+        await self.client.async_delete_items(shopping_list.id, ids)
+        await self.async_refresh()
+        return len(ids)
+
 
 @dataclass
 class OffersData:

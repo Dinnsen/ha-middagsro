@@ -214,6 +214,46 @@ async def ws_search(hass: HomeAssistant, connection, msg: dict[str, Any]) -> Non
     connection.send_result(msg["id"], [p.as_dict() for p in products])
 
 
+@websocket_api.websocket_command(
+    {vol.Required("type"): "rema1000/favorites", ENTRY: str, vol.Optional("force"): bool}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_favorites(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    """The account's favourite products, with what is on offer."""
+    client = _entry(hass, msg).runtime_data.client
+    products = await client.async_get_favorites(force=bool(msg.get("force")))
+    connection.send_result(msg["id"], [p.as_dict() for p in products])
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/list/add",
+        ENTRY: str,
+        vol.Required("product_id"): int,
+        vol.Optional("amount", default=1): int,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_list_add(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    """Add one product to the primary REMA list."""
+    coordinator = _entry(hass, msg).runtime_data.shopping_list
+    await coordinator.async_add_items(
+        [{"product_id": msg["product_id"], "amount": max(1, min(99, msg["amount"]))}]
+    )
+    connection.send_result(msg["id"], True)
+
+
+@websocket_api.websocket_command({vol.Required("type"): "rema1000/list/clear", ENTRY: str})
+@websocket_api.async_response
+@_wrap
+async def ws_list_clear(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    """Remove everything from the primary REMA list."""
+    removed = await _entry(hass, msg).runtime_data.shopping_list.async_clear()
+    connection.send_result(msg["id"], {"removed": removed})
+
+
 @callback
 def async_register_websocket(hass: HomeAssistant) -> None:
     """Register the panel's commands."""
@@ -228,5 +268,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_recipe,
         ws_plan_delete,
         ws_search,
+        ws_favorites,
+        ws_list_add,
+        ws_list_clear,
     ):
         websocket_api.async_register_command(hass, command)
