@@ -1,0 +1,774 @@
+"""Meal plans: prompt, AI generation, product matching and sending to REMA."""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Callable
+from datetime import date, datetime, timedelta
+import json
+import logging
+import math
+import re
+from typing import Any
+import uuid
+
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.util import dt as dt_util
+
+from .api import Catalog, Offer, Product, RemaClient, RemaError
+from .const import DOMAIN
+from .storage import RemaPlanStore
+
+_LOGGER = logging.getLogger(__name__)
+
+WEEKDAYS_DA = ("mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag", "søndag")
+AVOID_DA = {
+    "meat": "kød",
+    "pork": "svinekød",
+    "beef": "oksekød",
+    "fish": "fisk",
+    "shellfish": "skaldyr",
+    "animal_products": "alle animalske produkter (maden skal være vegansk)",
+    "spicy": "stærk mad",
+}
+ALLERGY_DA = {
+    "gluten": "gluten",
+    "lactose": "laktose",
+    "milk": "mælkeprotein",
+    "egg": "æg",
+    "nuts": "nødder",
+    "peanuts": "jordnødder",
+    "soy": "soja",
+    "sesame": "sesam",
+    "celery": "selleri",
+    "mustard": "sennep",
+    "fish": "fisk",
+    "shellfish": "krebsdyr",
+    "molluscs": "bløddyr",
+    "lupin": "lupin",
+    "sulphites": "sulfitter",
+}
+# Products REMA sells as "free from" an allergen.
+FREE_FROM = {"gluten": "GLUTENFRI", "lactose": "LAKTOSEFRI", "milk": "LAKTOSEFRI"}
+
+MAX_AI_ROUNDS = 2  # first try + one retry if the list is over budget
+SEARCH_CONCURRENCY = 4
+
+_SIZE_MULTI = re.compile(
+    r"(\d+)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(KG|GR|G|LTR|LITER|L|ML|CL|DL)\b", re.IGNORECASE
+)
+_SIZE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(KG|GR|G|LTR|LITER|L|ML|CL|DL|STK)\b", re.IGNORECASE)
+_UNIT_BASE = {
+    "kg": ("g", 1000),
+    "gr": ("g", 1),
+    "g": ("g", 1),
+    "ltr": ("ml", 1000),
+    "liter": ("ml", 1000),
+    "l": ("ml", 1000),
+    "dl": ("ml", 100),
+    "cl": ("ml", 10),
+    "ml": ("ml", 1),
+    "stk": ("stk", 1),
+    "stk.": ("stk", 1),
+    "pcs": ("stk", 1),
+}
+
+
+def signal_plans_updated(entry_id: str) -> str:
+    """Dispatcher signal sent when plans or generation status change."""
+    return f"{DOMAIN}_{entry_id}_plans_updated"
+
+
+def next_start(today: date, weekday: int) -> date:
+    """The next day (today included) that is the given weekday."""
+    return today + timedelta(days=(weekday - today.weekday()) % 7)
+
+
+def to_base(amount: float, unit: str | None) -> tuple[str, float] | None:
+    """Convert an amount to grams, millilitres or pieces."""
+    if not unit:
+        return None
+    base = _UNIT_BASE.get(unit.strip().lower())
+    if not base:
+        return None
+    return base[0], amount * base[1]
+
+
+def package_size(underline: str | None) -> tuple[str, float] | None:
+    """Read the package size from REMA's underline, e.g. '500 GR. / REMA 1000'."""
+    if not underline:
+        return None
+    text = underline.split("/")[0]
+    if match := _SIZE_MULTI.search(text):
+        count = int(match.group(1))
+        size = to_base(float(match.group(2).replace(",", ".")), match.group(3))
+        return (size[0], size[1] * count) if size else None
+    if match := _SIZE.search(text):
+        return to_base(float(match.group(1).replace(",", ".")), match.group(2))
+    return None
+
+
+def packages_needed(amount: float | None, unit: str | None, product: Product) -> int:
+    """How many packages of a product cover an amount."""
+    if not amount or amount <= 0:
+        return 1
+    need = to_base(amount, unit)
+    size = package_size(product.underline)
+    if need and size and need[0] == size[0] and size[1] > 0:
+        return max(1, min(20, math.ceil(need[1] / size[1] - 0.05)))
+    if need and need[0] == "stk" and not size:
+        return max(1, min(20, math.ceil(need[1])))
+    return 1
+
+
+def extract_json(data: Any) -> dict[str, Any]:
+    """Get the JSON object out of an AI answer."""
+    if isinstance(data, dict):
+        return data
+    text = str(data or "").strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("The AI answer contained no JSON object")
+    return json.loads(text[start : end + 1])
+
+
+def _num(value: Any, default: float | None = None) -> float | None:
+    try:
+        return float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        return default
+
+
+# ------------------------------------------------------------------ prompt
+
+
+def _household_lines(settings: dict[str, Any]) -> list[str]:
+    lines = []
+    for member in settings["household"]:
+        role = "Voksen" if member["role"] == "adult" else "Barn"
+        sex = {"male": "dreng/mand", "female": "pige/kvinde"}.get(member["sex"], "")
+        lines.append(f"- {role}, {member['age']} år{', ' + sex if sex else ''}")
+    return lines or ["- 2 voksne"]
+
+
+def build_prompt(
+    *,
+    settings: dict[str, Any],
+    dates: list[date],
+    catalog: Catalog | None,
+    offers: list[Offer],
+    favorites_due: list[dict[str, Any]],
+    favorites_optional: list[dict[str, Any]],
+    recent_dishes: list[str],
+    feedback: str | None = None,
+) -> str:
+    """Build the instructions for the AI."""
+    s = settings
+    day_list = ", ".join(f"{WEEKDAYS_DA[d.weekday()]} {d.isoformat()}" for d in dates)
+    out: list[str] = [
+        "Du er en erfaren dansk madplanlægger. Familien handler i REMA 1000 i Danmark.",
+        f"Lav en madplan med aftensmad for {len(dates)} dage: {day_list}.",
+        "",
+        "HUSSTAND (beregn mængder til hele husstanden; børn spiser mindre end voksne):",
+        *_household_lines(s),
+        "",
+        "KRAV – SKAL OVERHOLDES:",
+    ]
+    allergies = [ALLERGY_DA[a] for a in s["allergies"]]
+    if s["allergies_other"].strip():
+        allergies.append(s["allergies_other"].strip())
+    if allergies:
+        out.append(f"- Allergier – må ALDRIG indgå, heller ikke som spor: {', '.join(allergies)}.")
+    avoid = [AVOID_DA[a] for a in s["avoid"]]
+    if s["avoid_other"].strip():
+        avoid.append(s["avoid_other"].strip())
+    if avoid:
+        out.append(f"- Undgå helt: {', '.join(avoid)}.")
+    out.append(
+        f"- Vegetarretter: mindst {s['min_vegetarian']} og højst {s['max_vegetarian']} i perioden."
+    )
+    if s["leftover_days"]:
+        out.append(
+            f"- Præcis {s['leftover_days']} dage er restedage: retten dagen før laves i dobbelt "
+            'portion, og dagen efter spises resten (type "rester", angiv uses_leftovers_from, '
+            "ingen nye ingredienser). Rester må ikke ligge på første dag."
+        )
+    else:
+        out.append("- Ingen restedage; hver dag er en ny ret.")
+    for fixed in s["fixed_days"]:
+        matching = [d for d in dates if d.weekday() == fixed["weekday"]]
+        for day in matching:
+            out.append(f"- {WEEKDAYS_DA[day.weekday()]} {day.isoformat()}: {fixed['text']}")
+    out.append(
+        f"- Mandag til fredag højst {s['max_cook_minutes_weekday']} minutters aktiv tilberedning."
+    )
+    if recent_dishes:
+        out.append(
+            "- Disse retter fra de seneste uger må IKKE gentages: " + "; ".join(recent_dishes) + "."
+        )
+    if s["budget"]:
+        out.append(f"- Hele indkøbslisten skal koste under {s['budget']} kr. med REMA 1000-priser.")
+    organic = {
+        "only": "Brug udelukkende økologiske varer, hvor REMA 1000 har dem.",
+        "prefer": f"Foretræk økologiske varer, når de højst er {s['organic_max_extra_pct']} % dyrere.",
+        "none": "Vælg de billigste varer; økologi er ikke et krav.",
+    }[s["organic"]]
+    out.append(f"- Økologi: {organic}")
+    if feedback:
+        out.append(f"- VIGTIGT fra sidste forsøg: {feedback}")
+
+    out += ["", "ØNSKER:"]
+    if s["wishes"].strip():
+        out.append(f"- {s['wishes'].strip()}")
+    out.append(
+        "- Byg retterne op omkring ugens tilbud nedenfor, og marker tilbudsvarer på "
+        "indkøbslisten med tilbuddets id."
+    )
+    if favorites_due:
+        out.append("- Disse familiefavoritter SKAL med i perioden (angiv favorite_id på dagen):")
+        out += [f"  [{f['id']}] {f['text']}" for f in favorites_due]
+    if favorites_optional:
+        out.append(
+            '- Familiefavoritter til inspiration (ikke krav). Dem markeret "kun på tilbud" '
+            "bruges kun, hvis hovedingrediensen er på tilbud. Angiv favorite_id, hvis du bruger én:"
+        )
+        for fav in favorites_optional:
+            note = " (kun på tilbud)" if fav.get("frequency") == "on_offer" else ""
+            out.append(f"  [{fav['id']}] {fav['text']}{note}")
+    if s["pantry"].strip():
+        out.append(
+            f"- Basisvarer familien altid har, som IKKE skal på indkøbslisten: {s['pantry'].strip()}."
+        )
+    if s["must_haves"]:
+        names = ", ".join(item["name"] for item in s["must_haves"])
+        out.append(
+            f"- Faste ugevarer købes separat og skal IKKE på indkøbslisten: {names}. "
+            "Du må gerne bruge dem i retterne."
+        )
+
+    if offers:
+        label = catalog.label if catalog and catalog.label else "Ugens tilbud"
+        out += ["", f"UGENS TILBUD I REMA 1000 ({label}) – id | vare | pris | mængde:"]
+        for idx, offer in enumerate(offers):
+            price = f"{offer.price:g} kr." if offer.price is not None else "?"
+            if offer.pre_price:
+                price += f" (før {offer.pre_price:g})"
+            desc = (offer.description or "").split("\n")[0][:60]
+            qty = offer.quantity or ""
+            out.append(f"o{idx} | {offer.heading} | {price} | {qty} {desc}".rstrip())
+
+    out += [
+        "",
+        "OPSKRIFTER: Skriv til en uerfaren kok: præcise mængder til hele husstanden, korte "
+        "nummererede trin med tid i minutter, aktiv tid og samlet tid.",
+        "",
+        "INDKØBSLISTE: Saml alle ingredienser på tværs af dagene. Angiv for hver vare: navn, "
+        "mængde som tal, enhed (g, kg, ml, l eller stk), et søgeord til REMA 1000's varesøgning "
+        '(1-3 ord, fx "hakket oksekød", "laks", "broccoli"), kategori (Frugt & grønt, Kød, '
+        "Fisk, Mejeri, Brød, Kolonial, Frost eller Andet) og evt. tilbuddets id. Udelad basisvarer.",
+        "",
+        "Kontrollér til sidst ALLE krav og udfyld checklist ærligt. Skriv afvigelser i deviations.",
+        "",
+        "SVARFORMAT: Svar KUN med gyldig JSON uden markdown og uden forklaring, præcis sådan:",
+        json.dumps(
+            {
+                "title": "Madplan uge 43",
+                "summary": "Kort beskrivelse af ugen",
+                "days": [
+                    {
+                        "date": dates[0].isoformat(),
+                        "dish": "Ovnbagt laks med spinatpasta, pesto og broccoli",
+                        "type": "normal | vegetar | rester | fast",
+                        "favorite_id": None,
+                        "uses_leftovers_from": None,
+                        "makes_leftovers": False,
+                        "servings": 4,
+                        "active_minutes": 20,
+                        "total_minutes": 35,
+                        "ingredients": [{"name": "laksefilet", "amount": "600 g"}],
+                        "steps": [{"text": "Tænd ovnen på 200 grader.", "minutes": 1}],
+                        "tip": "Kort tip til børnefamilien",
+                    }
+                ],
+                "shopping": [
+                    {
+                        "name": "Laksefilet",
+                        "amount": 600,
+                        "unit": "g",
+                        "search": "laks",
+                        "category": "Fisk",
+                        "offer": "o12",
+                    }
+                ],
+                "checklist": [{"requirement": "Højst 1 vegetarret", "ok": True}],
+                "deviations": "",
+            },
+            ensure_ascii=False,
+        ),
+        f"days skal have præcis {len(dates)} elementer i datoorden.",
+    ]
+    return "\n".join(out)
+
+
+# ------------------------------------------------------------------ planner
+
+
+class MealPlanner:
+    """Create meal plans with AI and send them to the REMA shopping list."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry_id: str,
+        client: RemaClient,
+        store: RemaPlanStore,
+        get_catalogs: Callable[[], tuple[Catalog | None, Catalog | None]],
+        add_items: Callable[[list[dict[str, Any]]], Any],
+    ) -> None:
+        """Initialize the planner."""
+        self.hass = hass
+        self.entry_id = entry_id
+        self.client = client
+        self.store = store
+        self._get_catalogs = get_catalogs
+        self._add_items = add_items
+        self.status: dict[str, Any] = {"state": "idle", "message": None, "started": None}
+        self._task: asyncio.Task[None] | None = None
+        self._auto_attempted: set[str] = set()
+
+    # ------------------------------------------------------------- status
+
+    @callback
+    def _notify(self) -> None:
+        async_dispatcher_send(self.hass, signal_plans_updated(self.entry_id))
+
+    @callback
+    def _set_status(self, state: str, message: str | None = None) -> None:
+        started = self.status.get("started") if state != "generating" else dt_util.now().isoformat()
+        self.status = {"state": state, "message": message, "started": started}
+        self._notify()
+
+    @property
+    def generating(self) -> bool:
+        """True while a plan is being made."""
+        return self._task is not None and not self._task.done()
+
+    # ------------------------------------------------------------- generation
+
+    def default_start(self) -> date:
+        """The start date of the next plan."""
+        return next_start(dt_util.now().date(), self.store.settings["start_weekday"])
+
+    @callback
+    def async_start_generation(self, start: date | None = None, send: bool = False) -> None:
+        """Start making a plan in the background."""
+        if self.generating:
+            raise HomeAssistantError("Der er allerede ved at blive lavet en madplan")
+        self._set_status("generating", "Laver madplan …")
+        self._task = self.hass.async_create_background_task(
+            self._async_run(start or self.default_start(), send),
+            name=f"{DOMAIN} meal plan",
+        )
+
+    async def _async_run(self, start: date, send: bool) -> None:
+        try:
+            plan = await self.async_generate(start)
+            if send:
+                await self.async_send(plan["id"])
+        except Exception as err:
+            _LOGGER.exception("Could not make a meal plan")
+            self._set_status("error", str(err) or err.__class__.__name__)
+        else:
+            self._set_status("idle")
+
+    def _ai_entity(self) -> str | None:
+        entity = self.store.settings.get("ai_task_entity")
+        if entity:
+            return entity
+        # None lets Home Assistant use its preferred AI task entity; fall back to
+        # the first one if no preference is set.
+        prefs = self.hass.data.get("ai_task_preferences")
+        if prefs is not None and getattr(prefs, "gen_data_entity_id", None):
+            return None
+        ids = self.hass.states.async_entity_ids("ai_task")
+        return ids[0] if ids else None
+
+    async def _async_offers(self, start: date) -> tuple[Catalog | None, list[Offer]]:
+        current, upcoming = self._get_catalogs()
+        catalog = current
+        for candidate in (upcoming, current):
+            if (
+                candidate
+                and candidate.valid_from
+                and candidate.valid_to
+                and candidate.valid_from.date() <= start <= candidate.valid_to.date()
+            ):
+                catalog = candidate
+                break
+        if catalog is None:
+            return None, []
+        try:
+            return catalog, await self.client.async_get_offers(catalog.id)
+        except RemaError as err:
+            _LOGGER.warning("Could not load offers for the meal plan: %s", err)
+            return catalog, []
+
+    async def _async_ask_ai(self, prompt: str) -> dict[str, Any]:
+        from homeassistant.components.ai_task import async_generate_data  # noqa: PLC0415
+
+        entity_id = self._ai_entity()
+        result = await async_generate_data(
+            self.hass, task_name="REMA 1000 madplan", entity_id=entity_id, instructions=prompt
+        )
+        try:
+            return extract_json(result.data)
+        except ValueError:
+            _LOGGER.debug("AI answer was not valid JSON, asking again")
+        result = await async_generate_data(
+            self.hass,
+            task_name="REMA 1000 madplan",
+            entity_id=entity_id,
+            instructions=prompt
+            + "\n\nDit forrige svar var ikke gyldig JSON. Svar nu KUN med selve JSON-objektet.",
+        )
+        try:
+            return extract_json(result.data)
+        except ValueError as err:
+            raise HomeAssistantError(f"AI'en svarede ikke med en gyldig madplan: {err}") from err
+
+    async def async_generate(self, start: date) -> dict[str, Any]:
+        """Make, price and store a plan. Returns the plan."""
+        settings = self.store.settings
+        dates = [start + timedelta(days=i) for i in range(settings["days"])]
+        self._set_status("generating", "Henter ugens tilbud …")
+        catalog, offers = await self._async_offers(start)
+        due, optional = self.store.favorites_due(start)
+        recent = self.store.recent_dishes(start, settings["no_repeat_weeks"])
+
+        best: dict[str, Any] | None = None
+        feedback: str | None = None
+        for attempt in range(MAX_AI_ROUNDS):
+            self._set_status(
+                "generating",
+                "AI'en laver madplanen …"
+                if attempt == 0
+                else "Planen var over budget – prøver igen …",
+            )
+            prompt = build_prompt(
+                settings=settings,
+                dates=dates,
+                catalog=catalog,
+                offers=offers,
+                favorites_due=due,
+                favorites_optional=optional,
+                recent_dishes=recent,
+                feedback=feedback,
+            )
+            raw = await self._async_ask_ai(prompt)
+            self._set_status("generating", "Finder varer og priser i REMA 1000 …")
+            plan = await self._async_build_plan(raw, dates, catalog, offers)
+            if best is None or plan["total"] < best["total"]:
+                best = plan
+            if not settings["budget"] or plan["total"] <= settings["budget"]:
+                break
+            expensive = sorted(
+                (line for line in plan["shopping"] if line.get("cost")),
+                key=lambda line: line["cost"],
+                reverse=True,
+            )[:6]
+            feedback = (
+                f"Indkøbslisten kostede {plan['total']:.0f} kr., men budgettet er "
+                f"{settings['budget']} kr. Dyreste varer: "
+                + ", ".join(f"{line['name']} ({line['cost']:.0f} kr.)" for line in expensive)
+                + ". Vælg billigere retter og flere tilbudsvarer."
+            )
+
+        assert best is not None
+        best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
+        await self.store.async_add_plan(best)
+        self._notify()
+        return best
+
+    async def _async_build_plan(
+        self,
+        raw: dict[str, Any],
+        dates: list[date],
+        catalog: Catalog | None,
+        offers: list[Offer],
+    ) -> dict[str, Any]:
+        settings = self.store.settings
+        days = self._clean_days(raw.get("days") or [], dates)
+        shopping = [
+            line for line in (self._clean_line(item) for item in raw.get("shopping") or []) if line
+        ]
+        for item in settings["must_haves"]:
+            shopping.append(
+                {
+                    "name": item["name"],
+                    "amount": item["amount"],
+                    "unit": "pk",
+                    "search": item["name"],
+                    "category": "Faste varer",
+                    "offer": None,
+                    "must_have": True,
+                    "product_id": item.get("product_id"),
+                }
+            )
+        offer_names = {f"o{i}": offer.heading for i, offer in enumerate(offers)}
+        for line in shopping:
+            line["offer_name"] = offer_names.get(str(line.get("offer") or ""))
+
+        semaphore = asyncio.Semaphore(SEARCH_CONCURRENCY)
+
+        async def match(line: dict[str, Any]) -> None:
+            async with semaphore:
+                await self._async_match(line)
+
+        await asyncio.gather(*(match(line) for line in shopping))
+        total = round(sum(line.get("cost") or 0 for line in shopping), 2)
+        return {
+            "id": uuid.uuid4().hex[:12],
+            "created": dt_util.now().isoformat(),
+            "start_date": dates[0].isoformat(),
+            "end_date": dates[-1].isoformat(),
+            "week": dates[0].isocalendar().week,
+            "status": "draft",
+            "sent_at": None,
+            "title": str(raw.get("title") or f"Madplan uge {dates[0].isocalendar().week}")[:200],
+            "summary": str(raw.get("summary") or "")[:2000],
+            "days": days,
+            "shopping": shopping,
+            "checklist": [
+                {"requirement": str(c.get("requirement") or "")[:300], "ok": bool(c.get("ok"))}
+                for c in raw.get("checklist") or []
+                if isinstance(c, dict)
+            ],
+            "deviations": str(raw.get("deviations") or "")[:2000],
+            "total": total,
+            "budget": settings["budget"],
+            "catalog": {"id": catalog.id, "label": catalog.label} if catalog else None,
+            "ai_entity": self._ai_entity(),
+        }
+
+    @staticmethod
+    def _clean_days(raw_days: list[Any], dates: list[date]) -> list[dict[str, Any]]:
+        by_date = {
+            str(day.get("date")): day
+            for day in raw_days
+            if isinstance(day, dict) and day.get("date")
+        }
+        ordered = [d for d in raw_days if isinstance(d, dict)]
+        days = []
+        for idx, current in enumerate(dates):
+            day = by_date.get(current.isoformat()) or (ordered[idx] if idx < len(ordered) else {})
+            days.append(
+                {
+                    "date": current.isoformat(),
+                    "weekday": WEEKDAYS_DA[current.weekday()],
+                    "dish": str(day.get("dish") or "Fri aften")[:300],
+                    "type": str(day.get("type") or "normal")[:20],
+                    "favorite_id": day.get("favorite_id") or None,
+                    "uses_leftovers_from": day.get("uses_leftovers_from") or None,
+                    "makes_leftovers": bool(day.get("makes_leftovers")),
+                    "servings": int(_num(day.get("servings"), 4) or 4),
+                    "active_minutes": int(_num(day.get("active_minutes"), 0) or 0),
+                    "total_minutes": int(_num(day.get("total_minutes"), 0) or 0),
+                    "ingredients": [
+                        {
+                            "name": str(i.get("name") or "")[:200],
+                            "amount": str(i.get("amount") or "")[:60],
+                        }
+                        for i in day.get("ingredients") or []
+                        if isinstance(i, dict) and i.get("name")
+                    ],
+                    "steps": [
+                        {
+                            "text": str(st.get("text") if isinstance(st, dict) else st)[:1000],
+                            "minutes": int(_num(st.get("minutes"), 0) or 0)
+                            if isinstance(st, dict)
+                            else 0,
+                        }
+                        for st in day.get("steps") or []
+                        if st
+                    ],
+                    "tip": str(day.get("tip") or "")[:500],
+                }
+            )
+        return days
+
+    @staticmethod
+    def _clean_line(item: Any) -> dict[str, Any] | None:
+        if not isinstance(item, dict) or not item.get("name"):
+            return None
+        name = str(item["name"]).strip()[:200]
+        return {
+            "name": name,
+            "amount": _num(item.get("amount")),
+            "unit": str(item.get("unit") or "").strip().lower()[:10] or None,
+            "search": str(item.get("search") or name).strip()[:80],
+            "category": str(item.get("category") or "Andet")[:40],
+            "offer": item.get("offer") or None,
+            "must_have": False,
+            "product_id": None,
+        }
+
+    async def _async_match(self, line: dict[str, Any]) -> None:
+        """Pick a REMA product for a shopping line and price it."""
+        line.update(product=None, packages=1, cost=None, note=None)
+        try:
+            products = await self.client.async_search_products(line["search"], 15)
+            if not products and line["search"] != line["name"]:
+                products = await self.client.async_search_products(line["name"], 15)
+        except RemaError as err:
+            line["note"] = f"Søgning fejlede: {err}"
+            return
+
+        if line.get("product_id"):
+            chosen = next((p for p in products if p.id == line["product_id"]), None)
+            if chosen:
+                self._apply(line, chosen, int(line["amount"] or 1))
+                return
+        if line.get("must_have"):
+            priced = [p for p in products if p.price]
+            if priced:
+                self._apply(line, priced[0], int(line["amount"] or 1))
+            else:
+                line["note"] = "Ingen vare fundet – tilføjes som fritekst"
+            return
+
+        candidates = self._candidates(line, products)
+        if not candidates:
+            line["note"] = "Ingen vare fundet – tilføjes som fritekst"
+            return
+
+        def cost(product: Product) -> float:
+            return packages_needed(line["amount"], line["unit"], product) * (product.price or 0)
+
+        settings = self.store.settings
+        cheapest = min(candidates, key=lambda p: (cost(p), not p.is_advertised))
+        organic = [p for p in candidates if p.is_organic]
+        best_organic = min(organic, key=cost) if organic else None
+        chosen = cheapest
+        if settings["organic"] == "only":
+            if best_organic:
+                chosen = best_organic
+            else:
+                line["note"] = "Ingen økologisk variant fundet"
+        elif settings["organic"] == "prefer" and best_organic:
+            limit = cost(cheapest) * (1 + settings["organic_max_extra_pct"] / 100)
+            if cost(best_organic) <= limit + 0.001:
+                chosen = best_organic
+        self._apply(line, chosen, packages_needed(line["amount"], line["unit"], chosen))
+
+    def _candidates(self, line: dict[str, Any], products: list[Product]) -> list[Product]:
+        """Keep the products that really are what the line asks for."""
+        priced = [p for p in products[:12] if p.price]
+        if not priced:
+            return []
+        words = [w for w in re.findall(r"\w+", line["search"].lower()) if len(w) > 2]
+
+        def score(product: Product) -> int:
+            name = product.name.lower()
+            return sum(1 for word in words if word in name)
+
+        best_score = max((score(p) for p in priced), default=0)
+        relevant = [p for p in priced if score(p) == best_score] if best_score else priced[:3]
+        anchor = relevant[0].department
+        relevant = [p for p in relevant if p.department == anchor] or relevant
+        for allergy in self.store.settings["allergies"]:
+            marker = FREE_FROM.get(allergy)
+            if marker:
+                free = [p for p in relevant if marker in f"{p.name} {p.underline or ''}".upper()]
+                if free:
+                    relevant = free
+        return relevant
+
+    @staticmethod
+    def _apply(line: dict[str, Any], product: Product, packages: int) -> None:
+        line["packages"] = packages
+        line["cost"] = round(packages * (product.price or 0), 2)
+        line["product"] = {
+            "id": product.id,
+            "name": product.name,
+            "underline": product.underline,
+            "price": product.price,
+            "normal_price": product.normal_price,
+            "is_advertised": product.is_advertised,
+            "is_campaign": product.is_campaign,
+            "is_organic": product.is_organic,
+            "image": product.image,
+        }
+
+    # ------------------------------------------------------------- sending
+
+    async def async_send(self, plan_id: str | None = None) -> dict[str, Any]:
+        """Put a plan's shopping list on the primary REMA list."""
+        plan = self.store.get_plan(plan_id) if plan_id else self.store.latest_plan
+        if plan is None:
+            raise HomeAssistantError("Der er ingen madplan at sende")
+        items: list[dict[str, Any]] = []
+        for line in plan["shopping"]:
+            if line.get("product"):
+                items.append({"product_id": line["product"]["id"], "amount": line["packages"]})
+            else:
+                amount = line.get("amount")
+                label = line["name"]
+                if amount and line.get("unit") and line["unit"] != "pk":
+                    label += f" ({amount:g} {line['unit']})"
+                items.append({"name": label, "amount": 1})
+        await self._add_items(items)
+        await self.store.async_mark_sent(plan["id"])
+        self._notify()
+        return plan
+
+    # ------------------------------------------------------------- automatic
+
+    @callback
+    def async_check_auto_generate(self, upcoming: Catalog | None) -> None:
+        """Make next week's plan when the new avis is out (if switched on)."""
+        settings = self.store.settings
+        if not settings["auto_generate"] or upcoming is None or self.generating:
+            return
+        start = self.default_start()
+        if start == dt_util.now().date():
+            start += timedelta(days=7)
+        if not (
+            upcoming.valid_from
+            and upcoming.valid_to
+            and upcoming.valid_from.date() <= start <= upcoming.valid_to.date()
+        ):
+            return
+        key = start.isoformat()
+        if self.store.plan_for_start(start) or key in self._auto_attempted:
+            return
+        self._auto_attempted.add(key)
+        _LOGGER.info("New tilbudsavis found, making the meal plan for %s", key)
+        self.async_start_generation(start, send=settings["auto_send"])
+
+    @callback
+    def async_cancel(self) -> None:
+        """Stop a running generation (on unload)."""
+        if self._task and not self._task.done():
+            self._task.cancel()
+
+
+def plan_summary(plan: dict[str, Any]) -> dict[str, Any]:
+    """The fields of a plan needed for lists."""
+    return {
+        key: plan.get(key)
+        for key in ("id", "title", "start_date", "end_date", "week", "status", "total", "budget")
+    } | {"dishes": [day["dish"] for day in plan.get("days", [])]}
+
+
+def parse_date(value: str | None) -> date | None:
+    """Parse an ISO date from the panel."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value).date()
+    except ValueError as err:
+        raise HomeAssistantError(f"Ugyldig dato: {value}") from err

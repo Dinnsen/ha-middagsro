@@ -1,11 +1,26 @@
 # REMA 1000 til Home Assistant
 
-Uofficiel integration til REMA 1000 Danmark. Din indkøbsliste i REMA 1000-appen bliver en to-do-liste i Home Assistant, og du kan søge i sortimentet, se ugens tilbudsavis og tilføje varer fra automatiseringer og AI.
+Uofficiel integration til REMA 1000 Danmark. Lav ugens madplan med AI ud fra tilbudsavisen, og send indkøbslisten direkte til REMA 1000-appen. Din indkøbsliste i appen bliver samtidig en to-do-liste i Home Assistant.
 
 > **Bemærk:** REMA 1000 har ikke et offentligt API. Integrationen bruger de samme kald som rema1000.dk og webshoppen og kan derfor holde op med at virke, hvis REMA ændrer deres side. Kun til personlig brug med din egen konto.
 
+## Madplan
+
+Et **REMA 1000-panel** i sidebaren samler det hele:
+
+- **Madplan:** Ugens aftensmad lavet af den AI, du har sat op i Home Assistant (AI Task – fx Google, OpenAI eller Anthropic). Retterne bygges op om ugens tilbud.
+- **Opskrifter:** Ingredienser og trin i stor skrift, afkrydsning, timere og en knap, der holder skærmen tændt, mens du laver mad.
+- **Indkøb:** Den billigste REMA-vare til hver ingrediens efter dine økologi-regler, med pris, tilbud og samlet budget. Send listen til REMA 1000-appen med ét tryk.
+- **Historik:** Tidligere madplaner.
+- **Indstillinger:** Startdag, budget, økologi (udelukkende / foretrækkes hvis højst x % dyrere / ligeglad), ting der skal undgås, allergier, familiens medlemmer, vegetar- og restedage, faste dage (fx rugbrødsdag), maks. tid på hverdage, basisvarer, faste ugevarer og familiens favoritretter med hyppighed.
+
+Slå **automatik** til, så laves næste uges madplan, når den nye tilbudsavis udkommer – og sendes evt. direkte til REMA-listen.
+
+Hvis indkøbslisten bliver over budget, beder integrationen AI'en om en billigere plan én gang og beholder den billigste.
+
 ## Funktioner
 
+- **Madplan** (sensor), **Madplan** (kalender) og knapperne **Lav madplan** og **Send madplan til indkøbsliste**.
 - **Indkøbsliste** (`todo`): Din primære REMA-liste, den der vises i appen. Tilføj, kryds af, ret antal og slet – ændringer vises i appen og omvendt. Skriv `3 x mælk` for at tilføje 3 stk.
 - **Indkøbsliste i alt** (sensor): Anslået pris for det, der mangler at blive købt.
 - **Aktuel og næste tilbudsavis** (sensorer): Hvornår avisen gælder fra/til, og hvornår integrationen første gang så næste uges avis.
@@ -13,8 +28,10 @@ Uofficiel integration til REMA 1000 Danmark. Din indkøbsliste i REMA 1000-appen
   - `rema1000.search_products` – søg i sortimentet med pris, tilbud og økologi-mærker
   - `rema1000.add_items` – tilføj varer (produkt-ID eller fritekst) til listen
   - `rema1000.get_offers` – hent alle tilbud i aktuel eller næste tilbudsavis
+  - `rema1000.generate_meal_plan` – lav en madplan (evt. med `send: true`)
+  - `rema1000.send_meal_plan` – send madplanens indkøbsliste til REMA-listen
 
-Madplan med AI og et panel med opskrifter kommer i senere versioner.
+Madplanen kræver en AI Task-entitet i Home Assistant (Indstillinger → Enheder og tjenester → fx Google Generative AI, OpenAI eller Anthropic).
 
 ## Installation
 

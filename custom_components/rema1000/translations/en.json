@@ -30,19 +30,58 @@
   },
   "entity": {
     "sensor": {
-      "current_catalog": { "name": "Current offer catalogue" },
-      "list_total": { "name": "Shopping list total" },
-      "upcoming_catalog": { "name": "Next offer catalogue" }
+      "current_catalog": {
+        "name": "Current offer catalogue"
+      },
+      "list_total": {
+        "name": "Shopping list total"
+      },
+      "upcoming_catalog": {
+        "name": "Next offer catalogue"
+      },
+      "meal_plan": {
+        "name": "Meal plan",
+        "state": {
+          "none": "No plan",
+          "generating": "Generating",
+          "error": "Error",
+          "draft": "Ready",
+          "sent": "Sent to shopping list"
+        }
+      }
     },
     "todo": {
-      "shopping_list": { "name": "Shopping list" }
+      "shopping_list": {
+        "name": "Shopping list"
+      }
+    },
+    "button": {
+      "generate_meal_plan": {
+        "name": "Make meal plan"
+      },
+      "send_meal_plan": {
+        "name": "Send meal plan to shopping list"
+      }
+    },
+    "calendar": {
+      "meal_plan": {
+        "name": "Meal plan"
+      }
     }
   },
   "exceptions": {
-    "entry_not_found": { "message": "No loaded REMA 1000 account was found." },
-    "entry_required": { "message": "More than one REMA 1000 account is set up. Choose which one to use." },
-    "item_not_found": { "message": "Item {uid} is no longer on the shopping list." },
-    "update_failed": { "message": "REMA 1000 could not be updated: {error}" }
+    "entry_not_found": {
+      "message": "No loaded REMA 1000 account was found."
+    },
+    "entry_required": {
+      "message": "More than one REMA 1000 account is set up. Choose which one to use."
+    },
+    "item_not_found": {
+      "message": "Item {uid} is no longer on the shopping list."
+    },
+    "update_failed": {
+      "message": "REMA 1000 could not be updated: {error}"
+    }
   },
   "selector": {
     "catalog": {
@@ -57,25 +96,78 @@
       "name": "Search products",
       "description": "Searches the REMA 1000 catalogue and returns prices, offers and organic labels.",
       "fields": {
-        "config_entry_id": { "name": "Account", "description": "Only needed if more than one REMA 1000 account is set up." },
-        "query": { "name": "Search", "description": "What to search for." },
-        "limit": { "name": "Max results", "description": "How many products to return." }
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Only needed if more than one REMA 1000 account is set up."
+        },
+        "query": {
+          "name": "Search",
+          "description": "What to search for."
+        },
+        "limit": {
+          "name": "Max results",
+          "description": "How many products to return."
+        }
       }
     },
     "add_items": {
       "name": "Add to shopping list",
       "description": "Adds products or free-text items to the primary REMA 1000 shopping list.",
       "fields": {
-        "config_entry_id": { "name": "Account", "description": "Only needed if more than one REMA 1000 account is set up." },
-        "items": { "name": "Items", "description": "List of items, each with product_id or name, and an optional amount." }
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Only needed if more than one REMA 1000 account is set up."
+        },
+        "items": {
+          "name": "Items",
+          "description": "List of items, each with product_id or name, and an optional amount."
+        }
       }
     },
     "get_offers": {
       "name": "Get offers",
       "description": "Returns the offers in the current or next REMA 1000 tilbudsavis.",
       "fields": {
-        "config_entry_id": { "name": "Account", "description": "Only needed if more than one REMA 1000 account is set up." },
-        "catalog": { "name": "Tilbudsavis", "description": "The current or the next tilbudsavis." }
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Only needed if more than one REMA 1000 account is set up."
+        },
+        "catalog": {
+          "name": "Tilbudsavis",
+          "description": "The current or the next tilbudsavis."
+        }
+      }
+    },
+    "generate_meal_plan": {
+      "name": "Make meal plan",
+      "description": "Makes a dinner plan with AI from the tilbudsavis and your settings in the REMA 1000 panel.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Only needed if more than one REMA 1000 account is set up."
+        },
+        "start_date": {
+          "name": "Start date",
+          "description": "First day of the plan. Default is the next start day from the settings."
+        },
+        "send": {
+          "name": "Send to shopping list",
+          "description": "Put the shopping list on the REMA 1000 list when the plan is ready."
+        }
+      }
+    },
+    "send_meal_plan": {
+      "name": "Send meal plan to shopping list",
+      "description": "Puts a meal plan's shopping list on the primary REMA 1000 shopping list.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Only needed if more than one REMA 1000 account is set up."
+        },
+        "plan_id": {
+          "name": "Plan",
+          "description": "Plan id. Default is the newest plan."
+        }
       }
     }
   }

@@ -6,8 +6,6 @@ from collections.abc import Mapping
 import logging
 from typing import Any
 
-import voluptuous as vol
-
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
@@ -15,6 +13,7 @@ from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, Tex
 
 from .api import RemaAuthError, RemaClient, RemaConnectionError
 from .const import DOMAIN
+from .schema import vol
 
 _LOGGER = logging.getLogger(__name__)
 

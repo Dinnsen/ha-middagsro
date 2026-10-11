@@ -30,19 +30,58 @@
   },
   "entity": {
     "sensor": {
-      "current_catalog": { "name": "Aktuel tilbudsavis" },
-      "list_total": { "name": "Indkøbsliste i alt" },
-      "upcoming_catalog": { "name": "Næste tilbudsavis" }
+      "current_catalog": {
+        "name": "Aktuel tilbudsavis"
+      },
+      "list_total": {
+        "name": "Indkøbsliste i alt"
+      },
+      "upcoming_catalog": {
+        "name": "Næste tilbudsavis"
+      },
+      "meal_plan": {
+        "name": "Madplan",
+        "state": {
+          "none": "Ingen plan",
+          "generating": "Laves",
+          "error": "Fejl",
+          "draft": "Klar",
+          "sent": "Sendt til indkøbsliste"
+        }
+      }
     },
     "todo": {
-      "shopping_list": { "name": "Indkøbsliste" }
+      "shopping_list": {
+        "name": "Indkøbsliste"
+      }
+    },
+    "button": {
+      "generate_meal_plan": {
+        "name": "Lav madplan"
+      },
+      "send_meal_plan": {
+        "name": "Send madplan til indkøbsliste"
+      }
+    },
+    "calendar": {
+      "meal_plan": {
+        "name": "Madplan"
+      }
     }
   },
   "exceptions": {
-    "entry_not_found": { "message": "Der blev ikke fundet en indlæst REMA 1000-konto." },
-    "entry_required": { "message": "Der er sat flere REMA 1000-konti op. Vælg hvilken der skal bruges." },
-    "item_not_found": { "message": "Varen {uid} er ikke længere på indkøbslisten." },
-    "update_failed": { "message": "REMA 1000 kunne ikke opdateres: {error}" }
+    "entry_not_found": {
+      "message": "Der blev ikke fundet en indlæst REMA 1000-konto."
+    },
+    "entry_required": {
+      "message": "Der er sat flere REMA 1000-konti op. Vælg hvilken der skal bruges."
+    },
+    "item_not_found": {
+      "message": "Varen {uid} er ikke længere på indkøbslisten."
+    },
+    "update_failed": {
+      "message": "REMA 1000 kunne ikke opdateres: {error}"
+    }
   },
   "selector": {
     "catalog": {
@@ -57,25 +96,78 @@
       "name": "Søg efter varer",
       "description": "Søger i REMA 1000's sortiment og returnerer priser, tilbud og økologi-mærker.",
       "fields": {
-        "config_entry_id": { "name": "Konto", "description": "Kun nødvendig, hvis der er sat flere REMA 1000-konti op." },
-        "query": { "name": "Søgning", "description": "Hvad der skal søges efter." },
-        "limit": { "name": "Maks. resultater", "description": "Hvor mange varer der returneres." }
+        "config_entry_id": {
+          "name": "Konto",
+          "description": "Kun nødvendig, hvis der er sat flere REMA 1000-konti op."
+        },
+        "query": {
+          "name": "Søgning",
+          "description": "Hvad der skal søges efter."
+        },
+        "limit": {
+          "name": "Maks. resultater",
+          "description": "Hvor mange varer der returneres."
+        }
       }
     },
     "add_items": {
       "name": "Tilføj til indkøbsliste",
       "description": "Tilføjer varer eller fritekst til den primære REMA 1000-indkøbsliste.",
       "fields": {
-        "config_entry_id": { "name": "Konto", "description": "Kun nødvendig, hvis der er sat flere REMA 1000-konti op." },
-        "items": { "name": "Varer", "description": "Liste af varer, hver med product_id eller name og evt. amount." }
+        "config_entry_id": {
+          "name": "Konto",
+          "description": "Kun nødvendig, hvis der er sat flere REMA 1000-konti op."
+        },
+        "items": {
+          "name": "Varer",
+          "description": "Liste af varer, hver med product_id eller name og evt. amount."
+        }
       }
     },
     "get_offers": {
       "name": "Hent tilbud",
       "description": "Returnerer tilbuddene i den aktuelle eller næste REMA 1000-tilbudsavis.",
       "fields": {
-        "config_entry_id": { "name": "Konto", "description": "Kun nødvendig, hvis der er sat flere REMA 1000-konti op." },
-        "catalog": { "name": "Tilbudsavis", "description": "Den aktuelle eller den næste tilbudsavis." }
+        "config_entry_id": {
+          "name": "Konto",
+          "description": "Kun nødvendig, hvis der er sat flere REMA 1000-konti op."
+        },
+        "catalog": {
+          "name": "Tilbudsavis",
+          "description": "Den aktuelle eller den næste tilbudsavis."
+        }
+      }
+    },
+    "generate_meal_plan": {
+      "name": "Lav madplan",
+      "description": "Laver en madplan med aftensmad med AI ud fra tilbudsavisen og dine indstillinger i REMA 1000-panelet.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Konto",
+          "description": "Kun nødvendig, hvis der er sat flere REMA 1000-konti op."
+        },
+        "start_date": {
+          "name": "Startdato",
+          "description": "Planens første dag. Standard er næste startdag fra indstillingerne."
+        },
+        "send": {
+          "name": "Send til indkøbsliste",
+          "description": "Sæt indkøbslisten på REMA 1000-listen, når planen er klar."
+        }
+      }
+    },
+    "send_meal_plan": {
+      "name": "Send madplan til indkøbsliste",
+      "description": "Sætter en madplans indkøbsliste på den primære REMA 1000-indkøbsliste.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Konto",
+          "description": "Kun nødvendig, hvis der er sat flere REMA 1000-konti op."
+        },
+        "plan_id": {
+          "name": "Plan",
+          "description": "Planens id. Standard er den nyeste plan."
+        }
       }
     }
   }
