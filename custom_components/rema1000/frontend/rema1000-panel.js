@@ -1167,13 +1167,15 @@ const STYLE = `
     border: none; border-radius: 10px; padding: 8px 10px; cursor: pointer; color: var(--primary-text-color); }
   .result img { width: 40px; height: 40px; object-fit: contain; background: #fff; border-radius: 6px; }
   .result span { display: flex; flex-direction: column; flex: 1; }
-  .prod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
-  .prod { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--divider-color);
-    border-radius: 12px; background: var(--rema-subtle); }
-  .prod img, .prod .noimg { width: 100%; height: 110px; object-fit: contain; border-radius: 8px; }
+  .prod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .prod { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--divider-color);
+    border-radius: 12px; background: var(--rema-subtle); min-width: 0; font-size: 14px; }
+  .prod img, .prod .noimg { width: 100%; height: 90px; object-fit: contain; border-radius: 8px; }
   .prod img { background: #fff; } /* product photos are shot on white */
-  .prod-body { display: flex; flex-direction: column; gap: 3px; flex: 1; }
-  .prod-price { display: flex; gap: 8px; align-items: baseline; font-size: 17px; }
+  .prod-body { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; overflow-wrap: break-word; hyphens: auto; }
+  .prod-body > b { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .prod-price { display: flex; flex-wrap: wrap; gap: 0 6px; align-items: baseline; font-size: 16px; }
+  .prod .btn { width: 100%; }
   .sale { color: var(--rema-sale); font-weight: 700; }
   .favlist { list-style: none; padding: 0; margin: 8px 0 0; }
   .fav-row { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--divider-color); }
@@ -1187,6 +1189,12 @@ const STYLE = `
     .day { grid-template-columns: 1fr; gap: 4px; }
     .step-text { font-size: 18px; }
     .line { grid-template-columns: 40px 1fr; } .line .cost { grid-column: 2; text-align: left; flex-direction: row; gap: 8px; }
+    .prod-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+    .prod { padding: 6px; gap: 4px; font-size: 12px; border-radius: 10px; }
+    .prod img, .prod .noimg { height: 64px; }
+    .prod-price { font-size: 14px; }
+    .prod .badge { font-size: 10px; padding: 1px 5px; }
+    .prod .btn { padding: 6px 4px; font-size: 12px; }
   }
 `;
 
