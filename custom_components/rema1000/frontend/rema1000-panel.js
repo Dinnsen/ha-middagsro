@@ -53,6 +53,13 @@ const TABS = [
   ["settings", "Indstillinger"],
 ];
 
+/** Today's date as YYYY-MM-DD in the phone's own time zone. */
+function localToday() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 const esc = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const kr = (value) =>
@@ -80,6 +87,7 @@ class Rema1000Panel extends HTMLElement {
     this._plan = null; // the plan being viewed (latest unless chosen in history)
     this._viewingLatest = true;
     this._day = 0;
+    this._dayKey = null; // plan + date the recipe day was chosen for
     this._form = null;
     this._dirty = false;
     this._busy = false;
@@ -150,9 +158,9 @@ class Rema1000Panel extends HTMLElement {
     return this._hass.callWS({ type, ...entry, ...data });
   }
 
-  async _load(silent = false) {
+  async _load(silent = false, refresh = false) {
     try {
-      const state = await this._ws("rema1000/state");
+      const state = await this._ws("rema1000/state", refresh ? { refresh: true } : {});
       this._state = state;
       this._error = null;
       if (!this._startDate) this._startDate = state.default_start;
@@ -291,11 +299,13 @@ class Rema1000Panel extends HTMLElement {
         ),
       "open-day": () => {
         this._day = Number(arg);
+        this._dayKey = this._recipeKey();
         this._tab = "recipes";
         this._render();
       },
       day: () => {
         this._day = Number(arg);
+        this._dayKey = this._recipeKey();
         this._render();
       },
       tick: () => {
@@ -721,9 +731,21 @@ class Rema1000Panel extends HTMLElement {
       </div>`;
   }
 
+  // Which plan and date the chosen recipe day belongs to; a new plan or a new
+  // day starts again on today's dish.
+  _recipeKey() {
+    return `${this._plan?.id}|${localToday()}`;
+  }
+
   _recipesView() {
     const plan = this._plan;
     if (!plan) return `<div class="card">Der er ingen madplan endnu.</div>`;
+    if (this._dayKey !== this._recipeKey()) {
+      // Today, or the first day if the plan has not started (or is over).
+      const today = plan.days.findIndex((d) => d.date === localToday());
+      this._day = today >= 0 ? today : 0;
+      this._dayKey = this._recipeKey();
+    }
     const idx = Math.min(this._day, plan.days.length - 1);
     const day = plan.days[idx];
     const key = `${plan.id}|${day.date}`;
