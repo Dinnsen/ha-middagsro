@@ -21,6 +21,7 @@
   /* Edge to edge: the panel's header runs up behind the status bar and the page
      scrolls down behind the home bar. The panel gets the safe areas as variables. */
   html, body { overflow: hidden; overscroll-behavior: none; }
+  /* top + height (set by fitHeight) win over bottom when the page is too short. */
   #wrap { position: fixed; inset: 0; overflow-y: auto; overflow-x: hidden;
     -webkit-overflow-scrolling: touch; overscroll-behavior: none;
     padding: 0 env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px); }
@@ -268,6 +269,21 @@ function setupPullToRefresh(refresh) {
   wrap.addEventListener("touchend", end, { passive: true });
   wrap.addEventListener("touchcancel", end, { passive: true });
 }
+
+// ------------------------------------------------------------------ full height
+// iOS 26 bug: a home-screen app with a see-through status bar gets a page that is
+// one status bar too short, leaving an empty band at the bottom. Stretch the app to
+// the real screen height when that happens (does nothing once Apple fixes it).
+function fitHeight() {
+  const portrait = innerHeight >= innerWidth;
+  const full = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+  const gap = full - innerHeight;
+  const height = navigator.standalone && gap > 0 && gap < 120 ? `${full}px` : "";
+  for (const el of [wrap, msg]) el.style.height = height;
+}
+fitHeight();
+addEventListener("resize", fitHeight);
+addEventListener("orientationchange", () => setTimeout(fitHeight, 300));
 
 start();
 </script>
