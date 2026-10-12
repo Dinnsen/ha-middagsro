@@ -100,7 +100,7 @@ class RemaShoppingListEntity(RemaEntity[RemaShoppingListCoordinator], TodoListEn
 
     async def async_create_todo_item(self, item: TodoItem) -> None:
         """Add a line, matched to a REMA product when one fits ('3 x mælk' adds 3)."""
-        if not (item.summary or "").strip():
+        if not item.summary or not item.summary.strip():
             return
         try:
             await self._entry.runtime_data.planner.async_quick_add(item.summary)

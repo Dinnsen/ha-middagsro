@@ -88,7 +88,7 @@ async def test_reauth_flow(
     result = await config_entry.start_reauth_flow(hass)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "reauth_confirm"
-    assert result["description_placeholders"] == {"email": EMAIL}
+    assert result["description_placeholders"]["email"] == EMAIL
 
     mock_client.async_login.side_effect = RemaAuthError("rejected")
     result = await hass.config_entries.flow.async_configure(

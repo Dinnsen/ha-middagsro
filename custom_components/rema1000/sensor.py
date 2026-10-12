@@ -127,8 +127,9 @@ class RemaMealPlanSensor(RemaEntity[RemaShoppingListCoordinator], SensorEntity):
     def native_value(self) -> str:
         """Generating/error while working, else the newest plan's status."""
         data = self._entry.runtime_data
-        if data.planner.status["state"] in ("generating", "error"):
-            return data.planner.status["state"]
+        state = str(data.planner.status["state"])
+        if state in ("generating", "error"):
+            return state
         plan = data.store.latest_plan
         return str(plan["status"]) if plan else "none"
 
