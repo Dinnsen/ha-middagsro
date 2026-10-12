@@ -92,12 +92,17 @@ def _wrap(handler):
     return wrapper
 
 
-@websocket_api.websocket_command({vol.Required("type"): "rema1000/state", ENTRY: str})
+@websocket_api.websocket_command(
+    {vol.Required("type"): "rema1000/state", ENTRY: str, vol.Optional("refresh"): bool}
+)
 @websocket_api.async_response
 @_wrap
 async def ws_state(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
-    """Everything the panel shows."""
-    connection.send_result(msg["id"], _state(hass, _entry(hass, msg)))
+    """Everything the panel shows; refresh=True fetches the REMA list first."""
+    entry = _entry(hass, msg)
+    if msg.get("refresh"):
+        await entry.runtime_data.shopping_list.async_refresh()
+    connection.send_result(msg["id"], _state(hass, entry))
 
 
 @websocket_api.websocket_command(

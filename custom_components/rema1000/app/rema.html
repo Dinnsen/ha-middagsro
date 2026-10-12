@@ -24,7 +24,7 @@
   /* Scroll inside this box so the panel's sticky header stays below the notch. */
   html, body { overflow: hidden; overscroll-behavior: none; }
   #wrap { position: fixed; top: env(safe-area-inset-top, 0px); left: 0; right: 0; bottom: 0; overflow-y: auto; overflow-x: hidden;
-    -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch; overscroll-behavior: none;
     padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
   #msg { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 16px; padding: 24px; text-align: center; }
@@ -32,12 +32,24 @@
   #msg button { font: inherit; font-weight: 600; border: 0; border-radius: 999px; padding: 10px 20px; cursor: pointer;
     background: var(--primary-color); color: var(--text-primary-color, #fff); }
   [hidden] { display: none !important; }
+  /* Pull down at the top to refresh. */
+  #pull { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 6px); left: 50%; z-index: 10; width: 40px; height: 40px;
+    margin-left: -20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; opacity: 0;
+    transform: translateY(-48px); pointer-events: none; color: var(--secondary-text-color);
+    background: var(--card-background-color); box-shadow: 0 2px 10px rgba(0, 0, 0, .25); }
+  #pull.ready { color: var(--primary-color); }
+  #pull.back { transition: transform .25s ease, opacity .25s ease; }
+  #pull svg { width: 22px; height: 22px; }
+  #pull.busy svg { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 <div id="top"></div>
 <div id="msg"><img src="icon-192.png?v=1" alt=""><div>Åbner REMA 1000 …</div></div>
 <div id="wrap" hidden></div>
+<div id="pull" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="currentColor"
+  d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4z"/></svg></div>
 <script type="module">
 import {
   getAuth, createConnection, ERR_INVALID_AUTH,
@@ -187,8 +199,76 @@ async function start() {
   element.hass = { callWS: ws, connection: conn, auth };
   addEventListener("resize", () => { element.narrow = innerWidth < 870; });
   wrap.appendChild(element);
+  setupPullToRefresh(async () => {
+    if (conn.connected === false) {
+      location.reload();
+      return;
+    }
+    try { themes = await ws({ type: "frontend/get_themes" }); applyTheme(); } catch {}
+    await Promise.all([
+      element._load?.(false, true),
+      element._tab === "favorites" ? element._loadFavs?.(true) : null,
+    ]);
+  });
   wrap.hidden = false;
   msg.hidden = true;
+}
+
+// ------------------------------------------------------------------ pull to refresh
+function setupPullToRefresh(refresh) {
+  const pull = document.getElementById("pull");
+  const READY = 70;
+  let start = null;
+  let pulling = false;
+  let distance = 0;
+  let busy = false;
+  const show = (dist, rotate) => {
+    pull.style.transform = `translateY(${dist - 48}px) rotate(${rotate}deg)`;
+    pull.style.opacity = String(Math.min(1, dist / 40));
+  };
+  const hide = () => {
+    pull.classList.add("back");
+    pull.classList.remove("ready", "busy");
+    pull.style.transform = "translateY(-48px)";
+    pull.style.opacity = "0";
+  };
+  wrap.addEventListener("touchstart", (ev) => {
+    start = !busy && wrap.scrollTop <= 0 && ev.touches.length === 1
+      ? { x: ev.touches[0].clientX, y: ev.touches[0].clientY } : null;
+    pulling = false;
+  }, { passive: true });
+  wrap.addEventListener("touchmove", (ev) => {
+    if (!start) return;
+    const dy = ev.touches[0].clientY - start.y;
+    const dx = ev.touches[0].clientX - start.x;
+    if (!pulling) {
+      if (dy > 8 && dy > Math.abs(dx) * 1.5 && wrap.scrollTop <= 0) {
+        pulling = true;
+        pull.classList.remove("back");
+      } else if (Math.abs(dx) > 8 || dy < -8) {
+        start = null;
+      }
+      return;
+    }
+    distance = Math.min(120, (dy - 8) * 0.55);
+    pull.classList.toggle("ready", distance >= READY);
+    show(distance, distance * 3);
+  }, { passive: true });
+  const end = async () => {
+    if (!pulling) { start = null; return; }
+    pulling = false;
+    start = null;
+    if (distance < READY) { hide(); return; }
+    busy = true;
+    pull.classList.add("back", "busy");
+    show(56, 0);
+    try { await refresh(); } finally {
+      busy = false;
+      hide();
+    }
+  };
+  wrap.addEventListener("touchend", end, { passive: true });
+  wrap.addEventListener("touchcancel", end, { passive: true });
 }
 
 start();
