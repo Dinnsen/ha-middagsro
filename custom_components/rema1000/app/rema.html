@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="REMA 1000">
 <meta name="theme-color" content="#ffffff">
 <link rel="manifest" href="manifest.json?v=2">
@@ -18,14 +18,16 @@
 <style>
   html, body { margin: 0; height: 100%; background: var(--primary-background-color); color: var(--primary-text-color);
     font-family: var(--ha-font-family-body, -apple-system, system-ui, Roboto, sans-serif); }
-  /* The phone's status bar area, painted like the panel's header. */
-  #top { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); z-index: 5;
-    background: var(--rema-statusbar, var(--app-header-background-color, var(--card-background-color))); }
-  /* Scroll inside this box so the panel's sticky header stays below the notch. */
+  /* Edge to edge: the panel's header runs up behind the status bar and the page
+     scrolls down behind the home bar. The panel gets the safe areas as variables. */
   html, body { overflow: hidden; overscroll-behavior: none; }
-  #wrap { position: fixed; top: env(safe-area-inset-top, 0px); left: 0; right: 0; bottom: 0; overflow-y: auto; overflow-x: hidden;
+  #wrap { position: fixed; inset: 0; overflow-y: auto; overflow-x: hidden;
     -webkit-overflow-scrolling: touch; overscroll-behavior: none;
-    padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+    padding: 0 env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px); }
+  #wrap > * { --rema-safe-top: env(safe-area-inset-top, 0px); --rema-safe-bottom: env(safe-area-inset-bottom, 0px); }
+  /* The status bar text is white: a light header gets a soft shade behind it. */
+  #top { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); z-index: 5; pointer-events: none;
+    background: var(--rema-statusbar-shade, transparent); }
   #msg { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 16px; padding: 24px; text-align: center; }
   #msg img { width: 72px; height: 72px; border-radius: 16px; }
@@ -120,14 +122,10 @@ function applyTheme() {
   applied = Object.keys(vars);
   for (const [key, value] of Object.entries(vars)) root.style.setProperty(`--${key}`, String(value));
   root.style.colorScheme = dark ? "dark" : "light";
-  // iPhone: a white status bar for light themes, black for dark ones. The phone
-  // reads this when the icon is added to the home screen (not "translucent",
-  // which gives a blurred top on iOS 26).
   const header = getComputedStyle(root).getPropertyValue("--app-header-background-color").trim()
     || getComputedStyle(root).getPropertyValue("--card-background-color").trim();
-  const light = luminance(header) > 0.6;
-  root.style.setProperty("--rema-statusbar", header);
-  document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').content = light ? "default" : "black";
+  root.style.setProperty("--rema-statusbar-shade",
+    luminance(header) > 0.6 ? "linear-gradient(rgba(0, 0, 0, .35), rgba(0, 0, 0, 0))" : "transparent");
   document.querySelector('meta[name="theme-color"]').content = header;
 }
 

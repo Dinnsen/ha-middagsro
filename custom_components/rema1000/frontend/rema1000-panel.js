@@ -1173,7 +1173,10 @@ const STYLE = `
     --rema-warn: var(--warning-color, #ffa600);
     --rema-card: var(--ha-card-background, var(--card-background-color));
     --rema-subtle: var(--secondary-background-color);
-    --rema-tint: color-mix(in srgb, var(--rema-accent) 12%, transparent); }
+    --rema-tint: color-mix(in srgb, var(--rema-accent) 12%, transparent);
+    /* Bars that stay on screen while content scrolls under them: the card colour on the
+       page background, so see-through (glass) themes don't show text behind them. */
+    --rema-solid-card: linear-gradient(var(--card-background-color), var(--card-background-color)) var(--primary-background-color); }
   * { box-sizing: border-box; }
   a { color: var(--rema-accent); overflow-wrap: anywhere; }
   #content.from-right { animation: rema-from-right .2s ease-out; }
@@ -1181,17 +1184,19 @@ const STYLE = `
   @keyframes rema-from-right { from { transform: translateX(32px); opacity: .4; } }
   @keyframes rema-from-left { from { transform: translateX(-32px); opacity: .4; } }
   @media (prefers-reduced-motion: reduce) { #content.from-right, #content.from-left { animation: none; } }
-  .toolbar { display: flex; align-items: center; gap: 8px; height: var(--header-height, 56px); padding: 0 12px;
+  /* --rema-safe-top/-bottom are only set by the home-screen app (behind the status bar and home bar). */
+  .toolbar { display: flex; align-items: center; gap: 8px; height: calc(var(--header-height, 56px) + var(--rema-safe-top, 0px));
+    padding: var(--rema-safe-top, 0px) 12px 0;
     background: var(--app-header-background-color, var(--card-background-color)); color: var(--app-header-text-color, inherit);
     border-bottom: 1px solid var(--divider-color); position: sticky; top: 0; z-index: 3; }
   .logo { height: 26px; }
   .spacer { flex: 1; }
-  .tabs { display: flex; gap: 4px; overflow-x: auto; padding: 8px 12px 0; background: var(--card-background-color);
-    border-bottom: 1px solid var(--divider-color); position: sticky; top: var(--header-height, 56px); z-index: 2; }
+  .tabs { display: flex; gap: 4px; overflow-x: auto; padding: 8px 12px 0; background: var(--rema-solid-card);
+    border-bottom: 1px solid var(--divider-color); position: sticky; top: calc(var(--header-height, 56px) + var(--rema-safe-top, 0px)); z-index: 2; }
   .tab { border: none; background: none; color: var(--secondary-text-color); padding: 10px 14px; font-size: 15px; cursor: pointer;
     border-bottom: 3px solid transparent; white-space: nowrap; font-weight: 500; }
   .tab.active { color: var(--rema-accent); border-color: var(--rema-accent); }
-  main { max-width: 1100px; margin: 0 auto; padding: 16px 12px 96px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px 12px calc(96px + var(--rema-safe-bottom, 0px)); }
   .card { background: var(--rema-card); border-radius: var(--ha-card-border-radius, 12px);
     box-shadow: var(--ha-card-box-shadow, 0 1px 3px rgba(0,0,0,.12)); border: 1px solid var(--divider-color);
     padding: 16px 18px; margin-bottom: 16px; }
@@ -1300,12 +1305,13 @@ const STYLE = `
   .fav-row { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--divider-color); }
   .fav-row .what { flex: 1; }
   .filter { width: 100%; margin-top: 10px; }
-  .sticky { position: sticky; bottom: 0; background: var(--card-background-color); padding: 12px 0; border-top: 1px solid var(--divider-color); }
+  .sticky { position: sticky; bottom: 0; background: var(--rema-solid-card); padding: 12px 0 calc(12px + var(--rema-safe-bottom, 0px));
+    border-top: 1px solid var(--divider-color); }
   /* Last in the settings view, so it stays at the bottom of the screen all the way down. */
-  .savebar { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-    margin-top: 16px; padding: 12px 16px; background: var(--rema-card); border: 1px solid var(--divider-color);
+  .savebar { position: sticky; bottom: calc(8px + var(--rema-safe-bottom, 0px)); z-index: 2; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    margin-top: 16px; padding: 12px 16px; background: var(--rema-solid-card); border: 1px solid var(--divider-color);
     border-radius: var(--ha-card-border-radius, 12px); box-shadow: 0 -2px 12px rgba(0, 0, 0, .12); }
-  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--primary-text-color); color: var(--primary-background-color);
+  .toast { position: fixed; left: 50%; bottom: calc(24px + var(--rema-safe-bottom, 0px)); transform: translateX(-50%); background: var(--primary-text-color); color: var(--primary-background-color);
     padding: 12px 20px; border-radius: 10px; z-index: 10; max-width: 90vw; box-shadow: 0 4px 12px rgba(0,0,0,.3); }
   @media (max-width: 700px) {
     .recipe-grid { grid-template-columns: 1fr; }
