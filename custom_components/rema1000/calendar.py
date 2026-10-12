@@ -7,13 +7,12 @@ from typing import Any
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
 from .coordinator import RemaConfigEntry
+from .entity import device_info
 from .mealplan import signal_plans_updated
 
 PARALLEL_UPDATES = 0
@@ -60,10 +59,7 @@ class RemaMealPlanCalendar(CalendarEntity):
         """Initialize the calendar."""
         self._entry = entry
         self._attr_unique_id = f"{entry.unique_id}_meal_plan"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, str(entry.unique_id))},
-            entry_type=DeviceEntryType.SERVICE,
-        )
+        self._attr_device_info = device_info(entry)
 
     def _events(self) -> list[CalendarEvent]:
         """One event per dinner; a newer plan wins for the same day."""

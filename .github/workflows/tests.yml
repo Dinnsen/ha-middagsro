@@ -1,0 +1,56 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: check
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: format --check
+
+  pytest:
+    name: Pytest, coverage and mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+      - name: Install
+        run: pip install -r requirements_test.txt
+      - name: Pytest with coverage (at least 95 %)
+        run: |
+          set -o pipefail
+          pytest --cov --cov-report=term-missing -p no:cacheprovider 2>&1 | tee pytest.txt
+      - name: Strict typing
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          mypy 2>&1 | tee mypy.txt
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          annotate() {
+            [ -s "$3" ] || return 0
+            message=$(tail -n "$4" "$3" | sed -e 's/%/%25/g' -e 's/\r//g' | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/%0A/g')
+            echo "::$1 title=$2::$message"
+          }
+          sed -n '/coverage: platform/,$p' pytest.txt > coverage.txt || true
+          annotate notice "Coverage" coverage.txt 80
+          annotate notice "Pytest" pytest.txt 40
+          annotate notice "Mypy" mypy.txt 60

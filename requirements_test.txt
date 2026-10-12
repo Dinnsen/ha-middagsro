@@ -1,0 +1,4 @@
+# Tests, coverage and type checks against the latest Home Assistant.
+pytest-homeassistant-custom-component
+pytest-github-actions-annotate-failures
+mypy
