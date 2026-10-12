@@ -1,0 +1,46 @@
+"""Tests for the sidebar panel registration."""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from custom_components.rema1000 import panel
+from homeassistant.components import frontend
+from homeassistant.core import HomeAssistant
+
+
+async def test_register_and_remove_panel(hass: HomeAssistant) -> None:
+    """Files are served once, the panel is added once and removed again."""
+    hass.http = MagicMock()
+    hass.http.async_register_static_paths = AsyncMock()
+
+    async def fake_register(hass: HomeAssistant, **kwargs: object) -> None:
+        hass.data.setdefault(frontend.DATA_PANELS, {})[kwargs["frontend_url_path"]] = kwargs
+
+    with (
+        patch.object(panel.panel_custom, "async_register_panel", side_effect=fake_register) as add,
+        patch.object(panel.frontend, "async_remove_panel") as remove,
+    ):
+        await panel.async_register_panel(hass)
+        await panel.async_register_panel(hass)  # second account: nothing new
+
+        hass.http.async_register_static_paths.assert_awaited_once()
+        paths = hass.http.async_register_static_paths.call_args.args[0]
+        assert [(p.url_path, p.cache_headers) for p in paths] == [
+            ("/rema1000_static", True),
+            ("/rema1000_app", False),
+        ]
+        add.assert_called_once()
+        kwargs = add.call_args.kwargs
+        assert kwargs["frontend_url_path"] == "rema1000"
+        assert kwargs["webcomponent_name"] == "rema1000-panel"
+        version = kwargs["config"]["version"]
+        assert kwargs["module_url"] == f"/rema1000_static/rema1000-panel.js?v={version}"
+        assert kwargs["require_admin"] is False
+
+        panel.async_unregister_panel(hass)
+        remove.assert_called_once_with(hass, "rema1000")
+
+        hass.data[frontend.DATA_PANELS].clear()
+        panel.async_unregister_panel(hass)  # already gone
+        remove.assert_called_once()

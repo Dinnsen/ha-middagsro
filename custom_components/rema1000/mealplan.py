@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta
 import json
 import logging
@@ -13,7 +13,8 @@ from typing import Any
 import uuid
 
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 
@@ -52,6 +53,9 @@ ALLERGY_DA = {
 }
 # Products REMA sells as "free from" an allergen.
 FREE_FROM = {"gluten": "GLUTENFRI", "lactose": "LAKTOSEFRI", "milk": "LAKTOSEFRI"}
+
+ISSUE_NO_AI_TASK = "no_ai_task"
+AI_TASK_DOCS_URL = "https://www.home-assistant.io/integrations/ai_task/"
 
 MAX_AI_ROUNDS = 2  # first try + one retry if the list is over budget
 RECIPE_CONCURRENCY = 3
@@ -144,6 +148,24 @@ _NEUTRAL_WORDS = {
     "frisk",
     "friske",
 }
+
+
+def _invalid(key: str, **placeholders: str) -> ServiceValidationError:
+    """An error caused by what was asked for, with a translated message."""
+    return ServiceValidationError(
+        translation_domain=DOMAIN,
+        translation_key=key,
+        translation_placeholders=placeholders or None,
+    )
+
+
+def _failed(key: str, **placeholders: str) -> HomeAssistantError:
+    """An error while doing what was asked, with a translated message."""
+    return HomeAssistantError(
+        translation_domain=DOMAIN,
+        translation_key=key,
+        translation_placeholders=placeholders or None,
+    )
 
 
 def signal_plans_updated(entry_id: str) -> str:
@@ -267,7 +289,10 @@ def extract_json(data: Any) -> dict[str, Any]:
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end <= start:
         raise ValueError("The AI answer contained no JSON object")
-    return json.loads(text[start : end + 1])
+    result = json.loads(text[start : end + 1])
+    if not isinstance(result, dict):
+        raise ValueError("The AI answer was not a JSON object")
+    return result
 
 
 def _num(value: Any, default: float | None = None) -> float | None:
@@ -575,7 +600,7 @@ class MealPlanner:
         client: RemaClient,
         store: RemaPlanStore,
         get_catalogs: Callable[[], tuple[Catalog | None, Catalog | None]],
-        add_items: Callable[[list[dict[str, Any]]], Any],
+        add_items: Callable[[list[dict[str, Any]]], Awaitable[None]],
     ) -> None:
         """Initialize the planner."""
         self.hass = hass
@@ -620,10 +645,13 @@ class MealPlanner:
     ) -> None:
         """Start making a plan in the background. Days in skip get no dinner."""
         if self.generating:
-            raise HomeAssistantError("Der er allerede ved at blive lavet en madplan")
+            raise _invalid("already_generating")
         start = start or self.default_start()
         if skip and not plan_dates(start, self.store.settings["days"], skip):
-            raise HomeAssistantError("Alle dage er sprunget over")
+            raise _invalid("all_days_skipped")
+        if not self.ai_available():
+            self._async_create_ai_issue()
+            raise _invalid("no_ai_task")
         self._set_status("generating", "Laver madplan …")
         self._task = self.hass.async_create_background_task(
             self._async_run(start, send, skip or set()),
@@ -642,8 +670,9 @@ class MealPlanner:
             self._set_status("idle")
 
     def _ai_entity(self) -> str | None:
-        entity = self.store.settings.get("ai_task_entity")
-        if entity:
+        """The AI Task entity to use; None means Home Assistant's preferred one."""
+        entity: str | None = self.store.settings.get("ai_task_entity")
+        if entity and self.hass.states.get(entity) is not None:
             return entity
         # None lets Home Assistant use its preferred AI task entity; fall back to
         # the first one if no preference is set.
@@ -651,7 +680,27 @@ class MealPlanner:
         if prefs is not None and getattr(prefs, "gen_data_entity_id", None):
             return None
         ids = self.hass.states.async_entity_ids("ai_task")
-        return ids[0] if ids else None
+        return ids[0] if ids else entity
+
+    def ai_available(self) -> bool:
+        """True if there is an AI Task entity to make plans with."""
+        prefs = self.hass.data.get("ai_task_preferences")
+        if prefs is not None and getattr(prefs, "gen_data_entity_id", None):
+            return True
+        return bool(self.hass.states.async_entity_ids("ai_task"))
+
+    @callback
+    def _async_create_ai_issue(self) -> None:
+        """Tell the user in Repairs that an AI Task is needed."""
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            ISSUE_NO_AI_TASK,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_NO_AI_TASK,
+            learn_more_url=AI_TASK_DOCS_URL,
+        )
 
     async def _async_offers(self, start: date) -> tuple[Catalog | None, list[Offer]]:
         current, upcoming = self._get_catalogs()
@@ -685,10 +734,7 @@ class MealPlanner:
                 )
             except HomeAssistantError as err:
                 if "MAX_TOKENS" in str(err).upper():
-                    raise HomeAssistantError(
-                        f"{err} – AI'ens svar blev for langt. Hæv 'Maksimalt antal tokens' i "
-                        "AI-opgavens indstillinger (fx 8000), eller lav en kortere madplan."
-                    ) from err
+                    raise _failed("ai_answer_too_long", error=str(err)) from err
                 raise
             return result.data
 
@@ -704,7 +750,7 @@ class MealPlanner:
                 )
             )
         except ValueError as err:
-            raise HomeAssistantError(f"AI'en svarede ikke med gyldig JSON: {err}") from err
+            raise _failed("ai_invalid_json", error=str(err)) from err
 
     # ------------------------------------------------------------- recipes
 
@@ -773,12 +819,12 @@ class MealPlanner:
         plan = self.store.get_plan(plan_id)
         day = next((d for d in plan["days"] if d["date"] == day_date), None) if plan else None
         if plan is None or day is None:
-            raise HomeAssistantError("Dagen findes ikke i madplanen")
+            raise _invalid("day_not_found")
         await self._async_recipe(day, plan)
         await self.store.async_save()
         self._notify()
         if day.get("recipe_error"):
-            raise HomeAssistantError(day["recipe_error"])
+            raise _failed("recipe_failed", error=str(day["recipe_error"]))
         return day
 
     async def async_generate(self, start: date, skip: set[date] | None = None) -> dict[str, Any]:
@@ -786,7 +832,7 @@ class MealPlanner:
         settings = self.store.settings
         dates = plan_dates(start, settings["days"], skip)
         if not dates:
-            raise HomeAssistantError("Alle dage er sprunget over")
+            raise _invalid("all_days_skipped")
         skipped = sorted(
             d for d in (skip or set()) if start <= d < start + timedelta(settings["days"])
         )
@@ -842,6 +888,7 @@ class MealPlanner:
             )
 
         assert best is not None
+        ir.async_delete_issue(self.hass, DOMAIN, ISSUE_NO_AI_TASK)
         best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
         best["skipped"] = [d.isoformat() for d in skipped]
         await self._async_add_recipes(best)
@@ -1192,7 +1239,7 @@ class MealPlanner:
         """Add something typed by a person: a matching REMA product, else free text."""
         amount, name = parse_quick_add(text)
         if not name:
-            raise HomeAssistantError("Skriv hvad der skal på listen")
+            raise _invalid("empty_quick_add")
         line: dict[str, Any] = {
             "name": name,
             "search": name,
@@ -1230,7 +1277,7 @@ class MealPlanner:
         """Put a plan's shopping list on the primary REMA list."""
         plan = self.store.get_plan(plan_id) if plan_id else self.store.latest_plan
         if plan is None:
-            raise HomeAssistantError("Der er ingen madplan at sende")
+            raise _invalid("no_plan" if not plan_id else "plan_not_found")
         items: list[dict[str, Any]] = []
         for line in plan["shopping"]:
             if line.get("product"):
@@ -1268,7 +1315,10 @@ class MealPlanner:
             return
         self._auto_attempted.add(key)
         _LOGGER.info("New tilbudsavis found, making the meal plan for %s", key)
-        self.async_start_generation(start, send=settings["auto_send"])
+        try:
+            self.async_start_generation(start, send=settings["auto_send"])
+        except HomeAssistantError as err:
+            _LOGGER.warning("Could not make the meal plan for %s automatically: %s", key, err)
 
     @callback
     def async_cancel(self) -> None:
@@ -1327,4 +1377,4 @@ def parse_date(value: str | None) -> date | None:
     try:
         return datetime.fromisoformat(value).date()
     except ValueError as err:
-        raise HomeAssistantError(f"Ugyldig dato: {value}") from err
+        raise _invalid("invalid_date", value=value) from err

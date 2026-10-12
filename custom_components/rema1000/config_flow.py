@@ -105,3 +105,29 @@ class RemaConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={"email": entry.data[CONF_EMAIL]},
             errors=errors,
         )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change the e-mail or password of the same REMA 1000 account."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            email = user_input[CONF_EMAIL].strip()
+            user_id, errors = await self._async_validate(email, user_input[CONF_PASSWORD])
+            if not errors:
+                await self.async_set_unique_id(str(user_id))
+                self._abort_if_unique_id_mismatch(reason="wrong_account")
+                return self.async_update_reload_and_abort(
+                    entry,
+                    title=email,
+                    data_updates={CONF_EMAIL: email, CONF_PASSWORD: user_input[CONF_PASSWORD]},
+                )
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                USER_SCHEMA,
+                {CONF_EMAIL: (user_input or {}).get(CONF_EMAIL) or entry.data[CONF_EMAIL]},
+            ),
+            errors=errors,
+        )

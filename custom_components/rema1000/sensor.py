@@ -7,16 +7,14 @@ from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
 from .api import Catalog
-from .const import DOMAIN
 from .coordinator import RemaConfigEntry, RemaOffersCoordinator, RemaShoppingListCoordinator
-from .entity import RemaEntity
+from .entity import RemaEntity, device_info
 from .mealplan import signal_plans_updated
 
 PARALLEL_UPDATES = 0
@@ -50,10 +48,7 @@ class RemaDinnerTodaySensor(SensorEntity):
         """Initialize the sensor."""
         self._entry = entry
         self._attr_unique_id = f"{entry.unique_id}_dinner_today"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, str(entry.unique_id))},
-            entry_type=DeviceEntryType.SERVICE,
-        )
+        self._attr_device_info = device_info(entry)
 
     def _day(self, offset: int = 0) -> tuple[dict[str, Any], dict[str, Any]] | None:
         """(day, plan) for today + offset days."""
@@ -68,7 +63,7 @@ class RemaDinnerTodaySensor(SensorEntity):
     def native_value(self) -> str | None:
         """The dish, or nothing if today is not planned."""
         found = self._day()
-        return found[0]["dish"][:255] if found else None
+        return str(found[0]["dish"])[:255] if found else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -135,7 +130,7 @@ class RemaMealPlanSensor(RemaEntity[RemaShoppingListCoordinator], SensorEntity):
         if data.planner.status["state"] in ("generating", "error"):
             return data.planner.status["state"]
         plan = data.store.latest_plan
-        return plan["status"] if plan else "none"
+        return str(plan["status"]) if plan else "none"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

@@ -9,7 +9,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.typing import ConfigType
 
-from .api import RemaAuthError, RemaClient, RemaError
+from .api import Catalog, RemaAuthError, RemaClient, RemaError
 from .const import DOMAIN
 from .coordinator import (
     RemaConfigEntry,
@@ -49,9 +49,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
     try:
         await client.async_login()
     except RemaAuthError as err:
-        raise ConfigEntryAuthFailed(str(err)) from err
+        raise ConfigEntryAuthFailed(
+            translation_domain=DOMAIN,
+            translation_key="auth_failed",
+            translation_placeholders={"email": entry.data[CONF_EMAIL]},
+        ) from err
     except RemaError as err:
-        raise ConfigEntryNotReady(str(err)) from err
+        raise ConfigEntryNotReady(
+            translation_domain=DOMAIN,
+            translation_key="cannot_connect",
+            translation_placeholders={"error": str(err)},
+        ) from err
 
     store = RemaPlanStore(hass, entry.entry_id)
     await store.async_load()
@@ -62,7 +70,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
     # Offers come from a third party (Tjek); don't block setup if it fails.
     await offers.async_refresh()
 
-    def catalogs():
+    def catalogs() -> tuple[Catalog | None, Catalog | None]:
         data = offers.data
         return (data.current, data.upcoming) if data else (None, None)
 
