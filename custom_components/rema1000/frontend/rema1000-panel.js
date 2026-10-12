@@ -44,6 +44,15 @@ const onOffer = (p) =>
   Boolean(p.is_advertised || p.is_campaign || (p.normal_price && p.price && p.price < p.normal_price - 0.01));
 const validTo = (iso) => (iso && !iso.startsWith("2099") ? shortDate(iso.slice(0, 10)) : "");
 const STATUS_LABELS = { draft: "Klar", sent: "Sendt", generating: "Laves", error: "Fejl" };
+// Line icons for the tab bar (shown when it sits at the bottom on a phone).
+const TAB_ICONS = {
+  plan: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4M7.5 14h3M13.5 14h3M7.5 17h3"/></svg>',
+  recipes: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7.5c-1.6-1.6-4.3-2.3-8-2.2v12.5c3.7-.1 6.4.6 8 2.2 1.6-1.6 4.3-2.3 8-2.2V5.3c-3.7-.1-6.4.6-8 2.2zM12 7.5V20"/></svg>',
+  shopping: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2.2l2.3 10.3a1 1 0 0 0 1 .7h8.9a1 1 0 0 0 1-.8L20 8H6.3"/><circle cx="9.5" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/></svg>',
+  favorites: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z"/></svg>',
+  history: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
+  settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>',
+};
 const TABS = [
   ["plan", "Madplan"],
   ["recipes", "Opskrifter"],
@@ -622,7 +631,8 @@ class Rema1000Panel extends HTMLElement {
     // The toolbar and tabs are built once, so their horizontal scroll survives.
     if (!root.querySelector("#content")) {
       const tabs = TABS.map(
-        ([key, label]) => `<button class="tab" data-action="tab" data-arg="${key}">${label}</button>`
+        ([key, label]) =>
+          `<button class="tab" data-action="tab" data-arg="${key}">${TAB_ICONS[key] || ""}<span>${label}</span></button>`
       ).join("");
       root.innerHTML = `
         <style>${STYLE}</style>
@@ -1232,6 +1242,8 @@ const STYLE = `
   .tab { border: none; background: none; color: var(--secondary-text-color); padding: 10px 14px; font-size: 15px; cursor: pointer;
     border-bottom: 3px solid transparent; white-space: nowrap; font-weight: 500; }
   .tab.active { color: var(--rema-accent); border-color: var(--rema-accent); }
+  .tab svg { display: none; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8;
+    stroke-linecap: round; stroke-linejoin: round; }
   main { max-width: 1100px; margin: 0 auto; padding: 16px 12px calc(96px + var(--rema-safe-bottom, 0px)); }
   .card { background: var(--rema-card); border-radius: var(--ha-card-border-radius, 12px);
     box-shadow: var(--ha-card-box-shadow, 0 1px 3px rgba(0,0,0,.12)); border: 1px solid var(--divider-color);
@@ -1360,6 +1372,22 @@ const STYLE = `
     .prod-price { font-size: 14px; }
     .prod .badge { font-size: 10px; padding: 1px 5px; }
     .prod .btn { padding: 6px 4px; font-size: 12px; }
+    /* Phone: the tabs become a low bar at the very bottom, see-through like the CRM's menu. */
+    :host { --rema-tabbar: calc(46px + max(2px, var(--rema-safe-bottom, 0px) - 16px)); }
+    .tabs { position: fixed; top: auto; bottom: 0; left: 0; right: 0; z-index: 5; display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; overflow: visible;
+      padding: 2px 2px max(2px, calc(var(--rema-safe-bottom, 0px) - 16px));
+      border-bottom: none; border-top: 1px solid var(--divider-color);
+      background: color-mix(in srgb, var(--primary-background-color) 60%, transparent);
+      -webkit-backdrop-filter: blur(2px) saturate(1.4); backdrop-filter: blur(2px) saturate(1.4); }
+    .tab { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 4px 0 2px; min-width: 0;
+      font-size: 10.5px; font-weight: 600; border-bottom: none; }
+    .tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    .tab svg { display: block; }
+    main { padding-bottom: calc(96px + var(--rema-tabbar)); }
+    .savebar { bottom: calc(8px + var(--rema-tabbar)); }
+    .sticky { bottom: var(--rema-tabbar); padding-bottom: 12px; }
+    .toast { bottom: calc(16px + var(--rema-tabbar)); }
   }
 `;
 
