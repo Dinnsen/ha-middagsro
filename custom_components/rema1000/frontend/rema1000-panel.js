@@ -1150,7 +1150,7 @@ class Rema1000Panel extends HTMLElement {
       <div class="card">
         <h1>App på hjemmeskærmen</h1>
         <p class="muted">Åbn linket i Safari (eller Chrome), log ind og vælg Del › Føj til hjemmeskærm. Så åbner REMA 1000 i fuld skærm i dit tema.</p>
-        <p><a href="${esc(`${location.origin}/rema1000_app/rema.html`)}" target="_blank" rel="noopener">${esc(`${location.origin}/rema1000_app/rema.html`)}</a></p>
+        <p><a href="${esc(`${location.origin}/rema1000_app/app.html`)}" target="_blank" rel="noopener">${esc(`${location.origin}/rema1000_app/app.html`)}</a></p>
       </div>
 
       <div class="savebar">
