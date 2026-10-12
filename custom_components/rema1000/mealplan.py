@@ -329,6 +329,7 @@ def build_prompt(
     favorites_optional: list[dict[str, Any]],
     recent_dishes: list[str],
     feedback: str | None = None,
+    skipped: list[date] | None = None,
 ) -> str:
     """Build the instructions for the AI."""
     s = settings
@@ -342,6 +343,12 @@ def build_prompt(
         "",
         "KRAV – SKAL OVERHOLDES:",
     ]
+    if skipped:
+        out.append(
+            "- Disse dage springes over (ingen aftensmad og intet på indkøbslisten): "
+            + ", ".join(f"{WEEKDAYS_DA[d.weekday()]} {d.isoformat()}" for d in skipped)
+            + ". Rester spises dagen efter den ret, de kommer fra, i listen ovenfor."
+        )
     allergies = [ALLERGY_DA[a] for a in s["allergies"]]
     if s["allergies_other"].strip():
         allergies.append(s["allergies_other"].strip())
@@ -605,19 +612,27 @@ class MealPlanner:
         return next_start(dt_util.now().date(), self.store.settings["start_weekday"])
 
     @callback
-    def async_start_generation(self, start: date | None = None, send: bool = False) -> None:
-        """Start making a plan in the background."""
+    def async_start_generation(
+        self,
+        start: date | None = None,
+        send: bool = False,
+        skip: set[date] | None = None,
+    ) -> None:
+        """Start making a plan in the background. Days in skip get no dinner."""
         if self.generating:
             raise HomeAssistantError("Der er allerede ved at blive lavet en madplan")
+        start = start or self.default_start()
+        if skip and not plan_dates(start, self.store.settings["days"], skip):
+            raise HomeAssistantError("Alle dage er sprunget over")
         self._set_status("generating", "Laver madplan …")
         self._task = self.hass.async_create_background_task(
-            self._async_run(start or self.default_start(), send),
+            self._async_run(start, send, skip or set()),
             name=f"{DOMAIN} meal plan",
         )
 
-    async def _async_run(self, start: date, send: bool) -> None:
+    async def _async_run(self, start: date, send: bool, skip: set[date]) -> None:
         try:
-            plan = await self.async_generate(start)
+            plan = await self.async_generate(start, skip)
             if send:
                 await self.async_send(plan["id"])
         except Exception as err:
@@ -766,10 +781,22 @@ class MealPlanner:
             raise HomeAssistantError(day["recipe_error"])
         return day
 
-    async def async_generate(self, start: date) -> dict[str, Any]:
+    async def async_generate(self, start: date, skip: set[date] | None = None) -> dict[str, Any]:
         """Make, price and store a plan. Returns the plan."""
         settings = self.store.settings
-        dates = [start + timedelta(days=i) for i in range(settings["days"])]
+        dates = plan_dates(start, settings["days"], skip)
+        if not dates:
+            raise HomeAssistantError("Alle dage er sprunget over")
+        skipped = sorted(
+            d for d in (skip or set()) if start <= d < start + timedelta(settings["days"])
+        )
+        # Fewer days to cook: no more leftover or vegetarian days than there is room for.
+        settings = {
+            **settings,
+            "leftover_days": min(settings["leftover_days"], (len(dates) - 1) // 2),
+            "min_vegetarian": min(settings["min_vegetarian"], len(dates)),
+            "max_vegetarian": min(settings["max_vegetarian"], len(dates)),
+        }
         self._set_status("generating", "Henter ugens tilbud …")
         catalog, offers = await self._async_offers(start)
         due, optional = self.store.favorites_due(start)
@@ -793,6 +820,7 @@ class MealPlanner:
                 favorites_optional=optional,
                 recent_dishes=recent,
                 feedback=feedback,
+                skipped=skipped,
             )
             raw = await self._async_ask_ai(prompt, "REMA 1000 madplan")
             self._set_status("generating", "Finder varer og priser i REMA 1000 …")
@@ -815,6 +843,7 @@ class MealPlanner:
 
         assert best is not None
         best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
+        best["skipped"] = [d.isoformat() for d in skipped]
         await self._async_add_recipes(best)
         await self.store.async_add_plan(best)
         self._notify()
@@ -1284,6 +1313,11 @@ def plan_summary(plan: dict[str, Any]) -> dict[str, Any]:
         key: plan.get(key)
         for key in ("id", "title", "start_date", "end_date", "week", "status", "total", "budget")
     } | {"dishes": [day["dish"] for day in plan.get("days", [])]}
+
+
+def plan_dates(start: date, days: int, skip: set[date] | None = None) -> list[date]:
+    """The days of a plan that get a dinner."""
+    return [d for d in (start + timedelta(days=i) for i in range(days)) if d not in (skip or set())]
 
 
 def parse_date(value: str | None) -> date | None:
