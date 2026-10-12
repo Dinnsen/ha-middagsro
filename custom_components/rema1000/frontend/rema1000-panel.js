@@ -1280,7 +1280,7 @@ const STYLE = `
   .credit .gh { width: 16px; height: 16px; display: block; }
   .tab svg { display: none; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8;
     stroke-linecap: round; stroke-linejoin: round; }
-  main { max-width: 1100px; margin: 0 auto; padding: 16px 12px calc(96px + var(--rema-safe-bottom, 0px)); }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px 12px calc(96px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); }
   .card { background: var(--rema-card); border-radius: var(--ha-card-border-radius, 12px);
     box-shadow: var(--ha-card-box-shadow, 0 1px 3px rgba(0,0,0,.12)); border: 1px solid var(--divider-color);
     padding: 16px 18px; margin-bottom: 16px; }
@@ -1389,13 +1389,13 @@ const STYLE = `
   .fav-row { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--divider-color); }
   .fav-row .what { flex: 1; }
   .filter { width: 100%; margin-top: 10px; }
-  .sticky { position: sticky; bottom: 0; background: var(--rema-solid-card); padding: 12px 0 calc(12px + var(--rema-safe-bottom, 0px));
+  .sticky { position: sticky; bottom: 0; background: var(--rema-solid-card); padding: 12px 0 calc(12px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px)));
     border-top: 1px solid var(--divider-color); }
   /* Last in the settings view, so it stays at the bottom of the screen all the way down. */
-  .savebar { position: sticky; bottom: calc(8px + var(--rema-safe-bottom, 0px)); z-index: 2; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  .savebar { position: sticky; bottom: calc(8px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); z-index: 2; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
     margin-top: 16px; padding: 12px 16px; background: var(--rema-solid-card); border: 1px solid var(--divider-color);
     border-radius: var(--ha-card-border-radius, 12px); box-shadow: 0 -2px 12px rgba(0, 0, 0, .12); }
-  .toast { position: fixed; left: 50%; bottom: calc(24px + var(--rema-safe-bottom, 0px)); transform: translateX(-50%); background: var(--primary-text-color); color: var(--primary-background-color);
+  .toast { position: fixed; left: 50%; bottom: calc(24px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); transform: translateX(-50%); background: var(--primary-text-color); color: var(--primary-background-color);
     padding: 12px 20px; border-radius: 10px; z-index: 10; max-width: 90vw; box-shadow: 0 4px 12px rgba(0,0,0,.3); }
   @media (max-width: 700px) {
     .recipe-grid { grid-template-columns: 1fr; }
@@ -1409,11 +1409,11 @@ const STYLE = `
     .prod .badge { font-size: 10px; padding: 1px 5px; }
     .prod .btn { padding: 6px 4px; font-size: 12px; }
     /* Phone: the tabs become a low bar at the very bottom, see-through like the CRM's menu. */
-    :host { --rema-tabbar: calc(56px + max(2px, var(--rema-safe-bottom, 0px) - 16px)); }
+    :host { --rema-tabbar: calc(56px + max(2px, var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px)) - 16px)); }
     .tabs { position: fixed; top: auto; bottom: 0; left: 0; right: 0; z-index: 5; display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; overflow: visible;
       /* side padding keeps the outer icons clear of the screen's rounded corners */
-      padding: 5px 22px max(2px, calc(var(--rema-safe-bottom, 0px) - 16px));
+      padding: 5px 22px max(2px, calc(var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px)) - 16px));
       border-bottom: none; border-top: 1px solid var(--divider-color);
       background: color-mix(in srgb, var(--primary-background-color) 60%, transparent);
       -webkit-backdrop-filter: blur(2px) saturate(1.4); backdrop-filter: blur(2px) saturate(1.4); }
