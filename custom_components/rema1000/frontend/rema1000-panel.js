@@ -1266,7 +1266,7 @@ const STYLE = `
     padding: var(--rema-safe-top, 0px) 12px 0;
     background: var(--app-header-background-color, var(--card-background-color)); color: var(--app-header-text-color, inherit);
     border-bottom: 1px solid var(--divider-color); position: sticky; top: 0; z-index: 3; }
-  .logo { height: 26px; }
+  .logo { height: min(44px, calc(var(--header-height, 56px) - 8px)); }
   .spacer { flex: 1; }
   .tabs { display: flex; gap: 4px; overflow-x: auto; padding: 8px 12px 0; background: var(--rema-solid-card);
     border-bottom: 1px solid var(--divider-color); position: sticky; top: calc(var(--header-height, 56px) + var(--rema-safe-top, 0px)); z-index: 2; }
