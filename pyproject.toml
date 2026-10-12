@@ -4,6 +4,7 @@
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.coverage.run]
 source = ["custom_components/rema1000"]
@@ -17,6 +18,8 @@ skip_covered = true
 python_version = "3.14"
 files = ["custom_components/rema1000"]
 strict = true
+# Home Assistant re-exports names from its packages without __all__.
+implicit_reexport = true
 warn_unreachable = true
 enable_error_code = ["ignore-without-code", "redundant-self", "truthy-iterable"]
 disable_error_code = ["annotation-unchecked"]

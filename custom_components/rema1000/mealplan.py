@@ -817,7 +817,9 @@ class MealPlanner:
     async def async_regenerate_recipe(self, plan_id: str, day_date: str) -> dict[str, Any]:
         """Write one day's recipe again."""
         plan = self.store.get_plan(plan_id)
-        day = next((d for d in plan["days"] if d["date"] == day_date), None) if plan else None
+        day: dict[str, Any] | None = (
+            next((d for d in plan["days"] if d["date"] == day_date), None) if plan else None
+        )
         if plan is None or day is None:
             raise _invalid("day_not_found")
         await self._async_recipe(day, plan)
@@ -1351,9 +1353,8 @@ def parse_quick_add(text: str) -> tuple[int, str]:
     text = _NUMBER_WORD.sub(lambda m: str(_NUMBER_WORDS[m.group(1).lower()]), text)
     if match := _QUICK_COUNT.match(text):
         return max(1, int(match.group(1))), match.group(2)
-    if re.match(r"^\s*\d+\s*[x×*]\S", text):  # '3xæg'
-        count, rest = re.match(r"^\s*(\d+)\s*[x×*](.+)$", text).groups()
-        return max(1, int(count)), rest.strip()
+    if glued := re.match(r"^\s*(\d+)\s*[x×*](\S.*)$", text):  # '3xæg'
+        return max(1, int(glued.group(1))), glued.group(2).strip()
     return 1, text
 
 
