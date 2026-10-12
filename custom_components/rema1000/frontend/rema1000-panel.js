@@ -1409,14 +1409,15 @@ const STYLE = `
     .prod .badge { font-size: 10px; padding: 1px 5px; }
     .prod .btn { padding: 6px 4px; font-size: 12px; }
     /* Phone: the tabs become a low bar at the very bottom, see-through like the CRM's menu. */
-    :host { --rema-tabbar: calc(46px + max(2px, var(--rema-safe-bottom, 0px) - 16px)); }
+    :host { --rema-tabbar: calc(56px + max(2px, var(--rema-safe-bottom, 0px) - 16px)); }
     .tabs { position: fixed; top: auto; bottom: 0; left: 0; right: 0; z-index: 5; display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; overflow: visible;
-      padding: 2px 2px max(2px, calc(var(--rema-safe-bottom, 0px) - 16px));
+      /* side padding keeps the outer icons clear of the screen's rounded corners */
+      padding: 5px 22px max(2px, calc(var(--rema-safe-bottom, 0px) - 16px));
       border-bottom: none; border-top: 1px solid var(--divider-color);
       background: color-mix(in srgb, var(--primary-background-color) 60%, transparent);
       -webkit-backdrop-filter: blur(2px) saturate(1.4); backdrop-filter: blur(2px) saturate(1.4); }
-    .tab { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 4px 0 2px; min-width: 0;
+    .tab { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0 4px; min-width: 0;
       font-size: 10.5px; font-weight: 600; border-bottom: none; }
     .tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
     .tabs { grid-template-columns: repeat(5, minmax(0, 1fr)); }
