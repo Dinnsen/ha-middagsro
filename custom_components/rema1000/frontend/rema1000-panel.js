@@ -98,6 +98,7 @@ class Rema1000Panel extends HTMLElement {
     this._newFav = { text: "", frequency: "weekly" };
     this._newDislike = "";
     this._startDate = null;
+    this._skip = new Set(); // ISO dates in the next plan that get no dinner
     this._checked = {}; // ingredient/step ticks per plan+day
     this._timers = {};
     this._favs = null; // REMA favourite products
@@ -288,7 +289,12 @@ class Rema1000Panel extends HTMLElement {
       },
       generate: () =>
         this._run(async () => {
-          await this._ws("rema1000/generate", { start_date: this._startDate || null });
+          const days = new Set(this._planDates());
+          await this._ws("rema1000/generate", {
+            start_date: this._startDate || null,
+            skip_dates: [...this._skip].filter((d) => days.has(d)),
+          });
+          this._skip.clear();
           this._viewingLatest = true;
           this._tab = "plan";
         }, "Madplanen er ved at blive lavet – det tager typisk 1-2 minutter."),
@@ -430,6 +436,12 @@ class Rema1000Panel extends HTMLElement {
     const ds = el.dataset;
     if (ds.bind === "start") {
       this._startDate = el.value;
+      if (ev.type === "change") this._render(); // the skip boxes follow the dates
+      return;
+    }
+    if (ds.bind === "skip") {
+      if (el.checked) this._skip.add(el.value);
+      else this._skip.delete(el.value);
       return;
     }
     if (ds.bind === "favfilter") {
@@ -653,12 +665,33 @@ class Rema1000Panel extends HTMLElement {
     }
   }
 
+  // The dates the next plan covers, from the chosen first day.
+  _planDates() {
+    const start = this._startDate || this._state?.default_start;
+    const count = this._state?.settings?.days || 7;
+    if (!start) return [];
+    const pad = (n) => String(n).padStart(2, "0");
+    return Array.from({ length: count }, (_, i) => {
+      const d = new Date(`${start}T12:00:00`);
+      d.setDate(d.getDate() + i);
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    });
+  }
+
   _generateControls(label = "Lav ny madplan") {
     const generating = this._state?.status?.state === "generating";
+    const skip = this._planDates()
+      .map(
+        (iso) => `<label class="check skipday"><input type="checkbox" data-bind="skip" value="${iso}" ${this._skip.has(iso) ? "checked" : ""}> ${esc(dateLabel(iso))}</label>`
+      )
+      .join("");
     return `<div class="row wrap">
       <label class="field inline">Første dag
         <input type="date" data-bind="start" value="${esc(this._startDate || "")}">
       </label>
+    </div>
+    ${skip ? `<p class="muted small skiphead">Spring over (ingen aftensmad de dage):</p><div class="skipdays">${skip}</div>` : ""}
+    <div class="row wrap skipgo">
       <button class="btn primary" data-action="generate" ${generating || this._busy ? "disabled" : ""}>
         ${generating ? "Laves …" : label}
       </button>
@@ -705,7 +738,7 @@ class Rema1000Panel extends HTMLElement {
         <div class="row between wrap">
           <div>
             <h1>${esc(plan.title)}</h1>
-            <p class="muted">${esc(dateLabel(plan.start_date))} – ${esc(dateLabel(plan.end_date))}${plan.catalog ? ` · ${esc(plan.catalog.label || "")}` : ""}</p>
+            <p class="muted">${esc(dateLabel(plan.start_date))} – ${esc(dateLabel(plan.end_date))}${plan.catalog ? ` · ${esc(plan.catalog.label || "")}` : ""}${plan.skipped?.length ? `<br>Springes over: ${plan.skipped.map((d) => esc(dateLabel(d))).join(", ")}` : ""}</p>
           </div>
           <div class="price ${over ? "over" : ""}">
             <span class="big">${kr(plan.total)}</span>
@@ -1179,6 +1212,9 @@ const STYLE = `
     --rema-solid-card: linear-gradient(var(--card-background-color), var(--card-background-color)) var(--primary-background-color); }
   * { box-sizing: border-box; }
   a { color: var(--rema-accent); overflow-wrap: anywhere; }
+  .skiphead { margin: 14px 0 6px; }
+  .skipdays { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 2px 12px; }
+  .skipgo { margin-top: 12px; }
   #content.from-right { animation: rema-from-right .2s ease-out; }
   #content.from-left { animation: rema-from-left .2s ease-out; }
   @keyframes rema-from-right { from { transform: translateX(32px); opacity: .4; } }

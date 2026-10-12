@@ -157,14 +157,16 @@ async def ws_favorite_delete(hass: HomeAssistant, connection, msg: dict[str, Any
         vol.Required("type"): "rema1000/generate",
         ENTRY: str,
         vol.Optional("start_date"): vol.Any(str, None),
+        vol.Optional("skip_dates"): [str],
     }
 )
 @websocket_api.async_response
 @_wrap
 async def ws_generate(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
-    """Start making a meal plan."""
+    """Start making a meal plan; skip_dates get no dinner."""
     planner = _entry(hass, msg).runtime_data.planner
-    planner.async_start_generation(parse_date(msg.get("start_date")))
+    skip = {d for d in (parse_date(v) for v in msg.get("skip_dates") or []) if d}
+    planner.async_start_generation(parse_date(msg.get("start_date")), skip=skip)
     connection.send_result(msg["id"], planner.status)
 
 
