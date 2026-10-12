@@ -154,6 +154,12 @@ class Rema1000Panel extends HTMLElement {
     return this._panel?.config?.static_url || "/rema1000_static";
   }
 
+  /* Images are cached for a long time: the version in the address makes a new version load new images */
+  _img(name) {
+    const v = this._panel?.config?.version;
+    return `${this._static}/${name}${v ? `?v=${encodeURIComponent(v)}` : ""}`;
+  }
+
   connectedCallback() {
     document.addEventListener("visibilitychange", this._onVisibility);
     this._tick = setInterval(() => this._tickTimers(), 1000);
@@ -657,7 +663,7 @@ class Rema1000Panel extends HTMLElement {
         <style>${STYLE}</style>
         <div class="toolbar">
           <ha-menu-button></ha-menu-button>
-          <img class="logo" src="${this._static}/logo.png" alt="REMA 1000">
+          <img class="logo" src="${this._img("logo.png")}" alt="REMA 1000">
           <span class="spacer"></span>
           <span id="busy"></span>
         </div>
@@ -752,7 +758,7 @@ class Rema1000Panel extends HTMLElement {
       .join(" · ");
     if (!plan) {
       return `<div class="card hero">
-        <img src="${this._static}/icon.png" class="hero-icon" alt="">
+        <img src="${this._img("icon.png")}" class="hero-icon" alt="">
         <h1>Ingen madplan endnu</h1>
         <p>Madplanen laves med AI ud fra ugens tilbud og jeres indstillinger. Tjek indstillingerne først, og tryk så på knappen.</p>
         ${this._generateControls("Lav madplan")}

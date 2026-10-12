@@ -40,7 +40,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         sidebar_title="REMA 1000",
         sidebar_icon="mdi:cart-variant",
         module_url=f"{STATIC_URL}/{WEBCOMPONENT}.js?v={version}",
-        config={"static_url": STATIC_URL},
+        config={"static_url": STATIC_URL, "version": version},
         require_admin=False,
     )
 
