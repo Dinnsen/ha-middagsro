@@ -15,7 +15,7 @@ Et **REMA 1000-panel** i sidebaren samler det hele:
 - **Historik:** Tidligere madplaner.
 - **Indstillinger:** Startdag, budget, økologi (udelukkende / foretrækkes hvis højst x % dyrere / ligeglad), krav til æg (skrabe-, frilands- eller økologiske), økologisk mælk og økologisk frugt og grønt, ting der skal undgås, allergier, familiens medlemmer, vegetar- og restedage, faste dage (fx rugbrødsdag), maks. tid på hverdage, basisvarer, faste ugevarer og familiens favoritretter med hyppighed.
 
-**App på hjemmeskærmen:** Åbn `https://<din-home-assistant>/rema1000_app/index.html` i Safari eller Chrome, log ind og vælg *Del → Føj til hjemmeskærm*. Så åbner panelet i fuld skærm med REMA-ikon og dit Home Assistant-tema. Linket står også under Indstillinger i panelet.
+**App på hjemmeskærmen:** Åbn `https://<din-home-assistant>/rema1000_app/rema.html` i Safari eller Chrome, log ind og vælg *Del → Føj til hjemmeskærm*. Så åbner panelet i fuld skærm med REMA-ikon og dit Home Assistant-tema. Linket står også under Indstillinger i panelet.
 
 Slå **automatik** til, så laves næste uges madplan, når den nye tilbudsavis udkommer – og sendes evt. direkte til REMA-listen.
 

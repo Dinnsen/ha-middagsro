@@ -3,7 +3,7 @@
   "short_name": "REMA 1000",
   "description": "Madplan og indkøbsliste fra Home Assistant",
   "lang": "da",
-  "start_url": "/rema1000_app/index.html",
+  "start_url": "/rema1000_app/rema.html",
   "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
