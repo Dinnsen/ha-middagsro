@@ -22,7 +22,8 @@
   #top { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); z-index: 5;
     background: var(--rema-statusbar, var(--app-header-background-color, var(--card-background-color))); }
   /* Scroll inside this box so the panel's sticky header stays below the notch. */
-  #wrap { position: fixed; top: env(safe-area-inset-top, 0px); left: 0; right: 0; bottom: 0; overflow-y: auto;
+  html, body { overflow: hidden; overscroll-behavior: none; }
+  #wrap { position: fixed; top: env(safe-area-inset-top, 0px); left: 0; right: 0; bottom: 0; overflow-y: auto; overflow-x: hidden;
     -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
     padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
   #msg { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;

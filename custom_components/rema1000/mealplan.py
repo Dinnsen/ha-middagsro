@@ -373,6 +373,12 @@ def build_prompt(
     out.append(
         f"- Mandag til fredag højst {s['max_cook_minutes_weekday']} minutters aktiv tilberedning."
     )
+    if s["disliked_dishes"]:
+        out.append(
+            "- Familien kan ikke lide disse retter – brug dem ALDRIG, heller ikke varianter af dem: "
+            + "; ".join(s["disliked_dishes"])
+            + "."
+        )
     if recent_dishes:
         out.append(
             "- Disse retter fra de seneste uger må IKKE gentages: " + "; ".join(recent_dishes) + "."

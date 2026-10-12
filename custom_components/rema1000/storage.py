@@ -68,6 +68,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "produce_organic": False,
     "auto_generate": False,
     "auto_send": False,
+    "disliked_dishes": [],
 }
 
 
@@ -123,6 +124,11 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
         }
         for item in settings["must_haves"] or []
         if isinstance(item, dict) and str(item.get("name") or "").strip()
+    ][:50]
+    settings["disliked_dishes"] = [
+        text
+        for text in (str(item or "").strip()[:300] for item in settings["disliked_dishes"] or [])
+        if text
     ][:50]
     settings["fixed_days"] = [
         {"weekday": _clamp(item.get("weekday"), 0, 6, 0), "text": str(item.get("text") or "")[:300]}

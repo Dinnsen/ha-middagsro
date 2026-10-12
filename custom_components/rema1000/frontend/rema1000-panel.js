@@ -88,6 +88,7 @@ class Rema1000Panel extends HTMLElement {
     this._search = { query: "", results: [], loading: false };
     this._editFav = null;
     this._newFav = { text: "", frequency: "weekly" };
+    this._newDislike = "";
     this._startDate = null;
     this._checked = {}; // ingredient/step ticks per plan+day
     this._timers = {};
@@ -203,6 +204,16 @@ class Rema1000Panel extends HTMLElement {
   }
 
   // ------------------------------------------------------------------ events
+
+  // Saved right away like the favourites, without saving other unsaved settings.
+  _saveDislikes(list, okMessage) {
+    this._run(async () => {
+      const saved = await this._ws("rema1000/settings", {
+        settings: { ...this._state.settings, disliked_dishes: list },
+      });
+      if (this._form) this._form.disliked_dishes = saved.disliked_dishes;
+    }, okMessage);
+  }
 
   _goTab(key, direction = 0) {
     if (!key || key === this._tab) return;
@@ -325,6 +336,17 @@ class Rema1000Panel extends HTMLElement {
           await this._ws("rema1000/settings", { settings: this._form });
           this._dirty = false;
         }, "Indstillingerne er gemt."),
+      "add-dislike": () => {
+        const text = this._newDislike.trim();
+        if (!text) return this._say("Skriv en ret først.");
+        this._saveDislikes([...(this._state.settings.disliked_dishes || []), text], "Retten er tilføjet.");
+        this._newDislike = "";
+      },
+      "delete-dislike": () => {
+        const list = [...(this._state.settings.disliked_dishes || [])];
+        list.splice(Number(arg), 1);
+        this._saveDislikes(list, "Retten er fjernet.");
+      },
       "reset-settings": () => {
         this._form = clone(this._state.settings);
         this._dirty = false;
@@ -409,6 +431,10 @@ class Rema1000Panel extends HTMLElement {
     if (ds.bind === "search") {
       this._search.query = el.value;
       if (ev.type === "change") this._doSearch();
+      return;
+    }
+    if (ds.bind === "newdislike") {
+      this._newDislike = el.value;
       return;
     }
     if (ds.bind === "newfav") {
@@ -977,6 +1003,12 @@ class Rema1000Panel extends HTMLElement {
               ${p.is_organic ? '<span class="badge eco">Øko</span>' : ""}</button>`
           )
           .join("");
+    const dislikes = (this._state.settings.disliked_dishes || [])
+      .map(
+        (text, i) => `<li class="fav"><div class="what"><span>${esc(text)}</span></div>
+          <button class="btn small danger" data-action="delete-dislike" data-arg="${i}">Slet</button></li>`
+      )
+      .join("");
     const favs = this._state.favorites
       .map((fav) =>
         this._editFav?.id === fav.id
@@ -1070,11 +1102,6 @@ class Rema1000Panel extends HTMLElement {
         <label class="check"><input type="checkbox" data-path="auto_generate" ${f.auto_generate ? "checked" : ""}> Lav næste uges madplan automatisk, når den nye tilbudsavis udkommer</label>
         <label class="check"><input type="checkbox" data-path="auto_send" ${f.auto_send ? "checked" : ""}> Send den automatisk til REMA-listen</label>
 
-        <div class="row wrap actions sticky">
-          <button class="btn primary" data-action="save-settings" ${this._busy ? "disabled" : ""}>Gem indstillinger</button>
-          <button class="btn" data-action="reset-settings">Fortryd ændringer</button>
-          ${this._dirty ? '<span class="muted">Ikke gemt</span>' : ""}
-        </div>
       </div>
 
       <div class="card">
@@ -1089,15 +1116,31 @@ class Rema1000Panel extends HTMLElement {
       </div>
 
       <div class="card">
+        <h1>Retter familien ikke kan lide</h1>
+        <p class="muted">Retter, der aldrig skal på madplanen, fx “Fiskefrikadeller” eller “Gryderetter med kål”.</p>
+        <textarea data-bind="newdislike" rows="2" placeholder="Ret">${esc(this._newDislike)}</textarea>
+        <div class="row wrap">
+          <button class="btn primary small" data-action="add-dislike" ${this._busy ? "disabled" : ""}>Tilføj</button>
+        </div>
+        <ul class="favs">${dislikes || "<li class='muted'>Ingen endnu.</li>"}</ul>
+      </div>
+
+      <div class="card">
         <h1>App på hjemmeskærmen</h1>
         <p class="muted">Åbn linket i Safari (eller Chrome), log ind og vælg Del › Føj til hjemmeskærm. Så åbner REMA 1000 i fuld skærm i dit tema.</p>
         <p><a href="${esc(`${location.origin}/rema1000_app/rema.html`)}" target="_blank" rel="noopener">${esc(`${location.origin}/rema1000_app/rema.html`)}</a></p>
+      </div>
+
+      <div class="savebar">
+        <button class="btn primary" data-action="save-settings" ${this._busy ? "disabled" : ""}>Gem indstillinger</button>
+        <button class="btn" data-action="reset-settings">Fortryd ændringer</button>
+        ${this._dirty ? '<span class="muted">Ikke gemt</span>' : ""}
       </div>`;
   }
 }
 
 const STYLE = `
-  :host { display: block; min-height: 100vh; background: var(--primary-background-color); color: var(--primary-text-color);
+  :host { display: block; min-height: 100vh; overflow-x: clip; background: var(--primary-background-color); color: var(--primary-text-color);
     font-family: var(--ha-font-family-body, Roboto, sans-serif);
     /* Everything follows the Home Assistant theme; only the logo keeps REMA's colours. */
     --rema-accent: var(--primary-color);
@@ -1236,6 +1279,10 @@ const STYLE = `
   .fav-row .what { flex: 1; }
   .filter { width: 100%; margin-top: 10px; }
   .sticky { position: sticky; bottom: 0; background: var(--card-background-color); padding: 12px 0; border-top: 1px solid var(--divider-color); }
+  /* Last in the settings view, so it stays at the bottom of the screen all the way down. */
+  .savebar { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    margin-top: 16px; padding: 12px 16px; background: var(--rema-card); border: 1px solid var(--divider-color);
+    border-radius: var(--ha-card-border-radius, 12px); box-shadow: 0 -2px 12px rgba(0, 0, 0, .12); }
   .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--primary-text-color); color: var(--primary-background-color);
     padding: 12px 20px; border-radius: 10px; z-index: 10; max-width: 90vw; box-shadow: 0 4px 12px rgba(0,0,0,.3); }
   @media (max-width: 700px) {
