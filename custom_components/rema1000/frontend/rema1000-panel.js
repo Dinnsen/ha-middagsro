@@ -53,6 +53,11 @@ const TAB_ICONS = {
   history: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
   settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>',
 };
+// On a phone the bottom bar shows the first tabs; the rest sit behind "Mere".
+const EXTRA_TABS = new Set(["history", "settings"]);
+const MORE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>';
+const CLOSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+const CREDIT = `<p class="credit">Udviklet af Christian Dinnsen <a class="gh-link" href="https://github.com/Dinnsen" target="_blank" rel="noopener noreferrer" aria-label="Christian Dinnsen på GitHub" title="Christian Dinnsen på GitHub"><svg class="gh" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a></p>`;
 const TABS = [
   ["plan", "Madplan"],
   ["recipes", "Opskrifter"],
@@ -108,6 +113,7 @@ class Rema1000Panel extends HTMLElement {
     this._newDislike = "";
     this._startDate = null;
     this._skip = new Set(); // ISO dates in the next plan that get no dinner
+    this._moreOpen = false; // the "Mere" sheet on a phone
     this._checked = {}; // ingredient/step ticks per plan+day
     this._timers = {};
     this._favs = null; // REMA favourite products
@@ -235,6 +241,7 @@ class Rema1000Panel extends HTMLElement {
 
   _goTab(key, direction = 0) {
     if (!key || key === this._tab) return;
+    this._moreOpen = false;
     this._tab = key;
     if (key !== "recipes") this._releaseWake();
     if (key === "favorites" && !this._favs && !this._favsLoading) this._loadFavs();
@@ -283,7 +290,15 @@ class Rema1000Panel extends HTMLElement {
     if (!el) return;
     const { action, arg } = el.dataset;
     const actions = {
-      tab: () => this._goTab(arg),
+      tab: () => {
+        this._moreOpen = false;
+        if (arg === this._tab) this._render();
+        else this._goTab(arg);
+      },
+      more: () => {
+        this._moreOpen = !this._moreOpen;
+        this._render();
+      },
       "fav-refresh": () => this._loadFavs(true),
       "fav-add": () =>
         this._run(
@@ -626,14 +641,18 @@ class Rema1000Panel extends HTMLElement {
         history: () => this._historyView(),
         settings: () => this._settingsView(),
       }[this._tab]();
+      if (this._tab === "plan") body += CREDIT;
     }
     const root = this.shadowRoot;
     // The toolbar and tabs are built once, so their horizontal scroll survives.
     if (!root.querySelector("#content")) {
       const tabs = TABS.map(
         ([key, label]) =>
-          `<button class="tab" data-action="tab" data-arg="${key}">${TAB_ICONS[key] || ""}<span>${label}</span></button>`
+          `<button class="tab${EXTRA_TABS.has(key) ? " extra" : ""}" data-action="tab" data-arg="${key}">${TAB_ICONS[key] || ""}<span>${label}</span></button>`
       ).join("");
+      const extra = TABS.filter(([key]) => EXTRA_TABS.has(key))
+        .map(([key, label]) => `<button class="more-item" data-action="tab" data-arg="${key}">${TAB_ICONS[key] || ""}<span>${label}</span></button>`)
+        .join("");
       root.innerHTML = `
         <style>${STYLE}</style>
         <div class="toolbar">
@@ -642,7 +661,9 @@ class Rema1000Panel extends HTMLElement {
           <span class="spacer"></span>
           <span id="busy"></span>
         </div>
-        <nav class="tabs">${tabs}</nav>
+        <nav class="tabs">${tabs}<button class="tab more" data-action="more" aria-expanded="false"></button></nav>
+        <div class="more-scrim" data-action="more" hidden></div>
+        <div class="more-sheet" hidden>${extra}</div>
         <main id="content"></main>
         <div id="toast"></div>`;
     }
@@ -651,7 +672,17 @@ class Rema1000Panel extends HTMLElement {
       menu.hass = this._hass;
       menu.narrow = this._narrow;
     }
-    root.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.arg === this._tab));
+    root.querySelectorAll(".tab, .more-item").forEach((tab) => tab.classList.toggle("active", tab.dataset.arg === this._tab));
+    const more = root.querySelector(".tab.more");
+    if (more) {
+      more.classList.toggle("active", this._moreOpen || EXTRA_TABS.has(this._tab));
+      more.setAttribute("aria-expanded", String(!!this._moreOpen));
+      more.innerHTML = this._moreOpen ? `${CLOSE_ICON}<span>Luk</span>` : `${MORE_ICON}<span>Mere</span>`;
+    }
+    for (const sel of [".more-sheet", ".more-scrim"]) {
+      const el = root.querySelector(sel);
+      if (el) el.hidden = !this._moreOpen;
+    }
     root.querySelector("#busy").innerHTML = this._busy ? '<span class="spinner small"></span>' : "";
     const oldChips = root.querySelector(".chips");
     const chipsLeft = oldChips ? oldChips.scrollLeft : 0;
@@ -1242,6 +1273,11 @@ const STYLE = `
   .tab { border: none; background: none; color: var(--secondary-text-color); padding: 10px 14px; font-size: 15px; cursor: pointer;
     border-bottom: 3px solid transparent; white-space: nowrap; font-weight: 500; }
   .tab.active { color: var(--rema-accent); border-color: var(--rema-accent); }
+  .tab.more { display: none; }
+  .more-scrim, .more-sheet { display: none; }
+  .credit { margin: 24px 0 0; text-align: center; font-size: 13px; color: var(--secondary-text-color); }
+  .credit .gh-link { display: inline-flex; vertical-align: -3px; margin-left: 4px; padding: 2px; color: inherit; border-radius: 999px; }
+  .credit .gh { width: 16px; height: 16px; display: block; }
   .tab svg { display: none; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8;
     stroke-linecap: round; stroke-linejoin: round; }
   main { max-width: 1100px; margin: 0 auto; padding: 16px 12px calc(96px + var(--rema-safe-bottom, 0px)); }
@@ -1383,6 +1419,17 @@ const STYLE = `
     .tab { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 4px 0 2px; min-width: 0;
       font-size: 10.5px; font-weight: 600; border-bottom: none; }
     .tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    .tabs { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .tab.extra { display: none; }
+    .tab.more { display: flex; }
+    .more-scrim:not([hidden]) { display: block; position: fixed; inset: 0; z-index: 4; }
+    .more-sheet:not([hidden]) { display: flex; flex-direction: column; position: fixed; right: 8px; z-index: 6;
+      bottom: calc(var(--rema-tabbar) + 8px); min-width: 200px; padding: 6px; border-radius: 16px;
+      background: var(--rema-solid-card); border: 1px solid var(--divider-color); box-shadow: 0 8px 28px rgba(0, 0, 0, .22); }
+    .more-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: none; border-radius: 10px;
+      background: none; color: var(--primary-text-color); font-size: 16px; font-weight: 500; text-align: left; cursor: pointer; }
+    .more-item svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .more-item.active { color: var(--rema-accent); background: var(--rema-tint); }
     .tab svg { display: block; }
     main { padding-bottom: calc(96px + var(--rema-tabbar)); }
     .savebar { bottom: calc(8px + var(--rema-tabbar)); }
