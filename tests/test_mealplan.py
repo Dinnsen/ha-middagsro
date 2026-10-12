@@ -16,6 +16,7 @@ from custom_components.rema1000 import mealplan as mp
 from custom_components.rema1000.api import RemaError
 from custom_components.rema1000.const import DOMAIN
 from custom_components.rema1000.storage import clean_settings
+from homeassistant.components import ai_task  # noqa: F401 - patched in the tests
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import issue_registry as ir

@@ -323,7 +323,7 @@ async def test_token_refresh_and_relogin() -> None:
     session.on(
         "POST",
         f"{SHOP}/api/auth/refresh",
-        FakeResponse(url=f"{SHOP}/api/auth/refresh", cookies={"access_token": token(4242, 5000)}),
+        FakeResponse(url=f"{SHOP}/", cookies={"access_token": token(4242, 5000)}),
     )
     await client.async_search_products("x")
     assert 4900 < client._expires_at - time.time() < 5100
