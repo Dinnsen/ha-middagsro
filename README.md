@@ -13,7 +13,7 @@ Et **REMA 1000-panel** i sidebaren samler det hele:
 - **Indkøb:** Den billigste REMA-vare til hver ingrediens efter dine økologi-regler, med pris, tilbud og samlet budget. Send listen til REMA 1000-appen med ét tryk, og tøm REMA-listen, når I har handlet.
 - **Favoritter:** Dine favoritvarer fra REMA-appen – dem på tilbud nu og i næste avis vises øverst og kan tilføjes til listen med ét tryk.
 - **Historik:** Tidligere madplaner.
-- **Indstillinger:** Startdag, budget, økologi (udelukkende / foretrækkes hvis højst x % dyrere / ligeglad), krav til æg (skrabe-, frilands- eller økologiske), økologisk mælk og økologisk frugt og grønt, ting der skal undgås, allergier, familiens medlemmer, vegetar- og restedage, faste dage (fx rugbrødsdag), maks. tid på hverdage, basisvarer, faste ugevarer og familiens favoritretter med hyppighed.
+- **Indstillinger:** Startdag, budget, økologi (udelukkende / foretrækkes hvis højst x % dyrere / ligeglad), krav til æg (skrabe-, frilands- eller økologiske), økologisk mælk og økologisk frugt og grønt, ting der skal undgås, allergier, familiens medlemmer, vegetar- og restedage, faste dage (fx rugbrødsdag), maks. tid på hverdage, basisvarer, faste ugevarer familiens favoritretter med hyppighed og retter, familien ikke kan lide.
 
 **App på hjemmeskærmen:** Åbn `https://<din-home-assistant>/rema1000_app/rema.html` i Safari eller Chrome, log ind og vælg *Del → Føj til hjemmeskærm*. Så åbner panelet i fuld skærm med REMA-ikon og dit Home Assistant-tema. Linket står også under Indstillinger i panelet.
 
