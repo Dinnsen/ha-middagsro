@@ -103,6 +103,8 @@ class Rema1000Panel extends HTMLElement {
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
     this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
     this.shadowRoot.addEventListener("change", (ev) => this._onInput(ev));
+    this.shadowRoot.addEventListener("touchstart", (ev) => this._onTouchStart(ev), { passive: true });
+    this.shadowRoot.addEventListener("touchend", (ev) => this._onTouchEnd(ev), { passive: true });
   }
 
   set hass(hass) {
@@ -202,17 +204,57 @@ class Rema1000Panel extends HTMLElement {
 
   // ------------------------------------------------------------------ events
 
+  _goTab(key, direction = 0) {
+    if (!key || key === this._tab) return;
+    this._tab = key;
+    if (key !== "recipes") this._releaseWake();
+    if (key === "favorites" && !this._favs && !this._favsLoading) this._loadFavs();
+    this._render();
+    const content = this.shadowRoot.querySelector("#content");
+    if (content && direction) {
+      content.classList.remove("from-left", "from-right");
+      void content.offsetWidth; // restart the animation
+      content.classList.add(direction > 0 ? "from-right" : "from-left");
+    }
+  }
+
+  // Swipe left/right on the page to go to the next/previous tab.
+  _onTouchStart(ev) {
+    this._swipe = null;
+    if (ev.touches.length !== 1) return;
+    const t = ev.touches[0];
+    // Leave the screen edges to the system (back gesture, HA's menu).
+    if (t.clientX < 24 || t.clientX > innerWidth - 24) return;
+    for (const el of ev.composedPath()) {
+      if (el === this) break;
+      if (!(el instanceof HTMLElement)) continue;
+      if (el.matches("input, textarea, select, .tabs, .chips")) return;
+      const overflow = getComputedStyle(el).overflowX;
+      if ((overflow === "auto" || overflow === "scroll") && el.scrollWidth > el.clientWidth) return;
+    }
+    this._swipe = { x: t.clientX, y: t.clientY, time: Date.now() };
+  }
+
+  _onTouchEnd(ev) {
+    const start = this._swipe;
+    this._swipe = null;
+    if (!start || !ev.changedTouches.length) return;
+    const t = ev.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2 || Date.now() - start.time > 700) return;
+    if (getSelection()?.toString()) return;
+    const keys = TABS.map(([key]) => key);
+    const next = keys[keys.indexOf(this._tab) + (dx < 0 ? 1 : -1)];
+    this._goTab(next, dx < 0 ? 1 : -1);
+  }
+
   _onClick(ev) {
     const el = ev.target.closest("[data-action]");
     if (!el) return;
     const { action, arg } = el.dataset;
     const actions = {
-      tab: () => {
-        this._tab = arg;
-        if (arg !== "recipes") this._releaseWake();
-        if (arg === "favorites" && !this._favs && !this._favsLoading) this._loadFavs();
-        this._render();
-      },
+      tab: () => this._goTab(arg),
       "fav-refresh": () => this._loadFavs(true),
       "fav-add": () =>
         this._run(
@@ -1049,7 +1091,7 @@ class Rema1000Panel extends HTMLElement {
       <div class="card">
         <h1>App på hjemmeskærmen</h1>
         <p class="muted">Åbn linket i Safari (eller Chrome), log ind og vælg Del › Føj til hjemmeskærm. Så åbner REMA 1000 i fuld skærm i dit tema.</p>
-        <p><a href="${esc(`${location.origin}/rema1000_app/index.html`)}" target="_blank" rel="noopener">${esc(`${location.origin}/rema1000_app/index.html`)}</a></p>
+        <p><a href="${esc(`${location.origin}/rema1000_app/rema.html`)}" target="_blank" rel="noopener">${esc(`${location.origin}/rema1000_app/rema.html`)}</a></p>
       </div>`;
   }
 }
@@ -1069,6 +1111,11 @@ const STYLE = `
     --rema-tint: color-mix(in srgb, var(--rema-accent) 12%, transparent); }
   * { box-sizing: border-box; }
   a { color: var(--rema-accent); overflow-wrap: anywhere; }
+  #content.from-right { animation: rema-from-right .2s ease-out; }
+  #content.from-left { animation: rema-from-left .2s ease-out; }
+  @keyframes rema-from-right { from { transform: translateX(32px); opacity: .4; } }
+  @keyframes rema-from-left { from { transform: translateX(-32px); opacity: .4; } }
+  @media (prefers-reduced-motion: reduce) { #content.from-right, #content.from-left { animation: none; } }
   .toolbar { display: flex; align-items: center; gap: 8px; height: var(--header-height, 56px); padding: 0 12px;
     background: var(--app-header-background-color, var(--card-background-color)); color: var(--app-header-text-color, inherit);
     border-bottom: 1px solid var(--divider-color); position: sticky; top: 0; z-index: 3; }
