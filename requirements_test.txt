@@ -2,6 +2,3 @@
 pytest-homeassistant-custom-component
 pytest-github-actions-annotate-failures
 mypy
-# Needed by the conversation component, which AI Task imports.
-hassil
-home-assistant-intents

@@ -33,6 +33,26 @@ jobs:
           cache-dependency-path: requirements_test.txt
       - name: Install
         run: pip install -r requirements_test.txt
+      - name: Install what AI Task and its dependencies need
+        run: |
+          python - <<'PY' > component_requirements.txt
+          import json
+          from pathlib import Path
+          import homeassistant.components as components
+          base = Path(components.__path__[0])
+          seen, todo, reqs = set(), ["ai_task"], set()
+          while todo:
+              domain = todo.pop()
+              if domain in seen or not (base / domain / "manifest.json").exists():
+                  continue
+              seen.add(domain)
+              manifest = json.loads((base / domain / "manifest.json").read_text())
+              reqs.update(manifest.get("requirements", []))
+              todo += manifest.get("dependencies", []) + manifest.get("after_dependencies", [])
+          print("\n".join(sorted(reqs)))
+          PY
+          cat component_requirements.txt
+          pip install -r component_requirements.txt
       - name: Pytest with coverage (at least 95 %)
         run: |
           set -o pipefail
