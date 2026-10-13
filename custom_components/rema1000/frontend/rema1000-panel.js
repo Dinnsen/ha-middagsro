@@ -1407,6 +1407,7 @@ const STYLE = `
   @media (max-width: 700px) {
     .recipe-grid { grid-template-columns: 1fr; }
     .day { grid-template-columns: 1fr; gap: 4px; }
+    .price { text-align: left; }
     .step-text { font-size: 18px; }
     .line { grid-template-columns: 40px 1fr; } .line .cost { grid-column: 2; text-align: left; flex-direction: row; gap: 8px; }
     .prod-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
