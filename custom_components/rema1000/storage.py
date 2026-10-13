@@ -8,6 +8,7 @@ from typing import Any
 import uuid
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN
@@ -177,7 +178,9 @@ class RemaPlanStore:
         """Create or update a favourite dish."""
         text = str(favorite.get("text") or "").strip()[:1000]
         if not text:
-            raise ValueError("A favourite needs a description")
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="favorite_text_required"
+            )
         frequency = favorite.get("frequency")
         if frequency not in FAVORITE_FREQUENCIES:
             frequency = "inspiration"

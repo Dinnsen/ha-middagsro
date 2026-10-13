@@ -1,0 +1,29 @@
+# Tool settings only; the integration itself is installed through HACS.
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.coverage.run]
+source = ["custom_components/rema1000"]
+
+[tool.coverage.report]
+fail_under = 95
+show_missing = true
+skip_covered = true
+
+[tool.mypy]
+python_version = "3.14"
+files = ["custom_components/rema1000"]
+strict = true
+# Home Assistant re-exports names from its packages without __all__.
+implicit_reexport = true
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-self", "truthy-iterable"]
+disable_error_code = ["annotation-unchecked"]
+
+[[tool.mypy.overrides]]
+module = ["probatio", "voluptuous"]
+ignore_missing_imports = true
