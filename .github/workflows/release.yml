@@ -1,0 +1,178 @@
+name: Release
+
+# Publishes the GitHub release by itself when a new version reaches main:
+# once Tests and Validate have both passed for that commit, the version
+# in manifest.json is released with its section of CHANGELOG.md as notes.
+# A version that already has a release (also one made by hand) is left alone,
+# so every run after the first does nothing.
+#
+# A tag pushed by hand (vX.Y.Z) still works, and "Run workflow" releases the
+# manifest version of any commit whose checks passed (for a version that was
+# skipped).
+
+on:
+  workflow_run:
+    workflows:
+      - Tests
+      - Validate
+    types:
+      - completed
+    branches:
+      - main
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit or branch to release (its manifest version is used)
+        required: false
+        default: main
+
+permissions:
+  contents: write
+  actions: read
+
+# One release at a time: the checks finish close together, and only
+# the first run that sees all of them green may publish.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  CHECKS: "Tests Validate"
+
+jobs:
+  release:
+    name: Publish release
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Commit to release
+        id: commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_REF: ${{ inputs.ref }}
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            workflow_run) sha="$RUN_SHA" ;;
+            workflow_dispatch) sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/${INPUT_REF:-main}" --jq .sha)" ;;
+            *) sha="$GITHUB_SHA" ;;
+          esac
+          echo "Commit: $sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.commit.outputs.sha }}
+
+      - name: Version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(python3 -c 'import json; print(json.load(open("custom_components/rema1000/manifest.json"))["version"])')"
+          tag="v$version"
+          echo "Manifest version: $version"
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_NAME" != "$tag" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match manifest version $version."
+            exit 1
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; nothing to do."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: All checks passed
+        id: checks
+        if: steps.version.outputs.publish == 'true' && github.event_name != 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SHA&event=push&per_page=100" > runs.json
+          python3 - <<'PY'
+          import json, os
+          runs = json.load(open("runs.json"))["workflow_runs"]
+          waiting, failed = [], []
+          for name in os.environ["CHECKS"].split():
+              mine = sorted((run for run in runs if run["name"] == name), key=lambda run: run["run_number"])
+              if not mine:
+                  waiting.append(f"{name} (not started)")
+                  continue
+              last = mine[-1]
+              if last["status"] != "completed":
+                  waiting.append(name)
+              elif last["conclusion"] != "success":
+                  failed.append(f"{name} ({last['conclusion']})")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              if failed:
+                  print(f"::error::Not released: {', '.join(failed)} failed for this commit.")
+                  out.write("ready=false\n")
+                  raise SystemExit(1)
+              if waiting:
+                  print(f"Waiting for {', '.join(waiting)}; the last check to finish publishes the release.")
+                  out.write("ready=false\n")
+              else:
+                  print("Tests and Validate passed.")
+                  out.write("ready=true\n")
+          PY
+
+      - name: Release notes from the changelog
+        if: steps.version.outputs.publish == 'true' && (github.event_name == 'push' || steps.checks.outputs.ready == 'true')
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          version = os.environ["VERSION"]
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          match = re.search(rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|^\[[0-9]|\Z)", text, re.M | re.S)
+          if not match:
+              sys.exit(f"::error::CHANGELOG.md has no section for {version}")
+          open("release-notes.md", "w", encoding="utf-8").write(match.group(1).strip() + "\n")
+          PY
+
+      - name: Newest version
+        id: latest
+        if: steps.version.outputs.publish == 'true' && (github.event_name == 'push' || steps.checks.outputs.ready == 'true')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[] | select(.draft == false) | .tag_name]' > tags.json
+          python3 - <<'PY'
+          import json, os, re
+          def key(text):
+              return tuple(int(part) for part in re.findall(r"\d+", text)[:3])
+          version = key(os.environ["VERSION"])
+          newer = [tag for tag in json.load(open("tags.json")) if key(tag) > version]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"latest={'false' if newer else 'true'}\n")
+          PY
+
+      - name: Publish the GitHub release
+        if: steps.version.outputs.publish == 'true' && (github.event_name == 'push' || steps.checks.outputs.ready == 'true')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          SHA: ${{ steps.commit.outputs.sha }}
+          LATEST: ${{ steps.latest.outputs.latest }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG was published meanwhile; nothing to do."
+            exit 0
+          fi
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            gh release create "$TAG" --title "REMA 1000 $TAG" --notes-file release-notes.md --verify-tag --latest="$LATEST"
+          else
+            gh release create "$TAG" --title "REMA 1000 $TAG" --notes-file release-notes.md --target "$SHA" --latest="$LATEST"
+          fi
+          echo "Published $TAG."
