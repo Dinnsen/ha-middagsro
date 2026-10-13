@@ -8,6 +8,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_EMAIL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.storage import Store
@@ -59,9 +60,17 @@ class RemaShoppingListCoordinator(DataUpdateCoordinator[ShoppingList]):
         try:
             return await self.client.async_get_primary_list()
         except RemaAuthError as err:
-            raise ConfigEntryAuthFailed(str(err)) from err
+            raise ConfigEntryAuthFailed(
+                translation_domain=DOMAIN,
+                translation_key="auth_failed",
+                translation_placeholders={"email": self.config_entry.data[CONF_EMAIL]},
+            ) from err
         except RemaError as err:
-            raise UpdateFailed(str(err)) from err
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="update_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
 
     async def async_add_items(self, items: list[dict[str, Any]]) -> None:
         """Add items ({product_id|name, amount}) to the primary list."""
@@ -127,7 +136,11 @@ class RemaOffersCoordinator(DataUpdateCoordinator[OffersData]):
         try:
             catalogs = await self.client.async_get_catalogs()
         except RemaError as err:
-            raise UpdateFailed(str(err)) from err
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="update_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
 
         now = datetime.now(UTC)
         changed = False

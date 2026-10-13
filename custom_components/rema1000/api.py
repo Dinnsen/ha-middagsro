@@ -109,7 +109,8 @@ def _float(value: Any) -> float | None:
 def _name_of(value: Any) -> str | None:
     """Department/category is an object with a name, or sometimes just a name."""
     if isinstance(value, dict):
-        return value.get("name")
+        name = value.get("name")
+        return str(name) if name else None
     return str(value) if value else None
 
 
@@ -371,9 +372,12 @@ def _jwt_claims(token: str) -> dict[str, Any]:
     try:
         payload = token.split(".")[1]
         payload += "=" * (-len(payload) % 4)
-        return json.loads(base64.urlsafe_b64decode(payload))
+        claims = json.loads(base64.urlsafe_b64decode(payload))
     except (IndexError, ValueError) as err:
         raise RemaApiError("Access token could not be read") from err
+    if not isinstance(claims, dict):
+        raise RemaApiError("Access token could not be read")
+    return claims
 
 
 class RemaClient:
@@ -647,15 +651,17 @@ class RemaClient:
             payload["name"] = name
         else:
             raise ValueError("product_id or name is required")
-        return await self._async_request(
+        result: dict[str, Any] = await self._async_request(
             "POST", f"/v2/shoppinglists/{list_id}/items", payload=payload
         )
+        return result
 
     async def async_update_item(self, list_id: int, item_id: int, **changes: Any) -> dict[str, Any]:
         """Change amount, bought state or name of an item."""
-        return await self._async_request(
+        result: dict[str, Any] = await self._async_request(
             "PATCH", f"/v2/shoppinglists/{list_id}/items/{item_id}", payload=changes
         )
+        return result
 
     async def async_delete_items(self, list_id: int, item_ids: list[int]) -> None:
         """Delete items from a list (one request, like the webshop)."""

@@ -1,0 +1,165 @@
+"""Tests for the stored settings, favourites and plans."""
+
+from __future__ import annotations
+
+from datetime import date
+from typing import Any
+
+import pytest
+
+from custom_components.rema1000.storage import (
+    DEFAULT_SETTINGS,
+    MAX_PLANS,
+    RemaPlanStore,
+    clean_settings,
+)
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
+
+from .conftest import make_plan
+
+
+def test_clean_settings_defaults() -> None:
+    """Empty input gives the defaults."""
+    assert clean_settings({}) == DEFAULT_SETTINGS
+
+
+def test_clean_settings_limits_and_types() -> None:
+    """Values are kept in range and wrong values fall back."""
+    settings = clean_settings(
+        {
+            "start_weekday": 9,
+            "days": "0",
+            "budget": "abc",
+            "organic": "sometimes",
+            "organic_max_extra_pct": -5,
+            "avoid": ["pork", "chocolate"],
+            "allergies": ["nuts", "glitter"],
+            "pantry": None,
+            "wishes": "x" * 3000,
+            "ai_task_entity": "",
+            "auto_generate": 1,
+            "egg_min": "golden",
+            "milk_organic": "yes",
+            "household": [
+                {"role": "child", "age": 300, "sex": "female"},
+                {"role": "pet", "age": "x", "sex": "?"},
+                "not a member",
+            ],
+            "must_haves": [
+                {"name": " Kaffe ", "product_id": "123", "amount": 200},
+                {"name": " "},
+                "x",
+            ],
+            "disliked_dishes": ["  Fiskefrikadeller ", "", None, "y" * 400] + ["a"] * 60,
+            "fixed_days": [{"weekday": 3, "text": "Rugbrødsdag"}, {"weekday": 1, "text": " "}],
+            "unknown_key": True,
+        }
+    )
+    assert settings["start_weekday"] == 6
+    assert settings["days"] == 1
+    assert settings["budget"] == 500
+    assert settings["organic"] == "prefer"
+    assert settings["organic_max_extra_pct"] == 0
+    assert settings["avoid"] == ["pork"]
+    assert settings["allergies"] == ["nuts"]
+    assert settings["pantry"] == ""
+    assert len(settings["wishes"]) == 2000
+    assert settings["ai_task_entity"] is None
+    assert settings["auto_generate"] is True
+    assert settings["egg_min"] == "caged"
+    assert settings["milk_organic"] is True
+    assert settings["household"] == [
+        {"role": "child", "age": 120, "sex": "female"},
+        {"role": "adult", "age": 30, "sex": "other"},
+    ]
+    assert settings["must_haves"] == [{"name": "Kaffe", "product_id": 123, "amount": 99}]
+    assert settings["disliked_dishes"][0] == "Fiskefrikadeller"
+    assert len(settings["disliked_dishes"][1]) == 300
+    assert len(settings["disliked_dishes"]) == 50
+    assert settings["fixed_days"] == [{"weekday": 3, "text": "Rugbrødsdag"}]
+    assert "unknown_key" not in settings
+
+
+async def test_store_round_trip(hass: HomeAssistant, hass_storage: dict[str, Any]) -> None:
+    """Settings, favourites and plans survive a restart."""
+    store = RemaPlanStore(hass, "entry")
+    await store.async_load()
+    assert store.latest_plan is None
+    await store.async_set_settings({"budget": 700})
+    fav = await store.async_save_favorite({"text": "Lasagne", "frequency": "weekly"})
+    await store.async_add_plan(make_plan())
+
+    again = RemaPlanStore(hass, "entry")
+    await again.async_load()
+    assert again.settings["budget"] == 700
+    assert again.favorites[0]["id"] == fav["id"]
+    assert again.latest_plan is not None
+    assert again.latest_plan["id"] == "plan-1"
+
+
+async def test_favorites(hass: HomeAssistant, hass_storage: dict[str, Any]) -> None:
+    """Favourites are due by their frequency."""
+    store = RemaPlanStore(hass, "entry")
+    weekly = await store.async_save_favorite({"text": "Tacos", "frequency": "weekly"})
+    monthly = await store.async_save_favorite({"text": "Lasagne", "frequency": "monthly"})
+    offer = await store.async_save_favorite({"text": "Laks", "frequency": "on_offer"})
+    unknown = await store.async_save_favorite({"text": "Suppe", "frequency": "daily"})
+    assert unknown["frequency"] == "inspiration"
+    with pytest.raises(ServiceValidationError):
+        await store.async_save_favorite({"text": "  "})
+
+    monthly["last_used"] = "2026-10-01"
+    due, optional = store.favorites_due(date(2026, 10, 18))
+    assert [f["id"] for f in due] == [weekly["id"]]
+    assert {f["id"] for f in optional} == {monthly["id"], offer["id"], unknown["id"]}
+
+    due, _ = store.favorites_due(date(2026, 11, 1))
+    assert monthly["id"] in [f["id"] for f in due]
+
+    changed = await store.async_save_favorite({"id": weekly["id"], "text": "Fisketacos"})
+    assert changed["text"] == "Fisketacos"
+    await store.async_delete_favorite(weekly["id"])
+    assert weekly["id"] not in [f["id"] for f in store.favorites]
+
+
+async def test_plans(hass: HomeAssistant, hass_storage: dict[str, Any]) -> None:
+    """Plans: newest first, at most MAX_PLANS, sent and deleted."""
+    store = RemaPlanStore(hass, "entry")
+    fav = await store.async_save_favorite({"text": "Spaghetti", "frequency": "weekly"})
+    plan = make_plan("p0", start="2026-10-04")
+    plan["days"][0]["favorite_id"] = fav["id"]
+    await store.async_add_plan(plan)
+    assert store.favorites[0]["last_used"] == "2026-10-04"
+
+    for week in range(MAX_PLANS + 2):
+        await store.async_add_plan(make_plan(f"p{week + 1}", start="2026-10-11"))
+    assert len(store.plans) == MAX_PLANS
+    assert store.latest_plan is not None
+    assert store.latest_plan["id"] == f"p{MAX_PLANS + 2}"
+    assert store.get_plan("p0") is None
+    assert store.plan_for_start(date(2026, 10, 11)) is store.latest_plan
+    assert store.plan_for_start(date(2026, 1, 1)) is None
+
+    await store.async_mark_sent("p5")
+    sent = store.get_plan("p5")
+    assert sent is not None
+    assert sent["status"] == "sent"
+    assert sent["sent_at"]
+    await store.async_mark_sent("missing")
+    await store.async_delete_plan("p5")
+    assert store.get_plan("p5") is None
+
+
+async def test_recent_dishes(hass: HomeAssistant, hass_storage: dict[str, Any]) -> None:
+    """Dishes from the weeks before a plan are not repeated."""
+    store = RemaPlanStore(hass, "entry")
+    await store.async_add_plan(make_plan("old", start="2026-09-01"))
+    await store.async_add_plan(make_plan("last", start="2026-10-11"))
+    recent = store.recent_dishes(date(2026, 10, 18), 3)
+    assert recent == [
+        "Spaghetti bolognese",
+        "Rester af spaghetti bolognese",
+        "Kyllingewok med broccoli",
+    ]
+    assert store.recent_dishes(date(2026, 10, 18), 0) == []

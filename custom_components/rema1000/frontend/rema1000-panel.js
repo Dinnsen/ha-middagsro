@@ -913,7 +913,7 @@ class Rema1000Panel extends HTMLElement {
               return `<li class="line">
                 ${p?.image ? `<img src="${esc(p.image)}" alt="" loading="lazy">` : '<span class="noimg">?</span>'}
                 <div class="what">
-                  <b>${esc(p ? p.name : line.name)}</b> ${badges}
+                  <span class="title"><b>${esc(p ? p.name : line.name)}</b> ${badges}</span>
                   <span class="muted">${esc(p?.underline || "Tilføjes som fritekst")}${need ? ` · behov ${esc(need)}` : ""}</span>
                   ${line.offer_name ? `<span class="muted">Avisvare: ${esc(line.offer_name)}</span>` : ""}
                   ${line.note ? `<span class="note">${esc(line.note)}</span>` : ""}
@@ -1360,6 +1360,7 @@ const STYLE = `
   .line img, .noimg { width: 48px; height: 48px; object-fit: contain; border-radius: 8px; background: #fff; }
   .noimg { display: flex; align-items: center; justify-content: center; color: var(--secondary-text-color); background: var(--secondary-background-color); }
   .what { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .what .title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
   .note { color: var(--rema-warn); font-size: 13px; }
   .cost { text-align: right; display: flex; flex-direction: column; font-size: 13px; color: var(--secondary-text-color); white-space: nowrap; }
   .cost b { color: var(--primary-text-color); font-size: 15px; }
@@ -1406,6 +1407,7 @@ const STYLE = `
   @media (max-width: 700px) {
     .recipe-grid { grid-template-columns: 1fr; }
     .day { grid-template-columns: 1fr; gap: 4px; }
+    .price { text-align: left; }
     .step-text { font-size: 18px; }
     .line { grid-template-columns: 40px 1fr; } .line .cost { grid-column: 2; text-align: left; flex-direction: row; gap: 8px; }
     .prod-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
