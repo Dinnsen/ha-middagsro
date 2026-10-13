@@ -321,6 +321,7 @@ class FakeAI:
         self.entities: list[str | None] = []
 
     async def __call__(self, hass: HomeAssistant, **kwargs: Any) -> SimpleNamespace:
+        await asyncio.sleep(0)  # like a real AI call, let the event loop run
         self.entities.append(kwargs["entity_id"])
         if kwargs["task_name"] == "REMA 1000 madplan":
             self.prompts.append(kwargs["instructions"])
@@ -335,7 +336,7 @@ class FakeAI:
 
 
 async def _generate(planner: mp.MealPlanner, ai: FakeAI, **kwargs: Any) -> None:
-    with patch("homeassistant.components.ai_task.async_generate_data", side_effect=ai):
+    with patch("homeassistant.components.ai_task.async_generate_data", new=ai):
         planner.async_start_generation(START, **kwargs)
         assert planner.generating
         await planner._task
@@ -532,14 +533,14 @@ async def test_regenerate_recipe(
 ) -> None:
     """One day's recipe can be written again."""
     planner = init_integration.runtime_data.planner
-    with patch("homeassistant.components.ai_task.async_generate_data", side_effect=FakeAI()):
+    with patch("homeassistant.components.ai_task.async_generate_data", new=FakeAI()):
         day = await planner.async_regenerate_recipe("old", "2026-10-11")
     assert day["tip"] == "Gem lidt pastavand."
 
     with (
         patch(
             "homeassistant.components.ai_task.async_generate_data",
-            side_effect=FakeAI(recipe=HomeAssistantError("busy")),
+            new=FakeAI(recipe=HomeAssistantError("busy")),
         ),
         pytest.raises(HomeAssistantError) as err,
     ):
