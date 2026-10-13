@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>REMA 1000 – demo</title>
+<!-- Shows the real panel with demo data and Home Assistant's look, for the README
+     screenshots. Open with ?theme=light|dark&tab=plan|recipes|shopping|favorites|history|settings -->
+<style>
+  :root {
+    --primary-color: #009ac7;
+    --text-primary-color: #ffffff;
+    --primary-background-color: #f5f6f8;
+    --secondary-background-color: #eceff3;
+    --card-background-color: #ffffff;
+    --ha-card-background: #ffffff;
+    --primary-text-color: #15181c;
+    --secondary-text-color: #5f6670;
+    --divider-color: rgba(20, 24, 28, 0.1);
+    --error-color: #d93a30;
+    --warning-color: #e08a00;
+    --success-color: #2f9e55;
+    --ha-card-border-radius: 16px;
+    --ha-card-box-shadow: 0 1px 2px rgba(20, 24, 28, 0.06), 0 4px 18px rgba(20, 24, 28, 0.05);
+    --app-header-background-color: #f5f6f8;
+    --app-header-text-color: #15181c;
+    --header-height: 56px;
+    --ha-font-family-body: Inter, system-ui, sans-serif;
+  }
+  :root[data-theme="dark"] {
+    --primary-color: #2bb6e3;
+    --text-primary-color: #0b1218;
+    --primary-background-color: #111316;
+    --secondary-background-color: #1d2126;
+    --card-background-color: #1a1d21;
+    --ha-card-background: #1a1d21;
+    --primary-text-color: #eef1f4;
+    --secondary-text-color: #a3abb5;
+    --divider-color: rgba(255, 255, 255, 0.1);
+    --error-color: #ff6b5e;
+    --warning-color: #f2a73b;
+    --success-color: #5cc985;
+    --ha-card-box-shadow: none;
+    --app-header-background-color: #111316;
+    --app-header-text-color: #eef1f4;
+  }
+  html, body { margin: 0; background: var(--primary-background-color); }
+  ha-menu-button { display: none; }
+</style>
+<script src="demo-data.js"></script>
+</head>
+<body>
+<script type="module">
+  const q = new URLSearchParams(location.search);
+  document.documentElement.dataset.theme = q.get("theme") || "light";
+  await import("../../custom_components/rema1000/frontend/rema1000-panel.js");
+  const D = window.DEMO;
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const handlers = {
+    "rema1000/state": () => D.state,
+    "rema1000/plan": () => D.state.latest_plan,
+    "rema1000/favorites": () => D.remaFavorites,
+    "rema1000/search": () => D.search,
+  };
+  const hass = {
+    language: "da",
+    callWS: async (msg) => {
+      await wait(5);
+      const fn = handlers[msg.type];
+      if (!fn) throw new Error(`No demo answer for ${msg.type}`);
+      return JSON.parse(JSON.stringify(fn(msg)));
+    },
+  };
+  const panel = document.createElement("rema1000-panel");
+  panel.panel = { config: { static_url: "../../custom_components/rema1000/frontend", version: "demo" } };
+  panel.narrow = q.get("narrow") === "1";
+  if (q.get("phone") === "1") {
+    // Room for the status bar and the home bar, like the app on the home screen.
+    panel.style.setProperty("--rema-safe-top", "50px");
+    panel.style.setProperty("--rema-safe-bottom", "22px");
+  }
+  document.body.append(panel);
+  panel.hass = hass;
+  await wait(60);
+  const tab = q.get("tab");
+  if (tab && tab !== "plan") panel._goTab(tab);
+  if (q.get("day")) {
+    panel._day = Number(q.get("day"));
+    panel._dayKey = panel._recipeKey();
+    panel._render();
+  }
+  if (q.get("tick")) {
+    // Show a recipe in use: some ingredients ticked off and a timer running.
+    const plan = D.state.latest_plan;
+    const key = `${plan.id}|${plan.days[panel._day || 0].date}`;
+    for (const id of q.get("tick").split(",")) panel._checked[`${key}|${id}`] = true;
+    if (q.get("timer")) panel._timers[`${key}|${q.get("timer")}`] = Date.now() + 37 * 60000 + 12000;
+    panel._render();
+  }
+  if (tab === "favorites") await wait(80);
+  if (q.get("open")) panel.shadowRoot.querySelectorAll("details").forEach((d) => (d.open = true));
+  document.body.dataset.ready = "1";
+</script>
+</body>
+</html>
