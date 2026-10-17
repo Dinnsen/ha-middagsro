@@ -386,6 +386,19 @@ async def test_requests_and_retries() -> None:
     session.on("GET", url, FakeResponse(data={"data": [{"name": "no id"}, {"id": 2, "name": "B"}]}))
     assert [p.id for p in await client.async_search_products("a")] == [2]
 
+    # Priced as of a later time: next week's avis price is the price then.
+    prices = [
+        {"price": 20, "starting_at": "2026-01-01T00:00:00Z", "ending_at": None},
+        {"price": 15, "is_advertised": True, "starting_at": "2099-01-04T00:00:00Z",
+         "ending_at": "2099-01-10T22:00:00Z"},
+    ]  # fmt: skip
+    session.on("GET", url, FakeResponse(data={"data": [{"id": 3, "name": "C", "prices": prices}]}))
+    [now] = await client.async_search_products("c")
+    assert (now.price, now.upcoming_price) == (20, 15)
+    session.on("GET", url, FakeResponse(data={"data": [{"id": 3, "name": "C", "prices": prices}]}))
+    [later] = await client.async_search_products("c", at=datetime(2099, 1, 5, tzinfo=UTC))
+    assert (later.price, later.normal_price, later.is_advertised) == (15, 20, True)
+
 
 async def test_shopping_lists() -> None:
     """Find the primary list and change items."""

@@ -153,7 +153,7 @@ CATALOGUE = [
 ]
 
 
-async def fake_search(query: str, limit: int = 24) -> list[Product]:
+async def fake_search(query: str, limit: int = 24, at: datetime | None = None) -> list[Product]:
     """A small product search over CATALOGUE, like REMA's (word match)."""
     words = [w for w in query.lower().replace(".", " ").split() if len(w) > 1]
     names = {"oksekød": "okse", "kylling": "kylling", "mælk": "mælk"}

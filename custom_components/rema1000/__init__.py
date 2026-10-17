@@ -17,6 +17,7 @@ from .coordinator import (
     RemaRuntimeData,
     RemaShoppingListCoordinator,
 )
+from .favorites import FavoriteOffers
 from .mealplan import MealPlanner
 from .panel import async_register_panel, async_unregister_panel
 from .services import async_setup_services
@@ -78,7 +79,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
         hass, entry.entry_id, client, store, catalogs, shopping_list.async_add_items
     )
     entry.runtime_data = RemaRuntimeData(
-        client=client, shopping_list=shopping_list, offers=offers, store=store, planner=planner
+        client=client,
+        shopping_list=shopping_list,
+        offers=offers,
+        store=store,
+        planner=planner,
+        favorite_offers=FavoriteOffers(client),
     )
 
     @callback
