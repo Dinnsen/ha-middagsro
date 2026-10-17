@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [0.5.1] - 2026-10-17
+
+### Changed
+- The knife and fork sit in the centre of the round badge on the icon (panel, HACS and the home-screen app).
+
 ## [0.5.0] - 2026-10-17
 
 ### Added
