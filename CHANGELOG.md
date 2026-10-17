@@ -2,6 +2,12 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [0.5.6] - 2026-10-17
+
+### Fixed
+- **Avis offers are matched strictly** to REMA's products, in meal plans and in the favourites. A product only gets an offer's price when the offer is for that very product: every word of its name is in the offer, the brand fits (REMA's own cream doesn't get the price of Karolines Køkken's), the size is in the offer's range, the fat percentage is the same (8-12%, not 15-18%) and organic matches organic. Before, a loose match put wrong products and prices on the list, e.g. smoked salmon for a salmon fillet offer, an egg stand for eggs, and many wrong favourites next week. A favourite or item that doesn't fit an offer is better shown at its normal price than at someone else's.
+- **Meal plans:** an item built on an offer gets the product that offer is for (also searching for the offer's own name), and otherwise the best normal match. Weighed items are matched to products sold by weight, so 3 kg potatoes are no longer one sweet potato. Short words only match the end of a compound word (*æg* is *skrabeæg*, not *æggestand*).
+
 ## [0.5.5] - 2026-10-17
 
 ### Changed

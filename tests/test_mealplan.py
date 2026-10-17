@@ -509,6 +509,97 @@ async def test_late_offer_bought_on_its_day(
     assert seen["hakket oksekød"] == datetime(2026, 10, 18, 10, tzinfo=UTC)
 
 
+def _offer(heading: str, description: str | None = None) -> Offer:
+    return Offer(id=heading, heading=heading, description=description, price=10, pre_price=None,
+                 quantity=None, valid_from=None, valid_to=None)  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("name", "underline", "organic", "heading", "description", "fits"),
+    [
+        # Real offers from REMA's avis and the products that were wrongly matched to them.
+        ("NORSK RØGET LAKS", "50 GR. / REMA 1000", False, "REMA 1000 Laksefilet", "600 g", False),
+        ("LAKSEFILET", "600 GR. / REMA 1000", False, "REMA 1000 Laksefilet", "600 g", True),
+        ("ÆGGESTAND", "125 GR. / REMA 1000", False, "Æg", "Økologiske\n10 stk.", False),
+        ("SKRABEÆG", "15 STK. / STR. S/M", False, "Æg", "Økologiske\n10 stk.", False),
+        ("ØKOLOGISKE ÆG", "10 STK. / REMA 1000", True, "Æg", "Økologiske\n10 stk.", True),
+        ("GRILLET MADBRØD", "600 GR. / REMA 1000", False, "Schulstad Det Gode brød",
+         "350-950 g", False),
+        ("SOLSIKKERUGBRØD", "950 GR. / SCHULSTAD, DG", False, "Schulstad Det Gode brød",
+         "350-950 g", True),
+        ("SOLSIKKERUGBRØD", "750 GR. / KOHBERG", False, "Schulstad Det Gode brød",
+         "350-950 g", False),
+        ("GULERØDDER", "1 KG. / DANMARK KL. 1", False, "Mini madspildsgulerødder", "500 g", False),
+        ("HK. OKSEKØD 15-18%", "400 GR. / REMA 1000", False,
+         "REMA 1000 Hakket dansk oksekød 8-12% eller ungkvæg i tern", "300-400 g", False),
+        ("HK. OKSEKØD 8-12%", "400 GR. / REMA 1000", False,
+         "REMA 1000 Hakket dansk oksekød 8-12% eller ungkvæg i tern", "300-400 g", True),
+        ("BACONLEVERPOSTEJ", "200 GR. / TULIP", False,
+         "REMA 1000 Frilandsgris Leverpostej eller krydderpaté", "250 g", False),
+        ("LEVERPOSTEJ", "250 GR. / REMA 1000", False,
+         "REMA 1000 salami, leverpostej eller Taga serrano", "60-250 g", True),
+        ("EDAMAME BØNNER", "300 GR. / REMA 1000", False,
+         "Peter Larsen eller Löfbergs kaffe eller hele bønner", "400 g", False),
+        ("PEPSI MAX", "1.98 LTR. / 6 PK.", False, "Pepsi Max eller Faxe Kondi", "1,5 l", False),
+        ("KLOVBORG 45+", "240 GR. / MELLEMLAGRET, SKIVER", False,
+         "Arla Klovborg eller Cheasy skæreost", "467-747 g", False),
+        ("PUCK", "200 GR. / HVID OST", False, "PUCK hvid ost", "200 g", True),
+        ("KÆRGÅRDEN SMØRBAR", "200 GR. / LET", False, "Kærgården", "200 g", True),
+        ("LØG", "1 KG. / DANMARK KL. 1", False, "Løg", "1 kg", True),
+        ("RØDLØG", "500 GR. / HOLLAND", False, "Løg", "1 kg", False),
+        ("PISKEFLØDE 36%", "0.25 LTR. / REMA 1000", False, "Karolines Køkken Piskefløde 36%",
+         "250 ml", False),
+        ("PISKEFLØDE 36%", "0.25 LTR. / KAROLINES KØKKEN", False,
+         "Karolines Køkken Piskefløde 36%", "250 ml", True),
+        ("LYSKÆDE", "1 STK. / 80 LED", False, "Lyskæde eller klyngelyskæde", None, True),
+        ("ÆG", None, False, "Æg", "Økologiske eller konventionelle", True),
+        ("1,5% FEDT", None, False, "Letmælk 1,5%", None, False),
+    ],
+)  # fmt: skip
+def test_avis_match(
+    name: str, underline: str, organic: bool, heading: str, description: str | None, fits: bool
+) -> None:
+    """Only the very product an avis offer is for gets its price."""
+    assert mp.avis_match(name, underline, organic, _offer(heading, description)) is fits
+
+
+def test_offer_query_and_short_words() -> None:
+    """The offer's own part is searched for; 'æg' is not 'æggestand'."""
+    heading = "REMA 1000 salami, leverpostej eller Taga serrano"
+    assert mp.offer_query(_offer(heading), "Leverpostej") == "leverpostej"
+    assert mp.offer_query(_offer("REMA 1000 Laksefilet"), "Laks") == "Laksefilet"
+    assert mp.name_fit(["æg"], "ÆGGESTAND")[0] == 0
+    assert mp.name_fit(["æg"], "SKRABEÆG")[0] == 1
+    assert mp.name_fit(["laks"], "LAKSEFILET")[0] == 1
+
+
+async def test_offer_line_gets_the_offer_product(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """A line built on an offer gets that offer's product, or a normal match."""
+    planner = init_integration.runtime_data.planner
+    eggs: dict[str, Any] = {"name": "Æg", "search": "æg", "amount": 10, "unit": "stk"}
+    await planner._async_match(eggs, None, _offer("Æg", "Økologiske\n10 stk."))
+    assert eggs["product"]["name"] == "ØKOLOGISKE ÆG"  # the offer, not the cheaper frilandsæg
+
+    # The offer is for something REMA doesn't have under that name: a normal match.
+    onions: dict[str, Any] = {"name": "Løg", "search": "løg", "amount": 1, "unit": "kg"}
+    await planner._async_match(onions, None, _offer("Mini madspildsgulerødder", "500 g"))
+    assert onions["product"]["name"] == "LØG"
+
+    # 3 kg potatoes are not one sweet potato sold per piece.
+    sweet = make_product(1, "SØDE KARTOFLER", 5.0, underline="1 STK.")
+    potatoes = make_product(2, "KARTOFLER", 20.0, underline="2 KG / DANMARK")
+
+    async def search(query: str, limit: int = 24, at: datetime | None = None) -> list[Any]:
+        return [sweet, potatoes]
+
+    mock_client.async_search_products.side_effect = search
+    line: dict[str, Any] = {"name": "Kartofler", "search": "kartofler", "amount": 3, "unit": "kg"}
+    await planner._async_match(line)
+    assert (line["product"]["name"], line["packages"]) == ("KARTOFLER", 2)
+
+
 async def test_avis_price_until_rema_has_it(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:

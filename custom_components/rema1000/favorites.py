@@ -17,12 +17,11 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .api import DANISH_TIME, Catalog, Offer, Product, RemaClient, RemaError, parse_time
-from .mealplan import _NEUTRAL_WORDS, _tokens
+from .mealplan import avis_match
 
 _LOGGER = logging.getLogger(__name__)
 
 CACHE_SECONDS = 900
-MIN_SHARE = 0.5  # share of a favourite's words that must be in the avis text
 
 
 def on_offer(product: Product) -> bool:
@@ -34,40 +33,16 @@ def on_offer(product: Product) -> bool:
     )
 
 
-def _words(text: str) -> set[str]:
-    """Words that say what a product is (no sizes, numbers or neutral words)."""
-    return {w for w in _tokens(text) if len(w) > 2 and w not in _NEUTRAL_WORDS}
-
-
-def _fits(word: str, avis: set[str]) -> bool:
-    return word in avis or any(
-        len(a) > 3 and len(word) > 3 and (a in word or word in a) for a in avis
-    )
-
-
 def match_offer(product: Product, offers: list[Offer]) -> Offer | None:
-    """The avis offer that is this favourite, if any.
+    """The avis offer that is this very favourite, if any.
 
-    The avis names things its own way ("Karolines Køkken Piskefløde 36%" for
-    "PISKEFLØDE 36%"), so the offer must contain at least half of the
-    favourite's words, one of them a real word, and the best one wins.
+    Strict (see ``avis_match``): a wrong match shows a wrong price, so a
+    favourite is better left out than matched to something else.
     """
-    words = _words(product.name)
-    if not words:
-        return None
-    best: tuple[float, Offer] | None = None
-    for offer in offers:
-        first_line = (offer.description or "").split("\n")[0]
-        avis = _words(f"{offer.heading} {first_line}")
-        found = [w for w in words if _fits(w, avis)]
-        share = len(found) / len(words)
-        if (
-            share >= MIN_SHARE
-            and any(len(w) > 3 for w in found)
-            and (best is None or share > best[0])
-        ):
-            best = (share, offer)
-    return best[1] if best else None
+    return next(
+        (o for o in offers if avis_match(product.name, product.underline, product.is_organic, o)),
+        None,
+    )
 
 
 def offer_start(offer: Offer) -> datetime | None:

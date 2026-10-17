@@ -12,11 +12,14 @@ from custom_components.rema1000.favorites import FavoriteOffers, match_offer, of
 from .conftest import CURRENT, UPCOMING, make_product
 
 NOW = datetime(2026, 10, 14, 10, 0, tzinfo=UTC)  # wednesday of week 42
-MILK = make_product(20494, "LETMÆLK 1,5% FEDT", 10.95)
-CREAM = make_product(41001, "PISKEFLØDE 36%", 12.95)
-PATE = make_product(42001, "STOR LEVERPOSTEJ", 18.0)
+MILK = make_product(20494, "LETMÆLK 1,5% FEDT", 10.95, underline="1 LTR. / ARLA", is_organic=True)
+CREAM = make_product(41001, "PISKEFLØDE 36%", 12.95, underline="0.25 LTR. / KAROLINES KØKKEN")
+PATE = make_product(42001, "LEVERPOSTEJ", 18.0, underline="500 GR. / REMA 1000")
+OTHER_PATE = make_product(
+    42002, "STOR LEVERPOSTEJ", 22.0, underline="400 GR. / SLAGTER MESTER ANDERSEN"
+)
 BEEF_SALE = make_product(30001, "HK. OKSEKØD 8-12%", 40.0, normal_price=50.0, is_advertised=True)
-CHIPS = make_product(80001, "HAVSALT CHIPS", 20.0)
+CHIPS = make_product(80001, "KIMS CHIPS", 20.0, underline="170 GR. / KIMS")
 
 
 def offer(heading: str, price: float, start: str, **kwargs: Any) -> Offer:
@@ -48,11 +51,13 @@ NEXT_WEEK = [
 
 
 def test_matching() -> None:
-    """Favourites are found in the avis by their words, and only real matches."""
+    """Favourites are found in the avis only when the offer is for that very product."""
     assert on_offer(BEEF_SALE)
     assert not on_offer(MILK)
     assert match_offer(CREAM, NEXT_WEEK) is NEXT_WEEK[0]
-    assert match_offer(PATE, NEXT_WEEK) is NEXT_WEEK[1]  # "stor" is not in the avis, half is
+    assert match_offer(PATE, NEXT_WEEK) is NEXT_WEEK[1]
+    assert match_offer(OTHER_PATE, NEXT_WEEK) is None  # another brand's, and "stor"
+    assert match_offer(make_product(2, "PISKEFLØDE 36%", 9.0), NEXT_WEEK) is None  # REMA's own
     assert match_offer(CHIPS, THIS_WEEK) is THIS_WEEK[1]
     assert match_offer(BEEF_SALE, NEXT_WEEK) is None
     assert match_offer(make_product(1, "1,5% FEDT", 9.0), NEXT_WEEK) is None  # no real words
@@ -74,7 +79,7 @@ async def test_this_and_next_week(freezer: Any) -> None:
     # Wednesday: the beef is on offer in REMA; the chips only from thursday (avis).
     result = await favorites.async_on_offer(products, CURRENT)
     assert [(p["name"], p["price"], p["offer_from"]) for p in result] == [
-        ("HAVSALT CHIPS", 14, "2026-10-15T00:00:00+00:00"),
+        ("KIMS CHIPS", 14, "2026-10-15T00:00:00+00:00"),
         ("HK. OKSEKØD 8-12%", 40.0, None),
     ]
     assert result[0]["avis"] == "KiMs chips eller snacks"
@@ -87,7 +92,7 @@ async def test_this_and_next_week(freezer: Any) -> None:
     assert [(p["name"], p["price"], p["normal_price"], p["offer_from"]) for p in result] == [
         ("LETMÆLK 1,5% FEDT", 9, 10.95, None),
         ("PISKEFLØDE 36%", 10, 14.95, None),
-        ("STOR LEVERPOSTEJ", 10, 18.0, "2026-10-22T00:00:00+00:00"),
+        ("LEVERPOSTEJ", 10, 18.0, "2026-10-22T00:00:00+00:00"),
     ]
 
     # Thursday 02:00: the chips are in REMA's prices now, not from the avis.

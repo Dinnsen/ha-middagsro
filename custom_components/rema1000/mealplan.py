@@ -262,27 +262,146 @@ def _tokens(text: str) -> list[str]:
     return [_ABBREVIATIONS.get(w, w) for w in words]
 
 
-def offer_fits(name: str, organic: bool, offer: Offer) -> bool:
-    """Is a REMA product what an avis offer is for?
+# Words in REMA's underline that say where a product is from, not its brand.
+_ORIGINS = {
+    "danmark", "dansk", "danske", "land", "kl", "egypten", "spanien", "holland", "italien",
+    "norge", "norsk", "tyskland", "frankrig", "sverige", "polen", "marokko", "peru", "chile",
+    "portugal", "grækenland", "tyrkiet", "brasilien", "colombia", "ecuador", "costa", "israel",
+    "sydafrika", "kenya", "new", "argentina", "mexico", "irland", "belgien", "udenlandsk",
+}  # fmt: skip
+# Words in an avis heading that describe rather than name a product or brand.
+_AVIS_WORDS = _NEUTRAL_WORDS | {
+    "eller", "pr", "partivare", "max", "frost", "dybfrost", "ca", "stk", "pak", "nyhed",
+    "konventionelle", "økologiske", "udenlandske", "udenlandsk",
+}  # fmt: skip
+_PERCENT = re.compile(r"(\d+(?:[.,]\d+)?(?:\s*-\s*\d+(?:[.,]\d+)?)?)\s*%")
+_RANGE = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*(?:-\s*(\d+(?:[.,]\d+)?))?\s*(KG|GR|G|LTR|LITER|L|ML|CL|DL)\b",
+    re.IGNORECASE,
+)
 
-    At least half of the product's words must be in the offer's text, and an
-    organic product only fits an offer that says it is organic.
+
+def _stem(word: str) -> str:
+    """A word without its Danish plural/definite ending, to compare names."""
+    for ending in ("erne", "ene", "er", "e", "r"):
+        if word.endswith(ending) and len(word) - len(ending) >= 4:
+            return word[: -len(ending)]
+    return word
+
+
+def _name_words(text: str) -> set[str]:
+    return {_stem(w) for w in _tokens(text) if len(w) > 1 and w not in _NEUTRAL_WORDS}
+
+
+def _brand(underline: str | None) -> str | None:
+    """The brand in REMA's underline ('500 GR. / KAROLINES KØKKEN' -> karolines)."""
+    if not underline or "/" not in underline:
+        return None
+    words = _tokens(underline.split("/", 1)[1])
+    if not words or words[0] in _ORIGINS or words[0] == "økologisk":
+        return None
+    return words[0]
+
+
+def _sizes(text: str) -> tuple[str, float, float] | None:
+    """The size or size range an avis offer is for, in g or ml."""
+    found: list[tuple[str, float, float]] = []
+    for low, high, unit in _RANGE.findall(text):
+        a = to_base(float(low.replace(",", ".")), unit)
+        b = to_base(float((high or low).replace(",", ".")), unit)
+        if a and b:
+            found.append((a[0], a[1], b[1]))
+    if not found:
+        return None
+    base = found[0][0]
+    same = [f for f in found if f[0] == base]
+    return base, min(f[1] for f in same), max(f[2] for f in same)
+
+
+def _percents(text: str) -> set[str]:
+    return {re.sub(r"\s+", "", p).replace(",", ".") for p in _PERCENT.findall(text)}
+
+
+def avis_match(name: str, underline: str | None, organic: bool, offer: Offer) -> bool:
+    """Is a REMA product the very product an avis offer is for?
+
+    Strict, because a wrong match puts a wrong price on the list:
+    - every word of the product's name is in the offer's heading (a compound
+      like "rugbrød" for "brød" only when the offer names the product's brand;
+      any variety when the heading is just the product's name, "Kærgården"),
+    - unless the heading names the product's brand, the product's part of it
+      ("X, Y eller Z") names nothing the product isn't (another brand, another
+      variety),
+    - the size is within the offer's size or range,
+    - fat percentages (8-12%) are the same,
+    - organic matches organic.
     """
-    text = (
-        f"{offer.heading} {(offer.description or '').splitlines()[0] if offer.description else ''}"
+    return _avis_name_fits(name, underline, offer) and _avis_details_fit(
+        name, underline, organic, offer
     )
-    avis = {w for w in _tokens(text) if len(w) > 2 and w not in _NEUTRAL_WORDS}
-    words = {w for w in _tokens(name) if len(w) > 2 and w not in _NEUTRAL_WORDS}
+
+
+def _avis_name_fits(name: str, underline: str | None, offer: Offer) -> bool:
+    heading = _tokens(offer.heading)
+    heading_words = {_stem(w) for w in heading if len(w) > 1}
+    brand = _brand(underline)
+    # REMA's underline has the brand after the size, but often a variety
+    # instead ("200 GR. / LET"): only a brand the heading names counts.
+    branded = bool(brand and brand != "rema" and brand in heading)
+    words = _name_words(name)
     if not words:
         return False
-    found = [
-        w
-        for w in words
-        if w in avis or any(len(a) > 3 and len(w) > 3 and (a in w or w in a) for a in avis)
-    ]
-    if len(found) / len(words) < 0.5:
+    named = [w for w in heading if len(w) > 2 and w not in _AVIS_WORDS]
+    first = _name_words(_tokens(name)[0]) if _tokens(name) else set()
+    if len(named) == 1 and {_stem(named[0])} == first:
+        words = first  # "Kærgården": the whole line of the product, any variety
+    for word in words:
+        # "rugbrød" in "Schulstad Det Gode brød": the offer is for the brand's range.
+        if word not in heading_words and not (
+            branded and any(len(h) > 3 and word.endswith(h) for h in heading_words)
+        ):
+            return False
+    if branded:
+        return True
+    parts = re.split(r",|\beller\b", offer.heading, flags=re.IGNORECASE)
+    own = max(parts, key=lambda part: len(words & _name_words(part)))
+    return not any(
+        len(w) > 2 and w not in _AVIS_WORDS and _stem(w) not in words for w in _tokens(own)
+    )
+
+
+def _avis_details_fit(name: str, underline: str | None, organic: bool, offer: Offer) -> bool:
+    text = f"{offer.heading}\n{offer.description or ''}"
+    size = package_size(underline)
+    avis_size = _sizes(f"{offer.description or ''} {offer.quantity or ''}")
+    if (
+        size
+        and avis_size
+        and size[0] == avis_size[0]
+        and not avis_size[1] * 0.9 <= size[1] <= avis_size[2] * 1.1
+    ):
         return False
-    return not organic or "økologisk" in _tokens(f"{offer.heading} {offer.description or ''}")
+    offer_percents = _percents(text)
+    product_percents = _percents(name)
+    if offer_percents and product_percents and not product_percents & offer_percents:
+        return False
+    words = _tokens(text)
+    if "økologisk" in words:
+        return organic or any(w.startswith("konventionel") for w in words)
+    return not organic
+
+
+def offer_query(offer: Offer, name: str = "") -> str:
+    """REMA search words for the part of an avis offer a line is about.
+
+    'REMA 1000 salami, leverpostej eller Taga serrano' for 'leverpostej' ->
+    'leverpostej'; 'REMA 1000 Laksefilet' -> 'Laksefilet'.
+    """
+    heading = re.sub(r"^REMA 1000\s+", "", offer.heading.strip(), flags=re.IGNORECASE)
+    parts = [p.strip() for p in re.split(r",|\beller\b", heading, flags=re.IGNORECASE)]
+    wanted = _name_words(name)
+    best = max(parts, key=lambda part: len(wanted & _name_words(part)))
+    return best or heading or offer.heading
 
 
 def search_queries(line: dict[str, Any]) -> list[str]:
@@ -320,7 +439,15 @@ def name_fit(search_words: list[str], product_name: str) -> tuple[int, float]:
         if word in name:
             matched += 1
             continue
-        compound = next((t for t in name if t.startswith(word) or t.endswith(word)), None)
+        compound = next(
+            (
+                t
+                for t in name
+                # A short word only at the end: skrabeæg is æg, æggestand isn't.
+                if t.endswith(word) or (t.startswith(word) and len(word) > 3)
+            ),
+            None,
+        )
         if compound is None:
             continue
         matched += 1
@@ -1039,9 +1166,10 @@ class MealPlanner:
 
         async def match(line: dict[str, Any]) -> None:
             day = line["buy_from"]
+            offer = by_id.get(str(line.get("offer") or ""))
             async with semaphore:
-                await self._async_match(line, noon(date.fromisoformat(day)) if day else at)
-            self._avis_price(line, by_id.get(str(line.get("offer") or "")))
+                await self._async_match(line, noon(date.fromisoformat(day)) if day else at, offer)
+            self._avis_price(line, offer)
 
         await asyncio.gather(*(match(line) for line in shopping))
         total = round(sum(line.get("cost") or 0 for line in shopping), 2)
@@ -1137,13 +1265,15 @@ class MealPlanner:
             return await self.client.async_search_products(query, 15)
         return await self.client.async_search_products(query, 15, at=at)
 
-    async def _async_match(self, line: dict[str, Any], at: datetime | None = None) -> None:
+    async def _async_match(
+        self, line: dict[str, Any], at: datetime | None = None, offer: Offer | None = None
+    ) -> None:
         """Pick a REMA product for a shopping line and price it (now, or at a time)."""
         line.update(product=None, packages=1, cost=None, note=None)
         try:
             products = await self._async_search(line["search"], at)
             if not line.get("product_id") and not line.get("must_have"):
-                await self._async_match_by_name(line, products, at)
+                await self._async_match_by_name(line, products, at, offer)
                 return
             if not products and line["search"] != line["name"]:
                 products = await self._async_search(line["name"], at)
@@ -1193,29 +1323,45 @@ class MealPlanner:
         first: list[Product],
         require: Callable[[Product], bool] | None,
         at: datetime | None = None,
+        offer: Offer | None = None,
     ) -> tuple[list[Product], dict[int, float]]:
-        """Try the search terms in turn until a product matches by name."""
-        for idx, query in enumerate(search_queries(line)):
-            if idx == 0:
-                products = first
-            else:
-                try:
-                    products = await self._async_search(query, at)
-                except RemaError:
-                    continue
-            candidates, penalty = self._candidates(line, products, query, require)
-            if candidates:
-                return candidates, penalty
+        """Try the search terms in turn until a product matches by name.
+
+        With an avis offer, first look for the product the offer is for (also
+        searching for the offer's own name); only then for anything that fits.
+        """
+        queries = search_queries(line)
+        found: dict[str, list[Product]] = {queries[0]: first}
+        passes: list[tuple[Offer | None, list[str]]] = []
+        if offer is not None:
+            passes.append((offer, [*queries, offer_query(offer, line["name"])]))
+        passes.append((None, queries))
+        for this_offer, terms in passes:
+            for query in terms:
+                if query not in found:
+                    try:
+                        found[query] = await self._async_search(query, at)
+                    except RemaError:
+                        found[query] = []
+                candidates, penalty = self._candidates(
+                    line, found[query], query, require, this_offer
+                )
+                if candidates:
+                    return candidates, penalty
         return [], {}
 
     async def _async_match_by_name(
-        self, line: dict[str, Any], first: list[Product], at: datetime | None = None
+        self,
+        line: dict[str, Any],
+        first: list[Product],
+        at: datetime | None = None,
+        offer: Offer | None = None,
     ) -> None:
         """Choose the best product by name, the family's rules and price."""
         requirement = self._requirement(line)
         require = requirement[0] if requirement else None
         note: str | None = None
-        candidates, penalty = await self._async_search_candidates(line, first, require, at)
+        candidates, penalty = await self._async_search_candidates(line, first, require, at, offer)
         if not candidates and requirement:
             # None of the usual results meet the rule: search for it directly.
             for query in requirement[2]:
@@ -1236,6 +1382,14 @@ class MealPlanner:
             # Better a free-text line than a wrong product.
             line["note"] = "Ingen sikker vare fundet – tilføjes som fritekst"
             return
+        need = to_base(line["amount"], line["unit"]) if line.get("amount") else None
+        if need and need[0] in ("g", "ml"):
+            # 3 kg potatoes: only products whose size can be counted in kg,
+            # not one sweet potato sold per piece.
+            comparable = [
+                p for p in candidates if (size := package_size(p.underline)) and size[0] == need[0]
+            ]
+            candidates = comparable or candidates
 
         def package_cost(product: Product) -> float:
             return packages_needed(line["amount"], line["unit"], product) * (product.price or 0)
@@ -1292,9 +1446,13 @@ class MealPlanner:
         products: list[Product],
         query: str,
         require: Callable[[Product], bool] | None = None,
+        offer: Offer | None = None,
     ) -> tuple[list[Product], dict[int, float]]:
         """Products that really are what the line asks for, and a price penalty
-        for each (extra words in the name make a product a worse fit)."""
+        for each (extra words in the name make a product a worse fit).
+
+        With an avis offer, only the products that offer is for.
+        """
         priced = [p for p in products[:12] if p.price and (require is None or require(p))]
         if not priced:
             return [], {}
@@ -1304,16 +1462,15 @@ class MealPlanner:
         fits = {p.id: name_fit(words, p.name) for p in priced}
         penalty = {pid: fit[1] for pid, fit in fits.items()}
 
-        # The AI built the dish on an offer: if a matching product is on offer, use it.
-        if line.get("offer"):
-            on_offer = [
+        if offer is not None:
+            # The AI built the dish on this avis offer: only the product it is
+            # for, and only if that is also what the line asks for.
+            fitting = [
                 p
                 for p in priced
-                if (p.is_advertised or p.is_campaign)
-                and any(w in "".join(_tokens(p.name)) for w in words)
+                if fits[p.id][0] and avis_match(p.name, p.underline, p.is_organic, offer)
             ]
-            if on_offer:
-                return self._free_from(on_offer), penalty
+            return (self._free_from(fitting), penalty) if fitting else ([], penalty)
 
         best = max(fit[0] for fit in fits.values())
         if best == 0:
@@ -1352,8 +1509,13 @@ class MealPlanner:
             return  # REMA already has the offer
         if product.get("price") and product["price"] <= offer.price:
             return  # REMA's own price is lower anyway
-        if not offer_fits(product.get("name") or "", bool(product.get("is_organic")), offer):
-            return  # another product than the one on offer (e.g. organic)
+        if not avis_match(
+            product.get("name") or "",
+            product.get("underline"),
+            bool(product.get("is_organic")),
+            offer,
+        ):
+            return  # another product than the one on offer
         product["normal_price"] = product.get("price")
         product["price"] = offer.price
         product["is_advertised"] = True
