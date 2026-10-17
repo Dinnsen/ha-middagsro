@@ -272,11 +272,11 @@ _ORIGINS = {
 # Words in an avis heading that describe rather than name a product or brand.
 _AVIS_WORDS = _NEUTRAL_WORDS | {
     "eller", "pr", "partivare", "max", "frost", "dybfrost", "ca", "stk", "pak", "nyhed",
-    "konventionelle", "økologiske", "udenlandske", "udenlandsk",
+    "konventionelle", "økologiske", "udenlandske", "udenlandsk", "fersk", "ferske",
 }  # fmt: skip
 _PERCENT = re.compile(r"(\d+(?:[.,]\d+)?(?:\s*-\s*\d+(?:[.,]\d+)?)?)\s*%")
 _RANGE = re.compile(
-    r"(\d+(?:[.,]\d+)?)\s*(?:-\s*(\d+(?:[.,]\d+)?))?\s*(KG|GR|G|LTR|LITER|L|ML|CL|DL)\b",
+    r"(\d+(?:[.,]\d+)?)\s*(?:-\s*(\d+(?:[.,]\d+)?))?\s*(KG|GR|G|LTR|LITER|L|ML|CL|DL|STK)\b",
     re.IGNORECASE,
 )
 
@@ -304,7 +304,7 @@ def _brand(underline: str | None) -> str | None:
 
 
 def _sizes(text: str) -> tuple[str, float, float] | None:
-    """The size or size range an avis offer is for, in g or ml."""
+    """The size or size range an avis offer is for, in g, ml or pieces."""
     found: list[tuple[str, float, float]] = []
     for low, high, unit in _RANGE.findall(text):
         a = to_base(float(low.replace(",", ".")), unit)
@@ -353,8 +353,10 @@ def _avis_name_fits(name: str, underline: str | None, offer: Offer) -> bool:
         return False
     named = [w for w in heading if len(w) > 2 and w not in _AVIS_WORDS]
     first = _name_words(_tokens(name)[0]) if _tokens(name) else set()
-    if len(named) == 1 and {_stem(named[0])} == first:
-        words = first  # "Kærgården": the whole line of the product, any variety
+    if len(named) == 1 and {_stem(named[0])} == first and _same_size(underline, offer):
+        # "Kærgården" (200 g): the whole line of the product, any variety.
+        # Only with the same kind of size: "Æbler" (1 stk.) is no apple juice.
+        words = first
     for word in words:
         # "rugbrød" in "Schulstad Det Gode brød": the offer is for the brand's range.
         if word not in heading_words and not (
@@ -365,9 +367,20 @@ def _avis_name_fits(name: str, underline: str | None, offer: Offer) -> bool:
         return True
     parts = re.split(r",|\beller\b", offer.heading, flags=re.IGNORECASE)
     own = max(parts, key=lambda part: len(words & _name_words(part)))
+    if heading and heading[0] != "rema":
+        # "Lotus Premium Toiletpapir eller køkkenruller": the brand in front
+        # is for every part, so not REMA's own køkkenruller.
+        own = f"{' '.join(_tokens(parts[0])[:-1])} {own}"
     return not any(
         len(w) > 2 and w not in _AVIS_WORDS and _stem(w) not in words for w in _tokens(own)
     )
+
+
+def _same_size(underline: str | None, offer: Offer) -> bool:
+    """The product and the offer both have a size, of the same kind (g, ml, stk)."""
+    size = package_size(underline)
+    avis_size = _sizes(f"{offer.description or ''} {offer.quantity or ''}")
+    return bool(size and avis_size and size[0] == avis_size[0])
 
 
 def _avis_details_fit(name: str, underline: str | None, organic: bool, offer: Offer) -> bool:

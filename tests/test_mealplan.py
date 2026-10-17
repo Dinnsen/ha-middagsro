@@ -555,6 +555,13 @@ def _offer(heading: str, description: str | None = None) -> Offer:
          "Karolines Køkken Piskefløde 36%", "250 ml", True),
         ("LYSKÆDE", "1 STK. / 80 LED", False, "Lyskæde eller klyngelyskæde", None, True),
         ("ÆG", None, False, "Æg", "Økologiske eller konventionelle", True),
+        ("ØKOLOGISKE ÆG", "8 STK. / REMA 1000", True, "Æg", "Økologiske\n10 stk.", False),
+        ("ÆBLE JUICE", "1 LTR. / REMA 1000", False, "Æbler", "1 stk.", False),
+        ("KØKKENRULLER", "484 GR. / REMA 1000 SOFT", False,
+         "Lotus Premium Toiletpapir eller køkkenruller", None, False),
+        ("SMOOTHIE MED HAVRE", "90 GR. / REMA 1000", False, "REMA 1000 Smoothie", "90 g", True),
+        ("KLYNGELYSKÆDE", "1 STK. / 80 LED", False, "Lyskæde eller klyngelyskæde", None, True),
+        ("POUSSIN", "500 GR. / FRANKRIG", False, "Fersk poussin", "500 g", True),
         ("1,5% FEDT", None, False, "Letmælk 1,5%", None, False),
     ],
 )  # fmt: skip

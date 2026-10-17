@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [0.5.7] - 2026-10-17
+
+### Fixed
+- **Avis offers**, found by checking 0.5.6 against the real avis: a brand in front of an offer is for all of it (*Lotus Premium Toiletpapir eller køkkenruller* is not REMA's kitchen roll), a heading of one word only covers every variety when the size is of the same kind (*Kærgården* 200 g, but *Æbler* is not apple juice), and pieces count as a size (8 eggs are not the offer on 10).
+
 ## [0.5.6] - 2026-10-17
 
 ### Fixed
