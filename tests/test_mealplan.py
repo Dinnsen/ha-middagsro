@@ -562,6 +562,12 @@ def _offer(heading: str, description: str | None = None) -> Offer:
         ("SMOOTHIE MED HAVRE", "90 GR. / REMA 1000", False, "REMA 1000 Smoothie", "90 g", True),
         ("KLYNGELYSKÆDE", "1 STK. / 80 LED", False, "Lyskæde eller klyngelyskæde", None, True),
         ("POUSSIN", "500 GR. / FRANKRIG", False, "Fersk poussin", "500 g", True),
+        # Real descriptions also hold limits: "Max. 6 stk." is no size.
+        ("PEPSI MAX", "1.98 LTR. / 6 PK.", False, "Pepsi Max eller Faxe Kondi",
+         "Max. 6 stk. pr. kunde\n1,5 l", False),
+        ("KÆRGÅRDEN SMØRBAR", "200 GR. / LET", False, "Kærgården", "Max. 6 stk.\n200 g", True),
+        ("ØKOLOGISKE ÆG", "10 STK. / REMA 1000", True, "Æg", "Økologiske 10 stk.\nMax 4 stk.",
+         True),
         ("1,5% FEDT", None, False, "Letmælk 1,5%", None, False),
     ],
 )  # fmt: skip

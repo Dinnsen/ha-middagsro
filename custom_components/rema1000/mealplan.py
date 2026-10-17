@@ -303,19 +303,24 @@ def _brand(underline: str | None) -> str | None:
     return words[0]
 
 
-def _sizes(text: str) -> tuple[str, float, float] | None:
-    """The size or size range an avis offer is for, in g, ml or pieces."""
-    found: list[tuple[str, float, float]] = []
+_LIMIT = re.compile(r"max\.?\s*\d+\s*(?:stk|pk|ks)\.?", re.IGNORECASE)
+
+
+def avis_size(offer: Offer, kind: str) -> tuple[float, float] | None:
+    """The size range of one kind (g, ml or stk) an avis offer is for.
+
+    "Max 6 stk. pr. kunde" is a limit, not a size.
+    """
+    text = _LIMIT.sub(" ", f"{offer.description or ''} {offer.quantity or ''}")
+    found: list[tuple[float, float]] = []
     for low, high, unit in _RANGE.findall(text):
         a = to_base(float(low.replace(",", ".")), unit)
         b = to_base(float((high or low).replace(",", ".")), unit)
-        if a and b:
-            found.append((a[0], a[1], b[1]))
+        if a and b and a[0] == kind:
+            found.append((a[1], b[1]))
     if not found:
         return None
-    base = found[0][0]
-    same = [f for f in found if f[0] == base]
-    return base, min(f[1] for f in same), max(f[2] for f in same)
+    return min(f[0] for f in found), max(f[1] for f in found)
 
 
 def _percents(text: str) -> set[str]:
@@ -379,20 +384,14 @@ def _avis_name_fits(name: str, underline: str | None, offer: Offer) -> bool:
 def _same_size(underline: str | None, offer: Offer) -> bool:
     """The product and the offer both have a size, of the same kind (g, ml, stk)."""
     size = package_size(underline)
-    avis_size = _sizes(f"{offer.description or ''} {offer.quantity or ''}")
-    return bool(size and avis_size and size[0] == avis_size[0])
+    return bool(size and avis_size(offer, size[0]))
 
 
 def _avis_details_fit(name: str, underline: str | None, organic: bool, offer: Offer) -> bool:
     text = f"{offer.heading}\n{offer.description or ''}"
     size = package_size(underline)
-    avis_size = _sizes(f"{offer.description or ''} {offer.quantity or ''}")
-    if (
-        size
-        and avis_size
-        and size[0] == avis_size[0]
-        and not avis_size[1] * 0.9 <= size[1] <= avis_size[2] * 1.1
-    ):
+    sizes = avis_size(offer, size[0]) if size else None
+    if size and sizes and not sizes[0] * 0.9 <= size[1] <= sizes[1] * 1.1:
         return False
     offer_percents = _percents(text)
     product_percents = _percents(name)

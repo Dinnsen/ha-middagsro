@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [0.5.8] - 2026-10-17
+
+### Fixed
+- **Avis sizes** are compared per kind (grams, litres, pieces), so a piece count in the avis text no longer hides the weight or volume: a 6-pack of 1.98 l Pepsi Max is not the 1.5 l offer, and *Kærgården* 200 g is found again. Purchase limits (*Max. 6 stk.*) are not read as sizes.
+
 ## [0.5.7] - 2026-10-17
 
 ### Fixed
