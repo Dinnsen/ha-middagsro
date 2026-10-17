@@ -1394,7 +1394,13 @@ class MealPlanner:
                     except RemaError:
                         found[query] = []
                 candidates, penalty = self._candidates(
-                    line, found[query], query, require, this_offer
+                    # With an offer, the products must still be what the line asks
+                    # for, also when found by the offer's own name.
+                    line,
+                    found[query],
+                    query if this_offer is None else line["search"],
+                    require,
+                    this_offer,
                 )
                 if not candidates:
                     continue
@@ -1451,8 +1457,14 @@ class MealPlanner:
 
         cost = package_cost
 
-        def fit(product: Product) -> tuple[float, bool]:
-            return cost(product) * penalty.get(product.id, 1.0), not product.is_advertised
+        def fit(product: Product) -> tuple[float, bool, float]:
+            # Same cost: an offer beats the normal price, and more beats less.
+            size = package_size(product.underline)
+            return (
+                cost(product) * penalty.get(product.id, 1.0),
+                not product.is_advertised,
+                -(size[1] if size else 0),
+            )
 
         settings = self.store.settings
         if line.get("prefer") == "relevance":

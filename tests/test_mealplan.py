@@ -646,6 +646,24 @@ async def test_offer_line_gets_the_offer_product(
     await planner._async_match(line_fish)
     assert line_fish["product"]["name"] == "LAKSEFILET"
 
+    # The AI put kebab on the frikadeller offer: no frikadeller for kebab.
+    meatballs = make_product(45042, "FRIKADELLER", 25.0, underline="360 GR. / FRILANDSGRIS")
+    mock_client.async_get_products.return_value = [meatballs]
+    mock_client.async_search_products.return_value = [meatballs]
+    kebab: dict[str, Any] = {"name": "Kyllingekebab", "search": "kyllingekebab",
+                             "amount": 400, "unit": "g"}  # fmt: skip
+    gyros = replace(_offer("REMA 1000 Frilandsgris Frikadeller eller gyros"), product_ids=(45042,))
+    await planner._async_match(kebab, None, gyros)
+    assert kebab["product"] is None
+
+    # Same price for every bread on the offer: the biggest one.
+    small = make_product(60152, "RUGBRØDSSANDWICH", 15.0, underline="480 GR. / SCHULSTAD, DG")
+    big = make_product(60033, "SOLSIKKERUGBRØD", 15.0, underline="950 GR. / SCHULSTAD, DG")
+    mock_client.async_search_products.return_value = [small, big]
+    bread: dict[str, Any] = {"name": "Rugbrød", "search": "rugbrød", "amount": 2, "unit": "pk"}
+    await planner._async_match(bread)
+    assert bread["product"]["name"] == "SOLSIKKERUGBRØD"
+
     # 3 kg potatoes are not one sweet potato sold per piece.
     sweet = make_product(1, "SØDE KARTOFLER", 5.0, underline="1 STK.")
     potatoes = make_product(2, "KARTOFLER", 20.0, underline="2 KG / DANMARK")
