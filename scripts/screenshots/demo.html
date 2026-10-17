@@ -91,6 +91,10 @@
       return plan;
     },
     "rema1000/pantry": () => D.pantry,
+    "rema1000/send": () => {
+      D.state.latest_plan.status = "sent";
+      return { plan_id: D.state.latest_plan.id, status: "sent" };
+    },
     "rema1000/plan/add": (msg) => {
       const plan = D.state.latest_plan;
       const product = msg.pantry

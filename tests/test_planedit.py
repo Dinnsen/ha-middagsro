@@ -152,9 +152,9 @@ async def test_swap_dish(
     assert (sunday["dish"], sunday["uses"], sunday["total_minutes"]) == (
         "Kyllingewok",
         ["Kyllingebryst", "Persille"],
-        25,
+        30,  # the recipe's times win over the suggestion's
     )
-    assert sunday["active_minutes"] == 20  # kept: the choice had none
+    assert sunday["active_minutes"] == 20
     assert sunday["ingredients"] == RECIPE["ingredients"]
     assert monday["dish"] == "Rester af kyllingewok"
     assert monday["steps"][0]["text"] == "Varm resten af Kyllingewok op, og server den."
