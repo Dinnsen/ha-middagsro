@@ -2,6 +2,15 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [0.5.5] - 2026-10-17
+
+### Changed
+- **Favourites this week** use REMA's own prices, as in the app. On Saturday, when REMA has no price, the last known one is used until REMA's new prices start on Sunday at 02:00. Offers in the avis that start Thursday are shown before that with the avis price and a blue *fra tor* badge; from Thursday 02:00 REMA's price is used.
+- **Favourites next week** use the avis's prices as soon as the avis is out (REMA only has them from Sunday 02:00), with the avis text, so you see what the offer covers. Thursday offers get the blue badge.
+- **Meal plans** use the avis price for items built on an avis offer while REMA doesn't show the offer yet, marked *Avispris*. Only for the product that is on offer (an organic product doesn't get the price of a non-organic offer).
+- **Two baskets** with *Vi handler også sidst på ugen*: the shopping list is split into the shopping day and Thursday, each with its own send button. *Send til REMA-listen* and automatic sending send only the shopping day; the Thursday items are sent on their own. The action `rema1000.send_meal_plan` has a new field `part` (`main`, `late` or `all`, default `main`).
+- Before-prices: during an offer REMA often has no normal price; the normal price after (or before) the offer is shown.
+
 ## [0.5.4] - 2026-10-17
 
 ### Added

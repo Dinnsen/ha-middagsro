@@ -165,6 +165,13 @@
         "current": "Current",
         "upcoming": "Next"
       }
+    },
+    "send_part": {
+      "options": {
+        "main": "Shopping day",
+        "late": "Late in the week",
+        "all": "All"
+      }
     }
   },
   "services": {
@@ -243,6 +250,10 @@
         "plan_id": {
           "name": "Plan",
           "description": "Plan id. Default is the newest plan."
+        },
+        "part": {
+          "name": "Which items",
+          "description": "Main: what is bought on the shopping day. Late in the week: the items for offers that start later (e.g. Thursday), when 'We also shop late in the week' is on. All: everything."
         }
       }
     }

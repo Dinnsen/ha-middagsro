@@ -68,3 +68,12 @@ send_meal_plan:
     plan_id:
       selector:
         text:
+    part:
+      default: main
+      selector:
+        select:
+          translation_key: send_part
+          options:
+            - main
+            - late
+            - all

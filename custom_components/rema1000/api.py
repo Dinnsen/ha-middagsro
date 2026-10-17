@@ -90,12 +90,15 @@ DANISH_TIME = ZoneInfo("Europe/Copenhagen")
 
 
 def week_end(moment: datetime) -> datetime:
-    """The first sunday 00:00 danish time at or after a moment (when REMA's week turns)."""
-    local = moment.astimezone(DANISH_TIME)
-    sunday = local.date() + timedelta(days=(6 - local.weekday()) % 7)
-    turn = datetime.combine(sunday, clock_time(), DANISH_TIME)
-    if turn < local:
-        turn = datetime.combine(sunday + timedelta(days=7), clock_time(), DANISH_TIME)
+    """The first sunday 00:00 UTC at or after a moment: when REMA's new prices start.
+
+    That is 02:00 danish summer time (01:00 in winter).
+    """
+    utc = moment.astimezone(UTC)
+    sunday = utc.date() + timedelta(days=(6 - utc.weekday()) % 7)
+    turn = datetime.combine(sunday, clock_time(), UTC)
+    if turn < utc:
+        turn = datetime.combine(sunday + timedelta(days=7), clock_time(), UTC)
     return turn
 
 
@@ -257,8 +260,8 @@ class Product:
             else:
                 ended.append((end, price))
         # REMA's prices for a week end before the avis does (the avis runs to
-        # saturday night), so a price that ended still applies until the week
-        # turns at sunday 00:00 danish time, unless a new price replaced it.
+        # saturday night), so a price that ended still applies until REMA's
+        # new prices start (sunday 02:00 danish time), unless one replaced it.
         active += [
             price
             for end, price in ended
@@ -288,7 +291,20 @@ class Product:
                 active.append({"price": pricing.get("normal_price")})
 
         best = min(active, key=_price) if active else None
-        regular = [p for p in active if not p.get("is_campaign") and not p.get("is_advertised")]
+
+        def plain(entry: dict[str, Any]) -> bool:
+            return not entry.get("is_campaign") and not entry.get("is_advertised")
+
+        regular = [p for p in active if plain(p)]
+        if not regular:
+            # During an offer REMA often has no normal price at the same time:
+            # use the one that comes after the offer, else the one before it.
+            after = [p for p in upcoming if plain(p)]
+            before = [(end, p) for end, p in ended if plain(p)]
+            if after:
+                regular = [min(after, key=lambda p: parse_time(p.get("starting_at")) or now)]
+            elif before:
+                regular = [max(before, key=lambda item: item[0])[1]]
         normal = max(regular, key=_price) if regular else best
         next_price = min(upcoming, key=_price) if upcoming else None
 

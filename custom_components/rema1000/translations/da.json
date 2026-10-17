@@ -165,6 +165,13 @@
         "current": "Aktuel",
         "upcoming": "Næste"
       }
+    },
+    "send_part": {
+      "options": {
+        "main": "Indkøbsdag",
+        "late": "Sidst på ugen",
+        "all": "Alle"
+      }
     }
   },
   "services": {
@@ -243,6 +250,10 @@
         "plan_id": {
           "name": "Plan",
           "description": "Planens id. Standard er den nyeste plan."
+        },
+        "part": {
+          "name": "Hvilke varer",
+          "description": "Indkøbsdag: det, der købes på indkøbsdagen. Sidst på ugen: varerne til tilbud, der starter senere (fx torsdag), når 'Vi handler også sidst på ugen' er slået til. Alle: det hele."
         }
       }
     }

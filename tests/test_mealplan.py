@@ -509,6 +509,79 @@ async def test_late_offer_bought_on_its_day(
     assert seen["hakket oksekød"] == datetime(2026, 10, 18, 10, tzinfo=UTC)
 
 
+async def test_avis_price_until_rema_has_it(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """A line built on an avis offer gets the avis price while REMA shows the normal one."""
+    planner = init_integration.runtime_data.planner
+    onions = Offer(id="o", heading="Løg", description="Danske 1 kg", price=5, pre_price=None,
+                   quantity="1 kg", valid_from=None, valid_to=None)  # fmt: skip
+    line: dict[str, Any] = {"name": "Løg", "search": "løg", "amount": 2, "unit": "stk"}
+    await planner._async_match(line)
+    assert line["product"]["price"] == 8.0
+    planner._avis_price(line, onions)
+    assert (line["product"]["price"], line["product"]["normal_price"]) == (5, 8.0)
+    assert line["product"]["is_advertised"]
+    assert line["cost"] == 5
+    assert line["price_source"] == "avis"
+
+    # Not for organic products when the offer isn't organic, another product,
+    # a product REMA already has on offer, or when REMA is cheaper anyway.
+    for name, extra in (
+        ("ØKO. BROCCOLI", {"is_organic": True}),
+        ("SPAGHETTI", {}),
+        ("LØG", {"is_advertised": True}),
+        ("LØG", {"price": 4}),
+    ):
+        other: dict[str, Any] = {"packages": 1, "cost": 9,
+                                 "product": {"name": name, "price": 9, **extra}}  # fmt: skip
+        planner._avis_price(other, onions)
+        assert "price_source" not in other, name
+    organic = Offer(id="o", heading="Broccoli", description="Økologisk", price=5, pre_price=None,
+                    quantity=None, valid_from=None, valid_to=None)  # fmt: skip
+    eco: dict[str, Any] = {"packages": 1, "cost": 14,
+                           "product": {"name": "ØKO. BROCCOLI", "price": 14, "is_organic": True}}  # fmt: skip
+    planner._avis_price(eco, organic)
+    assert eco["price_source"] == "avis"
+    planner._avis_price({"product": None}, onions)
+    planner._avis_price(line, None)
+
+
+async def test_send_parts(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """The shopping day's items and the late-week items are sent separately."""
+    store = init_integration.runtime_data.store
+    plan = make_plan("parts", start="2026-10-18")
+    plan["shopping"][2]["buy_from"] = "2026-10-22"  # spaghetti on thursday
+    await store.async_add_plan(plan)
+    planner = init_integration.runtime_data.planner
+
+    def sent() -> list[str | int]:
+        return [c.kwargs.get("name") or c.kwargs.get("product_id")
+                for c in mock_client.async_add_to_list.call_args_list]  # fmt: skip
+
+    await planner.async_send("parts")
+    assert sent() == [30001, "Persille (1 bundt)"]
+    assert plan["status"] == "sent"
+    assert "late_sent_at" not in plan
+
+    mock_client.async_add_to_list.reset_mock()
+    await planner.async_send("parts", "late")
+    assert sent() == ["Spaghetti"]
+    assert plan["late_sent_at"]
+
+    mock_client.async_add_to_list.reset_mock()
+    await planner.async_send("parts", "all")
+    assert len(sent()) == 3
+
+    # Nothing to send: nothing is added.
+    plan["shopping"] = [line for line in plan["shopping"] if not line.get("buy_from")]
+    mock_client.async_add_to_list.reset_mock()
+    await planner.async_send("parts", "late")
+    assert sent() == []
+
+
 async def test_generate_over_budget_tries_again(
     hass: HomeAssistant, init_integration: MockConfigEntry, ai_task: str
 ) -> None:

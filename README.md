@@ -62,7 +62,7 @@ Ingredients and steps in large type. Tick them off as you go, start a **timer** 
 
 <img src="docs/images/favorites.png" alt="Favourite products from the REMA app that are on offer" width="100%">
 
-The products you have given a heart in the REMA 1000 app. Choose **Denne uge** (this week) or **Næste uge** (next week) to see which are on offer, with before and now price, and put them on the list with one tap. Favourites that look like something in the offers are checked with REMA 1000 at the price for that week. Offers that only start on Thursday are marked *fra tor* until they start. Until next week's offers are out, this week's are shown. All favourites can be filtered.
+The products you have given a heart in the REMA 1000 app. Choose **Denne uge** (this week) or **Næste uge** (next week) to see which are on offer, with before and now price, and put them on the list with one tap. This week shows REMA's own prices, as in the app. Next week shows the avis's prices and text as soon as it is out, since REMA only has them from Sunday 02:00. Offers that only start on Thursday are shown with a blue *fra tor* badge until they start. Until next week's offers are out, this week's are shown. All favourites can be filtered.
 
 ### History
 
@@ -148,7 +148,7 @@ The settings apply every time a meal plan is made and are stored per REMA 1000 a
 | **Wishes for the food** (*Ønsker til maden*) | Free text for the AI. | Healthy and child-friendly |
 | **Pantry** (*Basisvarer*) | What you always have and don't buy (salt, oil, flour …). | Salt, pepper, oil etc. |
 | **Fixed weekly items** (*Faste varer hver uge*) | Search REMA's range and pick a product (or write free text) that always goes on the list. | – |
-| **We also shop late in the week** (*Vi handler også sidst på ugen*) | Some offers only start on Thursday. Off, the meal plan only uses offers that run on the shopping day. On, it may use them in dishes from that day; those items are marked *Købes tor* (buy Thursday) and priced on that day. | Off |
+| **We also shop late in the week** (*Vi handler også sidst på ugen*) | Some offers only start on Thursday. Off, the meal plan only uses offers that run on the shopping day. On, it may use them in dishes from that day; the shopping list is split into the shopping day and Thursday, each sent on its own. | Off |
 | **Automation** (*Automatik*) | Make next week's plan when the new offers come out, and optionally send it to the REMA list. | Off |
 | **The family's favourites** (*Familiens favoritter*) | Dishes with how often. | – |
 | **Dishes the family doesn't like** | Never go on the plan. | – |
@@ -177,7 +177,7 @@ Each REMA 1000 account becomes a service with these entities:
 | `rema1000.get_offers` | All offers in the current or next catalogue. Returns a response. | `catalog` (`current` or `upcoming`), `config_entry_id` |
 | `rema1000.add_items` | Add products (REMA product number or free text) to the REMA list. | `items` (required, list with `product_id` or `name` and optionally `amount`), `config_entry_id` |
 | `rema1000.generate_meal_plan` | Make a meal plan in the background. | `start_date`, `send` (send the list when the plan is ready), `config_entry_id` |
-| `rema1000.send_meal_plan` | Send a meal plan's shopping list to the REMA list. | `plan_id` (empty = newest), `config_entry_id` |
+| `rema1000.send_meal_plan` | Send a meal plan's shopping list to the REMA list. | `plan_id` (empty = newest), `part` (`main` = the shopping day, `late` = the Thursday items, `all`; default `main`), `config_entry_id` |
 
 `config_entry_id` is only needed if you have several REMA 1000 accounts.
 

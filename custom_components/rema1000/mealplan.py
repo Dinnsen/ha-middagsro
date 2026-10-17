@@ -262,6 +262,29 @@ def _tokens(text: str) -> list[str]:
     return [_ABBREVIATIONS.get(w, w) for w in words]
 
 
+def offer_fits(name: str, organic: bool, offer: Offer) -> bool:
+    """Is a REMA product what an avis offer is for?
+
+    At least half of the product's words must be in the offer's text, and an
+    organic product only fits an offer that says it is organic.
+    """
+    text = (
+        f"{offer.heading} {(offer.description or '').splitlines()[0] if offer.description else ''}"
+    )
+    avis = {w for w in _tokens(text) if len(w) > 2 and w not in _NEUTRAL_WORDS}
+    words = {w for w in _tokens(name) if len(w) > 2 and w not in _NEUTRAL_WORDS}
+    if not words:
+        return False
+    found = [
+        w
+        for w in words
+        if w in avis or any(len(a) > 3 and len(w) > 3 and (a in w or w in a) for a in avis)
+    ]
+    if len(found) / len(words) < 0.5:
+        return False
+    return not organic or "økologisk" in _tokens(f"{offer.heading} {offer.description or ''}")
+
+
 def search_queries(line: dict[str, Any]) -> list[str]:
     """What to search REMA for, best guess first.
 
@@ -1003,6 +1026,7 @@ class MealPlanner:
                 }
             )
         offer_names = {f"o{i}": offer.heading for i, offer in enumerate(offers)}
+        by_id = {f"o{i}": offer for i, offer in enumerate(offers)}
         late_days = {f"o{i}": day for i, day in (late or {}).items()}
         for line in shopping:
             offer_id = str(line.get("offer") or "")
@@ -1017,6 +1041,7 @@ class MealPlanner:
             day = line["buy_from"]
             async with semaphore:
                 await self._async_match(line, noon(date.fromisoformat(day)) if day else at)
+            self._avis_price(line, by_id.get(str(line.get("offer") or "")))
 
         await asyncio.gather(*(match(line) for line in shopping))
         total = round(sum(line.get("cost") or 0 for line in shopping), 2)
@@ -1314,6 +1339,28 @@ class MealPlanner:
         return relevant
 
     @staticmethod
+    def _avis_price(line: dict[str, Any], offer: Offer | None) -> None:
+        """Use the avis's price for a line built on an offer REMA doesn't show yet.
+
+        REMA only has an offer's price once it takes effect (02:00 on its first
+        day), so a plan made before that would otherwise get the normal price.
+        """
+        product = line.get("product")
+        if not offer or not offer.price or not product:
+            return
+        if product.get("is_advertised") or product.get("is_campaign"):
+            return  # REMA already has the offer
+        if product.get("price") and product["price"] <= offer.price:
+            return  # REMA's own price is lower anyway
+        if not offer_fits(product.get("name") or "", bool(product.get("is_organic")), offer):
+            return  # another product than the one on offer (e.g. organic)
+        product["normal_price"] = product.get("price")
+        product["price"] = offer.price
+        product["is_advertised"] = True
+        line["cost"] = round(line["packages"] * offer.price, 2)
+        line["price_source"] = "avis"
+
+    @staticmethod
     def _apply(line: dict[str, Any], product: Product, packages: int) -> None:
         line["packages"] = packages
         line["cost"] = round(packages * (product.price or 0), 2)
@@ -1369,13 +1416,19 @@ class MealPlanner:
             "note": line.get("note"),
         }
 
-    async def async_send(self, plan_id: str | None = None) -> dict[str, Any]:
-        """Put a plan's shopping list on the primary REMA list."""
+    async def async_send(self, plan_id: str | None = None, part: str = "main") -> dict[str, Any]:
+        """Put a plan's shopping list on the primary REMA list.
+
+        part: "main" (bought on the shopping day), "late" (the items for later
+        in the week, e.g. thursday offers) or "all".
+        """
         plan = self.store.get_plan(plan_id) if plan_id else self.store.latest_plan
         if plan is None:
             raise _invalid("no_plan" if not plan_id else "plan_not_found")
         items: list[dict[str, Any]] = []
         for line in plan["shopping"]:
+            if part != "all" and bool(line.get("buy_from")) != (part == "late"):
+                continue
             if line.get("product"):
                 items.append({"product_id": line["product"]["id"], "amount": line["packages"]})
             else:
@@ -1384,8 +1437,9 @@ class MealPlanner:
                 if amount and line.get("unit") and line["unit"] != "pk":
                     label += f" ({amount:g} {line['unit']})"
                 items.append({"name": label, "amount": 1})
-        await self._add_items(items)
-        await self.store.async_mark_sent(plan["id"])
+        if items:
+            await self._add_items(items)
+        await self.store.async_mark_sent(plan["id"], part)
         self._notify()
         return plan
 

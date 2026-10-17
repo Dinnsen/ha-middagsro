@@ -89,6 +89,11 @@ const dateLabel = (iso) => {
   const d = new Date(`${iso}T12:00:00`);
   return `${WEEKDAYS[(d.getDay() + 6) % 7]} ${d.getDate()}/${d.getMonth() + 1}`;
 };
+// "torsdag" for a date.
+const dayName = (iso) => {
+  const d = new Date(`${localDay(iso)}T12:00:00`);
+  return WEEKDAYS[(d.getDay() + 6) % 7].toLowerCase();
+};
 // "tor 15/10": short weekday and date, for offers that start later in the week.
 const dayShort = (iso) => {
   if (!iso) return "";
@@ -370,8 +375,8 @@ class Rema1000Panel extends HTMLElement {
       generate: () => this._run(() => this._generate(), GENERATING_MESSAGE),
       send: () =>
         this._run(
-          () => this._ws("rema1000/send", { plan_id: this._plan?.id }),
-          "Indkøbslisten er sendt til REMA 1000-appen."
+          () => this._ws("rema1000/send", { plan_id: this._plan?.id, part: arg === "late" ? "late" : "main" }),
+          arg === "late" ? "Torsdagsvarerne er sendt til REMA 1000-appen." : "Indkøbslisten er sendt til REMA 1000-appen."
         ),
       "open-day": () => {
         this._day = this._recipeIndex(arg);
@@ -951,6 +956,9 @@ class Rema1000Panel extends HTMLElement {
           <button class="btn primary" data-action="send" ${this._busy ? "disabled" : ""}>
             ${plan.status === "sent" ? "Sendt ✓ – send igen" : "Send til REMA-listen"}
           </button>
+          ${plan.shopping.some((line) => line.buy_from)
+            ? `<span class="muted small">+ ${plan.shopping.filter((line) => line.buy_from).length} varer købes senere – se Indkøb</span>`
+            : ""}
           <button class="btn" data-action="tab" data-arg="shopping">Se indkøbsliste</button>
           <button class="btn" data-action="open-day" data-arg="">Start madlavning</button>
         </div>
@@ -1050,17 +1058,18 @@ class Rema1000Panel extends HTMLElement {
     let planHtml = `<div class="card">Der er ingen madplan endnu.</div>`;
     if (plan) {
       const groups = {};
-      plan.shopping.forEach((line) => (groups[line.category || "Andet"] ||= []).push(line));
-      const sections = Object.entries(groups)
-        .map(([category, lines]) => {
-          const rows = lines
-            .map((line) => {
+      const lateLines = plan.shopping.filter((line) => line.buy_from);
+      plan.shopping
+        .filter((line) => !line.buy_from)
+        .forEach((line) => (groups[line.category || "Andet"] ||= []).push(line));
+      const row = (line) => {
               const p = line.product;
               const badges = [
                 p?.is_advertised || p?.is_campaign ? '<span class="badge offer">Tilbud</span>' : "",
                 p?.is_organic ? '<span class="badge eco">Øko</span>' : "",
                 line.must_have ? '<span class="badge">Fast vare</span>' : "",
-                line.buy_from ? `<span class="badge late">Købes ${esc(dayShort(line.buy_from))}</span>` : "",
+                line.buy_from ? `<span class="badge from">Købes ${esc(dayShort(line.buy_from))}</span>` : "",
+                line.price_source === "avis" ? '<span class="badge">Avispris</span>' : "",
               ].join("");
               const need = line.amount && line.unit && line.unit !== "pk" ? `${line.amount} ${line.unit}` : "";
               return `<li class="line">
@@ -1073,14 +1082,29 @@ class Rema1000Panel extends HTMLElement {
                 </div>
                 <div class="cost">${p ? `${line.packages} × ${kr(p.price)}<b>${kr(line.cost)}</b>` : "–"}</div>
               </li>`;
-            })
-            .join("");
-          return `<h2>${esc(category)}</h2><ul class="lines">${rows}</ul>`;
-        })
+      };
+      const sections = Object.entries(groups)
+        .map(([category, lines]) => `<h2>${esc(category)}</h2><ul class="lines">${lines.map(row).join("")}</ul>`)
         .join("");
+      const lateDay = lateLines[0]?.buy_from;
+      const lateTotal = lateLines.reduce((sum, line) => sum + (line.cost || 0), 0);
+      const lateHtml = lateLines.length
+        ? `<div class="card">
+            <div class="row between wrap">
+              <div><h1>Indkøb ${esc(lateDay ? dayShort(lateDay) : "senere")}</h1>
+              <p class="muted">Tilbud, der først gælder fra ${esc(lateDay ? dayShort(lateDay) : "senere på ugen")}. Send dem til REMA-listen, når I skal handle.</p></div>
+              <div class="price"><span class="big">${kr(lateTotal)}</span></div>
+            </div>
+            <ul class="lines">${lateLines.map(row).join("")}</ul>
+            <div class="row wrap actions">
+              <button class="btn primary" data-action="send" data-arg="late" ${this._busy ? "disabled" : ""}>
+                ${plan.late_sent_at ? "Sendt ✓ – send igen" : `Send ${esc(lateDay ? dayName(lateDay) : "")}svarer til REMA-listen`}</button>
+            </div>
+          </div>`
+        : "";
       planHtml = `<div class="card">
         <div class="row between wrap">
-          <div><h1>Indkøbsliste</h1><p class="muted">${esc(plan.title)}</p></div>
+          <div><h1>${lateLines.length ? "Indkøb på indkøbsdagen" : "Indkøbsliste"}</h1><p class="muted">${esc(plan.title)}${lateLines.length ? ` · plus ${lateLines.length} varer ${esc(dayShort(lateDay))}` : ""}</p></div>
           <div class="price ${plan.budget && plan.total > plan.budget ? "over" : ""}"><span class="big">${kr(plan.total)}</span>
           <span class="muted">${plan.budget ? `budget ${kr(plan.budget)}` : ""}</span></div>
         </div>
@@ -1089,7 +1113,7 @@ class Rema1000Panel extends HTMLElement {
           <button class="btn primary" data-action="send" ${this._busy ? "disabled" : ""}>
             ${plan.status === "sent" ? "Sendt ✓ – send igen" : "Send til REMA-listen"}</button>
         </div>
-      </div>`;
+      </div>${lateHtml}`;
     }
     const remaItems = rema?.items?.length
       ? rema.items
@@ -1122,8 +1146,9 @@ class Rema1000Panel extends HTMLElement {
         <span>${p.is_advertised ? '<span class="badge offer">Avisvare</span>' : sale ? '<span class="badge offer">Tilbud</span>' : ""}
           ${p.is_organic ? '<span class="badge eco">Øko</span>' : ""}
           ${p.offer_from
-            ? `<span class="badge late">fra ${esc(dayShort(p.offer_from))}</span>`
+            ? `<span class="badge from">fra ${esc(dayShort(p.offer_from))}</span>`
             : sale && until ? `<span class="muted small">til ${esc(until)}</span>` : ""}</span>
+        ${p.avis ? `<span class="muted small avis">Avis: ${esc(p.avis)}${p.avis_quantity ? ` · ${esc(p.avis_quantity)}` : ""}</span>` : ""}
       </div>
       <button class="btn small primary" data-action="fav-add" data-arg="${esc(p.id)}" ${this._busy ? "disabled" : ""}>+ Tilføj</button>
     </div>`;
@@ -1503,7 +1528,8 @@ const STYLE = `
     background: var(--rema-subtle); color: var(--secondary-text-color); vertical-align: middle; }
   .badge.offer { background: var(--rema-sale); color: var(--rema-on-sale); }
   .badge.eco, .badge.sent { background: var(--rema-ok); color: var(--rema-on-accent); }
-  .badge.late { background: var(--rema-warn); color: var(--primary-text-color); }
+  .badge.from { background: var(--info-color, #039be5); color: #fff; }
+  .prod .avis { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .badge.draft { background: var(--rema-accent); color: var(--rema-on-accent); }
   details { margin-top: 14px; } summary { cursor: pointer; color: var(--secondary-text-color); }
   .checklist { list-style: none; padding: 0; } .checklist li { padding: 3px 0; } .checklist .bad { color: var(--rema-sale); }

@@ -87,6 +87,7 @@ SEND_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
         vol.Optional("plan_id"): cv.string,
+        vol.Optional("part", default="main"): vol.In(["main", "late", "all"]),
     }
 )
 OFFERS_SCHEMA = vol.Schema(
@@ -183,7 +184,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
     async def send_meal_plan(call: ServiceCall) -> None:
         entry = _get_entry(hass, call)
         try:
-            await entry.runtime_data.planner.async_send(call.data.get("plan_id"))
+            await entry.runtime_data.planner.async_send(call.data.get("plan_id"), call.data["part"])
         except RemaError as err:
             raise _error(err) from err
 

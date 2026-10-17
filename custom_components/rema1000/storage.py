@@ -282,11 +282,15 @@ class RemaPlanStore:
                 fav["last_used"] = plan["start_date"]
         await self.async_save()
 
-    async def async_mark_sent(self, plan_id: str) -> None:
-        """Mark a plan as sent to the REMA list."""
+    async def async_mark_sent(self, plan_id: str, part: str = "main") -> None:
+        """Mark a plan (its main list, its late-week list or all) as sent."""
         if plan := self.get_plan(plan_id):
-            plan["status"] = "sent"
-            plan["sent_at"] = datetime.now().astimezone().isoformat()
+            now = datetime.now().astimezone().isoformat()
+            if part in ("main", "all"):
+                plan["status"] = "sent"
+                plan["sent_at"] = now
+            if part in ("late", "all"):
+                plan["late_sent_at"] = now
             await self.async_save()
 
     async def async_delete_plan(self, plan_id: str) -> None:

@@ -210,7 +210,12 @@ async def ws_generate(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/send", ENTRY: str, vol.Optional("plan_id"): vol.Any(str, None)}
+    {
+        vol.Required("type"): "rema1000/send",
+        ENTRY: str,
+        vol.Optional("plan_id"): vol.Any(str, None),
+        vol.Optional("part", default="main"): vol.In(["main", "late", "all"]),
+    }
 )
 @websocket_api.async_response
 @_wrap
@@ -218,7 +223,7 @@ async def ws_send(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Send a plan's shopping list to the REMA list."""
-    plan = await _entry(hass, msg).runtime_data.planner.async_send(msg.get("plan_id"))
+    plan = await _entry(hass, msg).runtime_data.planner.async_send(msg.get("plan_id"), msg["part"])
     connection.send_result(msg["id"], {"plan_id": plan["id"], "status": plan["status"]})
 
 

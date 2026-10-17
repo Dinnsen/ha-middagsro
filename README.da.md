@@ -62,7 +62,7 @@ Ingredienser og trin i stor skrift. Kryds af undervejs, start en **timer** på h
 
 <img src="docs/images/favorites.png" alt="Favoritvarer fra REMA-appen, der er på tilbud nu og i næste avis" width="100%">
 
-De varer, du har givet et hjerte i REMA 1000-appen. Vælg **Denne uge** eller **Næste uge** for at se, hvilke der er på tilbud, med før- og nu-pris, og læg dem på listen med ét tryk. Favoritter, der ligner noget i tilbudsavisen, tjekkes hos REMA 1000 med prisen for den uge. Tilbud, der først gælder fra torsdag, mærkes *fra tor*, indtil de starter. Er næste uges avis ikke udkommet endnu, vises denne uges tilbud. Alle favoritter kan filtreres.
+De varer, du har givet et hjerte i REMA 1000-appen. Vælg **Denne uge** eller **Næste uge** for at se, hvilke der er på tilbud, med før- og nu-pris, og læg dem på listen med ét tryk. Denne uge viser REMA's egne priser som i appen. Næste uge viser avisens priser og tekst, så snart den er ude, for REMA har dem først søndag kl. 02. Tilbud, der først gælder fra torsdag, vises med et blåt *fra tor*-mærke, indtil de starter. Er næste uges avis ikke udkommet endnu, vises denne uges tilbud. Alle favoritter kan filtreres.
 
 ### Historik
 
@@ -148,7 +148,7 @@ Indstillingerne gælder hver gang, en madplan laves, og gemmes pr. REMA 1000-kon
 | **Ønsker til maden** | Fritekst til AI'en. | Sund og børnevenlig |
 | **Basisvarer** | Det, I altid har, og som ikke købes (salt, olie, mel …). | Salt, peber, olie m.m. |
 | **Faste varer hver uge** | Søg i REMA's sortiment, og vælg en vare (eller skriv fritekst), som altid kommer på listen. | – |
-| **Vi handler også sidst på ugen** | Nogle tilbud gælder først fra torsdag. Slået fra bruger madplanen kun tilbud, der gælder på indkøbsdagen. Slået til må de bruges i retter fra den dag; varerne mærkes *Købes tor* og prissættes den dag. | Fra |
+| **Vi handler også sidst på ugen** | Nogle tilbud gælder først fra torsdag. Slået fra bruger madplanen kun tilbud, der gælder på indkøbsdagen. Slået til må de bruges i retter fra den dag; indkøbslisten deles i indkøbsdagen og torsdag, der sendes hver for sig. | Fra |
 | **Automatik** | Lav næste uges plan automatisk, når den nye avis udkommer, og send den evt. til REMA-listen. | Fra |
 | **Familiens favoritter** | Retter med hyppighed. | – |
 | **Retter familien ikke kan lide** | Kommer aldrig på planen. | – |
@@ -177,7 +177,7 @@ Hver REMA 1000-konto bliver en tjeneste med disse entiteter:
 | `rema1000.get_offers` | Alle tilbud i den aktuelle eller næste tilbudsavis. Giver et svar. | `catalog` (`current` eller `upcoming`), `config_entry_id` |
 | `rema1000.add_items` | Tilføj varer (REMA-varenummer eller fritekst) til REMA-listen. | `items` (påkrævet, liste med `product_id` eller `name` og evt. `amount`), `config_entry_id` |
 | `rema1000.generate_meal_plan` | Lav en madplan i baggrunden. | `start_date`, `send` (send listen, når planen er klar), `config_entry_id` |
-| `rema1000.send_meal_plan` | Send en madplans indkøbsliste til REMA-listen. | `plan_id` (tom = nyeste), `config_entry_id` |
+| `rema1000.send_meal_plan` | Send en madplans indkøbsliste til REMA-listen. | `plan_id` (tom = nyeste), `part` (`main` = indkøbsdagen, `late` = torsdagsvarerne, `all`; standard `main`), `config_entry_id` |
 
 `config_entry_id` skal kun udfyldes, hvis du har flere REMA 1000-konti.
 

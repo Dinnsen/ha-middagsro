@@ -434,9 +434,18 @@ def test_prices_through_the_week() -> None:
         {"price": 11, "starting_at": "2026-10-14T00:00:00Z"},
     ]  # fmt: skip
     assert at(raised, "2026-10-15T10:00:00+00:00").price == 11
-    assert week_end(datetime(2026, 10, 17, 22, tzinfo=UTC)) == datetime(
-        2026, 10, 17, 22, tzinfo=UTC
-    )
+    # REMA's week turns sunday 00:00 UTC (02:00 danish time).
+    assert week_end(datetime(2026, 10, 17, 22, tzinfo=UTC)) == datetime(2026, 10, 18, tzinfo=UTC)
+    assert week_end(datetime(2026, 10, 18, tzinfo=UTC)) == datetime(2026, 10, 18, tzinfo=UTC)
+
+    # During an offer REMA has no normal price; the one after (or before) it is used.
+    offer_only = [cream[0], {"price": 12.95, "starting_at": "2026-10-18T00:00:00Z"}]
+    assert at(offer_only, "2026-10-14T10:00:00+00:00").normal_price == 12.95
+    before_only = [
+        {"price": 13.5, "starting_at": "2026-08-01T00:00:00Z", "ending_at": "2026-10-11T00:00:00Z"},
+        cream[0],
+    ]  # fmt: skip
+    assert at(before_only, "2026-10-14T10:00:00+00:00").normal_price == 13.5
 
 
 async def test_shopping_lists() -> None:
