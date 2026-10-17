@@ -849,7 +849,7 @@ def build_recipe_prompt(
 
     def describe(line: dict[str, Any]) -> str:
         bought = (line.get("product") or line.get("avis_item") or {}).get("name")
-        text = line["name"]
+        text = str(line["name"])
         if line.get("amount") and line.get("unit") and line["unit"] != "pk":
             text += f" ({line['amount']:g} {line['unit']})"
         if bought and bought.lower() != line["name"].lower():

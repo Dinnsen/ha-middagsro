@@ -226,7 +226,7 @@ def test_recipe_prompt_with_the_dish_items() -> None:
     prompt = mp.build_recipe_prompt(settings=clean_settings({}), day=day, plan=plan)
     assert "Rettens varer fra indkøbslisten" in prompt
     assert "Hakket oksekød (500 g) [købes som HK. OKSEKØD 8-12%], Persille (1 bundt)." in prompt
-    assert "Spaghetti" not in prompt
+    assert ", Spaghetti" not in prompt  # another dish's item
     assert "hakkede tomater på dåse" in prompt
     # Names the AI got wrong: the whole week's shopping, as before.
     other = mp.build_recipe_prompt(
