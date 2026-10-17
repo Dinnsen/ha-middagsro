@@ -303,13 +303,13 @@ def _brand(underline: str | None) -> str | None:
     return words[0]
 
 
-_LIMIT = re.compile(r"max\.?\s*\d+\s*(?:stk|pk|ks)\.?", re.IGNORECASE)
+_LIMIT = re.compile(r"(?:max\.?|flere end)\s*\d+\s*(?:stk|pk|ks)\.?", re.IGNORECASE)
 
 
 def avis_size(offer: Offer, kind: str) -> tuple[float, float] | None:
     """The size range of one kind (g, ml or stk) an avis offer is for.
 
-    "Max 6 stk. pr. kunde" is a limit, not a size.
+    "Max 6 stk." and "ved køb af flere end 6 stk." are limits, not sizes.
     """
     text = _LIMIT.sub(" ", f"{offer.description or ''} {offer.quantity or ''}")
     found: list[tuple[float, float]] = []
@@ -471,7 +471,10 @@ def name_fit(search_words: list[str], product_name: str) -> tuple[int, float]:
     for token in name:
         if token in _NEUTRAL_WORDS or any(word in token or token in word for word in search_words):
             continue
-        penalty += 5.0 if token in _DIFFERENT_WORDS else 0.15
+        different = token in _DIFFERENT_WORDS or any(
+            token.endswith(d) for d in _DIFFERENT_WORDS if len(d) > 4
+        )  # "varmrøget" is røget
+        penalty += 5.0 if different else 0.15
     return matched, penalty
 
 
@@ -1348,6 +1351,7 @@ class MealPlanner:
         if offer is not None:
             passes.append((offer, [*queries, offer_query(offer, line["name"])]))
         passes.append((None, queries))
+        poor: tuple[list[Product], dict[int, float]] | None = None
         for this_offer, terms in passes:
             for query in terms:
                 if query not in found:
@@ -1358,9 +1362,14 @@ class MealPlanner:
                 candidates, penalty = self._candidates(
                     line, found[query], query, require, this_offer
                 )
-                if candidates:
+                if not candidates:
+                    continue
+                if this_offer is not None or min(penalty.get(p.id, 1.0) for p in candidates) < 5:
                     return candidates, penalty
-        return [], {}
+                # Only something else by that name ("laks": smoked salmon);
+                # the line's own name ("Laksefilet") may find the real thing.
+                poor = poor or (candidates, penalty)
+        return poor or ([], {})
 
     async def _async_match_by_name(
         self,
@@ -1517,10 +1526,8 @@ class MealPlanner:
         product = line.get("product")
         if not offer or not offer.price or not product:
             return
-        if product.get("is_advertised") or product.get("is_campaign"):
-            return  # REMA already has the offer
         if product.get("price") and product["price"] <= offer.price:
-            return  # REMA's own price is lower anyway
+            return  # REMA already has the offer, or its own price is lower anyway
         if not avis_match(
             product.get("name") or "",
             product.get("underline"),

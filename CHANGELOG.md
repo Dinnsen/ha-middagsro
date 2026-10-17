@@ -2,6 +2,14 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [0.5.9] - 2026-10-17
+
+### Fixed
+- **Meal plans**, found with a test plan on the real avis for week 43:
+  - An item REMA already has at an offer price still gets the avis's lower price next week (minced chicken 25 kr in the avis, not this week's 29 kr).
+  - When the AI's search word only finds something else (*laks*: smoked salmon), the item's own name is searched too (*Laksefilet*), and smoked (*varmrøget*, *koldrøget*) products count as different products.
+  - *Ved køb af flere end 6 stk.* in the avis text is a limit, not a size.
+
 ## [0.5.8] - 2026-10-17
 
 ### Fixed

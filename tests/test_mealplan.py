@@ -562,6 +562,20 @@ def _offer(heading: str, description: str | None = None) -> Offer:
         ("SMOOTHIE MED HAVRE", "90 GR. / REMA 1000", False, "REMA 1000 Smoothie", "90 g", True),
         ("KLYNGELYSKÆDE", "1 STK. / 80 LED", False, "Lyskæde eller klyngelyskæde", None, True),
         ("POUSSIN", "500 GR. / FRANKRIG", False, "Fersk poussin", "500 g", True),
+        # From the real avis for week 43.
+        ("KÆRGÅRDEN SMØRBAR", "200 GR. / LET", False, "Kærgården",
+         "Ved køb af flere end 6 stk. pr. variant pr. dag er prisen op til 24.95 pr. stk.", True),
+        ("HK. KYLLINGEKØD 7-10%", "400 GR. / REMA 1000", False,
+         "REMA 1000 Hakket dansk kyllingekød, grise- og kalvekød, koteletter eller stegeflæsk",
+         "400-500 g\nMax. 62.50 pr. kg", True),
+        ("LAKSEFILET", "400 GR. / REMA 1000", False, "REMA 1000 Laksefilet",
+         "600 g\nPartivare. 148.33 pr. kg", False),
+        ("HAKKEBØFFER", "250 GR. / REMA 1000, BACON & GRØNT", False,
+         "REMA 1000 Hakkebøffer eller kalvesticks med bacon", "Med 25% grønt 250-280 g", True),
+        ("LASAGNEPLADER", "250 GR. / PASTA DI MARIA", False,
+         "La Pasta di Maria Italiensk fettuccine naturel eller lasagneplader", "250-500 g", True),
+        ("LEVERPOSTEJ", "500 GR. / REMA 1000", False,
+         "REMA 1000 Frilandsgris Leverpostej eller krydderpaté", "200-250 g", False),
         # Real descriptions also hold limits: "Max. 6 stk." is no size.
         ("PEPSI MAX", "1.98 LTR. / 6 PK.", False, "Pepsi Max eller Faxe Kondi",
          "Max. 6 stk. pr. kunde\n1,5 l", False),
@@ -586,6 +600,7 @@ def test_offer_query_and_short_words() -> None:
     assert mp.name_fit(["æg"], "ÆGGESTAND")[0] == 0
     assert mp.name_fit(["æg"], "SKRABEÆG")[0] == 1
     assert mp.name_fit(["laks"], "LAKSEFILET")[0] == 1
+    assert mp.name_fit(["laks"], "VARMRØGET LAKS")[1] > 5
 
 
 async def test_offer_line_gets_the_offer_product(
@@ -636,7 +651,7 @@ async def test_avis_price_until_rema_has_it(
     for name, extra in (
         ("ØKO. BROCCOLI", {"is_organic": True}),
         ("SPAGHETTI", {}),
-        ("LØG", {"is_advertised": True}),
+        ("LØG", {"is_advertised": True, "price": 5}),
         ("LØG", {"price": 4}),
     ):
         other: dict[str, Any] = {"packages": 1, "cost": 9,
