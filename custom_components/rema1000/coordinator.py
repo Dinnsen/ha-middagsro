@@ -18,6 +18,7 @@ from .api import Catalog, RemaAuthError, RemaClient, RemaError, ShoppingList
 from .const import DOMAIN, LIST_SCAN_INTERVAL, OFFERS_SCAN_INTERVAL, STORAGE_VERSION
 
 if TYPE_CHECKING:
+    from .favorites import FavoriteOffers
     from .mealplan import MealPlanner
     from .storage import RemaPlanStore
 
@@ -33,6 +34,7 @@ class RemaRuntimeData:
     offers: RemaOffersCoordinator
     store: RemaPlanStore
     planner: MealPlanner
+    favorite_offers: FavoriteOffers
 
 
 type RemaConfigEntry = ConfigEntry[RemaRuntimeData]

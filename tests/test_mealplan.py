@@ -39,6 +39,9 @@ def test_dates() -> None:
     ]
     assert mp.parse_date(None) is None
     assert mp.parse_date("2026-10-18T00:00:00") == START
+    # Named after the week of the plan's monday, like REMA's avis.
+    assert mp.plan_title(mp.plan_dates(START, 7)) == "Madplan uge 43"
+    assert mp.plan_week([date(2026, 10, 17)]) == 42
     with pytest.raises(ServiceValidationError):
         mp.parse_date("18/10")
 
@@ -158,8 +161,12 @@ def test_prompt_with_every_rule() -> None:
         recent_dishes=["Tacos"],
         feedback="For dyrt",
         skipped=[SKIP],
+        note="Fløde skal bruges inden tirsdag",
     )
     for part in (
+        "Familiens ønsker til netop denne madplan",
+        "Fløde skal bruges inden tirsdag",
+        '"title": "Madplan uge 43"',
         "springes over",
         "onsdag 2026-10-21",
         "nødder, kiwi",
@@ -235,6 +242,14 @@ def test_recipe_prompt() -> None:
         plan={"shopping": []},
     )
     assert "Højst" not in weekend
+    assert "Familiens ønsker" not in weekend
+    noted = mp.build_recipe_prompt(
+        settings=clean_settings({}), day=day, plan={"shopping": [], "note": "Brug fløden"}
+    )
+    assert (
+        "Familiens ønsker til ugen (brug varer, de allerede har, hvor det passer): Brug fløden"
+        in noted
+    )
     assert "salt og peber" in weekend
 
 
@@ -350,6 +365,8 @@ async def test_generate_plan(
 ) -> None:
     """A plan is made, priced by the family's rules and stored with recipes."""
     planner = init_integration.runtime_data.planner
+    store = init_integration.runtime_data.store
+    await store.async_set_note("Fløde skal bruges inden tirsdag")
     dates = mp.plan_dates(START, 7, {SKIP})
     ai = FakeAI(json.dumps(ai_answer(dates, SHOPPING)))  # type: ignore[arg-type]
     await _generate(planner, ai, skip={SKIP})
@@ -358,7 +375,13 @@ async def test_generate_plan(
     plan = init_integration.runtime_data.store.latest_plan
     assert plan is not None
     assert plan["start_date"] == "2026-10-18"
+    assert plan["title"] == "Madplan uge 43"
+    assert plan["week"] == 43
     assert plan["skipped"] == ["2026-10-21"]
+    # The wishes were used for this plan only.
+    assert "Fløde skal bruges inden tirsdag" in ai.prompts[0]
+    assert plan["note"] == "Fløde skal bruges inden tirsdag"
+    assert store.note == ""
     assert [d["date"] for d in plan["days"]] == [d.isoformat() for d in dates]
     assert "onsdag 2026-10-21" in ai.prompts[0]
     assert "[fav1] Lasagne" in ai.prompts[0]

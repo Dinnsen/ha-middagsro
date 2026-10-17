@@ -699,14 +699,16 @@ class RemaClient:
 
     # ------------------------------------------------------------ products
 
-    async def async_search_products(self, query: str, limit: int = 24) -> list[Product]:
-        """Search the REMA 1000 catalogue."""
+    async def async_search_products(
+        self, query: str, limit: int = 24, at: datetime | None = None
+    ) -> list[Product]:
+        """Search the REMA 1000 catalogue, priced as of now or a later time."""
         data = await self._async_request(
             "GET",
             "/search/products",
             params={"per_page": max(1, min(limit, 100)), "page": 1, "query": query},
         )
-        now = datetime.now(UTC)
+        now = at or datetime.now(UTC)
         products: list[Product] = []
         for entry in (data or {}).get("data") or []:
             try:

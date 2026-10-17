@@ -31,6 +31,9 @@ Integrationen lægger et **REMA 1000-panel** i sidebaren. Det følger dit Home A
 - Den AI, du har sat op i Home Assistant (en **AI-opgave**, fx Google Gemini, OpenAI eller Anthropic), laver aftensmaden for 1–14 dage og bygger retterne op om ugens tilbud.
 - Planen følger jeres regler: budget, økologi, krav til æg og mælk, ting der skal undgås, allergier, antal vegetarretter, restedage, faste dage (fx rugbrødsdag), maks. tid på hverdage og jeres favoritretter.
 - **Spring dage over**, hvis I ikke spiser hjemme, og vælg selv første dag.
+- **Ønsker til madplanen:** skriv fx, hvad der skal bruges fra køleskabet inden en bestemt dag, eller hvilken ret I vil have en bestemt dag. Ønskerne bruges kun i den næste plan – også når den laves automatisk – og fjernes derefter.
+- Mens næste uges plan ligger klar, viser forsiden **i aften og resten af denne uge** fra den plan, der kører nu. Opskrifter-fanen åbner altid på aftenens ret.
+- Knapper, der bruger AI, er mærket med ✦.
 - Bliver indkøbslisten **over budget**, beder integrationen AI'en om en billigere plan én gang og beholder den billigste.
 - En **krav-tjekliste** viser, om planen overholder jeres regler.
 - Slå **automatik** til, så laves næste uges plan, når den nye tilbudsavis udkommer – og sendes evt. direkte til REMA-listen.
@@ -56,7 +59,7 @@ Ingredienser og trin i stor skrift. Kryds af undervejs, start en **timer** på h
 
 <img src="docs/images/favorites.png" alt="Favoritvarer fra REMA-appen, der er på tilbud nu og i næste avis" width="100%">
 
-De varer, du har givet et hjerte i REMA 1000-appen. Dem, der er på tilbud nu og i **næste uges avis**, vises øverst med før- og nu-pris og kan lægges på listen med ét tryk. Alle favoritter kan filtreres.
+De varer, du har givet et hjerte i REMA 1000-appen. Vælg **Denne uge** eller **Næste uge** for at se, hvilke der er på tilbud, med før- og nu-pris, og læg dem på listen med ét tryk. Favoritter, der ligner noget i tilbudsavisen, tjekkes hos REMA 1000 med prisen for den uge. Er næste uges avis ikke udkommet endnu, vises denne uges tilbud. Alle favoritter kan filtreres.
 
 ### Historik
 
@@ -266,7 +269,7 @@ Opret gerne et [issue](https://github.com/Dinnsen/ha-rema1000/issues) med diagno
 
 ## Privatliv
 
-Dit REMA 1000-login gemmes i Home Assistant og sendes kun til REMA 1000. Til madplanen sender integrationen jeres indstillinger, ugens tilbud, jeres favoritretter og de seneste ugers retter (så de ikke gentages) til den AI-tjeneste, du har valgt i Home Assistant – aldrig dit login eller din e-mail.
+Dit REMA 1000-login gemmes i Home Assistant og sendes kun til REMA 1000. Til madplanen sender integrationen jeres indstillinger, ugens tilbud, jeres favoritretter, jeres ønsker til planen og de seneste ugers retter (så de ikke gentages) til den AI-tjeneste, du har valgt i Home Assistant – aldrig dit login eller din e-mail.
 
 ## Licens
 

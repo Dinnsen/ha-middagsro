@@ -59,7 +59,22 @@
   const handlers = {
     "rema1000/state": () => D.state,
     "rema1000/plan": () => D.state.latest_plan,
-    "rema1000/favorites": () => D.remaFavorites,
+    "rema1000/favorites": (msg) => {
+      const next = msg.week === "next";
+      const sale = (p) => p.is_advertised || p.is_campaign || p.price < p.normal_price - 0.01;
+      return {
+        week: msg.week,
+        fallback: false,
+        catalog: next ? { label: "Uge 44", valid_from: "2026-10-24T22:00:00+00:00" } : { label: "Uge 43" },
+        products: D.remaFavorites,
+        on_offer: next
+          ? D.remaFavorites
+              .filter((p) => p.upcoming_is_advertised)
+              .map((p) => ({ ...p, price: p.upcoming_price, normal_price: p.price, is_advertised: true }))
+          : D.remaFavorites.filter(sale),
+      };
+    },
+    "rema1000/note": (msg) => ({ note: (D.state.note = msg.text) }),
     "rema1000/search": () => D.search,
   };
   const hass = {

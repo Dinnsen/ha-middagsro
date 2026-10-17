@@ -153,7 +153,7 @@ async def test_products_and_list(
 
     msg = await _ws(client, 2, type="rema1000/favorites", force=True)
     mock_client.async_get_favorites.assert_awaited_with(force=True)
-    assert len(msg["result"]) == 3
+    assert len(msg["result"]["products"]) == 3
 
     msg = await _ws(client, 3, type="rema1000/list/add", product_id=20494, amount=500)
     assert msg["success"]
@@ -162,3 +162,54 @@ async def test_products_and_list(
     msg = await _ws(client, 4, type="rema1000/list/clear")
     assert msg["result"] == {"removed": 3}
     mock_client.async_delete_items.assert_awaited_with(777, [1, 2, 3])
+
+
+async def test_running_plan_and_note(
+    hass: HomeAssistant, init_integration: MockConfigEntry, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Tonight's plan is sent when it is not the newest; wishes can be saved."""
+    store = init_integration.runtime_data.store
+    store.plans[:] = [make_plan("next", start="2026-10-18"), make_plan("now", start="2026-10-13")]
+    client = await hass_ws_client(hass)
+    state = (await _ws(client, 1, type="rema1000/state"))["result"]
+    assert state["latest_plan"]["id"] == "next"
+    assert state["current_plan"]["id"] == "now"
+    assert state["note"] == ""
+
+    msg = await _ws(client, 2, type="rema1000/note", text="  Pizza fredag ")
+    assert msg["result"] == {"note": "Pizza fredag"}
+    store.plans[:] = [make_plan("now", start="2026-10-13")]
+    state = (await _ws(client, 3, type="rema1000/state"))["result"]
+    assert state["current_plan"] is None  # the newest plan has tonight's dinner
+    assert state["note"] == "Pizza fredag"
+
+
+async def test_favorite_weeks(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    hass_ws_client: WebSocketGenerator,
+    mock_client: MagicMock,
+) -> None:
+    """Favourites on offer this week and next week, with this week as a fallback."""
+    client = await hass_ws_client(hass)
+    result = (await _ws(client, 1, type="rema1000/favorites"))["result"]
+    assert result["week"] == "current"
+    assert result["fallback"] is False
+    assert result["catalog"]["label"] == "Uge 42"
+    assert len(result["products"]) == 3
+    assert result["on_offer"] == []
+
+    result = (await _ws(client, 2, type="rema1000/favorites", week="next"))["result"]
+    assert result["catalog"]["label"] == "Uge 43"
+    assert result["fallback"] is False
+
+    # Until next week's avis is out, next week shows this week's offers.
+    offers = init_integration.runtime_data.offers.data
+    assert offers is not None
+    offers.upcoming = None
+    result = (await _ws(client, 3, type="rema1000/favorites", week="next", force=True))["result"]
+    assert result["fallback"] is True
+    assert result["catalog"]["label"] == "Uge 42"
+
+    msg = await _ws(client, 4, type="rema1000/favorites", week="later")
+    assert not msg["success"]
