@@ -894,14 +894,15 @@ class Rema1000Panel extends HTMLElement {
     const running = this._viewingLatest ? this._state.current_plan : null;
     const later = new Set(plan.days.map((d) => d.date));
     const rest = running ? running.days.filter((d) => d.date >= today && !later.has(d.date)) : [];
+    const onlyTonight = rest.length === 1 && rest[0].date === today;
     const restCard = rest.length
       ? `<div class="card">
-          <h2 class="flush">${rest.length === 1 ? "I aften" : "Resten af denne uge"}</h2>
+          <h2 class="flush">${onlyTonight ? "I aften" : "Resten af denne uge"}</h2>
           <p class="muted">${esc(running.title)}</p>
           <div class="days">${rest
             .map(
               (day) => `<button class="day ${day.date === today ? "today" : ""}" data-action="open-day" data-arg="${esc(running.id)}|${day.date}">
-                <span class="date">${day.date === today && rest.length > 1 ? "I aften" : esc(dateLabel(day.date))}</span>
+                <span class="date">${day.date === today && !onlyTonight ? "I aften" : esc(dateLabel(day.date))}</span>
                 <span class="dish">${esc(day.dish)}</span>
                 <span class="meta">${day.total_minutes ? `${day.total_minutes} min` : ""}</span>
               </button>`

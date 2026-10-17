@@ -1,0 +1,43 @@
+name: Bug report / Fejl
+description: Something does not work as expected. / Noget virker ikke, som det skal.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please don't post your e-mail, password or other personal data.
+        Tak for fejlrapporten! Skriv ikke din e-mail, adgangskode eller andre personlige oplysninger.
+        Security issues: see SECURITY.md. / Sikkerhedsfejl: se SECURITY.md.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened? / Hvad skete der?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Integration version / Version af integrationen
+      placeholder: "0.5.2"
+    validations:
+      required: true
+  - type: input
+    id: ha
+    attributes:
+      label: Home Assistant version
+      placeholder: "2026.10.1"
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics / Diagnostik
+      description: "Settings → Devices & services → REMA 1000 → ⋮ → Download diagnostics. Personal data is removed from the file."
+      render: json
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant lines from the log with debug logging turned on.
+      render: text

@@ -2,6 +2,18 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [0.5.2] - 2026-10-17
+
+### Fixed
+- When tonight is skipped in the running plan, the rest of its week is still shown on the plan page and in the recipes.
+
+### Security
+- The home-screen app no longer loads its Home Assistant connection library from a CDN; it is bundled with the integration (home-assistant-js-websocket 9.4.0, Apache-2.0).
+
+### Docs
+- README in English, with the Danish README in `README.da.md`.
+- `SECURITY.md` for private vulnerability reports, and issue forms for bugs and ideas.
+
 ## [0.5.1] - 2026-10-17
 
 ### Changed

@@ -249,13 +249,12 @@ class RemaPlanStore:
         return next((p for p in self.plans if p.get("start_date") == start.isoformat()), None)
 
     def plan_covering(self, day: date) -> dict[str, Any] | None:
-        """The newest plan that has a dinner planned on a day."""
+        """The newest plan whose period includes a day (also if that day is skipped)."""
         return next(
             (
                 p
                 for p in self.plans
                 if p.get("start_date", "") <= day.isoformat() <= p.get("end_date", "")
-                and any(d.get("date") == day.isoformat() for d in p.get("days", []))
             ),
             None,
         )

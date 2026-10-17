@@ -1,0 +1,11 @@
+name: Idea / Idé
+description: Suggest something new or better. / Foreslå noget nyt eller bedre.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like? / Hvad kunne du tænke dig?
+      description: Describe the idea and what it would help with.
+    validations:
+      required: true

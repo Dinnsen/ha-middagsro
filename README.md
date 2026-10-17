@@ -1,185 +1,187 @@
 <p align="center">
-  <img src="docs/images/hero.png" alt="REMA 1000 til Home Assistant: madplan, opskrift og indkøbsliste på telefonen" width="100%">
+  <img src="docs/images/hero.png" alt="REMA 1000 for Home Assistant: meal plan, recipe and shopping list on a phone" width="100%">
 </p>
 
 <p align="center">
   <a href="https://github.com/Dinnsen/ha-rema1000/releases"><img alt="Version" src="https://img.shields.io/github/v/release/Dinnsen/ha-rema1000?style=flat-square&label=version&color=0e2a8a"></a>
-  <a href="https://hacs.xyz"><img alt="HACS" src="https://img.shields.io/badge/HACS-brugerdefineret-41BDF5?style=flat-square"></a>
+  <a href="https://hacs.xyz"><img alt="HACS" src="https://img.shields.io/badge/HACS-custom-41BDF5?style=flat-square"></a>
   <img alt="Home Assistant 2026.1+" src="https://img.shields.io/badge/Home%20Assistant-2026.1%2B-18BCF2?style=flat-square&logo=homeassistant&logoColor=white">
-  <img alt="Kvalitetsskala: Platin" src="https://img.shields.io/badge/kvalitet-platin-7f8c99?style=flat-square">
+  <img alt="Quality scale: Platinum" src="https://img.shields.io/badge/quality-platinum-7f8c99?style=flat-square">
   <a href="https://github.com/Dinnsen/ha-rema1000/actions/workflows/tests.yml"><img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/Dinnsen/ha-rema1000/tests.yml?branch=main&style=flat-square&label=tests"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/github/license/Dinnsen/ha-rema1000?style=flat-square"></a>
 </p>
 
-# REMA 1000 til Home Assistant
+# REMA 1000 for Home Assistant
 
-Lav ugens aftensmad med AI ud fra REMA 1000's tilbudsavis, få opskrifterne frem i køkkenet, og send indkøbslisten direkte til REMA 1000-appen med ét tryk. Din indkøbsliste i appen bliver samtidig en to-do-liste i Home Assistant, så du også kan tilføje varer med stemmen, fra en automatisering eller fra et dashboard.
+🇩🇰 [Læs på dansk](README.da.md)
+
+Plan the week's dinners with AI from REMA 1000's weekly offers (*tilbudsavis*), bring the recipes up in the kitchen, and send the shopping list straight to the REMA 1000 app with one tap. The shopping list in the app also becomes a to-do list in Home Assistant, so you can add items by voice, from an automation or from a dashboard.
 
 > [!NOTE]
-> Uofficiel integration. REMA 1000 har ikke et offentligt API, så integrationen bruger de samme kald som rema1000.dk og webshoppen. Den kan holde op med at virke, hvis REMA ændrer deres side. Kun til personlig brug med din egen REMA 1000-konto i Danmark.
+> Unofficial integration, not made by or affiliated with REMA 1000. REMA 1000 has no public API, so the integration uses the same calls as rema1000.dk and the web shop. It may stop working if REMA changes its site. For personal use with your own REMA 1000 account in Denmark. The panel and the meal plans are in Danish.
 
-**Indhold:** [Funktioner](#funktioner) · [Krav](#krav) · [Installation](#installation) · [Opsætning](#opsætning) · [Indstillinger](#indstillinger-i-panelet) · [Entiteter](#entiteter) · [Handlinger](#handlinger) · [Eksempler](#eksempler) · [Sådan virker det](#sådan-virker-det) · [Begrænsninger](#kendte-begrænsninger) · [Fejlfinding](#fejlfinding) · [Fjern integrationen](#fjern-integrationen)
+**Contents:** [Features](#features) · [Requirements](#requirements) · [Installation](#installation) · [Setup](#setup) · [Settings](#settings-in-the-panel) · [Entities](#entities) · [Actions](#actions) · [Examples](#examples) · [How it works](#how-it-works) · [Limitations](#known-limitations) · [Troubleshooting](#troubleshooting) · [Removal](#removing-the-integration) · [Privacy](#privacy)
 
-## Funktioner
+## Features
 
-Integrationen lægger et **REMA 1000-panel** i sidebaren. Det følger dit Home Assistant-tema, lys og mørk tilstand, og virker lige godt på computer, tablet og telefon, hvor fanerne ligger i bunden, og man kan stryge mellem dem.
+The integration adds a **REMA 1000 panel** to the sidebar. It follows your Home Assistant theme, light and dark mode, and works on a computer, tablet and phone, where the tabs sit at the bottom and you can swipe between them.
 
-### Ugens madplan, lavet med AI
+### The week's meal plan, made with AI
 
-<img src="docs/images/plan.png" alt="Madplan for en uge med pris, budget og dagens retter" width="100%">
+<img src="docs/images/plan.png" alt="A week's meal plan with price, budget and the dinners" width="100%">
 
-- Den AI, du har sat op i Home Assistant (en **AI-opgave**, fx Google Gemini, OpenAI eller Anthropic), laver aftensmaden for 1–14 dage og bygger retterne op om ugens tilbud.
-- Planen følger jeres regler: budget, økologi, krav til æg og mælk, ting der skal undgås, allergier, antal vegetarretter, restedage, faste dage (fx rugbrødsdag), maks. tid på hverdage og jeres favoritretter.
-- **Spring dage over**, hvis I ikke spiser hjemme, og vælg selv første dag.
-- **Ønsker til madplanen:** skriv fx, hvad der skal bruges fra køleskabet inden en bestemt dag, eller hvilken ret I vil have en bestemt dag. Ønskerne bruges kun i den næste plan – også når den laves automatisk – og fjernes derefter.
-- Mens næste uges plan ligger klar, viser forsiden **i aften og resten af denne uge** fra den plan, der kører nu. Opskrifter-fanen åbner altid på aftenens ret.
-- Knapper, der bruger AI, er mærket med ✦.
-- Bliver indkøbslisten **over budget**, beder integrationen AI'en om en billigere plan én gang og beholder den billigste.
-- En **krav-tjekliste** viser, om planen overholder jeres regler.
-- Slå **automatik** til, så laves næste uges plan, når den nye tilbudsavis udkommer – og sendes evt. direkte til REMA-listen.
+- The AI you have set up in Home Assistant (an **AI Task**, e.g. Google Gemini, OpenAI or Anthropic) plans dinner for 1–14 days and builds the dishes around the week's offers.
+- The plan follows your rules: budget, organic, requirements for eggs and milk, things to avoid, allergies, number of vegetarian dishes, leftover days, fixed days (e.g. a rye-bread day), maximum time on weekdays and your favourite dishes.
+- **Skip days** when you are not eating at home, and choose the first day yourself.
+- **Wishes for the plan:** write, for example, what in the fridge must be used before a given day, or which dish you want on a given day. The wishes are used in the next plan only – also when it is made automatically – and then removed.
+- While next week's plan is ready, the plan page shows **tonight and the rest of this week** from the plan that is running now. The recipes tab always opens on tonight's dish.
+- If the shopping list goes **over budget**, the integration asks the AI once for a cheaper plan and keeps the cheapest.
+- A **requirements checklist** shows whether the plan keeps your rules.
+- Turn on **automation** to make next week's plan when the new offers come out – and optionally send it straight to the REMA list.
+- Buttons that use AI are marked with ✦.
 
-### Opskrifter til køkkenet
+### Recipes for the kitchen
 
-<img src="docs/images/recipe.png" alt="Opskrift med afkrydsede ingredienser og en timer, der tæller ned" width="100%">
+<img src="docs/images/recipe.png" alt="A recipe with ticked ingredients and a timer counting down" width="100%">
 
-Ingredienser og trin i stor skrift. Kryds af undervejs, start en **timer** på hvert trin (den bipper og vibrerer, når tiden er gået), og tryk **Hold skærmen tændt**, mens du laver mad. Restedage henviser til den dag, maden blev lavet. Er du ikke tilfreds med en opskrift, så lav den igen.
+Ingredients and steps in large type. Tick them off as you go, start a **timer** on each step (it beeps and vibrates when time is up), and tap **Hold skærmen tændt** (keep the screen on) while you cook. Leftover days point to the day the food was made. Not happy with a recipe? Make it again.
 
-### Den billigste indkøbsliste – direkte i REMA-appen
+### The cheapest shopping list – straight into the REMA app
 
-<img src="docs/images/shopping.png" alt="Indkøbsliste med REMA-varer, tilbud, økologi-mærker og priser" width="100%">
+<img src="docs/images/shopping.png" alt="Shopping list with REMA products, offers, organic labels and prices" width="100%">
 
-- Til hver ingrediens findes **den billigste REMA-vare**, der opfylder jeres regler. Varer fra tilbudsavisen, økologiske varer og faste ugevarer er mærket.
-- Pris pr. vare, antal pakker og samlet pris mod budgettet.
-- **Send til REMA-listen** lægger det hele på din primære liste i REMA 1000-appen. Varer uden et sikkert match kommer på som tekst.
-- Under listen ses, hvad der står på REMA-listen lige nu, og den kan tømmes, når I har handlet.
+- For each ingredient, **the cheapest REMA product** that meets your rules is found. Products from the offers, organic products and weekly fixed items are labelled.
+- Price per product, number of packs and the total against the budget.
+- **Send til REMA-listen** puts everything on your primary list in the REMA 1000 app. Items without a safe match are added as text.
+- Below the list you see what is on the REMA list right now, and it can be emptied once you have shopped.
 
-<img src="docs/images/rema-list.png" alt="Det, der står på REMA-listen lige nu" width="100%">
+<img src="docs/images/rema-list.png" alt="What is on the REMA list right now" width="100%">
 
-### Dine favoritvarer på tilbud
+### Your favourite products on offer
 
-<img src="docs/images/favorites.png" alt="Favoritvarer fra REMA-appen, der er på tilbud nu og i næste avis" width="100%">
+<img src="docs/images/favorites.png" alt="Favourite products from the REMA app that are on offer" width="100%">
 
-De varer, du har givet et hjerte i REMA 1000-appen. Vælg **Denne uge** eller **Næste uge** for at se, hvilke der er på tilbud, med før- og nu-pris, og læg dem på listen med ét tryk. Favoritter, der ligner noget i tilbudsavisen, tjekkes hos REMA 1000 med prisen for den uge. Er næste uges avis ikke udkommet endnu, vises denne uges tilbud. Alle favoritter kan filtreres.
+The products you have given a heart in the REMA 1000 app. Choose **Denne uge** (this week) or **Næste uge** (next week) to see which are on offer, with before and now price, and put them on the list with one tap. Favourites that look like something in the offers are checked with REMA 1000 at the price for that week. Until next week's offers are out, this week's are shown. All favourites can be filtered.
 
-### Historik
+### History
 
-<img src="docs/images/history.png" alt="Tidligere madplaner med pris og retter" width="100%">
+<img src="docs/images/history.png" alt="Earlier meal plans with price and dishes" width="100%">
 
-Tidligere madplaner med pris, status og retter. Åbn en gammel plan, og send den til REMA-listen igen, eller slet den.
+Earlier meal plans with price, status and dishes. Open an old plan and send it to the REMA list again, or delete it.
 
-### Familiens favoritretter og retter, I ikke kan lide
+### The family's favourite dishes and dishes you don't like
 
-<img src="docs/images/family-favorites.png" alt="Familiens favoritretter med hyppighed" width="100%">
+<img src="docs/images/family-favorites.png" alt="The family's favourite dishes with how often" width="100%">
 
-Beskriv de retter, familien elsker, og hvor tit de skal på planen (hver uge, hver 2. uge, hver måned, kun når ingredienserne er på tilbud eller bare til inspiration). Retter, I ikke kan lide, kommer aldrig på planen.
+Describe the dishes the family loves and how often they should be on the plan (every week, every 2 weeks, every month, only when the ingredients are on offer, or just for inspiration). Dishes you don't like never go on the plan.
 
-### Lys og mørk tilstand
+### Light and dark mode
 
-<img src="docs/images/plan-dark.png" alt="Madplanen i mørk tilstand" width="100%">
+<img src="docs/images/plan-dark.png" alt="The meal plan in dark mode" width="100%">
 
-### App på hjemmeskærmen
+### App on the home screen
 
-Åbn `https://<din-home-assistant>/rema1000_app/app.html` i Safari eller Chrome, log ind og vælg **Del → Føj til hjemmeskærm**. Så åbner REMA 1000 i fuld skærm med REMA-ikon og dit Home Assistant-tema – også bag notch og hjemmebjælke. Træk ned for at opdatere. Linket står også under **Indstillinger** i panelet.
+Open `https://<your-home-assistant>/rema1000_app/app.html` in Safari or Chrome, log in and choose **Share → Add to Home Screen**. REMA 1000 then opens full screen with the REMA icon and your Home Assistant theme – also behind the notch and home bar. Pull down to refresh. The link is also under **Indstillinger** (settings) in the panel.
 
-## Krav
+## Requirements
 
-- Home Assistant **2026.1** eller nyere.
-- En REMA 1000-konto (samme login som på rema1000.dk og i REMA 1000-appen).
-- Til madplanen: en **AI-opgave** i Home Assistant, fx fra Google Generative AI, OpenAI eller Anthropic (**Indstillinger → Enheder og tjenester → Tilføj integration**). Indkøbslisten, søgning, tilbud og favoritter virker uden AI.
+- Home Assistant **2026.1** or newer.
+- A REMA 1000 account (the same login as on rema1000.dk and in the REMA 1000 app).
+- For the meal plan: an **AI Task** in Home Assistant, e.g. from Google Generative AI, OpenAI or Anthropic (**Settings → Devices & services → Add integration**). The shopping list, search, offers and favourites work without AI.
 
 ## Installation
 
-### Med HACS (anbefalet)
+### With HACS (recommended)
 
-[![Åbn dit Home Assistant og tilføj repositoriet i HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Dinnsen&repository=ha-rema1000&category=integration)
+[![Open your Home Assistant and add the repository to HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Dinnsen&repository=ha-rema1000&category=integration)
 
-1. Tryk på knappen ovenfor, eller gå til **HACS → ⋮ → Brugerdefinerede repositories**, og tilføj `https://github.com/Dinnsen/ha-rema1000` som **Integration**.
-2. Søg efter **REMA 1000** i HACS, og tryk **Download**.
-3. Genstart Home Assistant.
+1. Tap the button above, or go to **HACS → ⋮ → Custom repositories** and add `https://github.com/Dinnsen/ha-rema1000` as an **Integration**.
+2. Search for **REMA 1000** in HACS and tap **Download**.
+3. Restart Home Assistant.
 
-### Manuelt
+### Manually
 
-1. Hent kildekoden for den nyeste version under [Releases](https://github.com/Dinnsen/ha-rema1000/releases).
-2. Kopiér mappen `custom_components/rema1000` til `config/custom_components/` i Home Assistant.
-3. Genstart Home Assistant.
+1. Download the source code of the latest version under [Releases](https://github.com/Dinnsen/ha-rema1000/releases).
+2. Copy the folder `custom_components/rema1000` to `config/custom_components/` in Home Assistant.
+3. Restart Home Assistant.
 
-## Opsætning
+## Setup
 
-[![Åbn dit Home Assistant og tilføj REMA 1000.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=rema1000)
+[![Open your Home Assistant and add REMA 1000.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=rema1000)
 
-1. Gå til **Indstillinger → Enheder og tjenester → Tilføj integration**, og vælg **REMA 1000**.
-2. Log ind:
+1. Go to **Settings → Devices & services → Add integration** and choose **REMA 1000**.
+2. Log in:
 
-   | Felt | Beskrivelse |
+   | Field | Description |
    |---|---|
-   | **E-mail** | Den e-mail, du logger ind på rema1000.dk og i REMA 1000-appen med. |
-   | **Adgangskode** | Din REMA 1000-adgangskode. Den gemmes i Home Assistant og sendes kun til REMA 1000. |
+   | **E-mail** | The e-mail you log in to rema1000.dk and the REMA 1000 app with. |
+   | **Password** | Your REMA 1000 password. It is stored in Home Assistant and only sent to REMA 1000. |
 
-3. Åbn **REMA 1000** i sidebaren, gå til **Indstillinger**, og vælg familiens regler. Tryk så **Lav madplan**.
+3. Open **REMA 1000** in the sidebar, go to **Indstillinger** (settings) and choose the family's rules. Then tap **Lav madplan** (make meal plan).
 
-Integrationen logger selv ind igen, når sessionen udløber. Skifter du adgangskode, beder Home Assistant dig om den nye (**Indstillinger → Enheder og tjenester → REMA 1000**). Vil du skifte e-mail eller adgangskode selv, så vælg **⋮ → Omkonfigurér** på integrationen. Du kan tilføje flere REMA 1000-konti. Hver får sine egne entiteter, og handlingerne kan rettes mod en bestemt konto; panelet viser den først tilføjede.
+The integration logs in again by itself when the session expires. If you change your password, Home Assistant asks you for the new one (**Settings → Devices & services → REMA 1000**). To change the e-mail or password yourself, choose **⋮ → Reconfigure** on the integration. You can add several REMA 1000 accounts. Each gets its own entities, and the actions can target a given account; the panel shows the one added first.
 
-## Indstillinger i panelet
+## Settings in the panel
 
-<img src="docs/images/settings.png" alt="Indstillinger for AI, budget, økologi, krav til varer, ting at undgå og allergier" width="100%">
+<img src="docs/images/settings.png" alt="Settings for AI, budget, organic, product requirements, things to avoid and allergies" width="100%">
 
-Indstillingerne gælder hver gang, en madplan laves, og gemmes pr. REMA 1000-konto.
+The settings apply every time a meal plan is made and are stored per REMA 1000 account. The panel is in Danish; the Danish name of each setting is in brackets.
 
-| Indstilling | Hvad den gør | Standard |
+| Setting | What it does | Default |
 |---|---|---|
-| **AI-opgave-entitet** | Hvilken AI-opgave der laver planen. *Home Assistants standard* bruger den, der er valgt under AI-indstillingerne. | Standard |
-| **Madplanen starter / der handles ind** | Ugedagen, planen starter på. Tilbudsavisen gælder fra søndag. | Søndag |
-| **Antal dage** | 1–14 dage. | 7 |
-| **Budget** | Hele indkøbslisten i kr. Over budget prøver AI'en én gang mere. | 500 |
-| **Økologi** | *Udelukkende økologi*, *Foretræk økologi* (hvis højst x % dyrere end den billigste) eller *Ligeglad*. | Foretræk, 20 % |
-| **Æg** | Skrabeæg, mindst frilandsæg eller kun økologiske æg. | Skrabeæg |
-| **Mælk / frugt og grønt skal være økologisk** | Krav, der gælder uanset pris. | Fra |
-| **Undgå** | Kød, svinekød, oksekød, fisk, skaldyr, animalske produkter (vegansk), stærk mad – og fritekst. | – |
-| **Allergier** | De 14 allergener fra EU's liste (gluten, laktose, mælkeprotein, æg, nødder, jordnødder, soja, sesam, selleri, sennep, fisk, krebsdyr, bløddyr, lupin, sulfitter) – og fritekst. | – |
-| **Familien** | Voksne og børn med alder og køn, så mængderne passer. | 2 voksne, 2 børn |
-| **Vegetarretter** | Mindst og højst antal pr. plan. | 0–1 |
-| **Restedage** | Dage, hvor der spises rester fra dagen før. | 2 |
-| **Maks. minutter på hverdage** | Den tid, en ret højst må tage mandag–fredag. | 30 |
-| **Ingen gentagelse** | Antal uger, før en ret må komme igen. | 3 |
-| **Faste dage** | Fx *Rugbrødsdag* om onsdagen. | Torsdag: rugbrød |
-| **Ønsker til maden** | Fritekst til AI'en. | Sund og børnevenlig |
-| **Basisvarer** | Det, I altid har, og som ikke købes (salt, olie, mel …). | Salt, peber, olie m.m. |
-| **Faste varer hver uge** | Søg i REMA's sortiment, og vælg en vare (eller skriv fritekst), som altid kommer på listen. | – |
-| **Automatik** | Lav næste uges plan automatisk, når den nye avis udkommer, og send den evt. til REMA-listen. | Fra |
-| **Familiens favoritter** | Retter med hyppighed. | – |
-| **Retter familien ikke kan lide** | Kommer aldrig på planen. | – |
+| **AI Task entity** (*AI-opgave-entitet*) | Which AI Task makes the plan. *Home Assistants standard* uses the one chosen in the AI settings. | Default |
+| **Plan starts / shopping day** (*Madplanen starter / der handles ind*) | The weekday the plan starts. The offers run from Sunday. | Sunday |
+| **Number of days** (*Antal dage*) | 1–14 days. | 7 |
+| **Budget** | The whole shopping list in DKK. Over budget, the AI tries once more. | 500 |
+| **Organic** (*Økologi*) | *Only organic*, *Prefer organic* (if at most x % dearer than the cheapest) or *Don't mind*. | Prefer, 20 % |
+| **Eggs** (*Æg*) | Cage eggs, at least free-range or organic only. | Cage eggs |
+| **Milk / fruit and vegetables must be organic** | Requirements that apply whatever the price. | Off |
+| **Avoid** (*Undgå*) | Meat, pork, beef, fish, shellfish, animal products (vegan), spicy food – and free text. | – |
+| **Allergies** (*Allergier*) | The 14 allergens on the EU list (gluten, lactose, milk protein, egg, nuts, peanuts, soy, sesame, celery, mustard, fish, crustaceans, molluscs, lupin, sulphites) – and free text. | – |
+| **Family** (*Familien*) | Adults and children with age and sex, so the amounts fit. | 2 adults, 2 children |
+| **Vegetarian dishes** (*Vegetarretter*) | Minimum and maximum per plan. | 0–1 |
+| **Leftover days** (*Restedage*) | Days with leftovers from the day before. | 2 |
+| **Max. minutes on weekdays** | The most time a dish may take Monday–Friday. | 30 |
+| **No repeats** (*Ingen gentagelse*) | Number of weeks before a dish may come back. | 3 |
+| **Fixed days** (*Faste dage*) | E.g. a rye-bread day on Wednesdays. | Thursday: rye bread |
+| **Wishes for the food** (*Ønsker til maden*) | Free text for the AI. | Healthy and child-friendly |
+| **Pantry** (*Basisvarer*) | What you always have and don't buy (salt, oil, flour …). | Salt, pepper, oil etc. |
+| **Fixed weekly items** (*Faste varer hver uge*) | Search REMA's range and pick a product (or write free text) that always goes on the list. | – |
+| **Automation** (*Automatik*) | Make next week's plan when the new offers come out, and optionally send it to the REMA list. | Off |
+| **The family's favourites** (*Familiens favoritter*) | Dishes with how often. | – |
+| **Dishes the family doesn't like** | Never go on the plan. | – |
 
-## Entiteter
+## Entities
 
-Hver REMA 1000-konto bliver en tjeneste med disse entiteter:
+Each REMA 1000 account becomes a service with these entities:
 
-| Entitet | Type | Beskrivelse |
+| Entity | Type | Description |
 |---|---|---|
-| **Indkøbsliste** | `todo` | Din primære REMA-liste – den, der vises i appen. Tilføj, kryds af, ret antal og slet; ændringer vises i appen og omvendt. Det, du tilføjer (også via Assist), matches med en REMA-vare; skriv `3 x mælk` for 3 stk. Findes der ingen sikker vare, tilføjes det som tekst. |
-| **Tilføj vare** | `text` | Skriv fx `letmælk`, `2 x rugbrød` eller `tre poser chips`. Varen matches og lægges på listen, og feltet tømmes bagefter. Attributterne viser, hvad der blev tilføjet. |
-| **Madplan** | `sensor` | Status for madplanen (*Ingen plan*, *Laves*, *Klar*, *Sendt til indkøbsliste*, *Fejl*). Attributter: titel, start- og slutdato, pris, budget, over budget og aftensmaden pr. dag. |
-| **Dagens ret** | `sensor` | Dagens aftensmad. Attributter: type, rester, portioner, tid, ingredienser, antal trin, tip og morgendagens ret. |
-| **Indkøbsliste i alt** | `sensor` (kr.) | Anslået pris for det, der mangler at blive købt. Attributter: antal varer og varer uden pris. |
-| **Aktuel tilbudsavis** / **Næste tilbudsavis** | `sensor` (tidspunkt) | Hvornår avisen gælder til / fra. Attributter: avisens navn, antal tilbud og hvornår integrationen første gang så næste uges avis. |
-| **Madplan** | `calendar` | Hver dags aftensmad som en begivenhed med tid og ingredienser. |
-| **Lav madplan** | `button` | Laver en ny plan med indstillingerne fra panelet. |
-| **Send madplan til indkøbsliste** | `button` | Sender den nyeste plan til REMA-listen. |
+| **Shopping list** | `todo` | Your primary REMA list – the one shown in the app. Add, tick off, change amounts and delete; changes show in the app and the other way round. What you add (also via Assist) is matched with a REMA product; write `3 x mælk` for 3 pieces. If there is no safe match, it is added as text. |
+| **Add to shopping list** | `text` | Write e.g. `letmælk`, `2 x rugbrød` or `tre poser chips`. The product is matched and put on the list, and the field is emptied afterwards. The attributes show what was added. |
+| **Meal plan** | `sensor` | Status of the meal plan (*No plan*, *Generating*, *Ready*, *Sent to shopping list*, *Error*). Attributes: title, start and end date, price, budget, over budget and the dinner per day. |
+| **Dinner today** | `sensor` | Today's dinner. Attributes: type, leftovers, servings, time, ingredients, number of steps, tip and tomorrow's dish. |
+| **Shopping list total** | `sensor` (DKK) | Estimated price of what is still to be bought. Attributes: number of items and items without a price. |
+| **Current offer catalogue** / **Next offer catalogue** | `sensor` (timestamp) | When the offers run until / from. Attributes: the catalogue's name, number of offers and when the integration first saw next week's catalogue. |
+| **Meal plan** | `calendar` | Each day's dinner as an event with time and ingredients. |
+| **Make meal plan** | `button` | Makes a new plan with the settings from the panel. |
+| **Send meal plan to shopping list** | `button` | Sends the newest plan to the REMA list. |
 
-## Handlinger
+## Actions
 
-| Handling | Beskrivelse | Felter |
+| Action | Description | Fields |
 |---|---|---|
-| `rema1000.search_products` | Søg i REMA 1000's sortiment med pris, tilbud og økologi. Giver et svar. | `query` (påkrævet), `limit` (1–100, standard 10), `config_entry_id` |
-| `rema1000.get_offers` | Alle tilbud i den aktuelle eller næste tilbudsavis. Giver et svar. | `catalog` (`current` eller `upcoming`), `config_entry_id` |
-| `rema1000.add_items` | Tilføj varer (REMA-varenummer eller fritekst) til REMA-listen. | `items` (påkrævet, liste med `product_id` eller `name` og evt. `amount`), `config_entry_id` |
-| `rema1000.generate_meal_plan` | Lav en madplan i baggrunden. | `start_date`, `send` (send listen, når planen er klar), `config_entry_id` |
-| `rema1000.send_meal_plan` | Send en madplans indkøbsliste til REMA-listen. | `plan_id` (tom = nyeste), `config_entry_id` |
+| `rema1000.search_products` | Search REMA 1000's range with price, offers and organic. Returns a response. | `query` (required), `limit` (1–100, default 10), `config_entry_id` |
+| `rema1000.get_offers` | All offers in the current or next catalogue. Returns a response. | `catalog` (`current` or `upcoming`), `config_entry_id` |
+| `rema1000.add_items` | Add products (REMA product number or free text) to the REMA list. | `items` (required, list with `product_id` or `name` and optionally `amount`), `config_entry_id` |
+| `rema1000.generate_meal_plan` | Make a meal plan in the background. | `start_date`, `send` (send the list when the plan is ready), `config_entry_id` |
+| `rema1000.send_meal_plan` | Send a meal plan's shopping list to the REMA list. | `plan_id` (empty = newest), `config_entry_id` |
 
-`config_entry_id` skal kun udfyldes, hvis du har flere REMA 1000-konti.
+`config_entry_id` is only needed if you have several REMA 1000 accounts.
 
-## Eksempler
+## Examples
 
-**Tilføj varer fra en automatisering:**
+**Add products from an automation:**
 
 ```yaml
 action: rema1000.add_items
@@ -190,7 +192,7 @@ data:
     - name: Opvasketabs
 ```
 
-**Søg efter en vare og brug svaret:**
+**Search for a product and use the response:**
 
 ```yaml
 action: rema1000.search_products
@@ -200,20 +202,20 @@ data:
 response_variable: result
 ```
 
-**Få besked, når næste uges tilbudsavis er ude:**
+**Get a notification when next week's offers are out:**
 
 ```yaml
 triggers:
   - trigger: state
-    entity_id: sensor.rema_1000_naeste_tilbudsavis  # dit id for Næste tilbudsavis
+    entity_id: sensor.rema_1000_next_offer_catalogue  # your id for Next offer catalogue
     from: unknown
 actions:
-  - action: notify.mobile_app_din_telefon
+  - action: notify.mobile_app_your_phone
     data:
-      message: "Næste uges REMA-avis er ude – tid til en ny madplan."
+      message: "Next week's REMA offers are out – time for a new meal plan."
 ```
 
-**Lav og send madplanen lørdag morgen:**
+**Make and send the meal plan on Saturday morning:**
 
 ```yaml
 triggers:
@@ -228,49 +230,50 @@ actions:
       send: true
 ```
 
-**Med stemmen:** Sig *"Tilføj mælk til indkøbslisten"* til Assist (eller Siri via Home Assistant-appen), hvis **Indkøbsliste** er delt med Assist. Varen matches med en REMA-vare og vises i REMA 1000-appen.
+**By voice:** Say *"Add milk to the shopping list"* to Assist (or Siri via the Home Assistant app) if **Shopping list** is exposed to Assist. The item is matched with a REMA product and shows in the REMA 1000 app.
 
-**På et dashboard:** Vis **Dagens ret** i et felt-kort, **Indkøbsliste** i et to-do-kort og **Madplan**-kalenderen i et kalenderkort.
+**On a dashboard:** Show **Dinner today** in a tile card, **Shopping list** in a to-do list card and the **Meal plan** calendar in a calendar card.
 
-Entitets-id'erne afhænger af kontoens navn; find dem under **Indstillinger → Enheder og tjenester → REMA 1000**.
+The entity IDs depend on the account's name and your language; find them under **Settings → Devices & services → REMA 1000**.
 
-## Sådan virker det
+## How it works
 
-- **Indkøbslisten** hentes fra REMA 1000 hvert **2. minut**, så ændringer i appen hurtigt ses i Home Assistant. Ændringer fra Home Assistant sendes med det samme.
-- **Tilbudsaviserne** (aktuel og næste uge) hentes hvert **3. time** fra Tjek, som REMA 1000 bruger til sin avis.
-- **Madplanen** laves kun, når du beder om det (eller automatisk, når næste uges avis udkommer, hvis det er slået til). Den tager typisk 1–2 minutter: AI'en lægger planen, integrationen finder og prissætter varerne efter jeres regler, og til sidst skrives opskrifterne.
-- Planer, indstillinger og favoritretter gemmes i Home Assistant og er med i backuppen.
-- Mister integrationen forbindelsen til REMA 1000, bliver entiteterne utilgængelige og kommer igen af sig selv. Er login ugyldigt, beder Home Assistant dig om at logge ind igen.
+- The **shopping list** is fetched from REMA 1000 every **2 minutes**, so changes in the app show up quickly in Home Assistant. Changes from Home Assistant are sent at once.
+- The **offer catalogues** (current and next week) are fetched every **3 hours** from Tjek, which REMA 1000 uses for its offers.
+- The **meal plan** is only made when you ask for it (or automatically when next week's offers are out, if turned on). It usually takes 1–2 minutes: the AI plans, the integration finds and prices the products by your rules, and finally the recipes are written.
+- Plans, settings and favourite dishes are stored in Home Assistant and included in backups.
+- If the integration loses its connection to REMA 1000, the entities become unavailable and come back by themselves. If the login is no longer valid, Home Assistant asks you to log in again.
 
-## Kendte begrænsninger
+## Known limitations
 
-- Kun REMA 1000 **Danmark** og kun din **primære** indkøbsliste (den, appen viser).
-- Priserne er REMA's webpriser og kan afvige fra butikken. Tilbud uden for avisen (fx lokale tilbud i butikken) kendes ikke.
-- Nogle ingredienser har ingen sikker REMA-vare (fx friske krydderurter). De kommer på listen som tekst og tæller ikke med i prisen.
-- AI'en kan tage fejl. Tjek opskrifter og allergener, før I laver maden.
-- Integrationen bruger ikke-offentlige kald og kan holde op med at virke, hvis REMA 1000 ændrer deres side.
+- Only REMA 1000 **Denmark** and only your **primary** shopping list (the one the app shows).
+- The panel, meal plans and recipes are in Danish.
+- Prices are REMA's web prices and can differ from the shop. Offers outside the catalogue (e.g. local in-store offers) are not known.
+- Some ingredients have no safe REMA product (e.g. fresh herbs). They go on the list as text and are not counted in the price.
+- The AI can make mistakes. Check recipes and allergens before you cook.
+- The integration uses non-public calls and may stop working if REMA 1000 changes its site.
 
-## Fejlfinding
+## Troubleshooting
 
-- **"Madplanen kunne ikke laves":** Tjek, at der er en AI-opgave i Home Assistant, og at den er valgt (eller at der er valgt en standard) under panelets **Indstillinger**. Mangler den, står der også en besked under **Indstillinger → Reparationer**. Svarer AI'en for langt eller ikke i det rigtige format, så prøv igen – eller vælg en anden model.
-- **Login virker ikke:** Prøv at logge ind på rema1000.dk med samme e-mail og adgangskode. Brug **Omkonfigurér** på integrationen, hvis du har skiftet adgangskode.
-- **Listen opdateres ikke i appen:** Træk ned i REMA 1000-appen for at opdatere. Home Assistant henter listen hvert 2. minut.
-- **Panelet viser en gammel version efter en opdatering:** Genindlæs siden (på telefonen: luk og åbn appen).
-- **Debug-log:** Gå til integrationen, og vælg **Aktivér debuglogning**. Gentag fejlen, og slå det fra igen for at hente loggen. Adgangskoden logges aldrig.
-- **Diagnostik:** Vælg **⋮ → Hent diagnostik** på integrationen. E-mail, adgangskode, tokens og andre personlige oplysninger fjernes, før filen gemmes.
+- **"Madplanen kunne ikke laves"** (the meal plan could not be made): check that there is an AI Task in Home Assistant and that it is chosen (or that a default is chosen) under the panel's **Indstillinger**. If it is missing, there is also a message under **Settings → Repairs**. If the AI answers too long or not in the right format, try again – or choose another model.
+- **Login does not work:** try logging in on rema1000.dk with the same e-mail and password. Use **Reconfigure** on the integration if you changed your password.
+- **The list doesn't update in the app:** pull down in the REMA 1000 app to refresh. Home Assistant fetches the list every 2 minutes.
+- **The panel shows an old version after an update:** reload the page (on a phone: close and open the app).
+- **Debug log:** go to the integration and choose **Enable debug logging**. Repeat the error, then turn it off again to download the log. The password is never logged.
+- **Diagnostics:** choose **⋮ → Download diagnostics** on the integration. E-mail, password, tokens and other personal data are removed before the file is saved.
 
-Opret gerne et [issue](https://github.com/Dinnsen/ha-rema1000/issues) med diagnostikfilen og en beskrivelse.
+Feel free to open an [issue](https://github.com/Dinnsen/ha-rema1000/issues) with the diagnostics file and a description. Please report security issues privately, see [SECURITY.md](SECURITY.md).
 
-## Fjern integrationen
+## Removing the integration
 
-1. Gå til **Indstillinger → Enheder og tjenester → REMA 1000**, vælg **⋮ → Slet** for hver konto. Panelet forsvinder, når den sidste konto er slettet. Din liste i REMA 1000-appen røres ikke.
-2. Installeret med HACS: åbn **REMA 1000** i HACS, og vælg **⋮ → Fjern**. Manuelt: slet mappen `config/custom_components/rema1000`.
-3. Genstart Home Assistant.
+1. Go to **Settings → Devices & services → REMA 1000** and choose **⋮ → Delete** for each account. The panel disappears when the last account is deleted. Your list in the REMA 1000 app is not touched.
+2. Installed with HACS: open **REMA 1000** in HACS and choose **⋮ → Remove**. Manually: delete the folder `config/custom_components/rema1000`.
+3. Restart Home Assistant.
 
-## Privatliv
+## Privacy
 
-Dit REMA 1000-login gemmes i Home Assistant og sendes kun til REMA 1000. Til madplanen sender integrationen jeres indstillinger, ugens tilbud, jeres favoritretter, jeres ønsker til planen og de seneste ugers retter (så de ikke gentages) til den AI-tjeneste, du har valgt i Home Assistant – aldrig dit login eller din e-mail.
+Your REMA 1000 login is stored in Home Assistant and only sent to REMA 1000. For the meal plan, the integration sends your settings, the week's offers, your favourite dishes, your wishes for the plan and the dishes of the last weeks (so they are not repeated) to the AI service you have chosen in Home Assistant – never your login or your e-mail.
 
-## Licens
+## Licence
 
-[MIT](LICENSE) © Christian Dinnsen. REMA 1000 og REMA 1000-logoet tilhører REMA 1000. Integrationen er ikke lavet af eller godkendt af REMA 1000.
+[MIT](LICENSE). The home-screen app includes [home-assistant-js-websocket](https://github.com/home-assistant/home-assistant-js-websocket) under the Apache-2.0 licence. REMA 1000 is a trademark of its owner; this project is not affiliated with REMA 1000.

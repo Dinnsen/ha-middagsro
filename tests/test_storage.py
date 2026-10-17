@@ -185,3 +185,10 @@ async def test_note_and_plan_covering(hass: HomeAssistant, hass_storage: dict[st
     assert covering is not None
     assert covering["id"] == "week43"
     assert store.plan_covering(date(2026, 10, 1)) is None
+    # Tonight skipped: the plan still counts, so the rest of its days are shown.
+    week42 = store.get_plan("week42")
+    assert week42 is not None
+    week42["days"] = [d for d in week42["days"] if d["date"] != "2026-10-16"]
+    covering = store.plan_covering(date(2026, 10, 16))
+    assert covering is not None
+    assert covering["id"] == "week42"
