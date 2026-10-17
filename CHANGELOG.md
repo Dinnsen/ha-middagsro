@@ -2,6 +2,13 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [0.5.3] - 2026-10-17
+
+### Fixed
+- **Saturdays:** REMA's prices for the week end before the avis does, so on Saturdays many products had no price and the week's offers were missing – in the favourites and in meal plans made that day. A price that ended now lasts until the week turns at Sunday 00:00 (unless a new price replaced it), like in the shop.
+- **Favourites next week** are checked in the middle of the coming avis week. The check ran an hour after the avis starts, before REMA's prices for that week begin, and found no offers.
+- **Meal plans for next week** are priced on the plan's first day, so prices, offers and the total match the week you shop in and the avis the dishes are built on. Something typed for the list is still priced now.
+
 ## [0.5.2] - 2026-10-17
 
 ### Fixed

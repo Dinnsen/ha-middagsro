@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -27,8 +28,11 @@ def test_helpers() -> None:
     # The beef matches two words of the avis, broccoli one, milk none.
     assert in_avis([MILK, BROCCOLI, BEEF], OFFERS) == [BEEF, BROCCOLI]
     assert check_time(CURRENT, NOW) == NOW
-    assert UPCOMING.valid_from is not None
-    assert check_time(UPCOMING, NOW) == UPCOMING.valid_from + timedelta(hours=1)
+    # Next week's avis is checked in the middle of its week, not at its start
+    # (REMA's prices start a few hours after the avis does).
+    assert check_time(UPCOMING, NOW) == datetime(2026, 10, 21, 9, 59, 30, tzinfo=UTC)
+    no_end = replace(UPCOMING, valid_to=None)
+    assert check_time(no_end, NOW) == datetime(2026, 10, 18, 22, tzinfo=UTC)
 
 
 async def test_favorite_offers(freezer: Any) -> None:
@@ -56,12 +60,11 @@ async def test_favorite_offers(freezer: Any) -> None:
     await favorites.async_on_offer(products, CURRENT)  # cached
     assert client.async_get_offers.await_count == 1
 
-    # Next week: priced an hour after the avis starts; today's prices don't count.
+    # Next week: priced in the middle of its avis; today's prices don't count.
     seen.clear()
     result = await favorites.async_on_offer(products, UPCOMING, force=True)
     assert [p.id for p in result] == [BEEF.id]
-    assert UPCOMING.valid_from is not None
-    assert set(seen) == {UPCOMING.valid_from + timedelta(hours=1)}
+    assert set(seen) == {check_time(UPCOMING, NOW)}
 
     # No avis, or the avis can't be read: today's own offers.
     assert await favorites.async_on_offer(products, None) == [CHIPS_SALE]

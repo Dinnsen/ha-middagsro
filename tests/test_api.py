@@ -25,6 +25,7 @@ from custom_components.rema1000.api import (
     ShoppingList,
     ShoppingListItem,
     split_amount,
+    week_end,
 )
 
 SHOP = "https://shop.rema1000.dk"
@@ -398,6 +399,44 @@ async def test_requests_and_retries() -> None:
     session.on("GET", url, FakeResponse(data={"data": [{"id": 3, "name": "C", "prices": prices}]}))
     [later] = await client.async_search_products("c", at=datetime(2099, 1, 5, tzinfo=UTC))
     assert (later.price, later.normal_price, later.is_advertised) == (15, 20, True)
+
+
+def test_prices_through_the_week() -> None:
+    """REMA's week prices end before the avis; they last until the week turns."""
+
+    def at(prices: list[dict[str, Any]], now: str) -> Product:
+        return Product.from_api({"id": 1, "name": "PISKEFLØDE", "prices": prices},
+                                datetime.fromisoformat(now))  # fmt: skip
+
+    cream = [
+        {"price": 12, "is_advertised": True, "starting_at": "2026-10-11T00:00:00Z",
+         "ending_at": "2026-10-17T00:00:00Z"},
+        {"price": 12.95, "starting_at": "2026-08-01T00:00:00Z", "ending_at": "2026-10-17T00:00:00Z"},
+        {"price": 12.95, "starting_at": "2026-10-18T00:00:00Z"},
+    ]  # fmt: skip
+    saturday = at(cream, "2026-10-17T10:00:00+00:00")  # no REMA price, avis still runs
+    assert (saturday.price, saturday.normal_price, saturday.is_advertised) == (12, 12.95, True)
+    sunday_night = at(cream, "2026-10-17T23:00:00+00:00")  # week turned, new prices not yet
+    assert sunday_night.price == 12
+    sunday = at(cream, "2026-10-18T10:00:00+00:00")
+    assert (sunday.price, sunday.is_advertised) == (12.95, False)
+    later = at(cream[:2], "2026-10-25T10:00:00+00:00")  # long gone
+    assert later.price is None
+
+    # The offer ended but the normal price runs on: the offer lasts to the week's end.
+    running = [{"price": 20, "starting_at": "2026-01-01T00:00:00Z"}, cream[0]]
+    assert at(running, "2026-10-17T10:00:00+00:00").price == 12
+    assert at(running, "2026-10-18T10:00:00+00:00").price == 20
+
+    # A price replaced in the middle of the week is not carried on.
+    raised = [
+        {"price": 10, "starting_at": "2026-01-01T00:00:00Z", "ending_at": "2026-10-14T00:00:00Z"},
+        {"price": 11, "starting_at": "2026-10-14T00:00:00Z"},
+    ]  # fmt: skip
+    assert at(raised, "2026-10-15T10:00:00+00:00").price == 11
+    assert week_end(datetime(2026, 10, 17, 22, tzinfo=UTC)) == datetime(
+        2026, 10, 17, 22, tzinfo=UTC
+    )
 
 
 async def test_shopping_lists() -> None:

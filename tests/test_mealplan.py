@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 import json
 from types import SimpleNamespace
 from typing import Any
@@ -21,7 +21,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
 
-from .conftest import CATALOGUE, CURRENT, OFFERS, UPCOMING, make_plan, make_product
+from .conftest import CATALOGUE, CURRENT, OFFERS, UPCOMING, fake_search, make_plan, make_product
 
 START = date(2026, 10, 18)  # Sunday, the day the next avis starts
 SKIP = date(2026, 10, 21)
@@ -419,6 +419,33 @@ async def test_generate_plan(
 
     issues = ir.async_get(hass)
     assert issues.async_get_issue(DOMAIN, mp.ISSUE_NO_AI_TASK) is None
+
+
+async def test_plan_priced_on_its_first_day(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+    ai_task: str,
+) -> None:
+    """A plan for next week is priced with next week's prices and offers."""
+    seen: list[datetime | None] = []
+
+    async def search(query: str, limit: int = 24, at: datetime | None = None) -> list[Any]:
+        seen.append(at)
+        return await fake_search(query, limit)
+
+    mock_client.async_search_products.side_effect = search
+    planner = init_integration.runtime_data.planner
+    dates = mp.plan_dates(START, 7)
+    await _generate(planner, FakeAI(ai_answer(dates, SHOPPING[:2])))
+    assert seen
+    assert set(seen) == {datetime(2026, 10, 18, 10, tzinfo=UTC)}  # noon danish time
+    # A plan that starts today (it is noon now) is priced now.
+    assert mp.MealPlanner.price_time(date(2026, 10, 14)) is None
+    # Something typed for the list is priced now.
+    seen.clear()
+    await planner.async_quick_add("letmælk")
+    assert seen == [None]
 
 
 async def test_generate_over_budget_tries_again(

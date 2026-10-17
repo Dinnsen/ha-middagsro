@@ -56,9 +56,16 @@ def in_avis(products: list[Product], offers: list[Offer]) -> list[Product]:
 
 
 def check_time(catalog: Catalog, now: datetime) -> datetime:
-    """A moment the avis runs: now if it runs now, else an hour after it starts."""
+    """A moment the avis runs: now if it runs now, else the middle of its week.
+
+    REMA's prices for the week start a few hours after the avis does (the
+    avis at 00:00 danish time, the prices at 00:00 UTC), so the start itself
+    is not safe.
+    """
     if catalog.valid_from and catalog.valid_from > now:
-        return catalog.valid_from + timedelta(hours=1)
+        if catalog.valid_to and catalog.valid_to > catalog.valid_from:
+            return catalog.valid_from + (catalog.valid_to - catalog.valid_from) / 2
+        return catalog.valid_from + timedelta(days=1)
     return now
 
 

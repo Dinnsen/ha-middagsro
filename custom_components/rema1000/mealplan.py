@@ -855,6 +855,16 @@ class MealPlanner:
             raise _failed("recipe_failed", error=str(day["recipe_error"]))
         return day
 
+    @staticmethod
+    def price_time(start: date) -> datetime | None:
+        """When to read prices for a plan: noon on its first day, or now (None).
+
+        A plan for next week is bought next week, so it gets next week's
+        prices and offers, matching the avis it is built on.
+        """
+        noon = dt_util.start_of_local_day(start) + timedelta(hours=12)
+        return dt_util.as_utc(noon) if noon > dt_util.now() else None
+
     async def async_generate(self, start: date, skip: set[date] | None = None) -> dict[str, Any]:
         """Make, price and store a plan. Returns the plan."""
         settings = self.store.settings
@@ -900,7 +910,7 @@ class MealPlanner:
             )
             raw = await self._async_ask_ai(prompt, "REMA 1000 madplan")
             self._set_status("generating", "Finder varer og priser i REMA 1000 …")
-            plan = await self._async_build_plan(raw, dates, catalog, offers)
+            plan = await self._async_build_plan(raw, dates, catalog, offers, self.price_time(start))
             if best is None or plan["total"] < best["total"]:
                 best = plan
             if not settings["budget"] or plan["total"] <= settings["budget"]:
@@ -936,6 +946,7 @@ class MealPlanner:
         dates: list[date],
         catalog: Catalog | None,
         offers: list[Offer],
+        at: datetime | None = None,
     ) -> dict[str, Any]:
         settings = self.store.settings
         days = self._clean_days(raw.get("days") or [], dates)
@@ -963,7 +974,7 @@ class MealPlanner:
 
         async def match(line: dict[str, Any]) -> None:
             async with semaphore:
-                await self._async_match(line)
+                await self._async_match(line, at)
 
         await asyncio.gather(*(match(line) for line in shopping))
         total = round(sum(line.get("cost") or 0 for line in shopping), 2)
@@ -1053,16 +1064,22 @@ class MealPlanner:
             "product_id": None,
         }
 
-    async def _async_match(self, line: dict[str, Any]) -> None:
-        """Pick a REMA product for a shopping line and price it."""
+    async def _async_search(self, query: str, at: datetime | None) -> list[Product]:
+        """Search REMA, priced now or (at) when the plan is bought."""
+        if at is None:
+            return await self.client.async_search_products(query, 15)
+        return await self.client.async_search_products(query, 15, at=at)
+
+    async def _async_match(self, line: dict[str, Any], at: datetime | None = None) -> None:
+        """Pick a REMA product for a shopping line and price it (now, or at a time)."""
         line.update(product=None, packages=1, cost=None, note=None)
         try:
-            products = await self.client.async_search_products(line["search"], 15)
+            products = await self._async_search(line["search"], at)
             if not line.get("product_id") and not line.get("must_have"):
-                await self._async_match_by_name(line, products)
+                await self._async_match_by_name(line, products, at)
                 return
             if not products and line["search"] != line["name"]:
-                products = await self.client.async_search_products(line["name"], 15)
+                products = await self._async_search(line["name"], at)
         except RemaError as err:
             line["note"] = f"Søgning fejlede: {err}"
             return
@@ -1108,6 +1125,7 @@ class MealPlanner:
         line: dict[str, Any],
         first: list[Product],
         require: Callable[[Product], bool] | None,
+        at: datetime | None = None,
     ) -> tuple[list[Product], dict[int, float]]:
         """Try the search terms in turn until a product matches by name."""
         for idx, query in enumerate(search_queries(line)):
@@ -1115,7 +1133,7 @@ class MealPlanner:
                 products = first
             else:
                 try:
-                    products = await self.client.async_search_products(query, 15)
+                    products = await self._async_search(query, at)
                 except RemaError:
                     continue
             candidates, penalty = self._candidates(line, products, query, require)
@@ -1123,17 +1141,19 @@ class MealPlanner:
                 return candidates, penalty
         return [], {}
 
-    async def _async_match_by_name(self, line: dict[str, Any], first: list[Product]) -> None:
+    async def _async_match_by_name(
+        self, line: dict[str, Any], first: list[Product], at: datetime | None = None
+    ) -> None:
         """Choose the best product by name, the family's rules and price."""
         requirement = self._requirement(line)
         require = requirement[0] if requirement else None
         note: str | None = None
-        candidates, penalty = await self._async_search_candidates(line, first, require)
+        candidates, penalty = await self._async_search_candidates(line, first, require, at)
         if not candidates and requirement:
             # None of the usual results meet the rule: search for it directly.
             for query in requirement[2]:
                 try:
-                    products = await self.client.async_search_products(query, 15)
+                    products = await self._async_search(query, at)
                 except RemaError:
                     continue
                 for words in (line["search"], line["name"]):
@@ -1143,7 +1163,7 @@ class MealPlanner:
                 if candidates:
                     break
             if not candidates:
-                candidates, penalty = await self._async_search_candidates(line, first, None)
+                candidates, penalty = await self._async_search_candidates(line, first, None, at)
                 note = f"Ingen vare opfylder kravet om {requirement[1]} – billigste valgt"
         if not candidates:
             # Better a free-text line than a wrong product.

@@ -22,13 +22,14 @@ from __future__ import annotations
 import asyncio
 import base64
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time as clock_time, timedelta
 import json
 import logging
 import re
 import time
 from typing import Any
 from urllib.parse import unquote
+from zoneinfo import ZoneInfo
 
 import aiohttp
 from yarl import URL
@@ -81,6 +82,21 @@ class RemaApiError(RemaError):
 
 
 # --------------------------------------------------------------------- models
+
+
+# How long the last prices still count when REMA has none for the moment.
+PRICE_GAP = timedelta(days=2)
+DANISH_TIME = ZoneInfo("Europe/Copenhagen")
+
+
+def week_end(moment: datetime) -> datetime:
+    """The first sunday 00:00 danish time at or after a moment (when REMA's week turns)."""
+    local = moment.astimezone(DANISH_TIME)
+    sunday = local.date() + timedelta(days=(6 - local.weekday()) % 7)
+    turn = datetime.combine(sunday, clock_time(), DANISH_TIME)
+    if turn < local:
+        turn = datetime.combine(sunday + timedelta(days=7), clock_time(), DANISH_TIME)
+    return turn
 
 
 def _parse_dt(value: Any) -> datetime | None:
@@ -227,6 +243,8 @@ class Product:
         now = now or datetime.now(UTC)
         active: list[dict[str, Any]] = []
         upcoming: list[dict[str, Any]] = []
+        ended: list[tuple[datetime, dict[str, Any]]] = []
+        latest_start: datetime | None = None  # of the prices that apply now
         for price in data.get("prices") or []:
             start = _parse_dt(price.get("starting_at"))
             end = _parse_dt(price.get("ending_at"))
@@ -234,6 +252,23 @@ class Product:
                 upcoming.append(price)
             elif end is None or end >= now:
                 active.append(price)
+                if start and (latest_start is None or start > latest_start):
+                    latest_start = start
+            else:
+                ended.append((end, price))
+        # REMA's prices for a week end before the avis does (the avis runs to
+        # saturday night), so a price that ended still applies until the week
+        # turns at sunday 00:00 danish time, unless a new price replaced it.
+        active += [
+            price
+            for end, price in ended
+            if now < week_end(end) and (latest_start is None or latest_start < end)
+        ]
+        if not active and ended:
+            # Sunday night, before the new week's prices start: the last ones.
+            last = max(end for end, _ in ended)
+            if now - last <= PRICE_GAP:
+                active = [price for end, price in ended if last - end <= timedelta(hours=1)]
 
         def _price(entry: dict[str, Any]) -> float:
             return _float(entry.get("price")) or float("inf")

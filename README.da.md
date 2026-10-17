@@ -241,6 +241,7 @@ Entitets-id'erne afhænger af kontoens navn; find dem under **Indstillinger → 
 
 - **Indkøbslisten** hentes fra REMA 1000 hvert **2. minut**, så ændringer i appen hurtigt ses i Home Assistant. Ændringer fra Home Assistant sendes med det samme.
 - **Tilbudsaviserne** (aktuel og næste uge) hentes hvert **3. time** fra Tjek, som REMA 1000 bruger til sin avis.
+- Madplanens priser er dem, der gælder på planens første dag, så en plan for næste uge bruger næste uges priser og tilbud. REMA's priser for en uge slutter før avisen gør; indtil ugen skifter søndag, gælder ugens priser stadig.
 - **Madplanen** laves kun, når du beder om det (eller automatisk, når næste uges avis udkommer, hvis det er slået til). Den tager typisk 1–2 minutter: AI'en lægger planen, integrationen finder og prissætter varerne efter jeres regler, og til sidst skrives opskrifterne.
 - Planer, indstillinger og favoritretter gemmes i Home Assistant og er med i backuppen.
 - Mister integrationen forbindelsen til REMA 1000, bliver entiteterne utilgængelige og kommer igen af sig selv. Er login ugyldigt, beder Home Assistant dig om at logge ind igen.
