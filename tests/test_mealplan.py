@@ -398,11 +398,13 @@ async def test_generate_plan(
     assert chosen["Løg"]["product"]["id"] == 50003  # not hvidløg
     assert chosen["Persille"]["product"] is None
     assert "fritekst" in chosen["Persille"]["note"]
-    assert chosen["Broccoli"]["product"]["id"] == 50002
+    # Built on the (non-organic) broccoli offer: that broccoli, at the avis price.
+    assert chosen["Broccoli"]["product"]["id"] == 50001
+    assert chosen["Broccoli"]["price_source"] == "avis"
     assert chosen["Rugbrød"]["product"]["id"] == 70001
     assert chosen["Rugbrød"]["packages"] == 2
     assert len(plan["shopping"]) == 8
-    assert plan["total"] == pytest.approx(80 + 38 + 13.95 + 44 + 8 + 28 + 36)
+    assert plan["total"] == pytest.approx(80 + 38 + 13.95 + 44 + 8 + 20 + 36)
     assert plan["over_budget"] is False
     assert plan["checklist"] == [{"requirement": "Budget", "ok": True}]
 
