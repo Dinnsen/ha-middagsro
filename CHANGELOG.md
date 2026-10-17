@@ -2,6 +2,13 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [0.8.0] - 2026-10-17
+
+### Added
+- **Swap a dish:** tap a dish in the meal plan to see its recipe or get three other suggestions from the AI (following the family's rules and using the week's offers). The chosen dish gets its own shopping items – the old dish's items leave the list, items shared with other dishes stay – and a new recipe; leftovers of it follow along.
+- **Basic items in the plan** (*Basisvarer i madplanen*): a window in the shopping list with the basic items from the settings (salt, oil, butter …) that the recipes use, with how much. *Tilføj til indkøb* puts one on the list as the REMA product that fits the family's rules (the recipe's own word is searched for, e.g. *hvedemel*).
+- **Search and add products** to the plan's shopping list, both the shopping day's and the one for later in the week. Added items can be removed again.
+
 ## [0.7.0] - 2026-10-17
 
 ### Changed

@@ -151,6 +151,18 @@
     },
     "favorite_text_required": {
       "message": "En favoritret skal have en beskrivelse."
+    },
+    "swap_failed": {
+      "message": "Retten kunne ikke skiftes: {error}"
+    },
+    "line_not_found": {
+      "message": "Varen findes ikke på madplanens indkøbsliste."
+    },
+    "product_not_found": {
+      "message": "Varen findes ikke hos REMA 1000."
+    },
+    "no_late_list": {
+      "message": "Madplanen har ingen indkøb senere på ugen."
     }
   },
   "issues": {
