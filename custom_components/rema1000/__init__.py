@@ -94,6 +94,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
 
     entry.async_on_unload(offers.async_add_listener(_offers_updated))
     entry.async_on_unload(planner.async_cancel)
+    planner.async_restore_sends()
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await async_register_panel(hass)

@@ -598,6 +598,11 @@ async def test_offer_products() -> None:
     ]
     found = await client.async_get_offer_products(offers)
     assert [o.product_ids for o in found] == [(411655, 411652), (), None]
+    # A product without REMA's id: the ids are not the whole offer.
+    assert [o.unlinked for o in found] == [True, True, False]
+    assert found[0].unlinked_names == ("IKKE I WEBSHOPPEN",)
+    assert found[0].product_names == ("KØDPØLSE", "PEBER SPEGEPØLSE", "IKKE I WEBSHOPPEN")
+    assert found[1].unlinked_names == ()  # Tjek lists nothing at all
     assert session.calls[-1][2]["json"] == {"id": "c"}
     calls = len(session.calls)
     await client.async_get_offer_products(offers[:2])  # cached

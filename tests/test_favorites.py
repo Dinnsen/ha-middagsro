@@ -67,6 +67,15 @@ def test_matching() -> None:
     assert match_offer(OTHER_PATE, [by_ids]) is by_ids
     assert match_offer(PATE, [by_ids]) is None
     assert match_offer(CREAM, [replace(NEXT_WEEK[0], product_ids=())]) is None
+    # Tjek lists some of the offer's products without REMA's id ("Arla Skyr Airy"):
+    # those are found by Tjek's name, or by the avis's text.
+    skyr = Offer("s", "Karolines Køkken risalamande, Cheasy eller Arla Airy skyr", "128-180 g",
+                 5, None, "128 g", None, None, product_ids=(26522,), unlinked=True,
+                 unlinked_names=("Arla Skyr Airy Jordbær",))  # fmt: skip
+    airy = make_product(9, "SKYR AIRY JORDBÆR", 9.0, underline="150 GR. / ARLA")
+    assert match_offer(airy, [skyr]) is skyr
+    assert match_offer(make_product(10, "SKYR NATUREL", 9.0, underline="1 KG"), [skyr]) is None
+    assert match_offer(CREAM, [replace(NEXT_WEEK[0], product_ids=(), unlinked=True)]) is not None
     # The avis says 00:00 danish time; REMA's price changes at 00:00 UTC (02:00 danish).
     assert offer_start(THIS_WEEK[1]) == datetime(2026, 10, 15, tzinfo=UTC)
     assert offer_start(Offer("x", "x", None, 1, None, None, None, None)) is None

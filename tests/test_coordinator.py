@@ -54,6 +54,37 @@ async def test_offers_pick_current_and_next(
     assert again.data.first_seen["cat-43"] == NOW.isoformat()
 
 
+async def test_insert_is_not_next_weeks_avis(
+    hass: HomeAssistant, config_entry: MockConfigEntry, mock_client: MagicMock, freezer: Any
+) -> None:
+    """An insert (indstik) is out on wednesday, before it starts: not next week's avis.
+
+    From REMA's real aviser: "Uge 42 Indstik" runs thursday to saturday inside
+    "Uge 42"; the month-long "Meget mere" aviser have no offers.
+    """
+    freezer.move_to(NOW)  # wednesday
+    insert = Catalog("insert", "Uge 42 Indstik", datetime(2026, 10, 14, 22, tzinfo=UTC),
+                     CURRENT.valid_to, 12)  # fmt: skip
+    season = Catalog("season", "Meget mere sæson", datetime(2026, 9, 30, 22, tzinfo=UTC),
+                     datetime(2026, 10, 31, 23, tzinfo=UTC), 0)  # fmt: skip
+    mock_client.async_get_catalogs.return_value = [insert, season, CURRENT, UPCOMING]
+    config_entry.add_to_hass(hass)
+    coordinator = RemaOffersCoordinator(hass, config_entry, mock_client)
+    await coordinator.async_refresh()
+    assert coordinator.data.current is CURRENT
+    assert coordinator.data.upcoming is UPCOMING
+
+    # Before next week's avis is out.
+    mock_client.async_get_catalogs.return_value = [insert, season, CURRENT]
+    await coordinator.async_refresh()
+    assert coordinator.data.upcoming is None
+
+    # On thursday, the week's avis is still the current one.
+    freezer.move_to(datetime(2026, 10, 15, 8, tzinfo=UTC))
+    await coordinator.async_refresh()
+    assert coordinator.data.current is CURRENT
+
+
 async def test_offers_none_running(
     hass: HomeAssistant, config_entry: MockConfigEntry, mock_client: MagicMock, freezer: Any
 ) -> None:

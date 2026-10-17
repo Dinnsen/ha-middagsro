@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, time as clock_time, timedelta
 import json
 import logging
 import math
@@ -16,6 +16,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util import dt as dt_util
 
 from .api import DANISH_TIME, Catalog, Offer, Product, RemaClient, RemaError, parse_time
@@ -209,6 +210,11 @@ def late_offers(offers: list[Offer], first_day: date) -> dict[int, date]:
     return late
 
 
+def prices_from(day: date) -> datetime:
+    """When REMA has a day's products and prices: 00:00 UTC (02:00 danish), plus a margin."""
+    return datetime.combine(day, clock_time(0, 5), UTC)
+
+
 def noon(day: date) -> datetime | None:
     """Noon (danish time) on a day, in UTC, or None if that has passed: then prices are now."""
     moment = dt_util.start_of_local_day(day) + timedelta(hours=12)
@@ -254,6 +260,23 @@ def packages_needed(amount: float | None, unit: str | None, product: Product) ->
     if need[0] == "stk" and size is None:
         return max(1, min(20, math.ceil(need[1])))  # loose items sold per piece
     return 1  # e.g. 8 pitabrød from one 375 g bag
+
+
+def avis_packages(amount: float | None, unit: str | None, offer: Offer) -> int:
+    """How many of an avis offer's items cover an amount (by the avis's size)."""
+    if not amount or amount <= 0:
+        return 1
+    need = to_base(amount, unit)
+    if need is None:
+        return 1
+    if need[0] == "pack":
+        return max(1, min(20, math.ceil(need[1])))
+    size = avis_size(offer, need[0])
+    if size and size[0] > 0:
+        return max(1, min(20, math.ceil(need[1] / size[0] - 0.05)))
+    if need[0] == "stk":
+        return max(1, min(20, math.ceil(need[1])))
+    return 1
 
 
 _ACCENTS = str.maketrans("éèêëáàâíìîïóòôúùûüç", "eeeeaaaiiiiooouuuuc")
@@ -409,10 +432,32 @@ def _avis_details_fit(name: str, underline: str | None, organic: bool, offer: Of
 def offer_covers(
     offer: Offer, product_id: int | None, name: str, underline: str | None, organic: bool
 ) -> bool:
-    """Is the offer for this product? By REMA's product ids when Tjek has them."""
+    """Is the offer for this product? By REMA's product ids when Tjek has them.
+
+    When Tjek also lists products without a REMA id ("Arla Skyr Airy"), or none
+    at all, a product the ids don't cover can still be the offer by name.
+    """
     if offer.product_ids is not None:
-        return product_id in offer.product_ids
+        if product_id in offer.product_ids:
+            return True
+        if not offer.unlinked:
+            return False
+        if unlinked_match(name, underline, organic, offer):
+            return True
     return avis_match(name, underline, organic, offer)
+
+
+def unlinked_match(name: str, underline: str | None, organic: bool, offer: Offer) -> bool:
+    """Is a REMA product one Tjek lists for the offer without REMA's id?
+
+    Every word of REMA's name is in Tjek's ("SKYR AIRY JORDBÆR" in "Arla Skyr
+    Airy Jordbær"), and size, fat percentage and organic fit the offer.
+    """
+    words = _name_words(name)
+    return bool(words) and any(
+        words <= _name_words(tjek) and _avis_details_fit(name, underline, organic, offer)
+        for tjek in offer.unlinked_names
+    )
 
 
 def offer_query(offer: Offer, name: str = "") -> str:
@@ -711,6 +756,12 @@ def build_prompt(
         "Retternes navne skal passe til ingredienserne (kyllingefrikadeller kræver hakket "
         "kylling). Indkøbslisten skal indeholde ALLE ingredienser til alle retter, og mængderne "
         "skal dække dobbelte portioner på dage, der laver rester.",
+        "Brug de varer, en dansk familie normalt bruger til retten, og som er nemmest: hakkede "
+        "tomater på dåse til kødsovs, lasagne og bolognese (ikke friske tomater, der skal "
+        "hakkes), frossen spinat, revet ost. Samme slags vare til forskellige formål står hver "
+        "for sig (friske tomater til gnavegrønt OG hakkede tomater på dåse til sovsen).",
+        "Angiv for hver dag i uses navnene på de varer fra indkøbslisten, retten bruger "
+        "(præcis som de står på listen; ikke basisvarer). Restedage har en tom liste.",
         "",
         "INDKØBSLISTE: Saml alle ingredienser på tværs af dagene. Angiv for hver vare: navn, "
         "mængde som tal, enhed (g, kg, ml eller l når muligt; pk for pakker, dåser og poser, fx "
@@ -737,6 +788,7 @@ def build_prompt(
                         "servings": 4,
                         "active_minutes": 20,
                         "total_minutes": 35,
+                        "uses": ["Laksefilet", "Spinatpasta", "Pesto", "Broccoli"],
                     }
                 ],
                 "shopping": [
@@ -794,16 +846,39 @@ def build_recipe_prompt(
         out.append(
             f"Familiens ønsker til ugen (brug varer, de allerede har, hvor det passer): {plan['note']}"
         )
-    shopping = ", ".join(
-        f"{line['name']} ({line['amount']:g} {line['unit']})"
-        if line.get("amount") and line.get("unit") and line["unit"] != "pk"
-        else line["name"]
-        for line in plan.get("shopping", [])
-    )
+
+    def describe(line: dict[str, Any]) -> str:
+        bought = (line.get("product") or line.get("avis_item") or {}).get("name")
+        text = line["name"]
+        if line.get("amount") and line.get("unit") and line["unit"] != "pk":
+            text += f" ({line['amount']:g} {line['unit']})"
+        if bought and bought.lower() != line["name"].lower():
+            text += f" [købes som {bought}]"
+        return text
+
+    lines = plan.get("shopping", [])
+    uses = {name.lower() for name in day.get("uses") or []}
+    mine = [line for line in lines if line["name"].lower() in uses]
+    if mine:
+        # Only this dish's items: the fresh tomatoes for snacks on another day
+        # are not the lasagne's tomatoes.
+        out.append(
+            "Rettens varer fra indkøbslisten (brug dem, som de købes – fx hakkede tomater på "
+            "dåse hældes i, de skal ikke hakkes; tilføj ikke nye dyre varer): "
+            + ", ".join(describe(line) for line in mine)
+            + "."
+        )
+    else:
+        out.append(
+            "Ugens indkøb (brug disse varer og basisvarerne; tilføj ikke nye dyre varer): "
+            + ", ".join(describe(line) for line in lines)
+            + "."
+        )
     out += [
-        f"Ugens indkøb (brug disse varer og basisvarerne; tilføj ikke nye dyre varer): {shopping}.",
         f"Basisvarer: {s['pantry'].strip() or 'salt og peber'}.",
         "",
+        "Lav retten, som en dansk familie normalt laver den, med de nemmeste varer: hakkede "
+        "tomater på dåse i kødsovs og lasagne, ikke friske tomater, der skal hakkes.",
         "Skriv til en uerfaren kok: præcise mængder, højst 10 korte trin med minutter, og ét "
         "kort tip, der gør det nemt for børnefamilien.",
         "",
@@ -847,6 +922,8 @@ class MealPlanner:
         self.status: dict[str, Any] = {"state": "idle", "message": None, "started": None}
         self._task: asyncio.Task[None] | None = None
         self._auto_attempted: set[str] = set()
+        # Automatic sends waiting for REMA's prices: (plan id, key) -> cancel.
+        self._sends: dict[tuple[str, str], Callable[[], None]] = {}
 
     # ------------------------------------------------------------- status
 
@@ -897,7 +974,7 @@ class MealPlanner:
         try:
             plan = await self.async_generate(start, skip)
             if send:
-                await self.async_send(plan["id"])
+                await self._async_send_when_ready(plan)
         except Exception as err:
             _LOGGER.exception("Could not make a meal plan")
             self._set_status("error", str(err) or err.__class__.__name__)
@@ -1277,6 +1354,14 @@ class MealPlanner:
                         if st
                     ],
                     "tip": str(day.get("tip") or "")[:500],
+                    # The shopping list's items for this dish (from the overview).
+                    "uses": [
+                        str(name).strip()[:200]
+                        for name in (day.get("uses") or [])[:30]
+                        if isinstance(name, str) and name.strip()
+                    ]
+                    if isinstance(day.get("uses"), list)
+                    else [],
                 }
             )
         return days
@@ -1307,7 +1392,8 @@ class MealPlanner:
         self, line: dict[str, Any], at: datetime | None = None, offer: Offer | None = None
     ) -> None:
         """Pick a REMA product for a shopping line and price it (now, or at a time)."""
-        line.update(product=None, packages=1, cost=None, note=None)
+        line.update(product=None, avis_item=None, packages=1, cost=None, note=None)
+        line.pop("price_source", None)
         try:
             products = await self._async_search(line["search"], at)
             if not line.get("product_id") and not line.get("must_have"):
@@ -1362,22 +1448,19 @@ class MealPlanner:
         require: Callable[[Product], bool] | None,
         at: datetime | None = None,
         offer: Offer | None = None,
+        offered: list[Product] | None = None,
     ) -> tuple[list[Product], dict[int, float]]:
         """Try the search terms in turn until a product matches by name.
 
-        With an avis offer, first look for the product the offer is for (also
-        searching for the offer's own name); only then for anything that fits.
+        With an avis offer, first look for the product the offer is for
+        (``offered``: those products as REMA has them, then searching for the
+        offer's own name); only then for anything that fits.
         """
         queries = search_queries(line)
         found: dict[str, list[Product]] = {queries[0]: first}
-        if offer is not None and offer.product_ids:
-            # The very products the offer is for, as REMA knows them.
-            try:
-                products = await self.client.async_get_products(list(offer.product_ids), at)
-            except RemaError:
-                products = []
+        if offer is not None and offered:
             candidates, penalty = self._candidates(
-                line, products, line["search"], require, offer, limit=len(products)
+                line, offered, line["search"], require, offer, limit=len(offered)
             )
             if candidates:
                 return candidates, penalty
@@ -1419,10 +1502,20 @@ class MealPlanner:
         offer: Offer | None = None,
     ) -> None:
         """Choose the best product by name, the family's rules and price."""
+        offered = await self._async_offered(offer, at)
+        if (
+            offer is not None
+            and offered == []
+            and not offer.unlinked
+            and self._store_only(line, offer)
+        ):
+            return
         requirement = self._requirement(line)
         require = requirement[0] if requirement else None
         note: str | None = None
-        candidates, penalty = await self._async_search_candidates(line, first, require, at, offer)
+        candidates, penalty = await self._async_search_candidates(
+            line, first, require, at, offer, offered
+        )
         if not candidates and requirement:
             # None of the usual results meet the rule: search for it directly.
             for query in requirement[2]:
@@ -1506,6 +1599,68 @@ class MealPlanner:
         self._apply(line, chosen, packages_needed(line["amount"], line["unit"], chosen))
         if note:
             line["note"] = note
+
+    async def _async_offered(
+        self, offer: Offer | None, at: datetime | None
+    ) -> list[Product] | None:
+        """The very products an offer is for, as REMA has them (None: unknown).
+
+        An empty list means REMA's webshop has none of them: a *partivare*,
+        sold only in the shops.
+        """
+        if offer is None or not offer.product_ids:
+            return None
+        try:
+            return await self.client.async_get_products(list(offer.product_ids), at)
+        except RemaError:
+            return None
+
+    @staticmethod
+    def _store_only(line: dict[str, Any], offer: Offer) -> bool:
+        """Put an offer REMA's webshop doesn't have on the list as the avis has it.
+
+        Tjek's name for it ("REMA 1000 laksefilet 600g") at the avis's price.
+        Before the offer starts, its product is often not in REMA yet: it is
+        looked up again when the list is sent (from 02:00 on the shopping day
+        it is there, if REMA sells it online). If REMA still doesn't have it,
+        it goes on the list as free text, like the webshop does with a
+        *partivare*. Only when it is what the line asks for (no meatballs for
+        kebab when the AI picked the wrong offer).
+        """
+        label = (
+            offer.product_names[0]
+            if len(offer.product_names) == 1
+            else f"{offer_query(offer, line['name'])} (tilbud)"
+        )
+        fits = False
+        for text in (line["search"], line["name"]):
+            words = [w for w in _tokens(text) if len(w) > 1 and w not in _NEUTRAL_WORDS]
+            if words:
+                matched, cost = name_fit(words, f"{label} {offer.heading}")
+                fits = fits or (matched == len(words) and cost < 5)
+        if not fits:
+            return False
+        packages = avis_packages(line.get("amount"), line.get("unit"), offer)
+        start = parse_time(offer.valid_from)
+        started = (
+            start is None or prices_from(start.astimezone(DANISH_TIME).date()) <= dt_util.utcnow()
+        )
+        line["avis_item"] = {
+            "name": label,
+            "underline": offer.quantity,
+            "price": offer.price,
+            "is_advertised": True,
+            "product_ids": list(offer.product_ids or ()),
+        }
+        line["packages"] = packages
+        line["cost"] = round(packages * offer.price, 2) if offer.price else None
+        line["price_source"] = "avis"
+        line["note"] = (
+            "Partivare – kun i butikken, tilføjes som fritekst"
+            if started
+            else "Avisvare – REMA har den først, når tilbuddet starter; vælges, når listen sendes"
+        )
+        return True
 
     def _candidates(
         self,
@@ -1666,11 +1821,19 @@ class MealPlanner:
         if plan is None:
             raise _invalid("no_plan" if not plan_id else "plan_not_found")
         items: list[dict[str, Any]] = []
-        for line in plan["shopping"]:
-            if part != "all" and bool(line.get("buy_from")) != (part == "late"):
-                continue
+        lines = [
+            line
+            for line in plan["shopping"]
+            if part == "all" or bool(line.get("buy_from")) == (part == "late")
+        ]
+        await asyncio.gather(*(self._async_resolve_avis_item(line) for line in lines))
+        plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
+        for line in lines:
             if line.get("product"):
                 items.append({"product_id": line["product"]["id"], "amount": line["packages"]})
+            elif line.get("avis_item"):
+                # Only in the shops: the avis's name, as the webshop puts it on.
+                items.append({"name": line["avis_item"]["name"], "amount": line["packages"]})
             else:
                 amount = line.get("amount")
                 label = line["name"]
@@ -1679,9 +1842,114 @@ class MealPlanner:
                 items.append({"name": label, "amount": 1})
         if items:
             await self._add_items(items)
+        for key in {"main": ("send_at",), "late": ("late_send_at",)}.get(
+            part, ("send_at", "late_send_at")
+        ):
+            plan.pop(key, None)  # sent: nothing left to send automatically
+            self._cancel_send(plan["id"], key)
         await self.store.async_mark_sent(plan["id"], part)
         self._notify()
         return plan
+
+    async def _async_resolve_avis_item(self, line: dict[str, Any]) -> None:
+        """An avis item REMA didn't have when the plan was made: REMA's product now.
+
+        From 02:00 on an offer's first day REMA has its products (unless it is
+        a partivare, only sold in the shops); then the line gets the real
+        product, at REMA's price. Otherwise it stays free text.
+        """
+        item = line.get("avis_item")
+        if line.get("product") or not item or not item.get("product_ids"):
+            return
+        try:
+            products = await self.client.async_get_products(list(item["product_ids"]))
+        except RemaError as err:
+            _LOGGER.debug("Could not look up %s: %s", item["name"], err)
+            return
+        candidates: list[Product] = []
+        for text in (line["search"], line["name"], item["name"]):
+            candidates, _penalty = self._candidates(line, products, text, limit=len(products))
+            if candidates:
+                break
+        if not candidates:
+            return
+
+        def cost(product: Product) -> float:
+            return packages_needed(line.get("amount"), line.get("unit"), product) * (
+                product.price or 0
+            )
+
+        chosen = min(candidates, key=cost)
+        self._apply(line, chosen, packages_needed(line.get("amount"), line.get("unit"), chosen))
+        line["note"] = None
+        line.pop("price_source", None)  # REMA's own price now
+
+    @callback
+    def async_restore_sends(self) -> None:
+        """Schedule the automatic sends that were waiting (after a restart)."""
+        for plan in self.store.plans:
+            if plan.get("send_at") and plan.get("status") != "sent":
+                self._schedule_send(plan, "send_at")
+            if plan.get("late_send_at") and not plan.get("late_sent_at"):
+                self._schedule_send(plan, "late_send_at")
+
+    async def _async_send_when_ready(self, plan: dict[str, Any]) -> None:
+        """Send a plan automatically once REMA has its products and prices.
+
+        The avis is out days before it starts, but REMA's products and prices
+        for it (and new products on offer) come at 02:00 on the shopping day;
+        thursday's offers at 02:00 that thursday.
+        """
+        now = dt_util.utcnow()
+        main_at = prices_from(date.fromisoformat(plan["start_date"]))
+        if main_at <= now:
+            await self.async_send(plan["id"], "main")
+        else:
+            plan["send_at"] = main_at.isoformat()
+            self._schedule_send(plan, "send_at")
+        late = sorted(line["buy_from"] for line in plan["shopping"] if line.get("buy_from"))
+        if late:
+            plan["late_send_at"] = prices_from(date.fromisoformat(late[0])).isoformat()
+            self._schedule_send(plan, "late_send_at")
+        await self.store.async_save()
+        self._notify()
+
+    @callback
+    def _schedule_send(self, plan: dict[str, Any], key: str) -> None:
+        when = parse_time(plan.get(key))
+        if when is None:
+            return
+        self._cancel_send(plan["id"], key)
+        if date.fromisoformat(plan["end_date"]) < dt_util.now().date():
+            plan.pop(key, None)  # the week is over; nothing to buy any more
+            return
+        part = "late" if key == "late_send_at" else "main"
+        plan_id = plan["id"]
+
+        @callback
+        def _due(_now: datetime) -> None:
+            self._sends.pop((plan_id, key), None)
+            self.hass.async_create_task(
+                self._async_send_due(plan_id, part), name=f"{DOMAIN} send {part}"
+            )
+
+        # A time that has passed (HA was off at 02:00) fires right away.
+        self._sends[(plan_id, key)] = async_track_point_in_utc_time(
+            self.hass, _due, max(when, dt_util.utcnow())
+        )
+
+    @callback
+    def _cancel_send(self, plan_id: str, key: str) -> None:
+        if unsub := self._sends.pop((plan_id, key), None):
+            unsub()
+
+    async def _async_send_due(self, plan_id: str, part: str) -> None:
+        if self.store.get_plan(plan_id) is None:
+            return
+        try:
+            await self.async_send(plan_id, part)
+        except (HomeAssistantError, RemaError) as err:
+            _LOGGER.warning("Could not send the meal plan to REMA automatically: %s", err)
 
     # ------------------------------------------------------------- automatic
 
@@ -1712,9 +1980,12 @@ class MealPlanner:
 
     @callback
     def async_cancel(self) -> None:
-        """Stop a running generation (on unload)."""
+        """Stop a running generation and the waiting sends (on unload)."""
         if self._task and not self._task.done():
             self._task.cancel()
+        for unsub in self._sends.values():
+            unsub()
+        self._sends.clear()
 
 
 _QUICK_COUNT = re.compile(

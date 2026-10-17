@@ -14,7 +14,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import Catalog, RemaAuthError, RemaClient, RemaError, ShoppingList
+from .api import Catalog, RemaAuthError, RemaClient, RemaError, ShoppingList, is_insert
 from .const import DOMAIN, LIST_SCAN_INTERVAL, OFFERS_SCAN_INTERVAL, STORAGE_VERSION
 
 if TYPE_CHECKING:
@@ -159,11 +159,14 @@ class RemaOffersCoordinator(DataUpdateCoordinator[OffersData]):
         if changed:
             await self._store.async_save({"first_seen": self._first_seen})
 
+        # An insert (indstik) is part of its week's avis, whose offers it
+        # repeats; it is never the week's avis itself, nor next week's.
+        weekly = [c for c in catalogs if not is_insert(c, catalogs)]
         running = [
-            c for c in catalogs if c.valid_from and c.valid_to and c.valid_from <= now <= c.valid_to
+            c for c in weekly if c.valid_from and c.valid_to and c.valid_from <= now <= c.valid_to
         ]
         future = sorted(
-            (c for c in catalogs if c.valid_from and c.valid_from > now),
+            (c for c in weekly if c.valid_from and c.valid_from > now),
             key=lambda c: c.valid_from or now,
         )
         current = max(running, key=lambda c: c.offer_count or 0) if running else None
