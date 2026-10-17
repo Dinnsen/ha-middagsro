@@ -137,11 +137,11 @@ async def logged_in() -> tuple[RemaClient, FakeSession]:
 
 def test_helpers() -> None:
     """Small parsers."""
-    assert api._parse_dt(None) is None
-    assert api._parse_dt(5) is None
-    assert api._parse_dt("nope") is None
-    assert api._parse_dt("2026-10-18T00:00:00Z") == datetime(2026, 10, 18, tzinfo=UTC)
-    assert api._parse_dt("2026-10-18T00:00:00") == datetime(2026, 10, 18, tzinfo=UTC)
+    assert api.parse_time(None) is None
+    assert api.parse_time(5) is None
+    assert api.parse_time("nope") is None
+    assert api.parse_time("2026-10-18T00:00:00Z") == datetime(2026, 10, 18, tzinfo=UTC)
+    assert api.parse_time("2026-10-18T00:00:00") == datetime(2026, 10, 18, tzinfo=UTC)
     assert api._float("") is None
     assert api._float("x") is None
     assert api._float("1.5") == 1.5

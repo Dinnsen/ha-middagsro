@@ -250,6 +250,11 @@ def mock_client() -> Generator[MagicMock]:
     client.async_update_item = AsyncMock(return_value={})
     client.async_delete_items = AsyncMock()
     client.async_search_products = AsyncMock(side_effect=fake_search)
+
+    async def search_at(query: str, limit: int, times: list[datetime]) -> list[list[Product]]:
+        return [await fake_search(query, limit) for _ in times]
+
+    client.async_search_products_at = AsyncMock(side_effect=search_at)
     client.async_get_favorites = AsyncMock(return_value=CATALOGUE[:3])
     client.async_get_catalogs = AsyncMock(return_value=[CURRENT, UPCOMING])
     client.async_get_offers = AsyncMock(return_value=OFFERS)

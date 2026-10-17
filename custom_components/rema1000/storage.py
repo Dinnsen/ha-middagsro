@@ -70,6 +70,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "produce_organic": False,
     "auto_generate": False,
     "auto_send": False,
+    "shop_late_week": False,  # also shop thursday-saturday, for offers that start thursday
     "disliked_dishes": [],
 }
 
@@ -105,6 +106,7 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
     settings["ai_task_entity"] = settings["ai_task_entity"] or None
     settings["auto_generate"] = bool(settings["auto_generate"])
     settings["auto_send"] = bool(settings["auto_send"])
+    settings["shop_late_week"] = bool(settings["shop_late_week"])
     if settings["egg_min"] not in EGG_LEVELS:
         settings["egg_min"] = "caged"
     settings["milk_organic"] = bool(settings["milk_organic"])

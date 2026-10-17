@@ -13,7 +13,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.rema1000 import mealplan as mp
-from custom_components.rema1000.api import RemaError
+from custom_components.rema1000.api import Offer, RemaError
 from custom_components.rema1000.const import DOMAIN
 from custom_components.rema1000.storage import clean_settings
 import homeassistant.components.ai_task as ai_task_component  # noqa: F401 - patched in the tests
@@ -446,6 +446,67 @@ async def test_plan_priced_on_its_first_day(
     seen.clear()
     await planner.async_quick_add("letmælk")
     assert seen == [None]
+
+
+def test_late_offers_in_prompt() -> None:
+    """Offers that start thursday: left out, or marked with their first day."""
+    coffee = Offer(id="o-3", heading="Kaffe", description=None, price=39, pre_price=None,
+                   quantity=None, valid_from="2026-10-21T22:00:00+0000",
+                   valid_to="2026-10-24T21:59:59+0000")  # fmt: skip
+    offers = [*OFFERS, coffee]
+    late = mp.late_offers(offers, START)
+    assert late == {2: date(2026, 10, 22)}
+    assert mp.late_offers(offers, date(2026, 10, 22)) == {}
+    kwargs: dict[str, Any] = {
+        "dates": mp.plan_dates(START, 7),
+        "catalog": UPCOMING,
+        "offers": offers,
+        "favorites_due": [],
+        "favorites_optional": [],
+        "recent_dishes": [],
+        "late": late,
+    }
+    once = mp.build_prompt(settings=clean_settings({}), **kwargs)
+    assert "Kaffe" not in once
+    assert "gælder først fra" not in once
+    twice = mp.build_prompt(settings=clean_settings({"shop_late_week": True}), **kwargs)
+    assert "o2 | Kaffe | 39 kr. | | gælder først fra torsdag 2026-10-22" in twice
+    assert "må KUN bruges i retter på eller efter den dag" in twice
+
+
+async def test_late_offer_bought_on_its_day(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+    ai_task: str,
+) -> None:
+    """With late-week shopping, a thursday offer is bought and priced on thursday."""
+    store = init_integration.runtime_data.store
+    await store.async_set_settings({**SETTINGS, "shop_late_week": True, "must_haves": []})
+    coffee = Offer(id="o-3", heading="Kaffe", description=None, price=39, pre_price=None,
+                   quantity=None, valid_from="2026-10-21T22:00:00+0000",
+                   valid_to="2026-10-24T21:59:59+0000")  # fmt: skip
+    mock_client.async_get_offers.return_value = [*OFFERS, coffee]
+    seen: dict[str, datetime | None] = {}
+
+    async def search(query: str, limit: int = 24, at: datetime | None = None) -> list[Any]:
+        seen.setdefault(query, at)
+        return await fake_search(query, limit)
+
+    mock_client.async_search_products.side_effect = search
+    shopping = [
+        SHOPPING[0],
+        {"name": "Kaffe", "amount": 1, "unit": "pk", "search": "kaffe", "offer": "o2"},
+    ]
+    planner = init_integration.runtime_data.planner
+    await _generate(planner, FakeAI(ai_answer(mp.plan_dates(START, 7), shopping)))
+    plan = store.latest_plan
+    assert plan is not None
+    lines = {line["name"]: line for line in plan["shopping"]}
+    assert lines["Kaffe"]["buy_from"] == "2026-10-22"
+    assert lines["Hakket oksekød"]["buy_from"] is None
+    assert seen["kaffe"] == datetime(2026, 10, 22, 10, tzinfo=UTC)
+    assert seen["hakket oksekød"] == datetime(2026, 10, 18, 10, tzinfo=UTC)
 
 
 async def test_generate_over_budget_tries_again(

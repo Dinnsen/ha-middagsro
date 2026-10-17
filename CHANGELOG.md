@@ -2,6 +2,12 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [0.5.4] - 2026-10-17
+
+### Added
+- **Offers from Thursday:** a new setting, *Vi handler også sidst på ugen* (we also shop late in the week). Off (the default), the meal plan only uses offers that run on the shopping day, so no dish is built on an offer you can't get yet. On, the AI may use offers that start Thursday in dishes from that day, and those items are marked *Købes tor* (buy Thursday) and priced on that day.
+- **Favourites:** offers that only start Thursday are found too and marked *fra tor* until they start – this week and next week.
+
 ## [0.5.3] - 2026-10-17
 
 ### Fixed

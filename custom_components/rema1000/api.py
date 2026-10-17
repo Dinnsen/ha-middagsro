@@ -99,7 +99,7 @@ def week_end(moment: datetime) -> datetime:
     return turn
 
 
-def _parse_dt(value: Any) -> datetime | None:
+def parse_time(value: Any) -> datetime | None:
     """Parse an ISO 8601 timestamp from the API."""
     if not value or not isinstance(value, str):
         return None
@@ -246,8 +246,8 @@ class Product:
         ended: list[tuple[datetime, dict[str, Any]]] = []
         latest_start: datetime | None = None  # of the prices that apply now
         for price in data.get("prices") or []:
-            start = _parse_dt(price.get("starting_at"))
-            end = _parse_dt(price.get("ending_at"))
+            start = parse_time(price.get("starting_at"))
+            end = parse_time(price.get("ending_at"))
             if start and start > now:
                 upcoming.append(price)
             elif end is None or end >= now:
@@ -346,8 +346,8 @@ class Catalog:
         return cls(
             id=str(data["id"]),
             label=data.get("label") or data.get("name"),
-            valid_from=_parse_dt(data.get("run_from")),
-            valid_to=_parse_dt(data.get("run_till")),
+            valid_from=parse_time(data.get("run_from")),
+            valid_to=parse_time(data.get("run_till")),
             offer_count=data.get("offer_count"),
         )
 
@@ -738,19 +738,27 @@ class RemaClient:
         self, query: str, limit: int = 24, at: datetime | None = None
     ) -> list[Product]:
         """Search the REMA 1000 catalogue, priced as of now or a later time."""
+        return (await self.async_search_products_at(query, limit, [at or datetime.now(UTC)]))[0]
+
+    async def async_search_products_at(
+        self, query: str, limit: int, times: list[datetime]
+    ) -> list[list[Product]]:
+        """Search once and price the results at each of several times."""
         data = await self._async_request(
             "GET",
             "/search/products",
             params={"per_page": max(1, min(limit, 100)), "page": 1, "query": query},
         )
-        now = at or datetime.now(UTC)
-        products: list[Product] = []
+        priced: list[list[Product]] = [[] for _ in times]
         for entry in (data or {}).get("data") or []:
             try:
-                products.append(Product.from_api(entry, now))
+                versions = [Product.from_api(entry, moment) for moment in times]
             except (KeyError, TypeError, ValueError) as err:
                 _LOGGER.debug("Skipping product that could not be read: %s", err)
-        return products
+                continue
+            for products, product in zip(priced, versions, strict=True):
+                products.append(product)
+        return priced
 
     async def async_get_favorites(self, force: bool = False) -> list[Product]:
         """The account's favourite products (the hearts in the app), with prices.

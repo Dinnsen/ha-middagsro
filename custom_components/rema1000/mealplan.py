@@ -18,7 +18,7 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 
-from .api import Catalog, Offer, Product, RemaClient, RemaError
+from .api import DANISH_TIME, Catalog, Offer, Product, RemaClient, RemaError, parse_time
 from .const import DOMAIN
 from .storage import RemaPlanStore
 
@@ -191,6 +191,25 @@ def plan_week(dates: list[date]) -> int:
 def plan_title(dates: list[date]) -> str:
     """The name of a plan, e.g. 'Madplan uge 43'."""
     return f"Madplan uge {plan_week(dates)}"
+
+
+def late_offers(offers: list[Offer], first_day: date) -> dict[int, date]:
+    """Offers that only start after the plan's first day (e.g. thursday): index -> day."""
+    late: dict[int, date] = {}
+    for idx, offer in enumerate(offers):
+        start = parse_time(offer.valid_from)
+        if start is None:
+            continue
+        day = start.astimezone(DANISH_TIME).date()
+        if day > first_day:
+            late[idx] = day
+    return late
+
+
+def noon(day: date) -> datetime | None:
+    """Noon (danish time) on a day, in UTC, or None if that has passed: then prices are now."""
+    moment = dt_util.start_of_local_day(day) + timedelta(hours=12)
+    return dt_util.as_utc(moment) if moment > dt_util.now() else None
 
 
 def to_base(amount: float, unit: str | None) -> tuple[str, float] | None:
@@ -371,6 +390,7 @@ def build_prompt(
     feedback: str | None = None,
     skipped: list[date] | None = None,
     note: str | None = None,
+    late: dict[int, date] | None = None,
 ) -> str:
     """Build the instructions for the AI."""
     s = settings
@@ -486,14 +506,26 @@ def build_prompt(
 
     if offers:
         label = catalog.label if catalog and catalog.label else "Ugens tilbud"
+        late = late or {}
         out += ["", f"UGENS TILBUD I REMA 1000 ({label}) – id | vare | pris | mængde:"]
+        if late and s["shop_late_week"]:
+            out.append(
+                'Tilbud markeret "gælder først fra" må KUN bruges i retter på eller efter den dag '
+                "(familien køber dem den dag)."
+            )
         for idx, offer in enumerate(offers):
+            starts = late.get(idx)
+            if starts and not s["shop_late_week"]:
+                continue  # the family shops once, before this offer starts
             price = f"{offer.price:g} kr." if offer.price is not None else "?"
             if offer.pre_price:
                 price += f" (før {offer.pre_price:g})"
             desc = (offer.description or "").split("\n")[0][:60]
             qty = offer.quantity or ""
-            out.append(f"o{idx} | {offer.heading} | {price} | {qty} {desc}".rstrip())
+            line = f"o{idx} | {offer.heading} | {price} | {qty} {desc}".rstrip()
+            if starts:
+                line += f" | gælder først fra {WEEKDAYS_DA[starts.weekday()]} {starts.isoformat()}"
+            out.append(line)
 
     out += [
         "",
@@ -862,8 +894,7 @@ class MealPlanner:
         A plan for next week is bought next week, so it gets next week's
         prices and offers, matching the avis it is built on.
         """
-        noon = dt_util.start_of_local_day(start) + timedelta(hours=12)
-        return dt_util.as_utc(noon) if noon > dt_util.now() else None
+        return noon(start)
 
     async def async_generate(self, start: date, skip: set[date] | None = None) -> dict[str, Any]:
         """Make, price and store a plan. Returns the plan."""
@@ -883,6 +914,7 @@ class MealPlanner:
         }
         self._set_status("generating", "Henter ugens tilbud …")
         catalog, offers = await self._async_offers(start)
+        late = late_offers(offers, dates[0])
         due, optional = self.store.favorites_due(start)
         recent = self.store.recent_dishes(start, settings["no_repeat_weeks"])
         note = self.store.note.strip()
@@ -907,10 +939,13 @@ class MealPlanner:
                 feedback=feedback,
                 skipped=skipped,
                 note=note or None,
+                late=late,
             )
             raw = await self._async_ask_ai(prompt, "REMA 1000 madplan")
             self._set_status("generating", "Finder varer og priser i REMA 1000 …")
-            plan = await self._async_build_plan(raw, dates, catalog, offers, self.price_time(start))
+            plan = await self._async_build_plan(
+                raw, dates, catalog, offers, self.price_time(start), late
+            )
             if best is None or plan["total"] < best["total"]:
                 best = plan
             if not settings["budget"] or plan["total"] <= settings["budget"]:
@@ -947,6 +982,7 @@ class MealPlanner:
         catalog: Catalog | None,
         offers: list[Offer],
         at: datetime | None = None,
+        late: dict[int, date] | None = None,
     ) -> dict[str, Any]:
         settings = self.store.settings
         days = self._clean_days(raw.get("days") or [], dates)
@@ -967,14 +1003,20 @@ class MealPlanner:
                 }
             )
         offer_names = {f"o{i}": offer.heading for i, offer in enumerate(offers)}
+        late_days = {f"o{i}": day for i, day in (late or {}).items()}
         for line in shopping:
-            line["offer_name"] = offer_names.get(str(line.get("offer") or ""))
+            offer_id = str(line.get("offer") or "")
+            line["offer_name"] = offer_names.get(offer_id)
+            # A thursday offer is bought (and priced) on its first day.
+            day = late_days.get(offer_id) if settings["shop_late_week"] else None
+            line["buy_from"] = day.isoformat() if day else None
 
         semaphore = asyncio.Semaphore(SEARCH_CONCURRENCY)
 
         async def match(line: dict[str, Any]) -> None:
+            day = line["buy_from"]
             async with semaphore:
-                await self._async_match(line, at)
+                await self._async_match(line, noon(date.fromisoformat(day)) if day else at)
 
         await asyncio.gather(*(match(line) for line in shopping))
         total = round(sum(line.get("cost") or 0 for line in shopping), 2)

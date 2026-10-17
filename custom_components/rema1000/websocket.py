@@ -304,7 +304,7 @@ async def ws_favorites(
             "fallback": fallback,
             "catalog": _catalog(catalog),
             "products": [p.as_dict() for p in products],
-            "on_offer": [p.as_dict() for p in offers],
+            "on_offer": offers,
         },
     )
 

@@ -89,6 +89,13 @@ const dateLabel = (iso) => {
   const d = new Date(`${iso}T12:00:00`);
   return `${WEEKDAYS[(d.getDay() + 6) % 7]} ${d.getDate()}/${d.getMonth() + 1}`;
 };
+// "tor 15/10": short weekday and date, for offers that start later in the week.
+const dayShort = (iso) => {
+  if (!iso) return "";
+  const day = localDay(iso);
+  const d = new Date(`${day}T12:00:00`);
+  return `${WEEKDAYS[(d.getDay() + 6) % 7].slice(0, 3).toLowerCase()} ${shortDate(day)}`;
+};
 const shortDate = (iso) => {
   if (!iso) return "";
   const d = new Date(`${iso}T12:00:00`);
@@ -1053,6 +1060,7 @@ class Rema1000Panel extends HTMLElement {
                 p?.is_advertised || p?.is_campaign ? '<span class="badge offer">Tilbud</span>' : "",
                 p?.is_organic ? '<span class="badge eco">Øko</span>' : "",
                 line.must_have ? '<span class="badge">Fast vare</span>' : "",
+                line.buy_from ? `<span class="badge late">Købes ${esc(dayShort(line.buy_from))}</span>` : "",
               ].join("");
               const need = line.amount && line.unit && line.unit !== "pk" ? `${line.amount} ${line.unit}` : "";
               return `<li class="line">
@@ -1113,7 +1121,9 @@ class Rema1000Panel extends HTMLElement {
         </span>
         <span>${p.is_advertised ? '<span class="badge offer">Avisvare</span>' : sale ? '<span class="badge offer">Tilbud</span>' : ""}
           ${p.is_organic ? '<span class="badge eco">Øko</span>' : ""}
-          ${sale && until ? `<span class="muted small">til ${esc(until)}</span>` : ""}</span>
+          ${p.offer_from
+            ? `<span class="badge late">fra ${esc(dayShort(p.offer_from))}</span>`
+            : sale && until ? `<span class="muted small">til ${esc(until)}</span>` : ""}</span>
       </div>
       <button class="btn small primary" data-action="fav-add" data-arg="${esc(p.id)}" ${this._busy ? "disabled" : ""}>+ Tilføj</button>
     </div>`;
@@ -1297,6 +1307,8 @@ class Rema1000Panel extends HTMLElement {
           <label class="field">Antal dage ${num("days", f.days, 1, 14)}</label>
           <label class="field">Budget for hele listen (kr.) ${num("budget", f.budget, 0, 100000)}</label>
         </div>
+        <label class="check"><input type="checkbox" data-path="shop_late_week" ${f.shop_late_week ? "checked" : ""}> Vi handler også sidst på ugen</label>
+        <p class="muted small">Så må madplanen bruge tilbud, der først gælder fra torsdag, i retterne fra den dag. Varerne mærkes med, hvornår de skal købes. Ellers bruges kun tilbud, der gælder på indkøbsdagen.</p>
 
         <h2>Økologi</h2>
         <div class="row wrap">
@@ -1491,6 +1503,7 @@ const STYLE = `
     background: var(--rema-subtle); color: var(--secondary-text-color); vertical-align: middle; }
   .badge.offer { background: var(--rema-sale); color: var(--rema-on-sale); }
   .badge.eco, .badge.sent { background: var(--rema-ok); color: var(--rema-on-accent); }
+  .badge.late { background: var(--rema-warn); color: var(--primary-text-color); }
   .badge.draft { background: var(--rema-accent); color: var(--rema-on-accent); }
   details { margin-top: 14px; } summary { cursor: pointer; color: var(--secondary-text-color); }
   .checklist { list-style: none; padding: 0; } .checklist li { padding: 3px 0; } .checklist .bad { color: var(--rema-sale); }
