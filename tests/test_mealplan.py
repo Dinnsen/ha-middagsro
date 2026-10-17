@@ -637,6 +637,15 @@ async def test_offer_line_gets_the_offer_product(
     assert gone["product"]["name"] == "ØKOLOGISKE ÆG"  # found by searching instead
     mock_client.async_get_products.side_effect = None
 
+    # Searched as "laks" but called "Laksefilet": the fillet, not the cheaper pastry.
+    pastry = make_product(42980, "INDBAGT LAKS", 17.95, underline="250 GR. / REMA 1000")
+    mock_client.async_search_products.side_effect = None
+    mock_client.async_search_products.return_value = [pastry, salmon]
+    line_fish: dict[str, Any] = {"name": "REMA 1000 Laksefilet", "search": "laks",
+                                 "amount": 1200, "unit": "g"}  # fmt: skip
+    await planner._async_match(line_fish)
+    assert line_fish["product"]["name"] == "LAKSEFILET"
+
     # 3 kg potatoes are not one sweet potato sold per piece.
     sweet = make_product(1, "SØDE KARTOFLER", 5.0, underline="1 STK.")
     potatoes = make_product(2, "KARTOFLER", 20.0, underline="2 KG / DANMARK")

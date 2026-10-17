@@ -1536,6 +1536,17 @@ class MealPlanner:
             # become anything with "ana" in it. Free text is the safe answer.
             return [], penalty
         relevant = [p for p in priced if fits[p.id][0] == best]
+        # "Laksefilet" searched as "laks": products that are what the line is
+        # called beat the rest (salmon fillet, not salmon in pastry).
+        named = [
+            w for w in _tokens(line.get("name") or "") if len(w) > 1 and w not in _NEUTRAL_WORDS
+        ]
+        if named and named != words:
+            full = {p.id for p in relevant if name_fit(named, p.name)[0] == len(named)}
+            if full:
+                for p in relevant:
+                    if p.id not in full:
+                        penalty[p.id] = penalty.get(p.id, 1.0) + 5.0
         # Stay in the department of the best-fitting product (fish, not cold cuts).
         anchor = min(relevant, key=lambda p: penalty.get(p.id, 1.0)).department
         relevant = [p for p in relevant if p.department == anchor] or relevant

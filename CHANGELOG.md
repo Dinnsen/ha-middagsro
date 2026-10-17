@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [0.6.1] - 2026-10-17
+
+### Fixed
+- **Meal plans:** when the AI searches more broadly than the item is called (*laks* for *Laksefilet*), products that are what the item is called are preferred, so salmon fillet isn't swapped for a cheaper salmon pastry.
+
 ## [0.6.0] - 2026-10-17
 
 ### Changed
