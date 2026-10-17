@@ -258,6 +258,8 @@ def mock_client() -> Generator[MagicMock]:
     client.async_get_favorites = AsyncMock(return_value=CATALOGUE[:3])
     client.async_get_catalogs = AsyncMock(return_value=[CURRENT, UPCOMING])
     client.async_get_offers = AsyncMock(return_value=OFFERS)
+    client.async_get_offer_products = AsyncMock(side_effect=lambda offers: offers)
+    client.async_get_products = AsyncMock(return_value=[])
     with (
         patch("custom_components.rema1000.RemaClient", return_value=client),
         patch("custom_components.rema1000.config_flow.RemaClient", return_value=client),

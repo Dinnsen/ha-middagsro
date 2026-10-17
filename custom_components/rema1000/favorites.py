@@ -36,11 +36,18 @@ def on_offer(product: Product) -> bool:
 def match_offer(product: Product, offers: list[Offer]) -> Offer | None:
     """The avis offer that is this very favourite, if any.
 
-    Strict (see ``avis_match``): a wrong match shows a wrong price, so a
+    By REMA's product ids when Tjek has them for an offer; otherwise strictly
+    by text (see ``avis_match``): a wrong match shows a wrong price, so a
     favourite is better left out than matched to something else.
     """
-    return next(
-        (o for o in offers if avis_match(product.name, product.underline, product.is_organic, o)),
+    by_id = next((o for o in offers if o.product_ids and product.id in o.product_ids), None)
+    return by_id or next(
+        (
+            o
+            for o in offers
+            if o.product_ids is None
+            and avis_match(product.name, product.underline, product.is_organic, o)
+        ),
         None,
     )
 
@@ -96,6 +103,7 @@ class FavoriteOffers:
         if cached and not force and time.monotonic() - cached[0] < CACHE_SECONDS:
             return cached[1]
         offers = await self.client.async_get_offers(catalog.id)
+        offers = await self.client.async_get_offer_products(offers)
         self._offers[catalog.id] = (time.monotonic(), offers)
         return offers
 

@@ -574,6 +574,57 @@ async def test_catalogs_and_offers() -> None:
     assert offers[-1].heading == "Sidste"
 
 
+async def test_offer_products() -> None:
+    """Tjek says which REMA products an offer is for; they are fetched in one batch."""
+    client, session = await logged_in()
+    session.on("GET", f"{SHOP}/", FakeResponse(text=TJEK_HTML))
+    rpc = "https://tjek.example/v4/rpc/get_offer_products"
+    session.on(
+        "POST",
+        rpc,
+        FakeResponse(data={"offer_products": [
+            {"name": "KØDPØLSE", "external_id": "411655"},
+            {"name": "PEBER SPEGEPØLSE", "external_id": "411652"},
+            {"name": "IKKE I WEBSHOPPEN", "external_id": None},
+            "x",
+        ]}),
+        FakeResponse(data={"offer_products": []}),
+        aiohttp.ClientError("down"),
+    )  # fmt: skip
+    offers = [
+        api.Offer("a", "Gøl spegepølse eller kødpølse", None, 10, None, None, None, None),
+        api.Offer("b", "Partivare", None, 10, None, None, None, None),
+        api.Offer("c", "Ukendt", None, 10, None, None, None, None),
+    ]
+    found = await client.async_get_offer_products(offers)
+    assert [o.product_ids for o in found] == [(411655, 411652), (), None]
+    assert session.calls[-1][2]["json"] == {"id": "c"}
+    calls = len(session.calls)
+    await client.async_get_offer_products(offers[:2])  # cached
+    assert len(session.calls) == calls
+
+    product = {"id": 411655, "name": "KØDPØLSE", "underline": "110 GR. / GØL", "prices": [
+        {"price": 10, "is_advertised": True, "starting_at": "2026-10-11T00:00:00+00:00",
+         "ending_at": "2026-10-17T00:00:00+00:00"},
+        {"price": 11.95, "starting_at": "2026-10-18T00:00:00+00:00",
+         "ending_at": "2099-12-31T00:00:00+00:00"},
+    ]}  # fmt: skip
+    session.on("POST", f"{API}/v3/batch", FakeResponse(data=[
+        {"status": 200, "body": {"data": product}},
+        {"status": 404, "body": {"data": None}},
+        {"status": 200, "body": {"data": {"id": "bad"}}},
+        "x",
+    ]))  # fmt: skip
+    products = await client.async_get_products(
+        [411655, 1, 2], datetime(2026, 10, 18, 10, tzinfo=UTC)
+    )
+    assert [(p.id, p.price) for p in products] == [(411655, 11.95)]
+    assert session.calls[-1][2]["json"]["requests"][0] == {
+        "uri": "/api/v3/products/411655",
+        "method": "GET",
+    }
+
+
 async def test_tjek_errors() -> None:
     """A rejected key is read again next time; errors become RemaErrors."""
     session = FakeSession()

@@ -2,6 +2,12 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [0.6.0] - 2026-10-17
+
+### Changed
+- **Avis offers are matched to REMA's products by id.** Tjek, which publishes the avis, knows which of REMA's products each offer covers (the webshop shows them when you open an offer). Favourites and meal plans now use those product ids, so the right products get the avis price – also when the names differ (*Lækkert & Nemt Grøntsagsblanding*, *grise- og kalvekød*). An offer whose products aren't in the webshop (a *partivare*) gives no avis price. The strict text match from 0.5.6 is only used when an offer can't be looked up.
+- A meal plan item built on an offer gets one of that offer's own products, fetched directly from REMA.
+
 ## [0.5.9] - 2026-10-17
 
 ### Fixed

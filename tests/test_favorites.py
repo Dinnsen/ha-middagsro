@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -61,6 +62,11 @@ def test_matching() -> None:
     assert match_offer(CHIPS, THIS_WEEK) is THIS_WEEK[1]
     assert match_offer(BEEF_SALE, NEXT_WEEK) is None
     assert match_offer(make_product(1, "1,5% FEDT", 9.0), NEXT_WEEK) is None  # no real words
+    # With Tjek's product ids, the ids decide: also for names the text can't match.
+    by_ids = replace(NEXT_WEEK[1], product_ids=(OTHER_PATE.id,))
+    assert match_offer(OTHER_PATE, [by_ids]) is by_ids
+    assert match_offer(PATE, [by_ids]) is None
+    assert match_offer(CREAM, [replace(NEXT_WEEK[0], product_ids=())]) is None
     # The avis says 00:00 danish time; REMA's price changes at 00:00 UTC (02:00 danish).
     assert offer_start(THIS_WEEK[1]) == datetime(2026, 10, 15, tzinfo=UTC)
     assert offer_start(Offer("x", "x", None, 1, None, None, None, None)) is None
@@ -73,6 +79,7 @@ async def test_this_and_next_week(freezer: Any) -> None:
     client.async_get_offers = AsyncMock(
         side_effect=lambda catalog_id: THIS_WEEK if catalog_id == CURRENT.id else NEXT_WEEK
     )
+    client.async_get_offer_products = AsyncMock(side_effect=lambda offers: offers)
     favorites = FavoriteOffers(client)
     products = [MILK, CREAM, CHIPS, BEEF_SALE, PATE]
 

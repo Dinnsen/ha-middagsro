@@ -403,6 +403,15 @@ def _avis_details_fit(name: str, underline: str | None, organic: bool, offer: Of
     return not organic
 
 
+def offer_covers(
+    offer: Offer, product_id: int | None, name: str, underline: str | None, organic: bool
+) -> bool:
+    """Is the offer for this product? By REMA's product ids when Tjek has them."""
+    if offer.product_ids is not None:
+        return product_id in offer.product_ids
+    return avis_match(name, underline, organic, offer)
+
+
 def offer_query(offer: Offer, name: str = "") -> str:
     """REMA search words for the part of an avis offer a line is about.
 
@@ -1177,6 +1186,17 @@ class MealPlanner:
             day = late_days.get(offer_id) if settings["shop_late_week"] else None
             line["buy_from"] = day.isoformat() if day else None
 
+        # Which of REMA's products the offers the dishes are built on are for.
+        used = {str(line.get("offer") or "") for line in shopping} & by_id.keys()
+        try:
+            looked_up = await self.client.async_get_offer_products([by_id[o] for o in used])
+        except RemaError as err:
+            _LOGGER.debug("Could not look up the offers' products: %s", err)
+        else:
+            by_id |= {
+                key: offer for key in used for offer in looked_up if offer.id == by_id[key].id
+            }
+
         semaphore = asyncio.Semaphore(SEARCH_CONCURRENCY)
 
         async def match(line: dict[str, Any]) -> None:
@@ -1347,6 +1367,17 @@ class MealPlanner:
         """
         queries = search_queries(line)
         found: dict[str, list[Product]] = {queries[0]: first}
+        if offer is not None and offer.product_ids:
+            # The very products the offer is for, as REMA knows them.
+            try:
+                products = await self.client.async_get_products(list(offer.product_ids), at)
+            except RemaError:
+                products = []
+            candidates, penalty = self._candidates(
+                line, products, line["search"], require, offer, limit=len(products)
+            )
+            if candidates:
+                return candidates, penalty
         passes: list[tuple[Offer | None, list[str]]] = []
         if offer is not None:
             passes.append((offer, [*queries, offer_query(offer, line["name"])]))
@@ -1468,13 +1499,14 @@ class MealPlanner:
         query: str,
         require: Callable[[Product], bool] | None = None,
         offer: Offer | None = None,
+        limit: int = 12,
     ) -> tuple[list[Product], dict[int, float]]:
         """Products that really are what the line asks for, and a price penalty
         for each (extra words in the name make a product a worse fit).
 
         With an avis offer, only the products that offer is for.
         """
-        priced = [p for p in products[:12] if p.price and (require is None or require(p))]
+        priced = [p for p in products[:limit] if p.price and (require is None or require(p))]
         if not priced:
             return [], {}
         words = [w for w in _tokens(query) if len(w) > 1 and w not in _NEUTRAL_WORDS]
@@ -1489,7 +1521,7 @@ class MealPlanner:
             fitting = [
                 p
                 for p in priced
-                if fits[p.id][0] and avis_match(p.name, p.underline, p.is_organic, offer)
+                if fits[p.id][0] and offer_covers(offer, p.id, p.name, p.underline, p.is_organic)
             ]
             return (self._free_from(fitting), penalty) if fitting else ([], penalty)
 
@@ -1528,11 +1560,12 @@ class MealPlanner:
             return
         if product.get("price") and product["price"] <= offer.price:
             return  # REMA already has the offer, or its own price is lower anyway
-        if not avis_match(
+        if not offer_covers(
+            offer,
+            product.get("id"),
             product.get("name") or "",
             product.get("underline"),
             bool(product.get("is_organic")),
-            offer,
         ):
             return  # another product than the one on offer
         product["normal_price"] = product.get("price")

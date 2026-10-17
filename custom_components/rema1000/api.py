@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, time as clock_time, timedelta
 import json
 import logging
@@ -380,6 +380,8 @@ class Offer:
     quantity: str | None
     valid_from: str | None
     valid_to: str | None
+    # REMA's product ids for the offer (from Tjek); None when not looked up.
+    product_ids: tuple[int, ...] | None = None
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> Offer:
@@ -446,6 +448,7 @@ class RemaClient:
         self._lock = asyncio.Lock()
         self._tjek: tuple[str, str] | None = None
         self._favorites: tuple[float, list[Product]] | None = None
+        self._offer_products: dict[str, tuple[int, ...]] = {}
 
     @property
     def user_id(self) -> int | None:
@@ -846,13 +849,17 @@ class RemaClient:
         self._tjek = (base.group(1) if base else TJEK_DEFAULT_BASE, key.group(1))
         return self._tjek
 
-    async def _async_tjek(self, path: str, params: dict[str, Any]) -> Any:
-        """Call the Tjek API."""
+    async def _async_tjek(
+        self, path: str, params: dict[str, Any], payload: dict[str, Any] | None = None
+    ) -> Any:
+        """Call the Tjek API (GET, or POST with a payload)."""
         base, key = await self._async_tjek_config()
         try:
-            async with self._session.get(
+            async with self._session.request(
+                "GET" if payload is None else "POST",
                 f"{base}{path}",
                 params={**params, "api_key": key},
+                json=payload,
                 headers={"Accept": "application/json", "X-Api-Key": key},
                 timeout=REQUEST_TIMEOUT,
             ) as resp:
@@ -879,6 +886,69 @@ class RemaClient:
             except (KeyError, TypeError) as err:
                 _LOGGER.debug("Skipping catalog that could not be read: %s", err)
         return catalogs
+
+    async def async_get_offer_products(self, offers: list[Offer]) -> list[Offer]:
+        """The offers with the REMA products each one is for (``product_ids``).
+
+        Tjek knows which of REMA's products an offer covers (the webshop shows
+        them when an offer is opened). An offer that can't be looked up keeps
+        ``product_ids=None``; one without webshop products gets ``()``.
+        """
+        semaphore = asyncio.Semaphore(8)
+
+        async def lookup(offer: Offer) -> None:
+            if offer.id in self._offer_products:
+                return
+            async with semaphore:
+                try:
+                    data = await self._async_tjek(
+                        "/v4/rpc/get_offer_products", {}, {"id": offer.id}
+                    )
+                except RemaError as err:
+                    _LOGGER.debug("Products of offer %s not found: %s", offer.id, err)
+                    return
+            ids = [
+                int(entry["external_id"])
+                for entry in (data or {}).get("offer_products") or []
+                if isinstance(entry, dict) and str(entry.get("external_id") or "").isdigit()
+            ]
+            self._offer_products[offer.id] = tuple(dict.fromkeys(ids))
+
+        await asyncio.gather(*(lookup(offer) for offer in offers))
+        return [
+            replace(offer, product_ids=self._offer_products[offer.id])
+            if offer.id in self._offer_products
+            else offer
+            for offer in offers
+        ]
+
+    async def async_get_products(
+        self, product_ids: list[int], at: datetime | None = None
+    ) -> list[Product]:
+        """REMA products by id, priced as of now or a later time."""
+        moment = at or datetime.now(UTC)
+        products: list[Product] = []
+        for start in range(0, len(product_ids), 20):
+            chunk = product_ids[start : start + 20]
+            data = await self._async_request(
+                "POST",
+                "/v3/batch",
+                payload={
+                    "requests": [
+                        {"uri": f"/api/v3/products/{pid}", "method": "GET"} for pid in chunk
+                    ]
+                },
+            )
+            for answer in data or []:
+                body = answer.get("body") if isinstance(answer, dict) else None
+                entry = body.get("data") if isinstance(body, dict) else None
+                if not isinstance(entry, dict) or answer.get("status") != 200:
+                    continue
+                try:
+                    products.append(Product.from_api(entry, moment))
+                except (KeyError, TypeError, ValueError) as err:
+                    _LOGGER.debug("Skipping product that could not be read: %s", err)
+        return products
 
     async def async_get_offers(self, catalog_id: str, max_offers: int = 1000) -> list[Offer]:
         """Return all offers in a tilbudsavis."""

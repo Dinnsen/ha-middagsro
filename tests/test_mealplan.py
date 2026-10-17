@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 import json
 from types import SimpleNamespace
@@ -619,6 +620,21 @@ async def test_offer_line_gets_the_offer_product(
     onions: dict[str, Any] = {"name": "Løg", "search": "løg", "amount": 1, "unit": "kg"}
     await planner._async_match(onions, None, _offer("Mini madspildsgulerødder", "500 g"))
     assert onions["product"]["name"] == "LØG"
+
+    # Tjek's product ids decide, and those products are fetched directly.
+    salmon = make_product(440047, "LAKSEFILET", 69.95, underline="400 GR. / REMA 1000")
+    mock_client.async_get_products.return_value = [salmon]
+    fish: dict[str, Any] = {"name": "Laksefilet", "search": "laks", "amount": 400, "unit": "g"}
+    offer = replace(_offer("REMA 1000 Laksefilet", "600 g"), product_ids=(440047,))
+    await planner._async_match(fish, None, offer)
+    assert fish["product"]["name"] == "LAKSEFILET"
+    planner._avis_price(fish, offer)
+    assert fish["price_source"] == "avis"
+    mock_client.async_get_products.side_effect = RemaError("down")
+    gone: dict[str, Any] = {"name": "Æg", "search": "æg", "amount": 10, "unit": "stk"}
+    await planner._async_match(gone, None, replace(_offer("Æg"), product_ids=(40003,)))
+    assert gone["product"]["name"] == "ØKOLOGISKE ÆG"  # found by searching instead
+    mock_client.async_get_products.side_effect = None
 
     # 3 kg potatoes are not one sweet potato sold per piece.
     sweet = make_product(1, "SØDE KARTOFLER", 5.0, underline="1 STK.")
