@@ -1063,7 +1063,8 @@ class Rema1000Panel extends HTMLElement {
         .filter((line) => !line.buy_from)
         .forEach((line) => (groups[line.category || "Andet"] ||= []).push(line));
       const row = (line) => {
-              const p = line.product;
+              // An offer only sold in the shops (partivare) has the avis's name and price.
+              const p = line.product || line.avis_item;
               const badges = [
                 p?.is_advertised || p?.is_campaign ? '<span class="badge offer">Tilbud</span>' : "",
                 p?.is_organic ? '<span class="badge eco">Øko</span>' : "",
@@ -1080,7 +1081,7 @@ class Rema1000Panel extends HTMLElement {
                   ${line.offer_name ? `<span class="muted">Avisvare: ${esc(line.offer_name)}</span>` : ""}
                   ${line.note ? `<span class="note">${esc(line.note)}</span>` : ""}
                 </div>
-                <div class="cost">${p ? `${line.packages} × ${kr(p.price)}<b>${kr(line.cost)}</b>` : "–"}</div>
+                <div class="cost">${p && p.price != null ? `${line.packages} × ${kr(p.price)}<b>${kr(line.cost)}</b>` : "–"}</div>
               </li>`;
       };
       const sections = Object.entries(groups)

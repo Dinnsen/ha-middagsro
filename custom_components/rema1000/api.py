@@ -367,6 +367,39 @@ class Catalog:
             offer_count=data.get("offer_count"),
         )
 
+    def runs_within(self, other: Catalog) -> bool:
+        """True if this avis runs inside another one's period."""
+        return bool(
+            self.valid_from
+            and self.valid_to
+            and other.valid_from
+            and other.valid_to
+            and other.valid_from <= self.valid_from
+            and self.valid_to <= other.valid_to
+        )
+
+
+def is_insert(catalog: Catalog, catalogs: list[Catalog]) -> bool:
+    """An insert (indstik): a smaller avis inside another avis's week.
+
+    "Uge 42 Indstik" (thursday to saturday, 12 offers) runs inside "Uge 42",
+    and its offers are in the week's avis too. It is out on wednesday, before
+    it starts, so it must not be taken for next week's avis. A month-long avis
+    without offers ("Meget mere sæson") holds no inserts.
+    """
+    return any(
+        other.id != catalog.id
+        and catalog.runs_within(other)
+        and (other.offer_count or 0) > 0
+        and (other.offer_count or 0) >= (catalog.offer_count or 0)
+        and other.valid_from is not None
+        and other.valid_to is not None
+        and catalog.valid_from is not None
+        and catalog.valid_to is not None
+        and other.valid_to - other.valid_from > catalog.valid_to - catalog.valid_from
+        for other in catalogs
+    )
+
 
 @dataclass(slots=True)
 class Offer:
@@ -382,6 +415,13 @@ class Offer:
     valid_to: str | None
     # REMA's product ids for the offer (from Tjek); None when not looked up.
     product_ids: tuple[int, ...] | None = None
+    # The names Tjek gives the offer's products ("REMA 1000 laksefilet 600g").
+    product_names: tuple[str, ...] = ()
+    # Tjek lists products without a REMA id (or none at all), so the ids are
+    # not the whole offer: other products may still fit it by name.
+    unlinked: bool = False
+    # Tjek's names for those products ("Arla Skyr Airy Jordbær").
+    unlinked_names: tuple[str, ...] = ()
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> Offer:
@@ -448,7 +488,9 @@ class RemaClient:
         self._lock = asyncio.Lock()
         self._tjek: tuple[str, str] | None = None
         self._favorites: tuple[float, list[Product]] | None = None
-        self._offer_products: dict[str, tuple[int, ...]] = {}
+        self._offer_products: dict[
+            str, tuple[tuple[int, ...], tuple[str, ...], tuple[str, ...]]
+        ] = {}
 
     @property
     def user_id(self) -> int | None:
@@ -892,7 +934,11 @@ class RemaClient:
 
         Tjek knows which of REMA's products an offer covers (the webshop shows
         them when an offer is opened). An offer that can't be looked up keeps
-        ``product_ids=None``; one without webshop products gets ``()``.
+        ``product_ids=None``. Products Tjek lists without a REMA id (a brand
+        REMA's webshop doesn't link, e.g. *Arla Skyr Airy*) make the offer
+        ``unlinked``: the ids are then not all of it. ``product_names`` are
+        Tjek's names for the products, also those REMA's webshop doesn't sell
+        (a *partivare*, only in the shops).
         """
         semaphore = asyncio.Semaphore(8)
 
@@ -907,20 +953,46 @@ class RemaClient:
                 except RemaError as err:
                     _LOGGER.debug("Products of offer %s not found: %s", offer.id, err)
                     return
+            entries = [
+                entry
+                for entry in (data or {}).get("offer_products") or []
+                if isinstance(entry, dict)
+            ]
             ids = [
                 int(entry["external_id"])
-                for entry in (data or {}).get("offer_products") or []
-                if isinstance(entry, dict) and str(entry.get("external_id") or "").isdigit()
+                for entry in entries
+                if str(entry.get("external_id") or "").isdigit()
             ]
-            self._offer_products[offer.id] = tuple(dict.fromkeys(ids))
+            names = [str(entry.get("name") or "").strip() for entry in entries]
+            unlinked = [
+                name
+                for entry, name in zip(entries, names, strict=True)
+                if not str(entry.get("external_id") or "").isdigit()
+            ]
+            self._offer_products[offer.id] = (
+                tuple(dict.fromkeys(ids)),
+                tuple(dict.fromkeys(n for n in names if n)),
+                # None listed at all: unlinked too, with no names to go by.
+                tuple(unlinked) if entries else ("",),
+            )
 
         await asyncio.gather(*(lookup(offer) for offer in offers))
-        return [
-            replace(offer, product_ids=self._offer_products[offer.id])
-            if offer.id in self._offer_products
-            else offer
-            for offer in offers
-        ]
+        found: list[Offer] = []
+        for offer in offers:
+            if offer.id not in self._offer_products:
+                found.append(offer)
+                continue
+            ids, names, unlinked = self._offer_products[offer.id]
+            found.append(
+                replace(
+                    offer,
+                    product_ids=ids,
+                    product_names=names,
+                    unlinked=bool(unlinked),
+                    unlinked_names=tuple(n for n in unlinked if n),
+                )
+            )
+        return found
 
     async def async_get_products(
         self, product_ids: list[int], at: datetime | None = None

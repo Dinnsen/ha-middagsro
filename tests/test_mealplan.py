@@ -11,7 +11,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.rema1000 import mealplan as mp
 from custom_components.rema1000.api import Offer, RemaError
@@ -217,6 +217,24 @@ def test_prompt_with_every_rule() -> None:
     assert "skal koste under" not in plain
 
 
+def test_recipe_prompt_with_the_dish_items() -> None:
+    """With the overview's items for the dish, only those are in the recipe prompt."""
+    plan = make_plan(start="2026-10-12")
+    plan["shopping"][0]["product"] = {"name": "HK. OKSEKØD 8-12%"}
+    plan["shopping"][1]["avis_item"] = {"name": "Persille"}
+    day = {**plan["days"][0], "uses": ["hakket oksekød", "Persille"]}
+    prompt = mp.build_recipe_prompt(settings=clean_settings({}), day=day, plan=plan)
+    assert "Rettens varer fra indkøbslisten" in prompt
+    assert "Hakket oksekød (500 g) [købes som HK. OKSEKØD 8-12%], Persille (1 bundt)." in prompt
+    assert ", Spaghetti" not in prompt  # another dish's item
+    assert "hakkede tomater på dåse" in prompt
+    # Names the AI got wrong: the whole week's shopping, as before.
+    other = mp.build_recipe_prompt(
+        settings=clean_settings({}), day={**day, "uses": ["Kartofler"]}, plan=plan
+    )
+    assert "Ugens indkøb" in other
+
+
 def test_recipe_prompt() -> None:
     """The recipe prompt follows the household and the week's shopping."""
     settings = clean_settings(
@@ -272,6 +290,7 @@ def ai_answer(dates: list[date], shopping: list[dict[str, Any]]) -> dict[str, An
                 "servings": "4",
                 "active_minutes": 20,
                 "total_minutes": "35",
+                "uses": ["Spaghetti", 5, " "] if idx == 0 else "ikke en liste",
             }
         )
     return {
@@ -419,6 +438,9 @@ async def test_generate_plan(
         {"text": "Server.", "minutes": 0},
     ]
     assert cooked["total_minutes"] == 30
+    assert cooked["uses"] == ["Spaghetti"]
+    assert plan["days"][1]["uses"] == []
+    assert "hakkede tomater på dåse til kødsovs" in ai.prompts[0]
 
     issues = ir.async_get(hass)
     assert issues.async_get_issue(DOMAIN, mp.ISSUE_NO_AI_TASK) is None
@@ -751,7 +773,7 @@ async def test_send_parts(
 
 
 async def test_generate_over_budget_tries_again(
-    hass: HomeAssistant, init_integration: MockConfigEntry, ai_task: str
+    hass: HomeAssistant, init_integration: MockConfigEntry, ai_task: str, freezer: Any
 ) -> None:
     """Over budget: the AI is asked once more and the cheapest plan is kept."""
     store = init_integration.runtime_data.store
@@ -767,7 +789,14 @@ async def test_generate_over_budget_tries_again(
     plan = store.latest_plan
     assert plan is not None
     assert plan["total"] == 8
-    assert plan["status"] == "sent"  # send=True
+    # send=True: sent when REMA has next week's products, 02:00 on the first day.
+    assert plan["status"] == "draft"
+    assert plan["send_at"] == "2026-10-18T00:05:00+00:00"
+    freezer.move_to(datetime(2026, 10, 18, 0, 6, tzinfo=UTC))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert plan["status"] == "sent"
+    assert "send_at" not in plan
 
 
 async def test_generate_keeps_cheapest_when_still_over(
@@ -1071,3 +1100,199 @@ async def test_auto_generate_on_start_day(
     with patch.object(planner, "async_start_generation") as start:
         planner.async_check_auto_generate(UPCOMING)
     assert start.call_args.args[0] == date(2026, 10, 21)
+
+
+LAKS = Offer(
+    id="laks",
+    heading="REMA 1000 Laksefilet",
+    description="600 g\nPartivare. 148.33 pr. kg",
+    price=89,
+    pre_price=None,
+    quantity="600 g",
+    valid_from="2026-10-17T22:00:00+0000",
+    valid_to="2026-10-24T21:59:59+0000",
+    product_ids=(440095,),
+    product_names=("REMA 1000 laksefilet 600g",),
+)
+
+
+async def test_avis_item_rema_does_not_have_yet(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock, freezer: Any
+) -> None:
+    """An offer whose product REMA doesn't have: the avis's name and price.
+
+    From the real avis for week 43: Tjek says the salmon offer is REMA's product
+    440095, which REMA's webshop doesn't have (yet), and the webshop puts it on
+    the list as free text. Before, the plan got 3 x 225 g salmon at the normal
+    price instead of 600 g at 89 kr.
+    """
+    planner = init_integration.runtime_data.planner
+    mock_client.async_get_products.return_value = []
+    fish: dict[str, Any] = {"name": "Laksefilet", "search": "laks", "amount": 1200, "unit": "g"}
+    await planner._async_match(fish, None, LAKS)
+    assert fish["product"] is None
+    assert fish["avis_item"] == {
+        "name": "REMA 1000 laksefilet 600g",
+        "underline": "600 g",
+        "price": 89,
+        "is_advertised": True,
+        "product_ids": [440095],
+    }
+    assert (fish["packages"], fish["cost"], fish["price_source"]) == (2, 178, "avis")
+    assert "vælges, når listen sendes" in fish["note"]
+    planner._avis_price(fish, LAKS)  # no product: nothing to change
+    assert fish["cost"] == 178
+
+    # Once the offer runs and REMA still doesn't have it: a partivare.
+    freezer.move_to(datetime(2026, 10, 18, 8, tzinfo=UTC))
+    await planner._async_match(fish, None, LAKS)
+    assert fish["note"] == "Partivare – kun i butikken, tilføjes som fritekst"
+
+    # Several products and no price: the part of the offer the line is about.
+    snack = replace(
+        LAKS,
+        heading="Pizza snack",
+        description="Frost 120 g",
+        price=None,
+        quantity="120 g",
+        valid_from=None,
+        product_ids=(42689, 42690),
+        product_names=("Pizza snack Salami", "Pizza Snack Margherita"),
+    )
+    pizza: dict[str, Any] = {"name": "Pizza snack", "search": "pizza snack", "amount": 4,
+                             "unit": "stk"}  # fmt: skip
+    await planner._async_match(pizza, None, snack)
+    assert pizza["avis_item"]["name"] == "Pizza snack (tilbud)"
+    assert (pizza["packages"], pizza["cost"]) == (4, None)
+
+    # Not what the line asks for: no avis item (no meatballs for kebab).
+    gyros = replace(LAKS, heading="REMA 1000 Frikadeller eller gyros", product_names=("GYROS",))
+    kebab: dict[str, Any] = {"name": "Kyllingekebab", "search": "kyllingekebab", "amount": 400,
+                             "unit": "g"}  # fmt: skip
+    await planner._async_match(kebab, None, gyros)
+    assert kebab["avis_item"] is None
+
+    # Tjek lists products without REMA's id too: searched for by name instead.
+    unlinked = replace(LAKS, unlinked=True)
+    other: dict[str, Any] = {"name": "Laksefilet", "search": "laks", "amount": 600, "unit": "g"}
+    await planner._async_match(other, None, unlinked)
+    assert other["avis_item"] is None
+
+
+def test_avis_packages() -> None:
+    """How many of an avis item cover an amount."""
+    assert mp.avis_packages(None, None, LAKS) == 1
+    assert mp.avis_packages(1, "bundt", LAKS) == 1
+    assert mp.avis_packages(3, "pk", LAKS) == 3
+    assert mp.avis_packages(1.2, "kg", LAKS) == 2
+    assert mp.avis_packages(1, "l", LAKS) == 1  # no size of that kind
+    assert mp.avis_packages(3, "stk", LAKS) == 3
+
+
+async def test_avis_item_sent_as_rema_product(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """When the list is sent, an avis item is looked up again: REMA's product if it has it."""
+    store = init_integration.runtime_data.store
+    planner = init_integration.runtime_data.planner
+    plan = make_plan("avis", start="2026-10-18")
+    fish = {
+        "name": "Laksefilet",
+        "amount": 1200.0,
+        "unit": "g",
+        "search": "laks",
+        "category": "Fisk",
+        "offer": "o1",
+        "product": None,
+        "avis_item": {"name": "REMA 1000 laksefilet 600g", "price": 89, "product_ids": [440095]},
+        "packages": 2,
+        "cost": 178,
+        "note": "Avisvare",
+    }
+    plan["shopping"] = [fish]
+    await store.async_add_plan(plan)
+
+    def sent() -> list[tuple[str | int, int]]:
+        return [(c.kwargs.get("name") or c.kwargs.get("product_id"), c.kwargs["amount"])
+                for c in mock_client.async_add_to_list.call_args_list]  # fmt: skip
+
+    # REMA doesn't have it (a partivare): free text, as the webshop does.
+    mock_client.async_get_products.return_value = []
+    await planner.async_send("avis")
+    assert sent() == [("REMA 1000 laksefilet 600g", 2)]
+
+    # REMA can't be reached, or has something else under that id: free text too.
+    for answer in (RemaError("down"), [make_product(440095, "VASKEMIDDEL", 20.0)]):
+        mock_client.async_add_to_list.reset_mock()
+        mock_client.async_get_products.side_effect = (
+            answer if isinstance(answer, Exception) else None
+        )
+        mock_client.async_get_products.return_value = answer
+        await planner.async_send("avis")
+        assert sent() == [("REMA 1000 laksefilet 600g", 2)]
+    mock_client.async_get_products.side_effect = None
+
+    # From 02:00 on the first day REMA has it: that product, at REMA's price.
+    salmon = make_product(440095, "LAKSEFILET", 89.0, underline="600 GR. / REMA 1000")
+    mock_client.async_get_products.return_value = [salmon]
+    mock_client.async_add_to_list.reset_mock()
+    await planner.async_send("avis")
+    assert sent() == [(440095, 2)]
+    assert fish["product"]["name"] == "LAKSEFILET"
+    assert fish["note"] is None
+    assert "price_source" not in fish
+    assert plan["total"] == 178
+
+
+async def test_automatic_sends_wait_for_rema(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock, freezer: Any
+) -> None:
+    """Automatic sends wait for 02:00 on the shopping day, also over a restart."""
+    store = init_integration.runtime_data.store
+    planner = init_integration.runtime_data.planner
+    plan = make_plan("wait", start="2026-10-18")
+    plan["shopping"][2]["buy_from"] = "2026-10-22"  # spaghetti on thursday
+    await store.async_add_plan(plan)
+
+    await planner._async_send_when_ready(plan)
+    assert plan["send_at"] == "2026-10-18T00:05:00+00:00"
+    assert plan["late_send_at"] == "2026-10-22T00:05:00+00:00"
+    assert len(planner._sends) == 2
+
+    # After a restart the waiting sends are scheduled again.
+    planner.async_cancel()
+    assert planner._sends == {}
+    old = make_plan("old", start="2026-10-01")
+    old["send_at"] = "2026-10-01T00:05:00+00:00"
+    gone = make_plan("gone", start="2026-10-18")
+    gone["send_at"] = "2026-10-18T00:05:00+00:00"
+    await store.async_add_plan(old)
+    await store.async_add_plan(gone)
+    store.plans.append({**make_plan("bare", start="2026-10-18"), "send_at": "not a time"})
+    planner.async_restore_sends()
+    assert "send_at" not in old  # that week is over
+    assert set(planner._sends) == {("wait", "send_at"), ("wait", "late_send_at"),
+                                   ("gone", "send_at")}  # fmt: skip
+    await store.async_delete_plan("gone")  # deleted meanwhile: nothing is sent
+
+    freezer.move_to(datetime(2026, 10, 18, 0, 6, tzinfo=UTC))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert plan["status"] == "sent"
+    assert "send_at" not in plan
+    assert "late_sent_at" not in plan
+
+    # REMA fails on thursday: logged, and the plan isn't marked as sent.
+    mock_client.async_get_primary_list.side_effect = RemaError("down")
+    freezer.move_to(datetime(2026, 10, 22, 0, 6, tzinfo=UTC))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert "late_sent_at" not in plan
+    assert planner._sends == {}
+
+    # A plan for a week that has started is sent right away.
+    mock_client.async_get_primary_list.side_effect = None
+    now = make_plan("now", start="2026-10-20")
+    await store.async_add_plan(now)
+    await planner._async_send_when_ready(now)
+    assert now["status"] == "sent"

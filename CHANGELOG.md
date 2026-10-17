@@ -2,6 +2,17 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [0.7.0] - 2026-10-17
+
+### Changed
+- **Avis items REMA doesn't have yet.** Some offers are for products that aren't in REMA's webshop before the offer starts, or at all (a *partivare*, e.g. *REMA 1000 Laksefilet 600 g* for 89 kr in week 43). A meal plan item built on such an offer now gets the avis's name and price (*Avispris*) instead of another product at its normal price (3 × 225 g salmon for 132 kr). When the list is sent, the item is looked up again: REMA's product if it has it by then, otherwise free text with the avis's name, as the webshop does.
+- **Automatic sending waits for REMA:** a plan made when the new avis is out is sent at 02:00 on the shopping day (the Thursday items at 02:00 on Thursday), when REMA has the week's products and prices. A waiting send survives a restart.
+- **Recipes use the dish's own items.** The AI now says which items on the shopping list each dish uses, and the recipe gets only those (with what is bought), so the lasagne no longer uses the fresh tomatoes meant for the snack vegetables. Both prompts ask for the everyday ingredients a Danish family uses, such as chopped tomatoes in a can for meat sauce and lasagne.
+
+### Fixed
+- **Offers with products Tjek lists without REMA's id** (*Arla Skyr Airy* in the Karolines Køkken/Cheasy/Arla offer) are found by Tjek's name or the avis's text; before, only the products with an id could get the offer.
+- An **insert** (*Uge 42 Indstik*), which is out on Wednesday before it starts, is no longer taken for next week's avis. Its offers are in the week's avis already, so it isn't read.
+
 ## [0.6.2] - 2026-10-17
 
 ### Fixed

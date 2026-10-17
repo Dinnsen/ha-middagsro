@@ -17,7 +17,7 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .api import DANISH_TIME, Catalog, Offer, Product, RemaClient, RemaError, parse_time
-from .mealplan import avis_match
+from .mealplan import avis_match, unlinked_match
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,17 +36,21 @@ def on_offer(product: Product) -> bool:
 def match_offer(product: Product, offers: list[Offer]) -> Offer | None:
     """The avis offer that is this very favourite, if any.
 
-    By REMA's product ids when Tjek has them for an offer; otherwise strictly
-    by text (see ``avis_match``): a wrong match shows a wrong price, so a
-    favourite is better left out than matched to something else.
+    By REMA's product ids when Tjek has them for an offer; otherwise (also
+    for products Tjek lists without a REMA id) strictly by name (see
+    ``unlinked_match`` and ``avis_match``): a wrong match shows a wrong price,
+    so a favourite is better left out than matched to something else.
     """
     by_id = next((o for o in offers if o.product_ids and product.id in o.product_ids), None)
     return by_id or next(
         (
             o
             for o in offers
-            if o.product_ids is None
-            and avis_match(product.name, product.underline, product.is_organic, o)
+            if (o.product_ids is None or o.unlinked)
+            and (
+                unlinked_match(product.name, product.underline, product.is_organic, o)
+                or avis_match(product.name, product.underline, product.is_organic, o)
+            )
         ),
         None,
     )
