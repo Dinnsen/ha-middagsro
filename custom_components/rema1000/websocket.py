@@ -9,6 +9,7 @@ from typing import Any
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.util import dt as dt_util
 
 from .api import Catalog, RemaError
 from .const import DOMAIN
@@ -33,29 +34,35 @@ def _entry(hass: HomeAssistant, msg: dict[str, Any]) -> RemaConfigEntry:
     return entries[0]
 
 
+def _catalog(cat: Catalog | None) -> dict[str, Any] | None:
+    if not cat:
+        return None
+    return {
+        "id": cat.id,
+        "label": cat.label,
+        "valid_from": cat.valid_from.isoformat() if cat.valid_from else None,
+        "valid_to": cat.valid_to.isoformat() if cat.valid_to else None,
+    }
+
+
 def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
     data = entry.runtime_data
     store = data.store
     offers = data.offers.data
     shopping = data.shopping_list.data
 
-    def catalog(cat: Catalog | None) -> dict[str, Any] | None:
-        if not cat:
-            return None
-        return {
-            "id": cat.id,
-            "label": cat.label,
-            "valid_from": cat.valid_from.isoformat() if cat.valid_from else None,
-            "valid_to": cat.valid_to.isoformat() if cat.valid_to else None,
-        }
-
+    latest = store.latest_plan
+    current = store.plan_covering(dt_util.now().date())
     return {
         "entry_id": entry.entry_id,
         "title": entry.title,
         "settings": store.settings,
         "favorites": store.favorites,
         "plans": [plan_summary(plan) for plan in store.plans],
-        "latest_plan": store.latest_plan,
+        "latest_plan": latest,
+        # The plan with tonight's dinner, when it is not the newest one.
+        "current_plan": current if current is not latest else None,
+        "note": store.note,
         "status": data.planner.status,
         "default_start": data.planner.default_start().isoformat(),
         "ai_entities": [
@@ -63,8 +70,8 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
             for state in hass.states.async_all("ai_task")
         ],
         "catalogs": {
-            "current": catalog(offers.current) if offers else None,
-            "upcoming": catalog(offers.upcoming) if offers else None,
+            "current": _catalog(offers.current) if offers else None,
+            "upcoming": _catalog(offers.upcoming) if offers else None,
         },
         "rema_list": {
             "name": shopping.name,
@@ -141,6 +148,19 @@ async def ws_settings(
     entry = _entry(hass, msg)
     settings = await entry.runtime_data.store.async_set_settings(msg["settings"])
     connection.send_result(msg["id"], settings)
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "rema1000/note", ENTRY: str, vol.Required("text"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_note(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Save the family's wishes for the next plan (empty removes them)."""
+    store = _entry(hass, msg).runtime_data.store
+    connection.send_result(msg["id"], {"note": await store.async_set_note(msg["text"])})
 
 
 @websocket_api.websocket_command(
@@ -249,17 +269,44 @@ async def ws_search(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/favorites", ENTRY: str, vol.Optional("force"): bool}
+    {
+        vol.Required("type"): "rema1000/favorites",
+        ENTRY: str,
+        vol.Optional("force"): bool,
+        vol.Optional("week", default="current"): vol.In(["current", "next"]),
+    }
 )
 @websocket_api.async_response
 @_wrap
 async def ws_favorites(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """The account's favourite products, with what is on offer."""
-    client = _entry(hass, msg).runtime_data.client
-    products = await client.async_get_favorites(force=bool(msg.get("force")))
-    connection.send_result(msg["id"], [p.as_dict() for p in products])
+    """The account's favourite products, and those on offer this or next week.
+
+    Until next week's avis is out, next week shows this week's offers
+    (fallback=True).
+    """
+    data = _entry(hass, msg).runtime_data
+    force = bool(msg.get("force"))
+    products = await data.client.async_get_favorites(force=force)
+    catalogs = data.offers.data
+    current = catalogs.current if catalogs else None
+    upcoming = catalogs.upcoming if catalogs else None
+    catalog = upcoming if msg["week"] == "next" else current
+    fallback = msg["week"] == "next" and upcoming is None
+    if fallback:
+        catalog = current
+    offers = await data.favorite_offers.async_on_offer(products, catalog, force=force)
+    connection.send_result(
+        msg["id"],
+        {
+            "week": msg["week"],
+            "fallback": fallback,
+            "catalog": _catalog(catalog),
+            "products": [p.as_dict() for p in products],
+            "on_offer": [p.as_dict() for p in offers],
+        },
+    )
 
 
 @websocket_api.websocket_command(
@@ -301,6 +348,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_state,
         ws_plan,
         ws_settings,
+        ws_note,
         ws_favorite_save,
         ws_favorite_delete,
         ws_generate,

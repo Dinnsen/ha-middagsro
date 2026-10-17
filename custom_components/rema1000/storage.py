@@ -15,6 +15,7 @@ from .const import DOMAIN
 
 STORE_VERSION = 1
 MAX_PLANS = 52
+MAX_NOTE = 1000
 
 ORGANIC_MODES = ("only", "prefer", "none")
 EGG_LEVELS = ("caged", "free_range", "organic")  # skrabeæg < frilandsæg < økologiske æg
@@ -150,6 +151,7 @@ class RemaPlanStore:
         self.settings: dict[str, Any] = copy.deepcopy(DEFAULT_SETTINGS)
         self.favorites: list[dict[str, Any]] = []
         self.plans: list[dict[str, Any]] = []
+        self.note = ""  # the family's wishes for the next plan only
 
     async def async_load(self) -> None:
         """Load from disk."""
@@ -157,11 +159,17 @@ class RemaPlanStore:
         self.settings = clean_settings(data.get("settings") or {})
         self.favorites = list(data.get("favorites") or [])
         self.plans = list(data.get("plans") or [])
+        self.note = str(data.get("note") or "")
 
     async def async_save(self) -> None:
         """Write to disk."""
         await self._store.async_save(
-            {"settings": self.settings, "favorites": self.favorites, "plans": self.plans}
+            {
+                "settings": self.settings,
+                "favorites": self.favorites,
+                "plans": self.plans,
+                "note": self.note,
+            }
         )
 
     # ------------------------------------------------------------- settings
@@ -171,6 +179,14 @@ class RemaPlanStore:
         self.settings = clean_settings(raw)
         await self.async_save()
         return self.settings
+
+    # ------------------------------------------------------------- note
+
+    async def async_set_note(self, text: str) -> str:
+        """Set the wishes for the next plan (an empty text removes them)."""
+        self.note = str(text or "").strip()[:MAX_NOTE]
+        await self.async_save()
+        return self.note
 
     # ------------------------------------------------------------- favourites
 
@@ -231,6 +247,18 @@ class RemaPlanStore:
     def plan_for_start(self, start: date) -> dict[str, Any] | None:
         """Return the newest plan that starts on a date."""
         return next((p for p in self.plans if p.get("start_date") == start.isoformat()), None)
+
+    def plan_covering(self, day: date) -> dict[str, Any] | None:
+        """The newest plan that has a dinner planned on a day."""
+        return next(
+            (
+                p
+                for p in self.plans
+                if p.get("start_date", "") <= day.isoformat() <= p.get("end_date", "")
+                and any(d.get("date") == day.isoformat() for d in p.get("days", []))
+            ),
+            None,
+        )
 
     def recent_dishes(self, before: date, weeks: int) -> list[str]:
         """Dish names from plans in the weeks before a date."""
