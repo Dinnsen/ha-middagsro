@@ -605,6 +605,7 @@ def test_offer_query_and_short_words() -> None:
     assert mp.name_fit(["æg"], "SKRABEÆG")[0] == 1
     assert mp.name_fit(["laks"], "LAKSEFILET")[0] == 1
     assert mp.name_fit(["laks"], "VARMRØGET LAKS")[1] > 5
+    assert mp.name_fit(["laks"], "GRAVAD LAKS")[1] > 5
 
 
 async def test_offer_line_gets_the_offer_product(
