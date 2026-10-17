@@ -163,3 +163,25 @@ async def test_recent_dishes(hass: HomeAssistant, hass_storage: dict[str, Any]) 
         "Kyllingewok med broccoli",
     ]
     assert store.recent_dishes(date(2026, 10, 18), 0) == []
+
+
+async def test_note_and_plan_covering(hass: HomeAssistant, hass_storage: dict[str, Any]) -> None:
+    """The wishes for the next plan are saved; the plan with a day's dinner is found."""
+    store = RemaPlanStore(hass, "entry")
+    note = await store.async_set_note("  Pizza fredag  " + "x" * 2000)
+    assert note.startswith("Pizza fredag")
+    assert len(note) == 1000
+    other = RemaPlanStore(hass, "entry")
+    await other.async_load()
+    assert other.note == store.note
+    assert await store.async_set_note("") == ""
+
+    await store.async_add_plan(make_plan("week42", start="2026-10-15"))  # 15-17 Oct
+    await store.async_add_plan(make_plan("week43", start="2026-10-18"))
+    covering = store.plan_covering(date(2026, 10, 17))
+    assert covering is not None
+    assert covering["id"] == "week42"
+    covering = store.plan_covering(date(2026, 10, 18))
+    assert covering is not None
+    assert covering["id"] == "week43"
+    assert store.plan_covering(date(2026, 10, 1)) is None

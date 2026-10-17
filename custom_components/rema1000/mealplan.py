@@ -178,6 +178,21 @@ def next_start(today: date, weekday: int) -> date:
     return today + timedelta(days=(weekday - today.weekday()) % 7)
 
 
+def plan_week(dates: list[date]) -> int:
+    """The week a plan is named after: the week of its first monday.
+
+    A plan from sunday to saturday follows REMA's avis, which is named after
+    the week the monday is in.
+    """
+    monday = next((d for d in dates if d.weekday() == 0), dates[0])
+    return monday.isocalendar().week
+
+
+def plan_title(dates: list[date]) -> str:
+    """The name of a plan, e.g. 'Madplan uge 43'."""
+    return f"Madplan uge {plan_week(dates)}"
+
+
 def to_base(amount: float, unit: str | None) -> tuple[str, float] | None:
     """Convert an amount to grams, millilitres or pieces."""
     if not unit:
@@ -355,6 +370,7 @@ def build_prompt(
     recent_dishes: list[str],
     feedback: str | None = None,
     skipped: list[date] | None = None,
+    note: str | None = None,
 ) -> str:
     """Build the instructions for the AI."""
     s = settings
@@ -430,6 +446,12 @@ def build_prompt(
         out.append("- Mælk skal være økologisk.")
     if s["produce_organic"]:
         out.append("- Frugt og grønt skal være økologisk.")
+    if note:
+        out.append(
+            "- Familiens ønsker til netop denne madplan – SKAL følges (fx varer de allerede har, "
+            "der skal bruges før en bestemt dato, eller en bestemt ret på en bestemt dag). Varer, "
+            f"familien allerede har, skal IKKE på indkøbslisten: {note}"
+        )
     if feedback:
         out.append(f"- VIGTIGT fra sidste forsøg: {feedback}")
 
@@ -493,7 +515,7 @@ def build_prompt(
         "SVARFORMAT: Svar KUN med gyldig JSON uden markdown og uden forklaring, præcis sådan:",
         json.dumps(
             {
-                "title": "Madplan uge 43",
+                "title": plan_title(dates),
                 "summary": "Kort beskrivelse af ugen",
                 "days": [
                     {
@@ -559,6 +581,10 @@ def build_recipe_prompt(
         out.append(f"Undgå helt: {', '.join(avoid)}.")
     if current.weekday() < 5:
         out.append(f"Højst {s['max_cook_minutes_weekday']} minutters aktiv tilberedning.")
+    if plan.get("note"):
+        out.append(
+            f"Familiens ønsker til ugen (brug varer, de allerede har, hvor det passer): {plan['note']}"
+        )
     shopping = ", ".join(
         f"{line['name']} ({line['amount']:g} {line['unit']})"
         if line.get("amount") and line.get("unit") and line["unit"] != "pk"
@@ -849,6 +875,7 @@ class MealPlanner:
         catalog, offers = await self._async_offers(start)
         due, optional = self.store.favorites_due(start)
         recent = self.store.recent_dishes(start, settings["no_repeat_weeks"])
+        note = self.store.note.strip()
 
         best: dict[str, Any] | None = None
         feedback: str | None = None
@@ -869,6 +896,7 @@ class MealPlanner:
                 recent_dishes=recent,
                 feedback=feedback,
                 skipped=skipped,
+                note=note or None,
             )
             raw = await self._async_ask_ai(prompt, "REMA 1000 madplan")
             self._set_status("generating", "Finder varer og priser i REMA 1000 …")
@@ -893,8 +921,12 @@ class MealPlanner:
         ir.async_delete_issue(self.hass, DOMAIN, ISSUE_NO_AI_TASK)
         best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
         best["skipped"] = [d.isoformat() for d in skipped]
+        best["note"] = note
         await self._async_add_recipes(best)
         await self.store.async_add_plan(best)
+        if note and self.store.note.strip() == note:
+            # The wishes are for this plan only (unless changed meanwhile).
+            await self.store.async_set_note("")
         self._notify()
         return best
 
@@ -940,10 +972,10 @@ class MealPlanner:
             "created": dt_util.now().isoformat(),
             "start_date": dates[0].isoformat(),
             "end_date": dates[-1].isoformat(),
-            "week": dates[0].isocalendar().week,
+            "week": plan_week(dates),
             "status": "draft",
             "sent_at": None,
-            "title": str(raw.get("title") or f"Madplan uge {dates[0].isocalendar().week}")[:200],
+            "title": plan_title(dates),
             "summary": str(raw.get("summary") or "")[:2000],
             "days": days,
             "shopping": shopping,

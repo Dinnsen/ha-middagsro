@@ -29,7 +29,7 @@
     },
     "button": {
       "generate_meal_plan": {
-        "default": "mdi:chef-hat"
+        "default": "mdi:creation"
       },
       "send_meal_plan": {
         "default": "mdi:cart-arrow-right"
