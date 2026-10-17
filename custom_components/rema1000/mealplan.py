@@ -471,10 +471,10 @@ def name_fit(search_words: list[str], product_name: str) -> tuple[int, float]:
     for token in name:
         if token in _NEUTRAL_WORDS or any(word in token or token in word for word in search_words):
             continue
-        different = token in _DIFFERENT_WORDS or any(
+        is_other = token in _DIFFERENT_WORDS or any(
             token.endswith(d) for d in _DIFFERENT_WORDS if len(d) > 4
         )  # "varmrøget" is røget
-        penalty += 5.0 if different else 0.15
+        penalty += 5.0 if is_other else 0.15
     return matched, penalty
 
 
