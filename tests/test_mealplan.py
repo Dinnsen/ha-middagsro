@@ -511,9 +511,9 @@ async def test_late_offer_bought_on_its_day(
     assert seen["hakket oksekød"] == datetime(2026, 10, 18, 10, tzinfo=UTC)
 
 
-def _offer(heading: str, description: str | None = None) -> Offer:
+def _offer(heading: str, description: str | None = None, quantity: str | None = None) -> Offer:
     return Offer(id=heading, heading=heading, description=description, price=10, pre_price=None,
-                 quantity=None, valid_from=None, valid_to=None)  # fmt: skip
+                 quantity=quantity, valid_from=None, valid_to=None)  # fmt: skip
 
 
 @pytest.mark.parametrize(
@@ -564,7 +564,10 @@ def _offer(heading: str, description: str | None = None) -> Offer:
         ("POUSSIN", "500 GR. / FRANKRIG", False, "Fersk poussin", "500 g", True),
         # From the real avis for week 43.
         ("KÆRGÅRDEN SMØRBAR", "200 GR. / LET", False, "Kærgården",
-         "Ved køb af flere end 6 stk. pr. variant pr. dag er prisen op til 24.95 pr. stk.", True),
+         "Ved køb af flere end 6 stk. pr. variant pr. dag er prisen op til 24.95 pr. stk.\n200 g",
+         True),
+        ("KÆRGÅRDEN SMØRBAR", "200 GR. / LET", False, "Kærgården",
+         "Ved køb af flere end 6 stk. pr. variant pr. dag er prisen op til 24.95 pr. stk.", False),
         ("HK. KYLLINGEKØD 7-10%", "400 GR. / REMA 1000", False,
          "REMA 1000 Hakket dansk kyllingekød, grise- og kalvekød, koteletter eller stegeflæsk",
          "400-500 g\nMax. 62.50 pr. kg", True),
