@@ -251,3 +251,33 @@ window.DEMO = {
   remaFavorites,
   search: [P.milk, { ...P.milk, id: 20494, name: "LETMÆLK", underline: "1 LTR.", price: 10.95, normal_price: 10.95, is_organic: false }],
 };
+
+// Answers for swapping a dish, the basic items and adding products.
+window.DEMO.swapOptions = [
+  { dish: "Kyllingewok med nudler, broccoli og peanutsauce", type: "normal", active_minutes: 20, total_minutes: 25,
+    why: "Bruger kyllingeoverlår og broccoli fra ugens tilbud." },
+  { dish: "Grøntsagslasagne med linser og revet mozzarella", type: "vegetar", active_minutes: 25, total_minutes: 60,
+    why: "Vegetar, og mozzarellaen er på tilbud." },
+  { dish: "Frikadeller med kartofler og stuvet spidskål", type: "normal", active_minutes: 30, total_minutes: 40,
+    why: "En klassiker børnene kender, med hakket kød fra avisen." },
+];
+window.DEMO.pantry = [
+  { name: "olie", uses: [{ dish: "Ovnbagt kylling med rodfrugter", amount: "3 spsk" }, { dish: "Spaghetti med kødsovs", amount: "1 spsk" }],
+    amount: null, unit: null, on_list: false },
+  { name: "smør", uses: [{ dish: "Laks med kartofler og broccoli", amount: "25 g" }, { dish: "Linsegryde med naan", amount: "30 g" }],
+    amount: 55, unit: "g", on_list: false },
+  { name: "bouillon", uses: [{ dish: "Spaghetti med kødsovs", amount: "1 terning" }], amount: null, unit: null, on_list: false },
+  { name: "mel", uses: [{ dish: "Laks med kartofler og broccoli", amount: "2 spsk" }], amount: null, unit: null, on_list: false },
+];
+window.DEMO.pantryProducts = {
+  olie: { id: 80010, name: "RAPSOLIE", underline: "1 LTR. / DANSK", price: 19, normal_price: 19, is_advertised: false, is_organic: false },
+  smør: { id: 80020, name: "SMØR", underline: "250 GR. / ØKOLOGISK", price: 24, normal_price: 24, is_advertised: false, is_organic: true },
+  bouillon: { id: 80030, name: "HØNSEBOUILLON", underline: "12 STK.", price: 10, normal_price: 10, is_advertised: false, is_organic: false },
+  mel: { id: 80040, name: "HVEDEMEL", underline: "2 KG.", price: 11, normal_price: 11, is_advertised: false, is_organic: false },
+};
+window.DEMO.coffee = [
+  { id: 90010, name: "KAFFE FORMALET", underline: "400 GR. / ØKOLOGISK", price: 42, normal_price: 49, is_advertised: true, is_organic: true,
+    image: pic("☕", "#F3E9D8") },
+  { id: 90011, name: "KAFFEBØNNER MELLEMRISTET", underline: "500 GR.", price: 55, normal_price: 55, is_advertised: false, is_organic: false,
+    image: pic("☕", "#EFE7E1") },
+];

@@ -151,6 +151,18 @@
     },
     "favorite_text_required": {
       "message": "A favourite dish needs a description."
+    },
+    "swap_failed": {
+      "message": "The dish could not be swapped: {error}"
+    },
+    "line_not_found": {
+      "message": "The item is not on the meal plan's shopping list."
+    },
+    "product_not_found": {
+      "message": "REMA 1000 doesn't have that product."
+    },
+    "no_late_list": {
+      "message": "The meal plan has no shopping later in the week."
     }
   },
   "issues": {

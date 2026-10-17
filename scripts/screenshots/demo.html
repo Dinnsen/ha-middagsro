@@ -75,7 +75,48 @@
       };
     },
     "rema1000/note": (msg) => ({ note: (D.state.note = msg.text) }),
-    "rema1000/search": () => D.search,
+    "rema1000/search": (msg) => (/kaffe/i.test(msg.query) ? D.coffee : D.search),
+    // Swapping a dish, the basic items and adding products (made-up answers).
+    "rema1000/swap/options": async (msg) => {
+      await wait(Number(q.get("ai") || 5));
+      const plan = D.state.latest_plan;
+      const day = plan.days.find((d) => d.date === msg.date);
+      return { plan_id: plan.id, date: day.date, dish: day.dish, options: D.swapOptions };
+    },
+    "rema1000/swap": async (msg) => {
+      await wait(Number(q.get("ai") || 5));
+      const plan = D.state.latest_plan;
+      const day = plan.days.find((d) => d.date === msg.date);
+      Object.assign(day, { dish: msg.option.dish, type: msg.option.type, total_minutes: msg.option.total_minutes });
+      return plan;
+    },
+    "rema1000/pantry": () => D.pantry,
+    "rema1000/send": () => {
+      D.state.latest_plan.status = "sent";
+      return { plan_id: D.state.latest_plan.id, status: "sent" };
+    },
+    "rema1000/plan/add": (msg) => {
+      const plan = D.state.latest_plan;
+      const product = msg.pantry
+        ? D.pantryProducts[msg.pantry]
+        : [...D.search, ...D.coffee].find((p) => p.id === msg.product_id);
+      const late = msg.part === "late" ? plan.shopping.find((l) => l.buy_from)?.buy_from : null;
+      const line = {
+        id: `x${plan.shopping.length}`, name: product.name, amount: 1, unit: "pk", search: product.name,
+        category: msg.pantry ? "Basisvarer" : "Tilføjet", added: true, pantry: msg.pantry || null, buy_from: late,
+        product: { ...product }, packages: 1, cost: product.price, note: null,
+      };
+      plan.shopping.push(line);
+      plan.total = Math.round((plan.total + product.price) * 100) / 100;
+      const need = D.pantry.find((n) => n.name === msg.pantry);
+      if (need) need.on_list = true;
+      return line;
+    },
+    "rema1000/plan/remove": (msg) => {
+      const plan = D.state.latest_plan;
+      plan.shopping = plan.shopping.filter((l) => l.id !== msg.line_id);
+      return true;
+    },
   };
   const hass = {
     language: "da",
@@ -83,7 +124,7 @@
       await wait(5);
       const fn = handlers[msg.type];
       if (!fn) throw new Error(`No demo answer for ${msg.type}`);
-      return JSON.parse(JSON.stringify(fn(msg)));
+      return JSON.parse(JSON.stringify(await fn(msg)));
     },
   };
   const panel = document.createElement("rema1000-panel");

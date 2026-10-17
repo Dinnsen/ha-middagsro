@@ -1256,6 +1256,41 @@ class MealPlanner:
                     "product_id": item.get("product_id"),
                 }
             )
+        await self._async_price_lines(shopping, offers, at, late)
+        total = round(sum(line.get("cost") or 0 for line in shopping), 2)
+        return {
+            "id": uuid.uuid4().hex[:12],
+            "created": dt_util.now().isoformat(),
+            "start_date": dates[0].isoformat(),
+            "end_date": dates[-1].isoformat(),
+            "week": plan_week(dates),
+            "status": "draft",
+            "sent_at": None,
+            "title": plan_title(dates),
+            "summary": str(raw.get("summary") or "")[:2000],
+            "days": days,
+            "shopping": shopping,
+            "checklist": [
+                {"requirement": str(c.get("requirement") or "")[:300], "ok": bool(c.get("ok"))}
+                for c in raw.get("checklist") or []
+                if isinstance(c, dict)
+            ],
+            "deviations": str(raw.get("deviations") or "")[:2000],
+            "total": total,
+            "budget": settings["budget"],
+            "catalog": {"id": catalog.id, "label": catalog.label} if catalog else None,
+            "ai_entity": self._ai_entity(),
+        }
+
+    async def _async_price_lines(
+        self,
+        shopping: list[dict[str, Any]],
+        offers: list[Offer],
+        at: datetime | None = None,
+        late: dict[int, date] | None = None,
+    ) -> None:
+        """Find and price REMA products for shopping lines (offers as "o<index>")."""
+        settings = self.store.settings
         offer_names = {f"o{i}": offer.heading for i, offer in enumerate(offers)}
         by_id = {f"o{i}": offer for i, offer in enumerate(offers)}
         late_days = {f"o{i}": day for i, day in (late or {}).items()}
@@ -1287,30 +1322,6 @@ class MealPlanner:
             self._avis_price(line, offer)
 
         await asyncio.gather(*(match(line) for line in shopping))
-        total = round(sum(line.get("cost") or 0 for line in shopping), 2)
-        return {
-            "id": uuid.uuid4().hex[:12],
-            "created": dt_util.now().isoformat(),
-            "start_date": dates[0].isoformat(),
-            "end_date": dates[-1].isoformat(),
-            "week": plan_week(dates),
-            "status": "draft",
-            "sent_at": None,
-            "title": plan_title(dates),
-            "summary": str(raw.get("summary") or "")[:2000],
-            "days": days,
-            "shopping": shopping,
-            "checklist": [
-                {"requirement": str(c.get("requirement") or "")[:300], "ok": bool(c.get("ok"))}
-                for c in raw.get("checklist") or []
-                if isinstance(c, dict)
-            ],
-            "deviations": str(raw.get("deviations") or "")[:2000],
-            "total": total,
-            "budget": settings["budget"],
-            "catalog": {"id": catalog.id, "label": catalog.label} if catalog else None,
-            "ai_entity": self._ai_entity(),
-        }
 
     @staticmethod
     def _clean_days(raw_days: list[Any], dates: list[date]) -> list[dict[str, Any]]:

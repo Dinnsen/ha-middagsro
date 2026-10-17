@@ -15,6 +15,14 @@ from .api import Catalog, RemaError
 from .const import DOMAIN
 from .coordinator import RemaConfigEntry
 from .mealplan import parse_date, plan_summary
+from .planedit import (
+    async_add_pantry_item,
+    async_add_product,
+    async_remove_line,
+    async_swap_dish,
+    async_swap_options,
+    pantry_needs,
+)
 from .schema import vol
 from .storage import ALLERGY_OPTIONS, AVOID_OPTIONS, FAVORITE_FREQUENCIES
 
@@ -346,6 +354,109 @@ async def ws_list_clear(
     connection.send_result(msg["id"], {"removed": removed})
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/swap/options",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("date"): str,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_swap_options(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Three other dishes the AI suggests for a day."""
+    planner = _entry(hass, msg).runtime_data.planner
+    result = await async_swap_options(planner, msg["plan_id"], msg["date"])
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/swap",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("date"): str,
+        vol.Required("option"): dict,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_swap(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Put the chosen dish on the day, with its shopping and recipe."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_swap_dish(planner, msg["plan_id"], msg["date"], msg["option"])
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "rema1000/pantry", ENTRY: str, vol.Required("plan_id"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_pantry(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The basic items the plan's recipes use, which are not on the shopping list."""
+    data = _entry(hass, msg).runtime_data
+    plan = data.store.get_plan(msg["plan_id"])
+    if plan is None:
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key="plan_not_found")
+    connection.send_result(msg["id"], pantry_needs(plan, data.store.settings["pantry"]))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/plan/add",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Exclusive("product_id", "what"): int,
+        vol.Exclusive("pantry", "what"): str,
+        vol.Optional("amount", default=1): int,
+        vol.Optional("part", default="main"): vol.In(["main", "late"]),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_plan_add(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Put a searched product, or a basic item the recipes use, on the plan's list."""
+    planner = _entry(hass, msg).runtime_data.planner
+    if "pantry" in msg:
+        line = await async_add_pantry_item(planner, msg["plan_id"], msg["pantry"])
+    elif "product_id" in msg:
+        line = await async_add_product(
+            planner, msg["plan_id"], msg["product_id"], msg["amount"], msg["part"]
+        )
+    else:
+        raise ValueError("product_id or pantry is required")
+    connection.send_result(msg["id"], line)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/plan/remove",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("line_id"): str,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_plan_remove(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Take an added item off the plan's list."""
+    planner = _entry(hass, msg).runtime_data.planner
+    await async_remove_line(planner, msg["plan_id"], msg["line_id"])
+    connection.send_result(msg["id"], True)
+
+
 @callback
 def async_register_websocket(hass: HomeAssistant) -> None:
     """Register the panel's commands."""
@@ -364,5 +475,10 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_favorites,
         ws_list_add,
         ws_list_clear,
+        ws_swap_options,
+        ws_swap,
+        ws_pantry,
+        ws_plan_add,
+        ws_plan_remove,
     ):
         websocket_api.async_register_command(hass, command)

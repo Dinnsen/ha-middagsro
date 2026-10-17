@@ -39,6 +39,7 @@ The integration adds a **REMA 1000 panel** to the sidebar. It follows your Home 
 - If the shopping list goes **over budget**, the integration asks the AI once for a cheaper plan and keeps the cheapest.
 - A **requirements checklist** shows whether the plan keeps your rules.
 - Turn on **automation** to make next week's plan when the new offers come out – and optionally send it straight to the REMA list.
+- **Swap a dish:** tap a dish in the plan and get three other suggestions. Pick one, and the shopping list and recipe are made again.
 - Buttons that use AI are marked with ✦.
 
 ### Recipes for the kitchen
@@ -54,6 +55,8 @@ Ingredients and steps in large type. Tick them off as you go, start a **timer** 
 - For each ingredient, **the cheapest REMA product** that meets your rules is found. Products from the offers, organic products and weekly fixed items are labelled.
 - Price per product, number of packs and the total against the budget.
 - **Send til REMA-listen** puts everything on your primary list in the REMA 1000 app. Items without a safe match are added as text.
+- **Search and add** other REMA products to the shopping list – also to the list for later in the week.
+- **Basic items in the plan** (*Basisvarer i madplanen*) shows the basic items (salt, oil, butter …) the recipes use. Out of one? Tap **Tilføj til indkøb**, and the product is found by your settings.
 - Below the list you see what is on the REMA list right now, and it can be emptied once you have shopped.
 
 <img src="docs/images/rema-list.png" alt="What is on the REMA list right now" width="100%">
