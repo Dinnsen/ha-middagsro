@@ -36,7 +36,9 @@ Integrationen lægger et **REMA 1000-panel** i sidebaren. Det følger dit Home A
 - **Spring dage over**, hvis I ikke spiser hjemme, og vælg selv første dag.
 - **Ønsker til madplanen:** skriv fx, hvad der skal bruges fra køleskabet inden en bestemt dag, eller hvilken ret I vil have en bestemt dag. Ønskerne bruges kun i den næste plan – også når den laves automatisk – og fjernes derefter.
 - Mens næste uges plan ligger klar, viser forsiden **i aften og resten af denne uge** fra den plan, der kører nu. Opskrifter-fanen åbner altid på aftenens ret.
-- **Skift en ret:** tryk på en ret i madplanen, og få tre andre bud. Vælg et, så laves indkøbslisten og opskriften om.
+- **Skift, slet eller spring over:** tryk på en ret i madplanen (også i resten af denne uge), og få tre andre bud, slet retten eller spring dagen over. Indkøbslisten og opskriften følger med.
+- **Det skal AI'en huske:** faste punkter til alle madplaner, fx “altid frisk broccoli til laksefilet” – skrevet eller dikteret.
+- **Næringsmål** pr. aftensmad (kcal og fordeling af protein, kulhydrat og fedt), og fanen **Sundhed** med næring, kostrådene og mærker som Nøglehullet.
 - Knapper, der bruger AI, er mærket med ✦.
 - Bliver indkøbslisten **over budget**, beder integrationen AI'en om en billigere plan én gang og beholder den billigste.
 - En **krav-tjekliste** viser, om planen overholder jeres regler.
@@ -55,7 +57,7 @@ Ingredienser og trin i stor skrift. Kryds af undervejs, start en **timer** på h
 - Til hver ingrediens findes **den billigste REMA-vare**, der opfylder jeres regler. Varer fra tilbudsavisen, økologiske varer og faste ugevarer er mærket.
 - Pris pr. vare, antal pakker og samlet pris mod budgettet.
 - **Send til REMA-listen** lægger det hele på din primære liste i REMA 1000-appen. Varer uden et sikkert match kommer på som tekst.
-- **Søg og tilføj** andre REMA-varer til indkøbslisten – også til listen senere på ugen.
+- **Søg og tilføj** andre REMA-varer til indkøbslisten – også til listen senere på ugen. Tryk på en vare for at rette antal, skifte den ud eller slette den.
 - **Basisvarer i madplanen** viser de basisvarer (salt, olie, smør …), opskrifterne bruger. Mangler I en, så tryk **Tilføj til indkøb**, og varen findes efter jeres indstillinger.
 - Under listen ses, hvad der står på REMA-listen lige nu, og den kan tømmes, når I har handlet.
 

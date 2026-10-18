@@ -591,6 +591,37 @@ def line_kind(line: dict[str, Any]) -> str | None:
     return None
 
 
+def rule_lines(settings: dict[str, Any]) -> list[str]:
+    """The family's standing rules ("altid frisk broccoli til laks"), for every prompt."""
+    return [f"- {rule}" for rule in settings.get("rules") or []]
+
+
+def nutrition_target(settings: dict[str, Any]) -> str | None:
+    """The nutrition the family aims for per adult's dinner, as a prompt line."""
+    if not settings.get("nutrition_enabled"):
+        return None
+    return (
+        f"{settings['kcal_min']}-{settings['kcal_max']} kcal pr. voksenportion, og energien "
+        f"fordelt så tæt som muligt på {settings['protein_pct']} % protein, "
+        f"{settings['carb_pct']} % kulhydrat og {settings['fat_pct']} % fedt"
+    )
+
+
+NUTRITION_KEYS = ("kcal", "protein_g", "carbs_g", "fat_g", "fiber_g")
+
+
+def clean_nutrition(raw: Any) -> dict[str, float] | None:
+    """The AI's estimate of a dish's nutrition per adult portion."""
+    if not isinstance(raw, dict):
+        return None
+    out: dict[str, float] = {}
+    for key in NUTRITION_KEYS:
+        value = _num(raw.get(key))
+        if value is not None and 0 <= value < 10000:
+            out[key] = round(value, 1)
+    return out if "kcal" in out else None
+
+
 def _household_lines(settings: dict[str, Any]) -> list[str]:
     lines = []
     for member in settings["household"]:
@@ -673,6 +704,11 @@ def build_prompt(
         out.append(
             "- Disse retter fra de seneste uger må IKKE gentages: " + "; ".join(recent_dishes) + "."
         )
+    if s.get("rules"):
+        out.append("- Familiens faste regler – følg dem altid:")
+        out += [f"  {line}" for line in rule_lines(s)]
+    if target := nutrition_target(s):
+        out.append(f"- Næring: {target}.")
     if s["budget"]:
         out.append(f"- Hele indkøbslisten skal koste under {s['budget']} kr. med REMA 1000-priser.")
     organic = {
@@ -842,6 +878,10 @@ def build_recipe_prompt(
         out.append(f"Undgå helt: {', '.join(avoid)}.")
     if current.weekday() < 5:
         out.append(f"Højst {s['max_cook_minutes_weekday']} minutters aktiv tilberedning.")
+    if s.get("rules"):
+        out += ["Familiens faste regler – følg dem altid:", *rule_lines(s)]
+    if target := nutrition_target(s):
+        out.append(f"Næring: {target}. Juster mængderne, så retten rammer det.")
     if plan.get("note"):
         out.append(
             f"Familiens ønsker til ugen (brug varer, de allerede har, hvor det passer): {plan['note']}"
@@ -890,9 +930,17 @@ def build_recipe_prompt(
                 "tip": "Kort tip",
                 "active_minutes": 20,
                 "total_minutes": 35,
+                "nutrition": {
+                    "kcal": 750,
+                    "protein_g": 50,
+                    "carbs_g": 80,
+                    "fat_g": 22,
+                    "fiber_g": 9,
+                },
             },
             ensure_ascii=False,
         ),
+        "nutrition er dit bedste skøn over næringen i én voksenportion.",
     ]
     return "\n".join(out)
 
@@ -1105,6 +1153,7 @@ class MealPlanner:
         day["ingredients"] = cleaned["ingredients"]
         day["steps"] = cleaned["steps"]
         day["tip"] = cleaned["tip"]
+        day["nutrition"] = clean_nutrition(raw.get("nutrition"))
         if cleaned["active_minutes"]:
             day["active_minutes"] = cleaned["active_minutes"]
         if cleaned["total_minutes"]:
@@ -1781,6 +1830,9 @@ class MealPlanner:
             "is_campaign": product.is_campaign,
             "is_organic": product.is_organic,
             "image": product.image,
+            "department": product.department,
+            "category": product.category,
+            "labels": product.labels,
         }
 
     # ------------------------------------------------------------- sending
@@ -1856,7 +1908,7 @@ class MealPlanner:
                 label = line["name"]
                 if amount and line.get("unit") and line["unit"] != "pk":
                     label += f" ({amount:g} {line['unit']})"
-                items.append({"name": label, "amount": 1})
+                items.append({"name": label, "amount": int(line.get("packages") or 1)})
         if items:
             await self._add_items(items)
         for key in {"main": ("send_at",), "late": ("late_send_at",)}.get(

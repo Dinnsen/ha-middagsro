@@ -2,6 +2,19 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [0.9.0] - 2026-10-18
+
+### Added
+- **Delete or skip a day:** tap a dish – also in *Resten af denne uge* – to delete it (the day is empty, and a new dish can be found with *Find en ret*) or skip the day. The dish's own items leave the shopping list, and its leftovers go with it.
+- **Change shopping items:** tap an item in the shopping list to change how many, put another REMA product on it (search as in the shopping list) or delete it. An item changed by hand keeps its product when offers are matched again at 02:00. REMA's nutrition per 100 g is shown for the product.
+- **Det skal AI'en huske:** standing points for every plan, recipe and suggestion – e.g. *Vi vil altid have frisk broccoli og fettuccine med spinat til laksefilet* – on the plan page and in the settings, written or dictated with the microphone (the browser's speech recognition, or Home Assistant's own speech-to-text in the app). Each point can be edited and deleted. The wishes for the next plan can be dictated too.
+- **Nutrition targets** per adult's dinner: kcal from–to and protein/carbohydrate/fat in percent, aimed for as closely as possible. Recipes now come with the AI's estimate of the nutrition per portion.
+- **Sundhed (health)** tab: nutrition per dinner and on average against the targets – the AI's estimate and as REMA's own product data adds up (nutrition per 100 g of the products bought) – the official Danish dietary advice for what the dinners hold (vegetables, fish and fatty fish, red meat, legumes) and the share of the basket with the Keyhole label, organic and ASC/MSC.
+
+### Fixed
+- **No zooming** in the panel and the home-screen app (pinch, double-tap and the zoom on text fields on iPhone).
+- A new plan with skipped days no longer shows the running plan's dinners for those days under *Resten af denne uge*: the new plan's whole period replaces it.
+
 ## [0.8.1] - 2026-10-18
 
 ### Fixed

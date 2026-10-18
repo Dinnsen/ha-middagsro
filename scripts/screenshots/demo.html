@@ -112,6 +112,27 @@
       if (need) need.on_list = true;
       return line;
     },
+    "rema1000/settings": (msg) => (D.state.settings = { ...D.state.settings, ...msg.settings }),
+    "rema1000/day/clear": (msg) => {
+      const plan = D.state.latest_plan;
+      const day = plan.days.find((d) => d.date === msg.date);
+      if (msg.skip) {
+        plan.days = plan.days.filter((d) => d !== day);
+        plan.skipped = [...(plan.skipped || []), msg.date];
+      } else Object.assign(day, { dish: "", type: "tom", ingredients: [], steps: [] });
+      return plan;
+    },
+    "rema1000/plan/line": (msg) => {
+      const plan = D.state.latest_plan;
+      const line = plan.shopping.find((l) => l.id === msg.line_id);
+      if (msg.delete) plan.shopping = plan.shopping.filter((l) => l !== line);
+      else if (msg.product_id) {
+        const product = [...D.search, ...D.coffee].find((p) => p.id === msg.product_id);
+        Object.assign(line, { product: { ...product }, cost: product.price * line.packages });
+      } else if (msg.packages) Object.assign(line, { packages: msg.packages, cost: (line.product?.price || 0) * msg.packages });
+      return plan;
+    },
+    "rema1000/health": () => D.health,
     "rema1000/plan/remove": (msg) => {
       const plan = D.state.latest_plan;
       plan.shopping = plan.shopping.filter((l) => l.id !== msg.line_id);

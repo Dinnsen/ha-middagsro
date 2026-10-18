@@ -72,6 +72,15 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "auto_send": False,
     "shop_late_week": False,  # also shop thursday-saturday, for offers that start thursday
     "disliked_dishes": [],
+    # Things the AI must remember for every plan ("altid frisk broccoli til laks").
+    "rules": [],
+    # Nutrition per adult's dinner, aimed for as closely as possible.
+    "nutrition_enabled": False,
+    "protein_pct": 30,
+    "carb_pct": 45,
+    "fat_pct": 25,
+    "kcal_min": 600,
+    "kcal_max": 800,
 }
 
 
@@ -129,17 +138,28 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
         for item in settings["must_haves"] or []
         if isinstance(item, dict) and str(item.get("name") or "").strip()
     ][:50]
-    settings["disliked_dishes"] = [
-        text
-        for text in (str(item or "").strip()[:300] for item in settings["disliked_dishes"] or [])
-        if text
-    ][:50]
+    for key in ("disliked_dishes", "rules"):
+        settings[key] = [
+            text for text in (str(item or "").strip()[:300] for item in settings[key] or []) if text
+        ][:50]
+    settings["nutrition_enabled"] = bool(settings["nutrition_enabled"])
+    for key, default in (("protein_pct", 30), ("carb_pct", 45), ("fat_pct", 25)):
+        settings[key] = _clamp(settings[key], 0, 100, default)
+    settings["kcal_min"] = _clamp(settings["kcal_min"], 100, 3000, 600)
+    settings["kcal_max"] = max(settings["kcal_min"], _clamp(settings["kcal_max"], 100, 3000, 800))
     settings["fixed_days"] = [
         {"weekday": _clamp(item.get("weekday"), 0, 6, 0), "text": str(item.get("text") or "")[:300]}
         for item in settings["fixed_days"] or []
         if isinstance(item, dict) and str(item.get("text") or "").strip()
     ][:14]
     return settings
+
+
+def ensure_line_ids(plan: dict[str, Any]) -> None:
+    """Give every shopping line an id, so the panel can change one."""
+    for line in plan.get("shopping") or []:
+        if isinstance(line, dict) and not line.get("id"):
+            line["id"] = uuid.uuid4().hex[:8]
 
 
 class RemaPlanStore:
@@ -162,9 +182,13 @@ class RemaPlanStore:
         self.favorites = list(data.get("favorites") or [])
         self.plans = list(data.get("plans") or [])
         self.note = str(data.get("note") or "")
+        for plan in self.plans:
+            ensure_line_ids(plan)
 
     async def async_save(self) -> None:
         """Write to disk."""
+        for plan in self.plans:
+            ensure_line_ids(plan)
         await self._store.async_save(
             {
                 "settings": self.settings,

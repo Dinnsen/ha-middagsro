@@ -379,6 +379,36 @@ class Catalog:
         )
 
 
+_NUTRITION_NAMES = {
+    "fedt": "fat_g",
+    "kulhydrat": "carbs_g",
+    "kostfibre": "fiber_g",
+    "protein": "protein_g",
+    "salt": "salt_g",
+}
+
+
+def parse_nutrition(entries: Any) -> dict[str, float]:
+    """REMA's nutrition table (per 100 g/ml): 'Energi' '932 KJ / 224 kcal', 'Fedt' '16', '< 0,5'."""
+    out: dict[str, float] = {}
+    for entry in entries or []:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or "").strip().lower()
+        value = str(entry.get("value") or "")
+        if name == "energi":
+            match = re.search(r"(\d+(?:[.,]\d+)?)\s*kcal", value, re.IGNORECASE)
+            if match:
+                out["kcal"] = float(match.group(1).replace(",", "."))
+            continue
+        key = _NUTRITION_NAMES.get(name)
+        match = re.search(r"\d+(?:[.,]\d+)?", value)
+        if key and match:
+            # "< 0,5" is next to nothing.
+            out[key] = 0.0 if "<" in value else float(match.group(0).replace(",", "."))
+    return out if "kcal" in out else {}
+
+
 def is_insert(catalog: Catalog, catalogs: list[Catalog]) -> bool:
     """An insert (indstik): a smaller avis inside another avis's week.
 
@@ -488,6 +518,7 @@ class RemaClient:
         self._lock = asyncio.Lock()
         self._tjek: tuple[str, str] | None = None
         self._favorites: tuple[float, list[Product]] | None = None
+        self._nutrition: dict[int, dict[str, float]] = {}
         self._offer_products: dict[
             str, tuple[tuple[int, ...], tuple[str, ...], tuple[str, ...]]
         ] = {}
@@ -1021,6 +1052,31 @@ class RemaClient:
                 except (KeyError, TypeError, ValueError) as err:
                     _LOGGER.debug("Skipping product that could not be read: %s", err)
         return products
+
+    async def async_get_nutrition(self, product_ids: list[int]) -> dict[int, dict[str, float]]:
+        """REMA's nutrition per 100 g/ml for products (as the app shows it), cached.
+
+        Products without nutrition (fruit and vegetables, free text) are left out.
+        """
+        cache = self._nutrition
+        semaphore = asyncio.Semaphore(6)
+
+        async def lookup(pid: int) -> None:
+            async with semaphore:
+                try:
+                    data = await self._async_request(
+                        "GET", f"/v3/products/{pid}", params={"include": "nutrition_info"}
+                    )
+                except RemaError as err:
+                    _LOGGER.debug("Nutrition of %s not found: %s", pid, err)
+                    return
+            entry = (data or {}).get("data") if isinstance(data, dict) else None
+            cache[pid] = parse_nutrition((entry or {}).get("nutrition_info"))
+
+        await asyncio.gather(
+            *(lookup(pid) for pid in dict.fromkeys(product_ids) if pid not in cache)
+        )
+        return {pid: cache[pid] for pid in product_ids if cache.get(pid)}
 
     async def async_get_offers(self, catalog_id: str, max_offers: int = 1000) -> list[Offer]:
         """Return all offers in a tilbudsavis."""

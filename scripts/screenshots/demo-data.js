@@ -281,3 +281,38 @@ window.DEMO.coffee = [
   { id: 90011, name: "KAFFEBØNNER MELLEMRISTET", underline: "500 GR.", price: 55, normal_price: 55, is_advertised: false, is_organic: false,
     image: pic("☕", "#EFE7E1") },
 ];
+// Give every shopping line an id (as the integration does), rules and a health summary.
+window.DEMO.state.latest_plan.shopping.forEach((l, i) => (l.id ||= `l${i}`));
+window.DEMO.state.settings.rules = [
+  "Vi vil altid have frisk broccoli og fettuccine med spinat til laksefilet",
+  "Fredag er pizzadag – gerne hjemmelavet",
+];
+Object.assign(window.DEMO.state.settings, { nutrition_enabled: true, protein_pct: 30, carb_pct: 45, fat_pct: 25, kcal_min: 700, kcal_max: 850 });
+window.DEMO.state.latest_plan.days[0].nutrition = { kcal: 780, protein_g: 52, carbs_g: 74, fat_g: 28, fiber_g: 9 };
+window.DEMO.health = {
+  plan_id: "plan-43", title: "Madplan uge 43", people: 3.2, days: 7,
+  targets: { kcal_min: 700, kcal_max: 850, protein: 30, carbs: 45, fat: 25 },
+  dinners: [
+    { date: "2026-10-18", dish: "Ovnbagt kylling med rodfrugter og flødekartofler", leftovers: false,
+      nutrition: { kcal: 780, protein_g: 52, carbs_g: 74, fat_g: 28, fiber_g: 9 }, percent: { protein: 28, carbs: 40, fat: 32 } },
+    { date: "2026-10-19", dish: "Wraps med kylling, spidskål og coleslaw", leftovers: true,
+      nutrition: { kcal: 780, protein_g: 52, carbs_g: 74, fat_g: 28, fiber_g: 9 }, percent: { protein: 28, carbs: 40, fat: 32 } },
+    { date: "2026-10-20", dish: "Spaghetti med kødsovs og revet gulerod", leftovers: false,
+      nutrition: { kcal: 720, protein_g: 38, carbs_g: 92, fat_g: 20, fiber_g: 8 }, percent: { protein: 22, carbs: 53, fat: 25 } },
+    { date: "2026-10-22", dish: "Linsesuppe med kokos og naanbrød", leftovers: false,
+      nutrition: { kcal: 690, protein_g: 26, carbs_g: 96, fat_g: 22, fiber_g: 16 }, percent: { protein: 15, carbs: 56, fat: 29 } },
+  ],
+  average: { kcal: 742, protein_g: 42, carbs_g: 84, fat_g: 24.5, fiber_g: 10.5 },
+  average_percent: { protein: 23, carbs: 47, fat: 30 },
+  advice: [
+    { key: "vegetables", label: "Frugt og grønt", value: 260, goal: 600, unit: "g pr. person pr. dag", kind: "min",
+      note: "Kostrådet er 600 g om dagen i alt – aftensmaden kan give en god del." },
+    { key: "fish", label: "Fisk", value: 160, goal: 350, unit: "g pr. person pr. uge", kind: "min", note: "Heraf fed fisk: 160 g (mindst 200 g)." },
+    { key: "red_meat", label: "Rødt kød", value: 290, goal: 350, unit: "g tilberedt pr. person pr. uge", kind: "max",
+      note: "Højst 350 g tilberedt kød om ugen (okse, kalv, gris og lam, også pålæg)." },
+    { key: "legumes", label: "Bælgfrugter", value: 22, goal: 100, unit: "g pr. person pr. dag", kind: "min",
+      note: "Linser, bønner og kikærter – gerne 100 g om dagen." },
+  ],
+  unknown: ["Broccoli", "Spidskål"],
+  labels: { keyhole: 34, organic: 18, asc_msc: 9, known: true },
+};
