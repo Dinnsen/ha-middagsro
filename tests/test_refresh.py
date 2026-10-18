@@ -161,7 +161,7 @@ async def test_refresh_at_two_on_the_shopping_day(
     assert plan["shopping"][0]["product"]["id"] == 440095
     assert "refresh_at" not in plan
 
-    # Thursday: Tjek is down – logged, and tried again when the list is sent.
+    # Thursday: Tjek is down: logged, and tried again when the list is sent.
     mock_client.async_get_offers.side_effect = RemaError("down")
     freezer.move_to(datetime(2026, 10, 22, 0, 6, tzinfo=UTC))
     async_fire_time_changed(hass)
