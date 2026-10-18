@@ -1223,6 +1223,7 @@ class MealPlanner:
         best["note"] = note
         await self._async_add_recipes(best)
         await self.store.async_add_plan(best)
+        self._schedule_refreshes(best)
         if note and self.store.note.strip() == note:
             # The wishes are for this plan only (unless changed meanwhile).
             await self.store.async_set_note("")
@@ -1837,6 +1838,11 @@ class MealPlanner:
             for line in plan["shopping"]
             if part == "all" or bool(line.get("buy_from")) == (part == "late")
         ]
+        # The offers' products and prices as REMA has them now (once they run).
+        try:
+            await self._async_refresh_lines(plan, lines)
+        except RemaError as err:
+            _LOGGER.debug("Could not look at the offers again before sending: %s", err)
         await asyncio.gather(*(self._async_resolve_avis_item(line) for line in lines))
         plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
         for line in lines:
@@ -1895,14 +1901,86 @@ class MealPlanner:
         line["note"] = None
         line.pop("price_source", None)  # REMA's own price now
 
+    async def async_refresh_offers(self, plan_id: str, part: str = "all") -> dict[str, Any]:
+        """Match a plan's offer items again, now REMA has the offers' products and prices.
+
+        A plan is made from the avis days before it starts; REMA gets the
+        offers' products and prices at 02:00 on their first day (a new product
+        like the 600 g salmon fillet only appears then). Items whose offer has
+        not started yet are left as they are.
+        """
+        plan = self.store.get_plan(plan_id)
+        if plan is None:
+            raise _invalid("plan_not_found")
+        lines = [
+            line
+            for line in plan["shopping"]
+            if part == "all" or bool(line.get("buy_from")) == (part == "late")
+        ]
+        await self._async_refresh_lines(plan, lines)
+        await self.store.async_save()
+        self._notify()
+        return plan
+
+    async def _async_refresh_lines(self, plan: dict[str, Any], lines: list[dict[str, Any]]) -> None:
+        now = dt_util.utcnow()
+        due = [
+            line
+            for line in lines
+            if line.get("offer_name")
+            and not line.get("must_have")
+            and not line.get("added")
+            and not line.get("product_id")
+            and prices_from(date.fromisoformat(line.get("buy_from") or plan["start_date"])) <= now
+        ]
+        catalog_id = (plan.get("catalog") or {}).get("id")
+        if not due or not catalog_id:
+            return
+        offers = await self.client.async_get_offers(catalog_id)
+        by_heading = {
+            offer.heading: offer
+            for offer in await self.client.async_get_offer_products(
+                [o for o in offers if o.heading in {line["offer_name"] for line in due}]
+            )
+        }
+        semaphore = asyncio.Semaphore(SEARCH_CONCURRENCY)
+
+        async def refresh(line: dict[str, Any]) -> None:
+            offer = by_heading.get(line["offer_name"])
+            if offer is None:
+                return  # not in the avis any more: leave it
+            async with semaphore:
+                await self._async_match(line, None, offer)
+            self._avis_price(line, offer)
+
+        await asyncio.gather(*(refresh(line) for line in due))
+        plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
+        plan["refreshed_at"] = now.isoformat()
+
+    @callback
+    def _schedule_refreshes(self, plan: dict[str, Any]) -> None:
+        """Look at the plan's offers again at 02:00 on the shopping day (and thursday)."""
+        now = dt_util.utcnow()
+        main_at = prices_from(date.fromisoformat(plan["start_date"]))
+        if main_at > now:
+            plan["refresh_at"] = main_at.isoformat()
+            self._schedule_send(plan, "refresh_at")
+        late = sorted(line["buy_from"] for line in plan["shopping"] if line.get("buy_from"))
+        if late and prices_from(date.fromisoformat(late[0])) > now:
+            plan["late_refresh_at"] = prices_from(date.fromisoformat(late[0])).isoformat()
+            self._schedule_send(plan, "late_refresh_at")
+
     @callback
     def async_restore_sends(self) -> None:
-        """Schedule the automatic sends that were waiting (after a restart)."""
+        """Schedule the automatic sends and refreshes that were waiting (after a restart)."""
         for plan in self.store.plans:
             if plan.get("send_at") and plan.get("status") != "sent":
                 self._schedule_send(plan, "send_at")
             if plan.get("late_send_at") and not plan.get("late_sent_at"):
                 self._schedule_send(plan, "late_send_at")
+            for key in ("refresh_at", "late_refresh_at"):
+                if plan.get(key):
+                    self._schedule_send(plan, key)
 
     async def _async_send_when_ready(self, plan: dict[str, Any]) -> None:
         """Send a plan automatically once REMA has its products and prices.
@@ -1934,15 +2012,14 @@ class MealPlanner:
         if date.fromisoformat(plan["end_date"]) < dt_util.now().date():
             plan.pop(key, None)  # the week is over; nothing to buy any more
             return
-        part = "late" if key == "late_send_at" else "main"
+        part = "late" if key.startswith("late_") else "main"
         plan_id = plan["id"]
+        work = self._async_refresh_due if key.endswith("refresh_at") else self._async_send_due
 
         @callback
         def _due(_now: datetime) -> None:
             self._sends.pop((plan_id, key), None)
-            self.hass.async_create_task(
-                self._async_send_due(plan_id, part), name=f"{DOMAIN} send {part}"
-            )
+            self.hass.async_create_task(work(plan_id, part), name=f"{DOMAIN} {key}")
 
         # A time that has passed (HA was off at 02:00) fires right away.
         self._sends[(plan_id, key)] = async_track_point_in_utc_time(
@@ -1953,6 +2030,20 @@ class MealPlanner:
     def _cancel_send(self, plan_id: str, key: str) -> None:
         if unsub := self._sends.pop((plan_id, key), None):
             unsub()
+
+    async def _async_refresh_due(self, plan_id: str, part: str) -> None:
+        plan = self.store.get_plan(plan_id)
+        if plan is None:
+            return
+        plan.pop("late_refresh_at" if part == "late" else "refresh_at", None)
+        if plan.get("late_send_at" if part == "late" else "send_at"):
+            await self.store.async_save()
+            return  # sent automatically now, which looks at the offers again first
+        try:
+            await self.async_refresh_offers(plan_id, part)
+        except (HomeAssistantError, RemaError) as err:
+            _LOGGER.warning("Could not look at the meal plan's offers again: %s", err)
+            await self.store.async_save()
 
     async def _async_send_due(self, plan_id: str, part: str) -> None:
         if self.store.get_plan(plan_id) is None:

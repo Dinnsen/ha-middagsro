@@ -533,6 +533,11 @@ class Rema1000Panel extends HTMLElement {
       "swap-options": () => this._swapOptions(),
       "swap-pick": () => this._swapPick(Number(arg)),
       "pantry-open": () => this._pantryOpen(),
+      "plan-refresh": () =>
+        this._editPlan(
+          () => this._ws("rema1000/plan/refresh", { plan_id: this._plan.id }),
+          "Tilbudsvarerne er fundet igen med REMA's varer og priser lige nu."
+        ),
       "pantry-add": () => this._pantryAdd(arg),
       "shop-search": () => this._shopSearchRun(arg),
       "shop-add": () => {
@@ -1364,6 +1369,7 @@ class Rema1000Panel extends HTMLElement {
           <button class="btn primary" data-action="send" ${this._busy ? "disabled" : ""}>
             ${plan.status === "sent" ? "Sendt ✓ – send igen" : "Send til REMA-listen"}</button>
           <button class="btn" data-action="pantry-open">Basisvarer i madplanen</button>
+          <button class="btn" data-action="plan-refresh" ${this._busy ? "disabled" : ""}>Opdatér tilbudsvarer</button>
         </div>
       </div>${lateHtml}`;
     }

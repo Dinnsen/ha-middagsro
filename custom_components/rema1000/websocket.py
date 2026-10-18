@@ -439,6 +439,19 @@ async def ws_plan_add(
 
 
 @websocket_api.websocket_command(
+    {vol.Required("type"): "rema1000/plan/refresh", ENTRY: str, vol.Required("plan_id"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_plan_refresh(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Match the plan's offer items again with REMA's products and prices now."""
+    planner = _entry(hass, msg).runtime_data.planner
+    connection.send_result(msg["id"], await planner.async_refresh_offers(msg["plan_id"]))
+
+
+@websocket_api.websocket_command(
     {
         vol.Required("type"): "rema1000/plan/remove",
         ENTRY: str,
@@ -480,5 +493,6 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_pantry,
         ws_plan_add,
         ws_plan_remove,
+        ws_plan_refresh,
     ):
         websocket_api.async_register_command(hass, command)
