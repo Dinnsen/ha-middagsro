@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from datetime import date
 import json
 from types import SimpleNamespace
@@ -45,16 +46,28 @@ LAKS = {
 }
 
 
-@pytest.fixture
-def mealie(hass: HomeAssistant) -> MockConfigEntry:
-    """Mealie set up in Home Assistant."""
-    entry = MockConfigEntry(
-        domain="mealie",
-        data={"host": f"{URL}/", "api_token": "token", "verify_ssl": False},
-        state=ConfigEntryState.LOADED,
+def _entry() -> MockConfigEntry:
+    return MockConfigEntry(
+        domain="mealie", data={"host": f"{URL}/", "api_token": "token", "verify_ssl": False}
     )
+
+
+@pytest.fixture
+def mealie(hass: HomeAssistant) -> Generator[MockConfigEntry]:
+    """Mealie set up in Home Assistant (not really loaded: it isn't installed in the tests)."""
+    entry = _entry()
+    with patch.object(ml, "mealie_entry", return_value=entry):
+        yield entry
+
+
+async def test_finding_mealie(hass: HomeAssistant) -> None:
+    """The Mealie integration's account counts once it is loaded."""
+    entry = _entry()
     entry.add_to_hass(hass)
-    return entry
+    assert ml.mealie_entry(hass) is None
+    entry.mock_state(hass, ConfigEntryState.LOADED)
+    assert ml.mealie_entry(hass) is entry
+    entry.mock_state(hass, ConfigEntryState.NOT_LOADED)
 
 
 def test_reading_recipes() -> None:
