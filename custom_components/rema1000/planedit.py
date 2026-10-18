@@ -30,12 +30,16 @@ from .mealplan import (
     _tokens,
     late_offers,
     noon,
+    nutrition_target,
+    packages_needed,
+    rule_lines,
     to_base,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 PANTRY_CATEGORY = "Basisvarer"
+EMPTY_TYPE = "tom"  # a day whose dish was deleted; a new one can be chosen
 ADDED_CATEGORY = "Tilføjet"
 _AMOUNT = re.compile(r"(\d+(?:[.,]\d+)?)\s*(kg|g|gr|ml|dl|cl|l|liter)\b", re.IGNORECASE)
 
@@ -113,6 +117,9 @@ def _rules(settings: dict[str, Any], weekday: bool) -> list[str]:
         out.append(f"- Højst {settings['max_cook_minutes_weekday']} minutters aktiv tilberedning.")
     if settings["wishes"].strip():
         out.append(f"- Ønsker: {settings['wishes'].strip()}")
+    out += rule_lines(settings)
+    if target := nutrition_target(settings):
+        out.append(f"- Næring: {target}.")
     return out
 
 
@@ -154,8 +161,15 @@ def build_swap_prompt(
     ]
     out = [
         "Du er en erfaren dansk madplanlægger. Familien handler i REMA 1000.",
-        f"Familien vil skifte aftensmaden {WEEKDAYS_DA[when.weekday()]} {day['date']}: "
-        f"{day['dish']}. Foreslå TRE andre retter, der er forskellige fra hinanden.",
+        (
+            f"Familien mangler aftensmad {WEEKDAYS_DA[when.weekday()]} {day['date']}. "
+            "Foreslå TRE retter, der er forskellige fra hinanden."
+        )
+        if day.get("type") == EMPTY_TYPE
+        else (
+            f"Familien vil skifte aftensmaden {WEEKDAYS_DA[when.weekday()]} {day['date']}: "
+            f"{day['dish']}. Foreslå TRE andre retter, der er forskellige fra hinanden."
+        ),
         "",
         "HUSSTAND:",
         *_household_lines(settings),
@@ -215,7 +229,9 @@ def build_swap_items_prompt(
     servings = int(day.get("servings") or 4)
     out = [
         "Du er en erfaren dansk madplanlægger. Familien handler i REMA 1000.",
-        f'Retten "{day["dish"]}" {day["date"]} skiftes ud med "{dish}".',
+        f'Aftensmaden {day["date"]} bliver "{dish}".'
+        if day.get("type") == EMPTY_TYPE
+        else f'Retten "{day["dish"]}" {day["date"]} skiftes ud med "{dish}".',
         f"Den skal laves til {servings} personer"
         + (" i dobbelt portion (rester dagen efter)." if day.get("makes_leftovers") else "."),
         "",
@@ -331,7 +347,9 @@ async def async_swap_dish(
         d for d in plan["days"] if not d.get("uses_leftovers_from") and d.get("type") != "rester"
     ]
     # Plans from 0.7.0 know every dish's items: the old dish's own are found here.
-    known_uses = bool(day.get("uses")) and all("uses" in d for d in cooked)
+    known_uses = day.get("type") == EMPTY_TYPE or (
+        bool(day.get("uses")) and all("uses" in d for d in cooked)
+    )
     prompt = build_swap_items_prompt(
         settings=settings,
         plan=plan,
@@ -342,8 +360,10 @@ async def async_swap_dish(
     )
     raw = await planner._async_ask_ai(prompt, "REMA 1000 ny ret")
 
-    # The old dish's own items leave the list.
-    if known_uses:
+    # The old dish's own items leave the list (a deleted dish has none left).
+    if day.get("type") == EMPTY_TYPE:
+        remove: set[str] = set()
+    elif known_uses:
         others = {name.lower() for d in cooked if d is not day for name in d.get("uses") or []}
         remove = {n.lower() for n in day.get("uses") or []} - others
     else:
@@ -573,3 +593,145 @@ async def async_remove_line(planner: MealPlanner, plan_id: str, line_id: str) ->
     update_total(plan)
     await planner.store.async_save()
     planner._notify()
+
+
+# ------------------------------------------------------------------ days
+
+
+def _is_cooked(day: dict[str, Any]) -> bool:
+    return (
+        not day.get("uses_leftovers_from")
+        and day.get("type") not in ("rester", EMPTY_TYPE)
+        and bool(day.get("dish"))
+    )
+
+
+def _ingredient_lines(plan: dict[str, Any], day: dict[str, Any]) -> set[str]:
+    """Shopping lines (ids) a day's recipe uses, by its items or its ingredients' names."""
+    lines = [
+        line
+        for line in plan["shopping"]
+        if not line.get("must_have") and not line.get("added") and line.get("id")
+    ]
+    if "uses" in day:
+        wanted = {name.lower() for name in day.get("uses") or []}
+        return {line["id"] for line in lines if line["name"].lower() in wanted}
+    found: set[str] = set()
+    for ing in day.get("ingredients") or []:
+        words = set(_tokens(str(ing.get("name") or "")))
+        for line in lines:
+            name = set(_tokens(line["name"]))
+            if name and (name <= words or (words and words <= name)):
+                found.add(line["id"])
+    return found
+
+
+def own_lines(plan: dict[str, Any], day: dict[str, Any]) -> set[str]:
+    """The shopping lines only this dish uses (not shared with another dish)."""
+    others: set[str] = set()
+    for other in plan["days"]:
+        if other is not day and _is_cooked(other):
+            others |= _ingredient_lines(plan, other)
+    return _ingredient_lines(plan, day) - others
+
+
+def _empty(day: dict[str, Any]) -> None:
+    day.update(
+        dish="",
+        type=EMPTY_TYPE,
+        favorite_id=None,
+        uses_leftovers_from=None,
+        makes_leftovers=False,
+        active_minutes=0,
+        total_minutes=0,
+        ingredients=[],
+        steps=[],
+        tip="",
+        uses=[],
+        nutrition=None,
+    )
+    day.pop("recipe_error", None)
+
+
+async def async_clear_day(
+    planner: MealPlanner, plan_id: str, day_date: str, skip: bool = False
+) -> dict[str, Any]:
+    """Delete a day's dish (a new one can be chosen later), or skip the day.
+
+    The dish's own items leave the shopping list; its leftovers go with it.
+    """
+    plan, day = _plan_and_day(planner, plan_id, day_date)
+    removed = own_lines(plan, day) if _is_cooked(day) else set()
+    plan["shopping"] = [line for line in plan["shopping"] if line.get("id") not in removed]
+    for other in plan["days"]:
+        if other is not day and other.get("uses_leftovers_from") == day["date"]:
+            _empty(other)
+    if skip:
+        plan["days"] = [d for d in plan["days"] if d is not day]
+        plan["skipped"] = sorted({*(plan.get("skipped") or []), day["date"]})
+    else:
+        _empty(day)
+    update_total(plan)
+    await planner.store.async_save()
+    planner._notify()
+    return plan
+
+
+# ------------------------------------------------------------------ lines
+
+
+async def async_edit_line(
+    planner: MealPlanner,
+    plan_id: str,
+    line_id: str,
+    *,
+    delete: bool = False,
+    packages: int | None = None,
+    product_id: int | None = None,
+) -> dict[str, Any]:
+    """Delete a shopping line, change how many, or put another REMA product on it.
+
+    A line changed by hand keeps its product: it is not matched again at 02:00.
+    """
+    plan = planner.store.get_plan(plan_id)
+    if plan is None:
+        raise _invalid("plan_not_found")
+    line = next((item for item in plan["shopping"] if item.get("id") == line_id), None)
+    if line is None:
+        raise _invalid("line_not_found")
+    if delete:
+        plan["shopping"] = [item for item in plan["shopping"] if item is not line]
+    elif product_id is not None:
+        day = line.get("buy_from")
+        at = (
+            noon(date.fromisoformat(day))
+            if day
+            else planner.price_time(date.fromisoformat(plan["start_date"]))
+        )
+        try:
+            products = await planner.client.async_get_products([product_id], at)
+        except RemaError as err:
+            raise HomeAssistantError(str(err)) from err
+        if not products:
+            raise _invalid("product_not_found")
+        product = products[0]
+        count = packages or (
+            packages_needed(line.get("amount"), line.get("unit"), product)
+            if not line.get("added")
+            else int(line.get("packages") or 1)
+        )
+        planner._apply(line, product, max(1, min(99, count)))
+        line.update(product_id=product.id, avis_item=None, note=None)
+        line.pop("price_source", None)
+    elif packages is not None:
+        count = max(1, min(99, packages))
+        line["packages"] = count
+        item = line.get("product") or line.get("avis_item") or {}
+        price = item.get("price")
+        line["cost"] = round(count * price, 2) if price else None
+        if line.get("product"):
+            line["product_id"] = line["product"]["id"]  # keep it as chosen
+    update_total(plan)
+    await planner.store.async_save()
+    planner._notify()
+    return plan

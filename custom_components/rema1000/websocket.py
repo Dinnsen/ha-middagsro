@@ -14,10 +14,13 @@ from homeassistant.util import dt as dt_util
 from .api import Catalog, RemaError
 from .const import DOMAIN
 from .coordinator import RemaConfigEntry
+from .health import plan_health
 from .mealplan import parse_date, plan_summary
 from .planedit import (
     async_add_pantry_item,
     async_add_product,
+    async_clear_day,
+    async_edit_line,
     async_remove_line,
     async_swap_dish,
     async_swap_options,
@@ -470,6 +473,99 @@ async def ws_plan_remove(
     connection.send_result(msg["id"], True)
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/day/clear",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("date"): str,
+        vol.Optional("skip", default=False): bool,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_day_clear(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Delete a day's dish, or skip the day (no dinner at home)."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_clear_day(planner, msg["plan_id"], msg["date"], skip=msg["skip"])
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/plan/line",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("line_id"): str,
+        vol.Optional("delete", default=False): bool,
+        vol.Optional("packages"): vol.Any(int, None),
+        vol.Optional("product_id"): vol.Any(int, None),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_plan_line(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Delete a shopping item, change how many, or put another product on it."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_edit_line(
+        planner,
+        msg["plan_id"],
+        msg["line_id"],
+        delete=msg["delete"],
+        packages=msg.get("packages"),
+        product_id=msg.get("product_id"),
+    )
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/health",
+        ENTRY: str,
+        vol.Optional("plan_id"): vol.Any(str, None),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_health(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Nutrition, dietary advice and labels for a plan (the newest by default)."""
+    data = _entry(hass, msg).runtime_data
+    store = data.store
+    plan = store.get_plan(msg["plan_id"]) if msg.get("plan_id") else store.latest_plan
+    if plan is None:
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key="no_plan")
+    ids = [
+        int(line["product"]["id"])
+        for line in plan.get("shopping") or []
+        if isinstance(line.get("product"), dict) and line["product"].get("id")
+    ]
+    try:
+        table = await data.client.async_get_nutrition(ids)
+    except RemaError:
+        table = {}
+    connection.send_result(msg["id"], plan_health(plan, store.settings, table))
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "rema1000/nutrition", ENTRY: str, vol.Required("product_id"): int}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_nutrition(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """REMA's nutrition per 100 g for one product (empty if REMA has none)."""
+    client = _entry(hass, msg).runtime_data.client
+    table = await client.async_get_nutrition([msg["product_id"]])
+    connection.send_result(msg["id"], table.get(msg["product_id"]) or {})
+
+
 @callback
 def async_register_websocket(hass: HomeAssistant) -> None:
     """Register the panel's commands."""
@@ -494,5 +590,9 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_plan_add,
         ws_plan_remove,
         ws_plan_refresh,
+        ws_day_clear,
+        ws_plan_line,
+        ws_health,
+        ws_nutrition,
     ):
         websocket_api.async_register_command(hass, command)

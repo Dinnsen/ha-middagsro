@@ -650,3 +650,36 @@ async def test_tjek_errors() -> None:
         await client.async_get_catalogs()
     session.on("GET", f"{api.TJEK_DEFAULT_BASE}/v2/catalogs", FakeResponse(data=None))
     assert await client.async_get_catalogs() == []
+
+
+def test_parse_nutrition() -> None:
+    """REMA's nutrition table per 100 g, as the app shows it."""
+    table = [
+        {"name": "Energi", "value": "932 KJ / 224 kcal"},
+        {"name": "Fedt", "value": "16"},
+        {"name": "Heraf mættede fedtsyrer", "value": "2,3"},
+        {"name": "Kulhydrat", "value": "< 0,5"},
+        {"name": "Kostfibre", "value": ""},
+        {"name": "Protein", "value": "20"},
+        {"name": "Salt", "value": "0,11"},
+        "x",
+    ]
+    assert api.parse_nutrition(table) == {
+        "kcal": 224.0, "fat_g": 16.0, "carbs_g": 0.0, "protein_g": 20.0, "salt_g": 0.11,
+    }  # fmt: skip
+    assert api.parse_nutrition([{"name": "Energi", "value": "932 KJ"}]) == {}
+    assert api.parse_nutrition(None) == {}
+
+
+async def test_get_nutrition() -> None:
+    """Nutrition per product, fetched once."""
+    client, session = await logged_in()
+    salmon = {"data": {"id": 440095, "nutrition_info": [{"name": "Energi", "value": "224 kcal"}]}}
+    session.on("GET", f"{API}/v3/products/440095", FakeResponse(data=salmon))
+    session.on("GET", f"{API}/v3/products/1", FakeResponse(data={"data": {"id": 1}}))
+    session.on("GET", f"{API}/v3/products/2", FakeResponse(404))
+    found = await client.async_get_nutrition([440095, 1, 2, 440095])
+    assert found == {440095: {"kcal": 224.0}}
+    calls = len(session.calls)
+    assert await client.async_get_nutrition([440095, 1]) == {440095: {"kcal": 224.0}}
+    assert len(session.calls) == calls  # cached
