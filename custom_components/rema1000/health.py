@@ -273,12 +273,13 @@ def plan_health(
     priced = [
         line for line in plan.get("shopping") or [] if line.get("product") and line.get("cost")
     ]
-    total = sum(line["cost"] for line in priced) or 0
+    total = float(sum(line["cost"] for line in priced) or 0)
 
     def share(test: Any) -> int | None:
         if not total:
             return None
-        return round(sum(line["cost"] for line in priced if test(line["product"])) / total * 100)
+        part = float(sum(line["cost"] for line in priced if test(line["product"])))
+        return round(part / total * 100)
 
     labels = {
         "keyhole": share(lambda p: "Nøglehul" in (p.get("labels") or [])),
