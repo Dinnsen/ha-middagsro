@@ -1500,7 +1500,7 @@ class Rema1000Panel extends HTMLElement {
     if (!day?.dish) return "";
     if (day.mealie) {
       return mealie.url
-        ? `<a class="btn" href="${esc(`${mealie.url}/g/home/r/${encodeURIComponent(day.mealie)}`)}" target="_blank" rel="noopener">Åbn i Mealie</a>`
+        ? `<a class="btn" href="${esc(`${mealie.recipes || `${mealie.url}/g/home/r/`}${encodeURIComponent(day.mealie)}`)}" target="_blank" rel="noopener">Åbn i Mealie</a>`
         : "";
     }
     if (!day.steps?.length) return "";

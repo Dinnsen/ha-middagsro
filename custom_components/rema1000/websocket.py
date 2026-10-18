@@ -95,7 +95,11 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
         }
         if shopping
         else None,
-        "mealie": {"available": data.planner.mealie.available, "url": data.planner.mealie.url},
+        "mealie": {
+            "available": data.planner.mealie.available,
+            "url": data.planner.mealie.url,
+            "recipes": data.planner.mealie.recipe_url(""),
+        },
         "options": {
             "avoid": list(AVOID_OPTIONS),
             "allergies": list(ALLERGY_OPTIONS),

@@ -379,7 +379,11 @@ async def test_mealie_commands(
         return result
 
     state = await ws(1, type="rema1000/state")
-    assert state["result"]["mealie"] == {"available": True, "url": URL}
+    assert state["result"]["mealie"] == {
+        "available": True,
+        "url": URL,
+        "recipes": f"{URL}/g/home/r/",
+    }
     saved = {
         "slug": "spaghetti-bolognese",
         "id": "r1",
