@@ -81,6 +81,16 @@ Tidligere madplaner med pris, status og retter. Åbn en gammel plan, og send den
 
 Beskriv de retter, familien elsker, og hvor tit de skal på planen (hver uge, hver 2. uge, hver måned, kun når ingredienserne er på tilbud eller bare til inspiration). Retter, I ikke kan lide, kommer aldrig på planen.
 
+### Mealie
+
+Er [Mealie](https://mealie.io) sat op i Home Assistant (den officielle Mealie-integration), kan madplanen arbejde sammen med den – slå det til under **Indstillinger → Mealie**:
+
+- **Tag udgangspunkt i jeres egne opskrifter:** AI'en bruger familiens opskrifter i Mealie, når de passer til ugens tilbud og jeres regler, og finder selv på retter, når ingen passer. En ret fra Mealie beholder Mealies ingredienser og trin, og indkøbslisten følger dem. Når en ret udskiftes, foreslås jeres egne opskrifter også.
+- **Gem en opskrift i Mealie:** *Gem i Mealie* på en opskrift fra madplanen gemmer den i Mealie med ingredienser, trin og tider.
+- **Mealies kalender:** madplanens aftensmåltider kommer i Mealies madplan (som opskriften, når den findes i Mealie, ellers som en note) og opdateres, når en ret udskiftes eller slettes, eller en dag springes over.
+
+Integrationen bruger Mealie-integrationens adresse og API-token, så intet skal skrives to gange.
+
 ### Lys og mørk tilstand
 
 <img src="docs/images/plan-dark.png" alt="Madplanen i mørk tilstand" width="100%">
