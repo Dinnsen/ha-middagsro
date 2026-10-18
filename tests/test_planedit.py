@@ -87,7 +87,7 @@ async def test_swap_options(
     assert [o["dish"] for o in result["options"]] == ["Kyllingewok", "Linsegryde", "Frikadeller"]
     assert result["options"][0]["active_minutes"] == 20
     assert result["options"][1] == {"dish": "Linsegryde", "type": "vegetar", "active_minutes": 0,
-                                    "total_minutes": 0, "why": ""}  # fmt: skip
+                                    "total_minutes": 0, "why": "", "mealie": None}  # fmt: skip
     prompt = ai.prompts["REMA 1000 andre retter"][0]
     assert "dobbelt portion" in prompt
     assert "Kyllingewok med broccoli" in prompt  # not the week's other dishes
