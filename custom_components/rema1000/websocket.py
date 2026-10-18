@@ -24,6 +24,7 @@ from .planedit import (
     async_remove_line,
     async_swap_dish,
     async_swap_options,
+    cooked_day,
     pantry_needs,
 )
 from .schema import vol
@@ -94,6 +95,7 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
         }
         if shopping
         else None,
+        "mealie": {"available": data.planner.mealie.available, "url": data.planner.mealie.url},
         "options": {
             "avoid": list(AVOID_OPTIONS),
             "allergies": list(ALLERGY_OPTIONS),
@@ -566,6 +568,50 @@ async def ws_nutrition(
     connection.send_result(msg["id"], table.get(msg["product_id"]) or {})
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/mealie/save",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("date"): str,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_mealie_save(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Save a day's recipe in Mealie (and put it in Mealie's calendar, if switched on)."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = planner.store.get_plan(msg["plan_id"])
+    day = next((d for d in plan["days"] if d["date"] == msg["date"]), None) if plan else None
+    if plan is None or day is None:
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key="day_not_found")
+    day = cooked_day(plan, day)
+    saved = await planner.mealie.async_save_recipe(day)
+    day["mealie"] = saved["slug"]
+    await planner.store.async_save()
+    await planner.async_mealie_sync(plan)
+    connection.send_result(msg["id"], saved)
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "rema1000/mealie/sync", ENTRY: str, vol.Required("plan_id"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_mealie_sync(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Put a plan's dinners in Mealie's calendar now."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = planner.store.get_plan(msg["plan_id"])
+    if plan is None:
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key="plan_not_found")
+    count = await planner.async_mealie_sync(plan, force=True)
+    connection.send_result(msg["id"], {"count": count})
+
+
 @callback
 def async_register_websocket(hass: HomeAssistant) -> None:
     """Register the panel's commands."""
@@ -594,5 +640,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_plan_line,
         ws_health,
         ws_nutrition,
+        ws_mealie_save,
+        ws_mealie_sync,
     ):
         websocket_api.async_register_command(hass, command)

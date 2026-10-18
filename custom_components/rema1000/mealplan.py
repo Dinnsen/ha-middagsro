@@ -21,6 +21,7 @@ from homeassistant.util import dt as dt_util
 
 from .api import DANISH_TIME, Catalog, Offer, Product, RemaClient, RemaError, parse_time
 from .const import DOMAIN
+from .mealie import MealieError, MealieLink
 from .storage import RemaPlanStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -644,6 +645,7 @@ def build_prompt(
     skipped: list[date] | None = None,
     note: str | None = None,
     late: dict[int, date] | None = None,
+    mealie: list[dict[str, Any]] | None = None,
 ) -> str:
     """Build the instructions for the AI."""
     s = settings
@@ -762,6 +764,16 @@ def build_prompt(
             "Du må gerne bruge dem i retterne."
         )
 
+    if mealie:
+        out += [
+            "",
+            "FAMILIENS OPSKRIFTER I MEALIE – tag udgangspunkt i dem: brug en af dem, når den "
+            "passer til ugens tilbud og kravene (skriv dens id i mealie på dagen, og brug "
+            "opskriftens navn som dish; indkøbslisten følger opskriftens ingredienser). Er "
+            "der ikke en passende, så find selv på en ret (mealie: null). "
+            "id | ret | ingredienser:",
+        ]
+        out += [f"{r['slug']} | {r['name']} | {', '.join(r['ingredients'])[:300]}" for r in mealie]
     if offers:
         label = catalog.label if catalog and catalog.label else "Ugens tilbud"
         late = late or {}
@@ -825,6 +837,7 @@ def build_prompt(
                         "active_minutes": 20,
                         "total_minutes": 35,
                         "uses": ["Laksefilet", "Spinatpasta", "Pesto", "Broccoli"],
+                        "mealie": None,
                     }
                 ],
                 "shopping": [
@@ -970,6 +983,7 @@ class MealPlanner:
         self.status: dict[str, Any] = {"state": "idle", "message": None, "started": None}
         self._task: asyncio.Task[None] | None = None
         self._auto_attempted: set[str] = set()
+        self.mealie = MealieLink(hass)
         # Automatic sends waiting for REMA's prices: (plan id, key) -> cancel.
         self._sends: dict[tuple[str, str], Callable[[], None]] = {}
 
@@ -1140,6 +1154,8 @@ class MealPlanner:
             day["total_minutes"] = day["total_minutes"] or 15
             day["active_minutes"] = day["active_minutes"] or 5
             return
+        if day.get("mealie") and await self._async_mealie_recipe(day):
+            return
         prompt = build_recipe_prompt(settings=self.store.settings, day=day, plan=plan)
         try:
             raw = await self._async_ask_ai(prompt, f"REMA 1000 opskrift {day['date']}")
@@ -1158,6 +1174,38 @@ class MealPlanner:
             day["active_minutes"] = cleaned["active_minutes"]
         if cleaned["total_minutes"]:
             day["total_minutes"] = cleaned["total_minutes"]
+
+    async def _async_mealie_recipe(self, day: dict[str, Any]) -> bool:
+        """The family's own recipe from Mealie for a day built on it."""
+        try:
+            recipe = await self.mealie.async_recipe(str(day["mealie"]))
+        except MealieError as err:
+            _LOGGER.warning("Could not read %s from Mealie: %s", day["mealie"], err)
+            return False
+        if not recipe["ingredients"] and not recipe["steps"]:
+            return False
+        day["ingredients"] = [{"name": text, "amount": ""} for text in recipe["ingredients"]]
+        day["steps"] = [{"text": text, "minutes": 0} for text in recipe["steps"]]
+        day["tip"] = recipe["description"]
+        day["nutrition"] = None
+        day["active_minutes"] = recipe["active_minutes"] or day.get("active_minutes", 0)
+        day["total_minutes"] = recipe["total_minutes"] or day.get("total_minutes", 0)
+        return True
+
+    async def async_mealie_sync(self, plan: dict[str, Any], force: bool = False) -> int:
+        """Put a plan's dinners in Mealie's calendar (when switched on, or asked)."""
+        if not force and not (self.store.settings["mealie_calendar"] and self.mealie.available):
+            return 0
+        try:
+            count = await self.mealie.async_sync_calendar(plan)
+        except MealieError as err:
+            if force:
+                raise
+            _LOGGER.warning("Could not fill Mealie's calendar: %s", err)
+            return 0
+        finally:
+            await self.store.async_save()
+        return count
 
     async def _async_add_recipes(self, plan: dict[str, Any]) -> None:
         """Write all recipes, a few at a time."""
@@ -1221,6 +1269,13 @@ class MealPlanner:
         due, optional = self.store.favorites_due(start)
         recent = self.store.recent_dishes(start, settings["no_repeat_weeks"])
         note = self.store.note.strip()
+        mealie: list[dict[str, Any]] = []
+        if settings["mealie_recipes"] and self.mealie.available:
+            self._set_status("generating", "Henter jeres opskrifter fra Mealie …")
+            try:
+                mealie = await self.mealie.async_prompt_recipes(recent)
+            except MealieError as err:
+                _LOGGER.warning("Could not read the recipes in Mealie: %s", err)
 
         best: dict[str, Any] | None = None
         feedback: str | None = None
@@ -1243,12 +1298,17 @@ class MealPlanner:
                 skipped=skipped,
                 note=note or None,
                 late=late,
+                mealie=mealie,
             )
             raw = await self._async_ask_ai(prompt, "REMA 1000 madplan")
             self._set_status("generating", "Finder varer og priser i REMA 1000 …")
             plan = await self._async_build_plan(
                 raw, dates, catalog, offers, self.price_time(start), late
             )
+            known = {r["slug"] for r in mealie}
+            for day in plan["days"]:
+                if day.get("mealie") not in known:
+                    day["mealie"] = None  # not one of the family's recipes
             if best is None or plan["total"] < best["total"]:
                 best = plan
             if not settings["budget"] or plan["total"] <= settings["budget"]:
@@ -1273,6 +1333,7 @@ class MealPlanner:
         await self._async_add_recipes(best)
         await self.store.async_add_plan(best)
         self._schedule_refreshes(best)
+        await self.async_mealie_sync(best)
         if note and self.store.note.strip() == note:
             # The wishes are for this plan only (unless changed meanwhile).
             await self.store.async_set_note("")
@@ -1415,6 +1476,7 @@ class MealPlanner:
                         if st
                     ],
                     "tip": str(day.get("tip") or "")[:500],
+                    "mealie": str(day["mealie"])[:200] if day.get("mealie") else None,
                     # The shopping list's items for this dish (from the overview).
                     "uses": [
                         str(name).strip()[:200]

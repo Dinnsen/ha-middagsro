@@ -604,6 +604,16 @@ class Rema1000Panel extends HTMLElement {
       },
       dictate: () => this._dictate(arg),
       "health-refresh": () => this._loadHealth(true),
+      "mealie-save": () => {
+        const [planId, date] = String(arg).split("|");
+        if (this._modal) {
+          this._modal = null;
+          this._renderModal();
+        }
+        this._editPlan(() => this._ws("rema1000/mealie/save", { plan_id: planId, date }), "Opskriften er gemt i Mealie.");
+      },
+      "mealie-sync": () =>
+        this._run(() => this._ws("rema1000/mealie/sync", { plan_id: this._plan.id }), "Ugen er sat i Mealie-kalenderen."),
       "swap-pick": () => this._swapPick(Number(arg)),
       "pantry-open": () => this._pantryOpen(),
       "plan-refresh": () =>
@@ -1480,12 +1490,29 @@ class Rema1000Panel extends HTMLElement {
       </div>`;
   }
 
+  // "Gem i Mealie" for the plan's own recipes, "Åbn i Mealie" for the family's.
+  _mealieButton(planId, date) {
+    const mealie = this._state?.mealie;
+    if (!mealie?.available) return "";
+    const plan = [this._plan, this._state?.current_plan].find((p) => p?.id === planId);
+    let day = plan?.days.find((d) => d.date === date);
+    if (day?.uses_leftovers_from) day = plan.days.find((d) => d.date === day.uses_leftovers_from) || day;
+    if (!day?.dish) return "";
+    if (day.mealie) {
+      return mealie.url
+        ? `<a class="btn" href="${esc(`${mealie.url}/g/home/r/${encodeURIComponent(day.mealie)}`)}" target="_blank" rel="noopener">Åbn i Mealie</a>`
+        : "";
+    }
+    if (!day.steps?.length) return "";
+    return `<button class="btn" data-action="mealie-save" data-arg="${esc(planId)}|${esc(day.date)}" ${this._busy ? "disabled" : ""}>Gem i Mealie</button>`;
+  }
+
   _dayModal(m) {
     const busy = !!m.busy;
     const options = (m.options || [])
       .map(
         (o, i) => `<button class="option" data-action="swap-pick" data-arg="${i}" ${busy ? "disabled" : ""}>
-          <span class="option-dish"><b>${esc(o.dish)}</b>${o.type === "vegetar" ? ' <span class="badge eco">Vegetar</span>' : ""}</span>
+          <span class="option-dish"><b>${esc(o.dish)}</b>${o.type === "vegetar" ? ' <span class="badge eco">Vegetar</span>' : ""}${o.mealie ? ' <span class="badge mealie">Mealie</span>' : ""}</span>
           ${o.why ? `<span class="muted small">${esc(o.why)}</span>` : ""}
           <span class="muted small">${o.active_minutes ? `${o.active_minutes} min aktiv` : ""}${o.total_minutes ? ` · ${o.total_minutes} min i alt` : ""}</span>
           ${m.busy === "swap" && m.picked === i ? '<span class="muted small"><span class="spinner small"></span> Finder varer og skriver opskriften …</span>' : ""}
@@ -1504,6 +1531,7 @@ class Rema1000Panel extends HTMLElement {
       : `${m.leftovers ? '<p class="muted small">Det er rester – skifter du, skiftes retten, de er rester af.</p>' : ""}
          <div class="row wrap dialog-actions">
            ${m.dish ? `<button class="btn" data-action="day-recipe" ${busy ? "disabled" : ""}>Se opskriften</button>` : ""}
+           ${this._mealieButton(m.planId, m.date)}
            <button class="btn primary" data-action="swap-options" ${busy ? "disabled" : ""}>
              ${m.busy === "options" ? '<span class="spinner small"></span> Finder retter …' : aiLabel(m.dish ? "Skift retten – tre forslag" : "Find en ret – tre forslag")}</button>
          </div>
@@ -1673,7 +1701,7 @@ class Rema1000Panel extends HTMLElement {
         return `<button class="day ${day.date === today ? "today" : ""}" data-action="day-menu" data-arg="${esc(plan.id)}|${day.date}">
           <span class="date">${esc(dateLabel(day.date))}</span>
           <span class="dish ${day.dish ? "" : "muted"}">${esc(day.dish || "Ingen ret – tryk for at vælge en")}</span>
-          <span class="meta">${day.total_minutes ? `${day.total_minutes} min` : ""}${type ? ` <span class="badge">${esc(type)}</span>` : ""}</span>
+          <span class="meta">${day.total_minutes ? `${day.total_minutes} min` : ""}${type ? ` <span class="badge">${esc(type)}</span>` : ""}${day.mealie ? ' <span class="badge mealie">Mealie</span>' : ""}</span>
         </button>`;
       })
       .join("");
@@ -1707,6 +1735,7 @@ class Rema1000Panel extends HTMLElement {
             : ""}
           <button class="btn" data-action="tab" data-arg="shopping">Se indkøbsliste</button>
           <button class="btn" data-action="open-day" data-arg="">Start madlavning</button>
+          ${this._state.mealie?.available ? `<button class="btn" data-action="mealie-sync" ${this._busy ? "disabled" : ""}>Sæt ugen i Mealie-kalenderen</button>` : ""}
         </div>
         ${checklist || plan.deviations ? `<details><summary>Krav-tjekliste</summary><ul class="checklist">${checklist}</ul>${plan.deviations ? `<p class="muted">${esc(plan.deviations)}</p>` : ""}</details>` : ""}
       </div>
@@ -1803,7 +1832,9 @@ class Rema1000Panel extends HTMLElement {
             <h2>Sådan gør du</h2>
             <ol class="steps">${steps || "<li>Ingen trin</li>"}</ol>
             ${day.tip ? `<p class="tip">💡 ${esc(day.tip)}</p>` : ""}
-            <p><button class="btn small" data-action="recipe" ${this._busy ? "disabled" : ""}>${aiLabel("Lav opskriften igen")}</button></p>
+            <p class="row wrap">${day.mealie ? "" : `<button class="btn small" data-action="recipe" ${this._busy ? "disabled" : ""}>${aiLabel("Lav opskriften igen")}</button>`}
+              ${this._mealieButton(plan.id, day.date)}</p>
+            ${day.mealie ? '<p class="muted small">Opskriften er jeres egen fra Mealie.</p>' : ""}
           </section>
         </div>
       </div>`;
@@ -2205,6 +2236,16 @@ class Rema1000Panel extends HTMLElement {
       </div>
 
       <div class="card">
+        <h1>Mealie</h1>
+        ${this._state.mealie?.available
+          ? `<p class="muted">Bruger Mealie-integrationen i Home Assistant${this._state.mealie.url ? ` (${esc(this._state.mealie.url)})` : ""}.</p>
+            <label class="check"><input type="checkbox" data-path="mealie_recipes" ${f.mealie_recipes ? "checked" : ""}> Tag udgangspunkt i vores opskrifter i Mealie – AI'en finder selv på, når ingen passer</label>
+            <label class="check"><input type="checkbox" data-path="mealie_calendar" ${f.mealie_calendar ? "checked" : ""}> Sæt madplanen i Mealie-kalenderen (og ret den, når madplanen ændres)</label>
+            <p class="muted small">Madplanens egne opskrifter kan gemmes i Mealie med "Gem i Mealie" på retten.</p>`
+          : `<p class="muted">Har I jeres opskrifter i <a href="https://mealie.io" target="_blank" rel="noopener">Mealie</a>, så sæt Mealie-integrationen op i Home Assistant (Indstillinger › Enheder og tjenester). Så kan madplanen tage udgangspunkt i jeres opskrifter, gemme sine egne i Mealie og fylde Mealie-kalenderen.</p>`}
+      </div>
+
+      <div class="card">
         <h1>App på hjemmeskærmen</h1>
         <p class="muted">Åbn linket i Safari (eller Chrome), log ind og vælg Del › Føj til hjemmeskærm. Så åbner REMA 1000 i fuld skærm i dit tema.</p>
         <p><a href="${esc(`${location.origin}/rema1000_app/app.html`)}" target="_blank" rel="noopener">${esc(`${location.origin}/rema1000_app/app.html`)}</a></p>
@@ -2380,6 +2421,8 @@ const STYLE = `
   .line-head h2 { margin: 0; }
   .stepper { align-items: center; gap: 8px; margin: 10px 0; } .stepper .count { min-width: 28px; text-align: center; font-size: 18px; }
   .small-h { font-size: 16px; margin: 14px 0 6px; }
+  .badge.mealie { background: #e58325; color: #fff; }
+  a.btn { text-decoration: none; display: inline-flex; align-items: center; }
   .mic.on { background: var(--rema-sale); color: var(--rema-on-sale); border-color: transparent; }
   details.nutrition table { width: 100%; border-collapse: collapse; margin-top: 6px; }
   details.nutrition td { padding: 6px 4px; border-bottom: 1px solid var(--divider-color); } details.nutrition td:last-child { text-align: right; font-weight: 600; }

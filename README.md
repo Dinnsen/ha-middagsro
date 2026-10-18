@@ -81,6 +81,16 @@ Earlier meal plans with price, status and dishes. Open an old plan and send it t
 
 Describe the dishes the family loves and how often they should be on the plan (every week, every 2 weeks, every month, only when the ingredients are on offer, or just for inspiration). Dishes you don't like never go on the plan.
 
+### Mealie
+
+If [Mealie](https://mealie.io) is set up in Home Assistant (the official Mealie integration), the plan can work with it – switch it on under **Indstillinger → Mealie**:
+
+- **Start from your own recipes:** the AI uses the family's recipes in Mealie when they fit the week's offers and your rules, and makes up its own dishes when none fit. A dish from Mealie keeps Mealie's ingredients and steps, and the shopping list follows them. Swapping a dish suggests your own recipes too.
+- **Save a recipe in Mealie:** *Gem i Mealie* on a recipe from the plan saves it in Mealie with ingredients, steps and times.
+- **Mealie's calendar:** the plan's dinners go into Mealie's meal planner (as the recipe when it is in Mealie, otherwise as a note), and are updated when a dish is swapped, deleted or a day is skipped.
+
+The integration uses the Mealie integration's address and API token, so nothing has to be entered twice.
+
 ### Light and dark mode
 
 <img src="docs/images/plan-dark.png" alt="The meal plan in dark mode" width="100%">

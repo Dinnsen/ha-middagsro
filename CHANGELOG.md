@@ -2,6 +2,14 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [0.10.0] - 2026-10-18
+
+### Added
+- **Mealie** (when the official Mealie integration is set up in Home Assistant; switch it on under *Indstillinger → Mealie*):
+  - **Start from the family's own recipes:** the AI is shown the recipes in Mealie and uses one when it fits the week's offers and the rules, else it makes up its own dish. A dish from Mealie keeps Mealie's ingredients and steps, and its shopping items follow the recipe. Swapping a dish suggests the family's recipes too.
+  - **Gem i Mealie:** save one of the plan's recipes in Mealie, with ingredients, steps, servings and times.
+  - **Mealie's calendar:** the plan's dinners are put in Mealie's meal planner – as the recipe when it is in Mealie, else as a note – and kept up to date when a dish is swapped or deleted or a day is skipped. *Sæt ugen i Mealie-kalenderen* does it by hand.
+
 ## [0.9.0] - 2026-10-18
 
 ### Added

@@ -81,6 +81,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "fat_pct": 25,
     "kcal_min": 600,
     "kcal_max": 800,
+    # Mealie (when its integration is set up): the family's recipes first, and its calendar.
+    "mealie_recipes": False,
+    "mealie_calendar": False,
 }
 
 
@@ -143,6 +146,8 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
             text for text in (str(item or "").strip()[:300] for item in settings[key] or []) if text
         ][:50]
     settings["nutrition_enabled"] = bool(settings["nutrition_enabled"])
+    settings["mealie_recipes"] = bool(settings["mealie_recipes"])
+    settings["mealie_calendar"] = bool(settings["mealie_calendar"])
     for key, default in (("protein_pct", 30), ("carb_pct", 45), ("fat_pct", 25)):
         settings[key] = _clamp(settings[key], 0, 100, default)
     settings["kcal_min"] = _clamp(settings["kcal_min"], 100, 3000, 600)
