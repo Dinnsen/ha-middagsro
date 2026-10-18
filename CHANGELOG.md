@@ -2,6 +2,12 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [0.8.1] - 2026-10-18
+
+### Fixed
+- **Offer items are matched again at 02:00 on the shopping day** (Thursday's at 02:00 on Thursday), when REMA has the offers' products and prices – also when the plan isn't sent automatically. A plan is made from the avis days before, when a new offer product isn't in REMA yet: week 43's salmon offer got 3 × 225 g salmon at the normal price, while REMA's *HEL LAKSEFILET* 600 g for 89 kr only appeared on Sunday. Sending the list also looks at the offers again first.
+- A new button, *Opdatér tilbudsvarer*, in the shopping list does it by hand (for plans made before this version).
+
 ## [0.8.0] - 2026-10-17
 
 ### Added
