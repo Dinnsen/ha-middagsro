@@ -2,6 +2,15 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.2.3] - 2026-10-19
+
+### Changed
+- The price comparison from favourites is smaller: at most 80 % of the screen, with a ✕ at the top and *Luk* at the bottom that stay in place while you scroll. Each result is two lines on a phone, with the button under the price.
+- The help under the meal plan ("Tryk på en ret …") is behind a small ?.
+
+### Fixed
+- *Billigst* in a search is only the very kind asked for: REMA's search also finds near misses such as grisekød for oksekød, and those are left out. Items with other words that make them another product (oksekød 35 % grønt) or another fat % are still shown, but cannot be the cheapest.
+
 ## [1.2.2] - 2026-10-19
 
 ### Fixed

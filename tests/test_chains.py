@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import date
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
@@ -424,6 +424,30 @@ async def test_search_everywhere(
     # REMA's own avis can be read too.
     with patch.object(planner.chains, "_get", new=FakeTjek()):
         assert len(await planner.chains.async_offers(ch.REMA_ID)) == 4
+
+
+async def test_search_everywhere_finds_the_kind_asked_for(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """Near misses from REMA's search are left out, and only the very kind can be cheapest."""
+    planner = init_integration.runtime_data.planner
+    beef = make_product(1, "HK. OKSEKØD 8-12%", 20.0, underline="500 GR. / REMA 1000")
+    lean = make_product(2, "HK. OKSEKØD 4-7%", 5.0, underline="500 GR. / REMA 1000")
+    green = make_product(3, "HK. OKSEKØD, 35% GRØNT", 6.0, underline="500 GR. / REMA 1000")
+    pork = make_product(4, "HK. GRISEKØD 8-12%", 10.0, underline="500 GR. / REMA 1000")
+    mock_client.async_search_products = AsyncMock(return_value=[pork, green, lean, beef])
+    with patch.object(planner.chains, "_get", new=FakeTjek()):
+        found = await ch.async_search_everywhere(planner, "HK. OKSEKØD 8-12%")
+    assert [p["id"] for p in found["products"]] == [1, 3, 2]
+    assert found["best"] == {"source": "rema", "id": 1, "unit_price": {"unit": "kg", "price": 40.0}}
+    # Nothing fits every word: REMA's results are all shown.
+    mock_client.async_search_products = AsyncMock(return_value=[pork])
+    with patch.object(planner.chains, "_get", new=FakeTjek()):
+        found = await ch.async_search_everywhere(planner, "kalvekød")
+    assert [p["id"] for p in found["products"]] == [4]
+    assert found["best"] is None
+    assert ch.query_fit("dansk", "Dansk smør") == (True, True)
+    assert ch.query_fit("", "Smør") == (False, False)
 
 
 async def test_rema_offers_on_the_list(

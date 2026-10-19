@@ -635,6 +635,10 @@ class Rema1000Panel extends HTMLElement {
         this._renderModal();
         this._everywhereRun(p.name);
       },
+      "plan-help": () => {
+        this._planHelp = !this._planHelp;
+        this._render();
+      },
       "chain-open": () => {
         this._chain = arg;
         this._chainQuery = "";
@@ -2289,15 +2293,16 @@ class Rema1000Panel extends HTMLElement {
     if (this._modal?.kind === "where") {
       const e = this._everywhere;
       node.innerHTML = `<div class="scrim" data-action="modal-close"></div>
-        <div class="dialog wide" role="dialog" aria-modal="true" aria-label="Priser">
-          <h2>${esc(this._modal.title)}</h2>
+        <div class="dialog wide where" role="dialog" aria-modal="true" aria-label="Priser">
+          <div class="dialog-top"><h2>${esc(this._modal.title)}</h2>
+            <button class="icon-btn close" data-action="modal-close" aria-label="Luk">${CLOSE_ICON}</button></div>
           <div class="row wrap everywhere">
             <input class="grow" type="search" data-bind="everywhere" value="${esc(e.query)}" placeholder="Søg på en vare">
             <button class="btn" data-action="everywhere" ${e.loading ? "disabled" : ""}>${e.loading ? '<span class="spinner small"></span>' : "Søg"}</button>
           </div>
           <div class="ev-out">${e.error ? `<div class="banner error">${esc(e.error)}</div>` : ""}
           ${e.loading && !e.data ? '<p class="muted"><span class="spinner small"></span> Finder priserne …</p>' : e.data ? this._everywhereHtml(e.data) : ""}</div>
-          <div class="row wrap dialog-actions"><span class="spacer"></span><button class="btn" data-action="modal-close">Luk</button></div>
+          <div class="dialog-bottom"><button class="btn" data-action="modal-close">Luk</button></div>
         </div>`;
       return;
     }
@@ -2574,7 +2579,10 @@ class Rema1000Panel extends HTMLElement {
         ${plan.summary ? `<p>${esc(plan.summary)}</p>` : ""}
         ${over ? `<div class="banner warn">Planen er over budget. Prøv at lave en ny, eller ret budgettet i indstillingerne.</div>` : ""}
         <div class="days">${days}</div>
-        <p class="muted small">Tryk på en ret for at se opskriften eller skifte den ud. 👍, 👎 og ♥ gemmer retten i opskriftsamlingen – tryk igen for at fortryde.</p>
+        <div class="help-row">
+          ${this._planHelp ? '<p class="muted small help-text">Tryk på en ret for at se opskriften eller skifte den ud. 👍, 👎 og ♥ gemmer retten i opskriftsamlingen – tryk igen for at fortryde.</p>' : ""}
+          <button class="help-q" data-action="plan-help" aria-expanded="${this._planHelp ? "true" : "false"}" aria-label="Hjælp" title="Hjælp">?</button>
+        </div>
         <div class="row wrap actions">
           <button class="btn primary" data-action="send" ${this._busy ? "disabled" : ""}>
             ${plan.status === "sent" ? "Sendt ✓ – send igen" : "Send til REMA-listen"}
@@ -3275,7 +3283,26 @@ const STYLE = `
   .ev .what { display: grid; min-width: 0; } .ev .what b { overflow-wrap: anywhere; }
   .ev .badge { justify-self: start; margin-top: 2px; }
   .ev-price { font-weight: 700; white-space: nowrap; } .ev-price.sale { color: var(--rema-sale); }
-  @media (max-width: 600px) { .ev { grid-template-columns: auto 40px minmax(0, 1fr) auto; } .ev .btn { grid-column: 3 / 5; justify-self: start; } }
+  .ev .what .muted { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  /* On a phone the button sits under the price, so a row is two lines, not four. */
+  @media (max-width: 600px) {
+    .ev { grid-template-columns: auto 40px minmax(0, 1fr) auto; row-gap: 4px; padding: 8px 2px; }
+    .ev > .chain-logo, .ev > img, .ev > .noimg, .ev > .what { grid-row: 1 / 3; }
+    .ev > .ev-price { grid-column: 4; grid-row: 1; justify-self: end; align-self: end; }
+    .ev > .btn { grid-column: 4; grid-row: 2; justify-self: end; align-self: start; padding: 4px 10px; min-height: 0; font-size: .85rem; }
+    .ev img, .ev .noimg { width: 40px; height: 40px; }
+  }
+  .help-row { display: flex; align-items: flex-start; justify-content: flex-end; gap: 8px; margin: 6px 0; }
+  .help-row .help-text { flex: 1; margin: 2px 0; }
+  .help-q { flex: none; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--divider-color); background: none; cursor: pointer;
+    color: var(--secondary-text-color); font-weight: 700; font-size: .8rem; line-height: 1; display: grid; place-items: center; padding: 0; }
+  .help-q[aria-expanded="true"] { background: var(--secondary-background-color); color: var(--primary-text-color); }
+  .dialog.where { padding-top: 0; padding-bottom: 0; max-height: min(80vh, 720px); max-height: min(80dvh, 720px); }
+  .dialog-top, .dialog-bottom { position: sticky; z-index: 1; background: var(--rema-solid-card); display: flex; align-items: center; gap: 8px; }
+  .dialog-top { top: 0; padding: 14px 0 8px; margin-bottom: 4px; }
+  .dialog-top h2 { margin: 0; flex: 1; font-size: 1.15rem; overflow-wrap: anywhere; }
+  .dialog-top .close { width: 36px; height: 36px; background: var(--secondary-background-color); }
+  .dialog-bottom { bottom: 0; justify-content: flex-end; padding: 10px 0 14px; margin-top: 8px; border-top: 1px solid var(--divider-color); }
   .cheaper { justify-self: start; width: fit-content; }
   .cheaper > span:not(.chain-logo) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chain-save { align-items: center; }
