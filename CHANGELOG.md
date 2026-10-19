@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.2.5] - 2026-10-19
+
+### Fixed
+- Deleting a meal plan updates the meal plan sensor and calendar right away; before, they showed the deleted plan until the next change.
+
 ## [1.2.4] - 2026-10-19
 
 ### Fixed
