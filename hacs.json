@@ -1,6 +1,10 @@
 {
   "name": "Middagsro",
   "homeassistant": "2026.1.0",
-  "country": ["DK"],
-  "render_readme": true
+  "country": [
+    "DK"
+  ],
+  "render_readme": true,
+  "zip_release": true,
+  "filename": "middagsro.zip"
 }

@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.4.3] - 2026-10-19
+
+### Changed
+- Each release has a `middagsro.zip` that HACS installs from, so GitHub counts the downloads – shown as a badge at the top of the README. Nothing changes in Home Assistant.
+
 ## [1.4.2] - 2026-10-19
 
 ### Changed

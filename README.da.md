@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/Dinnsen/ha-middagsro/releases"><img alt="Version" src="https://img.shields.io/github/v/release/Dinnsen/ha-middagsro?style=flat-square&label=version&color=0e2a8a"></a>
+  <a href="https://github.com/Dinnsen/ha-middagsro/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Dinnsen/ha-middagsro/total?style=flat-square&label=downloads&color=0e2a8a"></a>
   <a href="https://hacs.xyz"><img alt="HACS" src="https://img.shields.io/badge/HACS-brugerdefineret-41BDF5?style=flat-square"></a>
   <img alt="Home Assistant 2026.1+" src="https://img.shields.io/badge/Home%20Assistant-2026.1%2B-18BCF2?style=flat-square&logo=homeassistant&logoColor=white">
   <img alt="Kvalitetsskala: Platin" src="https://img.shields.io/badge/kvalitet-platin-7f8c99?style=flat-square">

@@ -170,10 +170,13 @@ jobs:
             echo "Release $TAG was published meanwhile; nothing to do."
             exit 0
           fi
+          # HACS installs from this zip (hacs.json: zip_release), so GitHub counts the downloads.
+          (cd custom_components/middagsro && zip -r -X -q "$GITHUB_WORKSPACE/middagsro.zip" . -x '*__pycache__*')
+          unzip -l middagsro.zip | grep -q " manifest.json$"
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            gh release create "$TAG" --title "$TAG" --notes-file release-notes.md --verify-tag --latest="$LATEST"
+            gh release create "$TAG" middagsro.zip --title "$TAG" --notes-file release-notes.md --verify-tag --latest="$LATEST"
           else
-            gh release create "$TAG" --title "$TAG" --notes-file release-notes.md --target "$SHA" --latest="$LATEST"
+            gh release create "$TAG" middagsro.zip --title "$TAG" --notes-file release-notes.md --target "$SHA" --latest="$LATEST"
           fi
           echo "Published $TAG."
 
