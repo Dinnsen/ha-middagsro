@@ -317,7 +317,9 @@ async def async_compare_products(
 
 
 def _line(plan: dict[str, Any], line_id: str) -> dict[str, Any]:
-    line = next((x for x in plan["shopping"] if x.get("id") == line_id), None)
+    line: dict[str, Any] | None = next(
+        (x for x in plan["shopping"] if x.get("id") == line_id), None
+    )
     if line is None:
         raise _invalid("line_not_found")
     return line
