@@ -1042,8 +1042,47 @@ class MealPlanner:
     # ------------------------------------------------------------- generation
 
     def default_start(self) -> date:
-        """The start date of the next plan."""
-        return next_start(dt_util.now().date(), self.store.settings["start_weekday"])
+        """The start date of the next plan.
+
+        The family's first weekday, but today while next week's avis isn't out:
+        a plan for next week can't be priced yet, the rest of this week can.
+        """
+        today = dt_util.now().date()
+        start = next_start(today, self.store.settings["start_weekday"])
+        try:
+            self.avis_end(start)
+        except ServiceValidationError:
+            return today
+        return start
+
+    def avis_end(self, start: date) -> date | None:
+        """The last day a plan from start can be priced, or None for no limit.
+
+        Raises if start is after every avis that is out: the prices aren't known yet.
+        Without any avis known (REMA can't be reached), anything goes, as before.
+        """
+        known = [
+            (c, _local_day(c.valid_from), _local_day(c.valid_to))
+            for c in self._get_catalogs()
+            if c and c.valid_from and c.valid_to
+        ]
+        if not known:
+            return None
+        covering = next((k for k in known if k[1] <= start <= k[2]), None)
+        if covering is None:
+            last = max(k[2] for k in known)
+            if start > last:
+                raise _invalid(
+                    "avis_not_out",
+                    date=f"{start.day}/{start.month}",
+                    last=f"{last.day}/{last.month}",
+                )
+            return None
+        end = covering[2]
+        # A later avis takes over the day after: the plan can go on into it.
+        if any(k[1] <= end + timedelta(days=1) <= k[2] for k in known if k is not covering):
+            return None
+        return end
 
     @callback
     def async_start_generation(
@@ -1060,6 +1099,7 @@ class MealPlanner:
         if self.generating:
             raise _invalid("already_generating")
         start = start or self.default_start()
+        self.avis_end(start)
         if skip and not plan_dates(start, self.store.settings["days"], skip):
             raise _invalid("all_days_skipped")
         if not self.ai_available():
@@ -1298,6 +1338,10 @@ class MealPlanner:
         """Make, price and store a plan. Returns the plan."""
         settings = self.store.settings
         dates = plan_dates(start, settings["days"], skip)
+        # Not past the last avis that is out: those days' prices aren't known yet.
+        end = self.avis_end(start)
+        if end is not None:
+            dates = [d for d in dates if d <= end]
         if not dates:
             raise _invalid("all_days_skipped")
         skipped = sorted(
@@ -2298,6 +2342,11 @@ def plan_summary(plan: dict[str, Any]) -> dict[str, Any]:
         key: plan.get(key)
         for key in ("id", "title", "start_date", "end_date", "week", "status", "total", "budget")
     } | {"dishes": [day["dish"] for day in plan.get("days", [])]}
+
+
+def _local_day(moment: datetime) -> date:
+    """The local day of a moment (an avis from 22:00 UTC starts the next day here)."""
+    return dt_util.as_local(moment).date()
 
 
 def plan_dates(start: date, days: int, skip: set[date] | None = None) -> list[date]:

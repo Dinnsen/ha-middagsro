@@ -338,6 +338,7 @@ async def test_plans_use_the_collection(
         return SimpleNamespace(data=RECIPE)
 
     await planner.store.async_set_settings({"days": 2})
+    planner._get_catalogs = lambda: (None, None)  # no avis known: any week can be made
     with patch("homeassistant.components.ai_task.async_generate_data", new=fake):
         plan = await planner.async_generate(date(2026, 10, 25))
         first, second = plan["days"]

@@ -840,8 +840,41 @@ async def test_generate_errors(
     assert planner.status["state"] == "idle"
 
 
-async def test_generation_guards(hass: HomeAssistant, init_integration: MockConfigEntry) -> None:
+async def test_only_weeks_with_an_avis(
+    hass: HomeAssistant, init_integration: MockConfigEntry, ai_task: str, freezer: Any
+) -> None:
+    """A plan can't start after the last avis that is out, nor run past it."""
+    planner = init_integration.runtime_data.planner
+    planner._get_catalogs = lambda: (CURRENT, None)  # next week's avis isn't out
+    freezer.move_to(datetime(2026, 10, 12, 15, tzinfo=UTC))  # monday in week 42
+    assert planner.default_start() == date(2026, 10, 12)  # the rest of this week
+    assert planner.avis_end(date(2026, 10, 12)) == date(2026, 10, 17)
+    with pytest.raises(ServiceValidationError) as err:
+        planner.async_start_generation(date(2026, 10, 18))
+    assert err.value.translation_key == "avis_not_out"
+    assert err.value.translation_placeholders == {"date": "18/10", "last": "17/10"}
+    assert planner.avis_end(date(2026, 10, 1)) is None  # before every avis: as before
+
+    dates = mp.plan_dates(date(2026, 10, 15), 7)[:3]
+    ai = FakeAI(ai_answer(dates, []))
+    with patch("homeassistant.components.ai_task.async_generate_data", new=ai):
+        plan = await planner.async_generate(date(2026, 10, 15))
+    assert [d["date"] for d in plan["days"]] == ["2026-10-15", "2026-10-16", "2026-10-17"]
+
+    # Out: next week is the default again, and a plan may run into it.
+    planner._get_catalogs = lambda: (CURRENT, UPCOMING)
+    assert planner.default_start() == date(2026, 10, 18)
+    assert planner.avis_end(date(2026, 10, 15)) is None
+    assert planner.avis_end(date(2026, 10, 20)) == date(2026, 10, 24)
+    planner._get_catalogs = lambda: (None, None)
+    assert planner.avis_end(date(2027, 1, 3)) is None
+
+
+async def test_generation_guards(
+    hass: HomeAssistant, init_integration: MockConfigEntry, freezer: Any
+) -> None:
     """No AI, everything skipped or already running."""
+    freezer.move_to(datetime(2026, 10, 14, 10, tzinfo=UTC))
     planner = init_integration.runtime_data.planner
     with pytest.raises(ServiceValidationError) as err:
         planner.async_start_generation(START)

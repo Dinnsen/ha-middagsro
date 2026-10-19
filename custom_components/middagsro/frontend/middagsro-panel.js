@@ -2471,11 +2471,18 @@ class Rema1000Panel extends HTMLElement {
     const count = this._state?.settings?.days || 7;
     if (!start) return [];
     const pad = (n) => String(n).padStart(2, "0");
+    const last = this._lastAvisDay();
     return Array.from({ length: count }, (_, i) => {
       const d = new Date(`${start}T12:00:00`);
       d.setDate(d.getDate() + i);
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    });
+    }).filter((iso) => !last || iso <= last || start > last);
+  }
+
+  // The last day of the newest avis that is out: a plan can't be priced after it.
+  _lastAvisDay() {
+    const cat = this._state?.catalogs || {};
+    return localDay(cat.upcoming?.valid_to || cat.current?.valid_to || "");
   }
 
   _generateControls(label = "Lav ny madplan") {
@@ -2486,11 +2493,16 @@ class Rema1000Panel extends HTMLElement {
       )
       .join("");
     const note = this._state?.note;
+    const cat = this._state?.catalogs || {};
+    const last = this._lastAvisDay();
     return `<div class="row wrap">
       <label class="field inline">Første dag
-        <input type="date" data-bind="start" value="${esc(this._startDate || "")}">
+        <input type="date" data-bind="start" value="${esc(this._startDate || "")}" ${last ? `max="${esc(last)}"` : ""}>
       </label>
     </div>
+    ${cat.current && !cat.upcoming && last
+      ? `<p class="muted small">Næste uges avis er ikke ude endnu, så madplanen kan højst gå til og med ${esc(dateLabel(last))}.</p>`
+      : ""}
     <div class="wishes">
       <button class="btn" data-action="note-open">${note ? "Ret ønsker til madplanen" : "Ønsker til madplanen"}</button>
       ${note ? `<p class="muted small note-preview">Bruges i næste madplan: ${esc(note)}</p>` : ""}

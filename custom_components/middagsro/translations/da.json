@@ -191,6 +191,9 @@
     },
     "chain_not_found": {
       "message": "Kæden findes ikke."
+    },
+    "avis_not_out": {
+      "message": "Næste uges tilbudsavis er ikke udkommet endnu, så madplanen fra {date} kan ikke laves med de rigtige priser. Vælg en første dag til og med {last}, eller vent til den nye avis er ude."
     }
   },
   "issues": {
