@@ -369,14 +369,40 @@ def text_has(words: list[str], text: str) -> bool:
     return bool(words) and all(any(w in t for t in tokens) for w in words)
 
 
+def query_fit(query: str, name: str) -> tuple[bool, bool]:
+    """Does a name fit a search: (every word is in it, and it is the very kind asked for).
+
+    The kind is wrong if a word makes it another product ("oksekød 35% grønt") or the
+    fat % differs ("oksekød 4-7%" for "oksekød 8-12%").
+    """
+    from .mealplan import _NEUTRAL_WORDS, _percents, name_fit  # noqa: PLC0415
+
+    words = query_words(query)
+    words = [w for w in words if w not in _NEUTRAL_WORDS] or words
+    if not words:
+        return False, False
+    matched, penalty = name_fit(words, name)
+    if matched < len(words):
+        return False, False
+    asked, theirs = _percents(query), _percents(name)
+    return True, penalty < 5 and not (asked and theirs and not asked & theirs)
+
+
 async def async_search_everywhere(planner: MealPlanner, query: str) -> dict[str, Any]:
     """REMA's products and the chosen chains' offers for a search, cheapest first."""
     words = query_words(query)
     if not words:
         return {"query": query, "products": [], "offers": [], "best": None}
     products = [p.as_dict() for p in await planner.client.async_search_products(query, 8)]
+    fits: dict[int, tuple[bool, bool]] = {}
     for product in products:
         product["unit_price"] = product_unit_price(product)
+        fits[id(product)] = query_fit(query, str(product.get("name") or ""))
+    # REMA's search also finds near misses (grisekød for oksekød): leave them out
+    # when something fits, and put the very kind first.
+    if any(fit[0] for fit in fits.values()):
+        products = [p for p in products if fits[id(p)][0]]
+    products.sort(key=lambda p: not fits[id(p)][1])
     now = datetime.now(UTC)
     offers: list[dict[str, Any]] = []
     for dealer_id in [d for d in planner.store.settings["chains"] if d in CHAINS]:
@@ -398,9 +424,12 @@ async def async_search_everywhere(planner: MealPlanner, query: str) -> dict[str,
 
     offers.sort(key=order)
     offers = offers[:30]
-    # The cheapest, compared per kg, litre or piece in the unit most results have.
-    candidates = [("rema", p) for p in products if p.get("unit_price")] + [
-        ("chain", o) for o in offers if o.get("unit_price")
+    # The cheapest of the very kind asked for, compared per kg, litre or piece in
+    # the unit most of them have.
+    candidates = [("rema", p) for p in products if p.get("unit_price") and fits[id(p)][1]] + [
+        ("chain", o)
+        for o in offers
+        if o.get("unit_price") and query_fit(query, str(o.get("heading") or ""))[1]
     ]
     best: dict[str, Any] | None = None
     if candidates:
