@@ -107,7 +107,10 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
     shopping = data.shopping_list.data
 
     latest = store.latest_plan
-    current = store.plan_covering(dt_util.now().date())
+    today = dt_util.now().date()
+    current = store.plan_covering(today)
+    timeline = store.timeline(today, store.settings["start_weekday"])
+    shown = {entry["plan_id"] for entry in timeline}
     return {
         "entry_id": entry.entry_id,
         "title": entry.title,
@@ -117,6 +120,11 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
         "latest_plan": latest,
         # The plan with tonight's dinner, when it is not the newest one.
         "current_plan": current if current is not latest else None,
+        # This week and the coming days as one plan: which plan each date comes from.
+        "timeline": timeline,
+        "timeline_plans": [
+            p for p in store.plans if p["id"] in shown and p is not latest and p is not current
+        ],
         "note": store.note,
         "recipes": [_recipe_summary(r) for r in store.recipes],
         "status": data.planner.status,

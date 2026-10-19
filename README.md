@@ -35,11 +35,11 @@ The integration adds a **Middagsro panel** to the sidebar. It follows your Home 
 - The plan follows your rules: budget, organic, requirements for eggs and milk, things to avoid, allergies, number of vegetarian dishes, leftover days, fixed days (e.g. a rye-bread day), maximum time on weekdays and your favourite dishes.
 - **Skip days** when you are not eating at home, and choose the first day yourself.
 - **Wishes for the plan:** write, for example, what in the fridge must be used before a given day, or which dish you want on a given day. The wishes are used in the next plan only – also when it is made automatically – and then removed.
-- While next week's plan is ready, the plan page shows **tonight and the rest of this week** from the plan that is running now. The recipes tab always opens on tonight's dish.
+- **One plan for the week:** the plan page shows the whole week, from the family's first weekday to the last planned day, as one plan – also when it was made in several goes (a new plan from Wednesday replaces the old one from Wednesday on). When next week's plan is ready, it follows under its own week heading. Days that have passed are dimmed. The calendar and the *dinner today* sensor follow the same rule. The recipes tab always opens on tonight's dish.
 - If the shopping list goes **over budget**, the integration asks the AI once for a cheaper plan and keeps the cheapest.
 - A **requirements checklist** shows whether the plan keeps your rules.
 - Turn on **automation** to make next week's plan when the new offers come out – and optionally send it straight to the REMA list.
-- **Swap, delete or skip:** tap a dish in the plan (also in the rest of this week) to get three other suggestions, delete it or skip the day. The shopping list and recipe follow along.
+- **Swap, delete or skip:** tap a dish in the plan to get three other suggestions, delete it or skip the day. The shopping list and recipe follow along.
 - **Det skal AI'en huske** (what the AI must remember): standing points for every plan, e.g. “always fresh broccoli with salmon” – typed or dictated.
 - **Nutrition targets** per dinner (kcal and the split of protein, carbs and fat), and the **Sundhed** (health) tab with nutrition, the dietary advice and labels like the Keyhole.
 - Buttons that use AI are marked with ✦.
@@ -87,7 +87,7 @@ Describe the dishes the family loves and how often they should be on the plan (e
 
 The **Opskrifter** (recipes) tab has two pages: **Ugens opskrifter** (the week's recipes) as before, and **Opskriftsamling** (the recipe collection).
 
-- **👍, 👎 and ❤️** on every dinner in the plan – also in the rest of this week and on the recipe. 👍 saves the dish in the collection as one you like, 👎 as one you don't like (it is never put on a plan again), and ❤️ as a favourite (it also gets 👍, and the heart turns red). Tap again to take it back; 👍 after 👎 changes it.
+- **👍, 👎 and ❤️** on every dinner in the plan and on the recipe. 👍 saves the dish in the collection as one you like, 👎 as one you don't like (it is never put on a plan again), and ❤️ as a favourite (it also gets 👍, and the heart turns red). Tap again to take it back; 👍 after 👎 changes it.
 - **Search, sort and filter** the collection (name, newest, most used, quickest; all, favourites, liked, disliked).
 - **Add a recipe from a link:** paste the link to a recipe page and tap **Hent opskrift**. The recipe is read from the page (most recipe sites have it as data; otherwise the AI reads the page), and you can correct it before it is saved. The link itself is not kept. Or write a recipe yourself.
 - **Open a recipe** to edit the name, times, ingredients and steps, rate it, or **put it on the meal plan** on a day you choose – its items go on the shopping list.

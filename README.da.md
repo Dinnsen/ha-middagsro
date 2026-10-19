@@ -35,8 +35,8 @@ Integrationen lægger et **Middagsro-panel** i sidebaren. Det følger dit Home A
 - Planen følger jeres regler: budget, økologi, krav til æg og mælk, ting der skal undgås, allergier, antal vegetarretter, restedage, faste dage (fx rugbrødsdag), maks. tid på hverdage og jeres favoritretter.
 - **Spring dage over**, hvis I ikke spiser hjemme, og vælg selv første dag.
 - **Ønsker til madplanen:** skriv fx, hvad der skal bruges fra køleskabet inden en bestemt dag, eller hvilken ret I vil have en bestemt dag. Ønskerne bruges kun i den næste plan – også når den laves automatisk – og fjernes derefter.
-- Mens næste uges plan ligger klar, viser forsiden **i aften og resten af denne uge** fra den plan, der kører nu. Opskrifter-fanen åbner altid på aftenens ret.
-- **Skift, slet eller spring over:** tryk på en ret i madplanen (også i resten af denne uge), og få tre andre bud, slet retten eller spring dagen over. Indkøbslisten og opskriften følger med.
+- **Én plan for ugen:** forsiden viser hele ugen, fra familiens første ugedag til den sidste planlagte dag, som én plan – også når den er lavet i flere omgange (en ny plan fra onsdag afløser den gamle fra onsdag). Når næste uges plan er klar, kommer den under sin egen ugeoverskrift. Dage, der er gået, er nedtonet. Kalenderen og sensoren *Aftensmad i dag* følger samme regel. Opskrifter-fanen åbner altid på aftenens ret.
+- **Skift, slet eller spring over:** tryk på en ret i madplanen, og få tre andre bud, slet retten eller spring dagen over. Indkøbslisten og opskriften følger med.
 - **Det skal AI'en huske:** faste punkter til alle madplaner, fx “altid frisk broccoli til laksefilet” – skrevet eller dikteret.
 - **Næringsmål** pr. aftensmad (kcal og fordeling af protein, kulhydrat og fedt), og fanen **Sundhed** med næring, kostrådene og mærker som Nøglehullet.
 - Knapper, der bruger AI, er mærket med ✦.
@@ -87,7 +87,7 @@ Beskriv de retter, familien elsker, og hvor tit de skal på planen (hver uge, hv
 
 Fanen **Opskrifter** har to sider: **Ugens opskrifter** som hidtil og **Opskriftsamling**.
 
-- **👍, 👎 og ❤️** på hver aftensmad i madplanen – også i resten af denne uge og på opskriften. 👍 gemmer retten i samlingen som en, I synes om, 👎 som en, I ikke synes om (den kommer aldrig på madplanen igen), og ❤️ som favorit (den får også 👍, og hjertet bliver rødt). Tryk igen for at fortryde; 👍 efter 👎 laver den om.
+- **👍, 👎 og ❤️** på hver aftensmad i madplanen og på opskriften. 👍 gemmer retten i samlingen som en, I synes om, 👎 som en, I ikke synes om (den kommer aldrig på madplanen igen), og ❤️ som favorit (den får også 👍, og hjertet bliver rødt). Tryk igen for at fortryde; 👍 efter 👎 laver den om.
 - **Søg, sortér og filtrér** i samlingen (navn, senest tilføjet, mest brugt, hurtigst; alle, favoritter, synes om, synes ikke om).
 - **Tilføj en opskrift fra et link:** indsæt linket til en opskrift, og tryk på **Hent opskrift**. Opskriften læses fra siden (de fleste opskriftssider har den som data, ellers læser AI'en siden), og du kan rette den, før den gemmes. Selve linket gemmes ikke. Du kan også skrive en opskrift selv.
 - **Åbn en opskrift** for at rette navn, tider, ingredienser og trin, give den 👍, 👎 eller ❤️ eller **sætte den på madplanen** på en dag, du vælger – dens varer kommer på indkøbslisten.

@@ -154,6 +154,23 @@ async def test_calendar(hass: HomeAssistant, init_integration: MockConfigEntry) 
     assert events[0]["description"].startswith("40 min.")
     assert "rester" in events[2]["description"]
 
+    # A day the newest plan skips has no dinner, also not the older plan's.
+    newest = init_integration.runtime_data.store.get_plan("plan-1")
+    assert newest is not None
+    newest["days"] = [d for d in newest["days"] if d["date"] != "2026-10-14"]
+    result = await hass.services.async_call(
+        "calendar",
+        "get_events",
+        {ATTR_ENTITY_ID: CALENDAR, "start_date_time": "2026-10-12 00:00", "duration": {"days": 7}},
+        blocking=True,
+        return_response=True,
+    )
+    assert [e["start"] for e in result[CALENDAR]["events"]] == [
+        "2026-10-12",
+        "2026-10-13",
+        "2026-10-15",
+    ]
+
 
 async def test_buttons(hass: HomeAssistant, init_integration: MockConfigEntry) -> None:
     """The buttons start a plan and send the newest plan."""

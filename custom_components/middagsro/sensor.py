@@ -52,12 +52,10 @@ class RemaDinnerTodaySensor(SensorEntity):
 
     def _day(self, offset: int = 0) -> tuple[dict[str, Any], dict[str, Any]] | None:
         """(day, plan) for today + offset days."""
-        wanted = (dt_util.now().date() + timedelta(days=offset)).isoformat()
-        for plan in self._entry.runtime_data.store.plans:  # newest first
-            for day in plan.get("days", []):
-                if day.get("date") == wanted:
-                    return day, plan
-        return None
+        plan, day = self._entry.runtime_data.store.dinner(
+            dt_util.now().date() + timedelta(days=offset)
+        )
+        return (day, plan) if plan is not None and day is not None else None
 
     @property
     def native_value(self) -> str | None:

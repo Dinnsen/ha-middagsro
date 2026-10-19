@@ -192,3 +192,31 @@ async def test_note_and_plan_covering(hass: HomeAssistant, hass_storage: dict[st
     covering = store.plan_covering(date(2026, 10, 16))
     assert covering is not None
     assert covering["id"] == "week42"
+
+
+async def test_timeline(hass: HomeAssistant, hass_storage: dict[str, Any]) -> None:
+    """This week and the coming days as one plan: the newest plan covering a date decides."""
+    store = RemaPlanStore(hass, "entry")
+    assert store.timeline(date(2026, 10, 19), 6) == []
+    await store.async_add_plan(make_plan("old", start="2026-10-18"))  # 18-20 Oct
+    newer = make_plan("new", start="2026-10-19")  # 19-21 Oct, no dinner the 20th
+    newer["days"] = [d for d in newer["days"] if d["date"] != "2026-10-20"]
+    await store.async_add_plan(newer)
+    timeline = store.timeline(date(2026, 10, 19), 6)  # a monday; the week starts sunday
+    assert [(e["date"], e["plan_id"], e["skipped"]) for e in timeline] == [
+        ("2026-10-18", "old", False),
+        ("2026-10-19", "new", False),
+        ("2026-10-20", "new", True),
+        ("2026-10-21", "new", False),
+    ]
+    assert {e["week"] for e in timeline} == {43}
+    plan, day = store.dinner(date(2026, 10, 20))
+    assert plan is not None and plan["id"] == "new"
+    assert day is None
+    assert store.dinner(date(2026, 10, 30)) == (None, None)
+    # A plan into next week: its days there are in the next week.
+    await store.async_add_plan(make_plan("next", start="2026-10-24"))  # 24-26 Oct
+    weeks = {e["date"]: e["week"] for e in store.timeline(date(2026, 10, 19), 6)}
+    assert (weeks["2026-10-24"], weeks["2026-10-25"]) == (43, 44)
+    # Everything has ended.
+    assert store.timeline(date(2026, 11, 2), 6) == []

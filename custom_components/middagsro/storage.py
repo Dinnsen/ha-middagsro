@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 import uuid
 
@@ -287,6 +287,51 @@ class RemaPlanStore:
     def plan_for_start(self, start: date) -> dict[str, Any] | None:
         """Return the newest plan that starts on a date."""
         return next((p for p in self.plans if p.get("start_date") == start.isoformat()), None)
+
+    def dinner(self, day: date) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        """(plan, day) for a date: the newest plan whose period has it decides.
+
+        A newer plan replaces an older one for its whole period, also on the days it
+        skips, so the day is None there (no dinner planned).
+        """
+        plan = self.plan_covering(day)
+        if plan is None:
+            return None, None
+        iso = day.isoformat()
+        return plan, next((d for d in plan.get("days", []) if d.get("date") == iso), None)
+
+    def timeline(self, today: date, start_weekday: int) -> list[dict[str, Any]]:
+        """This week's and the coming dinners, one entry per date, as one plan.
+
+        From the family's first weekday of this week to the last planned day
+        (at most four weeks). Each date comes from the newest plan covering it.
+        """
+        last = max((p.get("end_date", "") for p in self.plans), default="")
+        if not last or last < today.isoformat():
+            return []
+        first = today - timedelta(days=(today.weekday() - start_weekday) % 7)
+        end = min(date.fromisoformat(last), first + timedelta(days=27))
+        out: list[dict[str, Any]] = []
+        day = first
+        while day <= end:
+            plan, dinner = self.dinner(day)
+            if plan is not None:
+                week_start = day - timedelta(days=(day.weekday() - start_weekday) % 7)
+                monday = next(
+                    week_start + timedelta(days=i)
+                    for i in range(7)
+                    if (week_start + timedelta(days=i)).weekday() == 0
+                )
+                out.append(
+                    {
+                        "date": day.isoformat(),
+                        "plan_id": plan["id"],
+                        "skipped": dinner is None,
+                        "week": monday.isocalendar().week,
+                    }
+                )
+            day += timedelta(days=1)
+        return out
 
     def plan_covering(self, day: date) -> dict[str, Any] | None:
         """The newest plan whose period includes a day (also if that day is skipped)."""

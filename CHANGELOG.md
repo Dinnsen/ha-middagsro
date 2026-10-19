@@ -2,6 +2,12 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.3.0] - 2026-10-19
+
+### Changed
+- One plan for the week. The plan page no longer splits the week into *Resten af denne uge* and the newest plan: it shows every day from the family's first weekday to the last planned day as one plan, *Madplan uge 43*. Each day comes from the newest plan that covers it, so a plan made from Wednesday replaces the old one from Wednesday on, also on the days it skips. Next week's plan follows under its own week heading, and days that have passed are dimmed. When days come from an older plan, the price says which days the shopping list covers.
+- The week's recipes, *Sæt på madplanen* from the collection, the calendar and the *dinner today* sensor use the same rule, so they always show the same dinner for a day.
+
 ## [1.2.5] - 2026-10-19
 
 ### Fixed
