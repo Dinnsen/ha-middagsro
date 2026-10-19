@@ -375,3 +375,13 @@ window.DEMO.compare = {
   },
   chains: { "9ba51": { count: 2, saving: 17.65 }, "71c90": { count: 1, saving: 5 } },
 };
+
+// REMA 1000's recipes (made up).
+window.DEMO.remaRecipes = [
+  ["kylling-i-cremet-svampesauce", "Kylling i cremet svampesauce med ris", "aften", 30, 2, false, 96.5],
+  ["laks-med-quinoasalat", "Laks med quinoasalat og græsk yoghurt", "avis", 25, 3, false, 142],
+  ["pasta-med-graeskar", "Pasta med græskar og kikærter", "kodfri", 35, 1, true, 61.25],
+  ["fiskefrikadeller-born", "Fiskefrikadeller med rugbrød og gulerodssalat", "born", 30, 0, false, 74],
+  ["italiensk-tomatpande", "Italiensk tomatpande", "aften", 20, 2, false, 88.9],
+  ["shakshuka", "Shakshuka med salatost og kartoffeltern", "kodfri", 30, 1, true, 55],
+].map(([slug, title, tag, mins, offer, veg, cost]) => ({ slug, title, tag, image: null, servings: 4, total_minutes: mins, tags: [], vegetarian: veg, ingredients: 10, on_offer: offer, cost }));

@@ -85,13 +85,14 @@ Describe the dishes the family loves and how often they should be on the plan (e
 
 <img src="docs/images/collection.png" alt="The recipe collection with search, sorting and thumbs up, down and heart" width="100%">
 
-The **Opskrifter** (recipes) tab has two pages: **Ugens opskrifter** (the week's recipes) as before, and **Opskriftsamling** (the recipe collection).
+The **Opskrifter** (recipes) tab has three pages: **Ugens opskrifter** (the week's recipes) as before, **Opskriftsamling** (the recipe collection) and **REMA-opskrifter** (REMA 1000's own recipes).
 
 - **👍, 👎 and ❤️** on every dinner in the plan and on the recipe. 👍 saves the dish in the collection as one you like, 👎 as one you don't like (it is never put on a plan again), and ❤️ as a favourite (it also gets 👍, and the heart turns red). Tap again to take it back; 👍 after 👎 changes it.
 - **Search, sort and filter** the collection (name, newest, most used, quickest; all, favourites, liked, disliked).
 - **Add a recipe from a link:** paste the link to a recipe page and tap **Hent opskrift**. The recipe is read from the page (most recipe sites have it as data; otherwise the AI reads the page), and you can correct it before it is saved. The link itself is not kept. Or write a recipe yourself.
 - **Open a recipe** to edit the name, times, ingredients and steps, rate it, or **put it on the meal plan** on a day you choose – its items go on the shopping list.
 - New plans and swap suggestions use the family's favourites and liked dishes when they fit the week's offers, and never the disliked ones.
+- **REMA 1000's recipes:** browse REMA's own recipes – popular, newest, *Avisopskrifter* (built on this week's offers), *Aftensmad*, *Mad for børn*, *Kødfri* and more. Each card shows the time, a rough price and how many of its items are on offer. Every ingredient is linked to one of REMA's products, so the shopping list gets the very item. Save a recipe in the collection (with its photo), or put it straight on a day of the plan. In the plan, tap a dish and **Vælg en REMA-opskrift** to swap it for one of REMA's.
 
 ### Overrask os (surprise us)
 

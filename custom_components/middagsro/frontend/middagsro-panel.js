@@ -205,6 +205,9 @@ class Rema1000Panel extends HTMLElement {
     this._settingsSection = null; // the open sub-page of the settings
     this._recipesSub = "week"; // "week" (the plan's recipes) or "collection"
     this._rc = { query: "", sort: "newest", filter: "all", link: "", importing: false };
+    // REMA 1000's own recipes: the chosen category, the pages read, and a day to put one on.
+    this._rr = { key: "popular", page: 0, last: 1, total: 0, recipes: [], tags: [], loading: false, error: null };
+    this._remaPick = null;
     this._chains = null; // the chains that can be chosen, with logos
     this._chain = null; // the chain whose offers page is open
     this._chainOffers = {}; // dealer id -> {offers, loading, error}
@@ -560,7 +563,33 @@ class Rema1000Panel extends HTMLElement {
       },
       "recipes-sub": () => {
         this._recipesSub = arg;
+        if (arg !== "rema") this._remaPick = null;
         this._render();
+        if (arg === "rema" && !this._rr.page) this._rrLoad();
+      },
+      "rr-tag": () => {
+        if (this._rr.loading) return;
+        this._rr = { ...this._rr, key: arg, page: 0, last: 1, recipes: [], error: null };
+        this._rrLoad();
+      },
+      "rr-more": () => this._rrLoad(),
+      "rr-open": () => this._rrOpen(arg),
+      "rr-pick": () => this._rrPick(arg),
+      "rr-pick-cancel": () => {
+        this._remaPick = null;
+        this._render();
+      },
+      "day-rema": () => {
+        const m = this._modal;
+        if (m?.kind !== "day") return;
+        this._remaPick = { planId: m.planId, date: m.date, dish: m.dish };
+        this._modal = null;
+        this._renderModal();
+        this._goTab("recipes");
+        this._recipesSub = "rema";
+        this._render();
+        this._toTop();
+        if (!this._rr.page) this._rrLoad();
       },
       "rc-filter": () => {
         this._rc.filter = arg;
@@ -2104,12 +2133,13 @@ class Rema1000Panel extends HTMLElement {
   async _recipeToPlan(arg) {
     const m = this._modal;
     const [planId, date] = String(arg).split("|");
-    if (m?.kind !== "recipe" || !m.recipe.id || m.busy) return;
+    if (m?.kind !== "recipe" || !(m.recipe.id || m.recipe.rema_slug) || m.busy) return;
     m.busy = "plan";
     m.error = null;
     this._renderModal();
     try {
-      await this._ws("middagsro/recipes/plan", { recipe_id: m.recipe.id, plan_id: planId, date });
+      if (m.recipe.id) await this._ws("middagsro/recipes/plan", { recipe_id: m.recipe.id, plan_id: planId, date });
+      else await this._ws("middagsro/rema_recipes/plan", { slug: m.recipe.rema_slug, plan_id: planId, date });
       this._modal = null;
       this._renderModal();
       await this._load();
@@ -2136,7 +2166,7 @@ class Rema1000Panel extends HTMLElement {
           <input type="text" class="amount" data-bind="rcp" data-list="ingredients" data-idx="${i}" data-field="amount" value="${esc(ing.amount)}" placeholder="Mængde">
           <input type="text" class="grow" data-bind="rcp" data-list="ingredients" data-idx="${i}" data-field="name" value="${esc(ing.name)}" placeholder="Ingrediens">
           <button class="icon-btn" data-action="rc-row" data-arg="ingredients|del|${i}" aria-label="Fjern ingrediens">${CLOSE_ICON}</button>
-        </div>`
+        </div>${ing.product ? `<p class="muted small rc-prod">REMA: ${esc(ing.product.name)}${ing.product.underline ? ` · ${esc(ing.product.underline)}` : ""}${ing.basic ? " · basisvare" : ""}</p>` : ""}`
       )
       .join("");
     const steps = r.steps
@@ -2164,7 +2194,14 @@ class Rema1000Panel extends HTMLElement {
           <input type="text" class="rc-name" data-bind="rcp" data-field="name" value="${esc(r.name)}" placeholder="Rettens navn">
           ${this._recipeRateButtons(r)}
         </div>
-        ${m.imported ? '<p class="muted small">Hentet fra linket. Ret det, der skal rettes, og gem den i opskriftsamlingen.</p>' : ""}
+        ${r.image ? `<img class="rc-photo" src="${esc(r.image)}" alt="">` : ""}
+        ${r.rema_slug
+          ? `<p class="muted small">Fra REMA 1000's opskrifter. Ingredienserne er koblet til REMA's varer, så indkøbslisten får de rigtige varer.${r.id ? "" : " Gem den i opskriftsamlingen, eller sæt den direkte på madplanen."}</p>`
+          : m.imported ? '<p class="muted small">Hentet fra linket. Ret det, der skal rettes, og gem den i opskriftsamlingen.</p>' : ""}
+        ${this._remaPick && r.rema_slug
+          ? `<div class="banner info">Vælg den til ${esc(dateLabel(this._remaPick.date).toLowerCase())}?
+              <button class="btn primary small" data-action="rr-pick" data-arg="${esc(r.rema_slug)}" ${busy ? "disabled" : ""}>${m.busy === "pick" ? '<span class="spinner small"></span> Sætter på …' : "Sæt på madplanen"}</button></div>`
+          : ""}
         ${m.error ? `<div class="banner error">${esc(m.error)}</div>` : ""}
         <div class="grid rc-meta">
           <label class="field">Personer ${field("servings", r.servings, 'type="number" min="1" max="50"')}</label>
@@ -2186,7 +2223,7 @@ class Rema1000Panel extends HTMLElement {
         ${targets}
         <div class="row wrap dialog-actions">
           <button class="btn primary" data-action="rc-save" ${busy ? "disabled" : ""}>${r.id ? "Gem" : "Gem i opskriftsamlingen"}</button>
-          ${r.id ? `<button class="btn" data-action="rc-plan" ${busy ? "disabled" : ""}>${aiLabel("Tilføj til madplan")}</button>` : ""}
+          ${r.id || r.rema_slug ? `<button class="btn" data-action="rc-plan" ${busy ? "disabled" : ""}>${aiLabel("Tilføj til madplan")}</button>` : ""}
           ${r.id ? `<button class="btn danger" data-action="rc-delete" ${busy ? "disabled" : ""}>Slet</button>` : ""}
           <span class="spacer"></span>
           <button class="btn" data-action="modal-close" ${busy ? "disabled" : ""}>Luk</button>
@@ -2394,6 +2431,7 @@ class Rema1000Panel extends HTMLElement {
            ${this._mealieButton(m.planId, m.date)}
            <button class="btn primary" data-action="swap-options" ${busy ? "disabled" : ""}>
              ${m.busy === "options" ? '<span class="spinner small"></span> Finder retter …' : aiLabel(m.dish ? "Skift retten – tre forslag" : "Find en ret – tre forslag")}</button>
+           <button class="btn" data-action="day-rema" ${busy ? "disabled" : ""}>Vælg en REMA-opskrift</button>
          </div>
          <div class="row wrap dialog-actions">
            ${m.dish ? `<button class="btn danger" data-action="day-clear" data-arg="delete" ${busy ? "disabled" : ""}>Slet retten</button>` : ""}
@@ -2640,12 +2678,120 @@ class Rema1000Panel extends HTMLElement {
     return `${this._plan?.id}|${localToday()}`;
   }
 
+  // REMA 1000's own recipes: categories, cards and "Vis flere".
+  _remaView() {
+    const rr = this._rr;
+    const pick = this._remaPick;
+    const chip = (key, label) =>
+      `<button class="chip ${rr.key === key ? "active" : ""}" data-action="rr-tag" data-arg="${esc(key)}" ${rr.loading ? "disabled" : ""}>${esc(label)}</button>`;
+    const chips = [chip("popular", "Populære"), chip("newest", "Nyeste"), ...rr.tags.map((t) => chip(t.id, t.title))].join("");
+    const cards = rr.recipes
+      .map(
+        (r) => `<div class="rr-card">
+          <button class="rr-img" data-action="rr-open" data-arg="${esc(r.slug)}" aria-label="Se ${esc(r.title)}">${r.image ? `<img src="${esc(r.image)}" alt="" loading="lazy">` : ""}</button>
+          <b class="rr-title">${esc(r.title)}</b>
+          <span class="muted small">${[r.total_minutes ? `${r.total_minutes} min` : "", r.servings ? `${r.servings} pers.` : "", r.cost ? `ca. ${kr(r.cost)}` : ""].filter(Boolean).join(" · ")}</span>
+          <span class="rr-badges">${r.on_offer ? `<span class="badge offer">${r.on_offer} på tilbud</span>` : ""}${r.vegetarian ? '<span class="badge eco">Vegetar</span>' : ""}</span>
+          ${pick
+            ? `<button class="btn primary small" data-action="rr-pick" data-arg="${esc(r.slug)}" ${this._busy ? "disabled" : ""}>Vælg</button>`
+            : `<button class="btn small" data-action="rr-open" data-arg="${esc(r.slug)}">Se opskrift</button>`}
+        </div>`
+      )
+      .join("");
+    return `<div class="card">
+      ${pick
+        ? `<div class="banner info">Vælg en ret til ${esc(dateLabel(pick.date).toLowerCase())}${pick.dish ? ` i stedet for ${esc(pick.dish)}` : ""}.
+            <span class="spacer"></span><button class="btn small" data-action="rr-pick-cancel">Annullér</button></div>`
+        : ""}
+      <h2 class="flush">REMA 1000's opskrifter</h2>
+      <p class="muted small">${rr.total ? `${rr.total} opskrifter. ` : ""}Ingredienserne er koblet til REMA's varer, så indkøbslisten får de rigtige varer – også dem på tilbud.</p>
+      <div class="chips">${chips}</div>
+      ${rr.error ? `<div class="banner error">${esc(rr.error)}</div>` : ""}
+      <div class="rr-grid">${cards}</div>
+      ${rr.loading ? '<p class="muted"><span class="spinner small"></span> Henter opskrifter …</p>' : ""}
+      ${!rr.loading && rr.page && rr.page < rr.last ? '<button class="btn" data-action="rr-more">Vis flere</button>' : ""}
+      ${!rr.loading && rr.page && !rr.recipes.length ? '<p class="muted">Ingen opskrifter her.</p>' : ""}
+    </div>`;
+  }
+
+  async _rrLoad() {
+    const rr = this._rr;
+    if (rr.loading || (rr.page && rr.page >= rr.last)) return;
+    rr.loading = true;
+    rr.error = null;
+    this._render();
+    const sorted = rr.key === "popular" || rr.key === "newest";
+    try {
+      const data = await this._ws("middagsro/rema_recipes/list", {
+        tag: sorted ? null : rr.key,
+        sort: rr.key === "newest" ? "newest" : "popular",
+        page: rr.page + 1,
+      });
+      if (this._rr !== rr) return; // another category was chosen meanwhile
+      const seen = new Set(rr.recipes.map((r) => r.slug));
+      rr.recipes.push(...data.recipes.filter((r) => !seen.has(r.slug)));
+      Object.assign(rr, { page: data.page, last: data.last_page, total: data.total, tags: data.tags || rr.tags });
+    } catch (err) {
+      rr.error = err?.message || String(err);
+    }
+    rr.loading = false;
+    if (this._tab === "recipes") this._render();
+  }
+
+  async _rrOpen(slug) {
+    this._modal = { kind: "recipe", loading: true, recipe: { id: null, name: "" } };
+    this._renderModal();
+    try {
+      const recipe = await this._ws("middagsro/rema_recipes/get", { slug });
+      if (this._modal?.kind !== "recipe" || !this._modal.loading) return;
+      this._modal = { kind: "recipe", recipe: clone(recipe) };
+      this._renderModal();
+    } catch (err) {
+      this._modal = null;
+      this._renderModal();
+      this._say(`Fejl: ${err?.message || err}`);
+    }
+  }
+
+  // Put a REMA recipe on the day chosen in the plan (it is saved in the collection too).
+  async _rrPick(slug) {
+    const pick = this._remaPick;
+    if (!pick || this._busy) return;
+    const m = this._modal;
+    if (m?.kind === "recipe") {
+      m.busy = "pick";
+      this._renderModal();
+    }
+    this._busy = true;
+    this._say("Sætter retten på og finder varerne …");
+    try {
+      await this._ws("middagsro/rema_recipes/plan", { slug, plan_id: pick.planId, date: pick.date });
+      this._remaPick = null;
+      this._modal = null;
+      this._renderModal();
+      this._busy = false;
+      this._goTab("plan");
+      await this._load();
+      this._say(`Retten er sat på ${dateLabel(pick.date).toLowerCase()} og gemt i opskriftsamlingen – indkøbslisten er lavet om.`);
+    } catch (err) {
+      this._busy = false;
+      if (m?.kind === "recipe" && this._modal === m) {
+        m.busy = false;
+        m.error = err?.message || String(err);
+        this._renderModal();
+      } else this._say(`Fejl: ${err?.message || err}`);
+      this._render();
+    }
+  }
+
   _recipesView() {
     const seg = `<div class="seg subnav">
         <button class="${this._recipesSub === "week" ? "active" : ""}" data-action="recipes-sub" data-arg="week">Ugens opskrifter</button>
         <button class="${this._recipesSub === "collection" ? "active" : ""}" data-action="recipes-sub" data-arg="collection">Opskriftsamling${this._state.recipes?.length ? ` (${this._state.recipes.length})` : ""}</button>
+        <button class="${this._recipesSub === "rema" ? "active" : ""}" data-action="recipes-sub" data-arg="rema">REMA-opskrifter</button>
       </div>`;
-    return seg + (this._recipesSub === "collection" ? this._collectionView() : this._weekRecipesView());
+    const view = { collection: () => this._collectionView(), rema: () => this._remaView() }[this._recipesSub];
+    return seg + (view ? view() : this._weekRecipesView());
   }
 
   _weekRecipesView() {
@@ -3274,6 +3420,18 @@ const STYLE = `
   .rc-step textarea { min-height: 44px; }
   .rc-ing, .rc-step { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
   .rc-ing .amount { width: 110px; flex: none; }
+  .rc-prod { margin: -4px 0 8px 116px; }
+  @media (max-width: 600px) { .rc-prod { margin-left: 0; } }
+  .rc-photo { width: 100%; max-height: 260px; object-fit: cover; border-radius: 12px; margin: 4px 0 10px; }
+  .rr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin: 12px 0; }
+  .rr-card { display: grid; gap: 4px; align-content: start; padding: 8px; border: 1px solid var(--divider-color); border-radius: 12px; background: var(--secondary-background-color); }
+  .rr-card .btn { justify-self: start; margin-top: 4px; }
+  .rr-img { padding: 0; border: none; background: var(--card-background-color); border-radius: 8px; overflow: hidden; aspect-ratio: 4 / 3; cursor: pointer; }
+  .rr-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .rr-title { font-size: .95rem; line-height: 1.25; overflow-wrap: anywhere; }
+  .rr-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+  .rr-badges:empty { display: none; }
+  @media (max-width: 600px) { .rr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
   .rc-step .num { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 13px;
     background: var(--rema-tint); color: var(--rema-accent); font-weight: 600; }
   .icon-btn { flex: none; width: 32px; height: 32px; border-radius: 50%; border: none; background: none; cursor: pointer;

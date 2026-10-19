@@ -2,6 +2,13 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.4.0] - 2026-10-19
+
+### Added
+- **REMA 1000's recipes** under *Opskrifter → REMA-opskrifter*: popular, newest, *Avisopskrifter* and REMA's categories (*Aftensmad*, *Nem hverdagsmad*, *Mad for børn*, *Kødfri* …). Each card shows the time, a rough price and how many of its items are on offer now.
+- A REMA recipe can be saved in the collection – with its photo and every ingredient linked to REMA's product – or put straight on a day of the plan. Saving it again updates the same recipe and keeps its rating.
+- In the plan: tap a dish and **Vælg en REMA-opskrift** to swap it for one of REMA's. The shopping list gets the products the recipe is made for; basic items only when the family doesn't have them.
+
 ## [1.3.1] - 2026-10-19
 
 ### Fixed

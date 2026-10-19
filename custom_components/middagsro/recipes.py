@@ -84,11 +84,29 @@ def split_ingredient(text: str) -> dict[str, str]:
     return {"amount": "", "name": text[:200]}
 
 
-def _ingredient(item: Any) -> dict[str, str] | None:
+def _product(value: Any) -> dict[str, Any] | None:
+    """The REMA product a REMA recipe links an ingredient to."""
+    if not isinstance(value, dict) or not isinstance(value.get("id"), int):
+        return None
+    return {
+        "id": value["id"],
+        "name": str(value.get("name") or "").strip()[:120],
+        "underline": str(value.get("underline") or "").strip()[:120],
+    }
+
+
+def _ingredient(item: Any) -> dict[str, Any] | None:
     if isinstance(item, dict):
         name = str(item.get("name") or "").strip()[:200]
         amount = str(item.get("amount") or "").strip()[:60]
-        return {"name": name, "amount": amount} if name else None
+        if not name:
+            return None
+        out: dict[str, Any] = {"name": name, "amount": amount}
+        if product := _product(item.get("product")):
+            out["product"] = product
+        if item.get("basic"):
+            out["basic"] = True
+        return out
     if isinstance(item, str) and item.strip():
         return split_ingredient(item)
     return None
@@ -135,11 +153,24 @@ def clean_recipe(raw: dict[str, Any], existing: dict[str, Any] | None = None) ->
         "rating": rating,
         "favorite": favorite,
         "source": str(old.get("source") or raw.get("source") or "manual")[:20],
+        **_rema_fields(raw, old),
         "created": old.get("created") or _now(),
         "updated": _now(),
         "times_planned": _int(old.get("times_planned"), 100000),
         "last_planned": old.get("last_planned"),
     }
+
+
+def _rema_fields(raw: dict[str, Any], old: dict[str, Any]) -> dict[str, Any]:
+    """Where a recipe from REMA 1000 came from, and its photo."""
+    out: dict[str, Any] = {}
+    slug = raw.get("rema_slug") or old.get("rema_slug")
+    if isinstance(slug, str) and slug.strip():
+        out["rema_slug"] = slug.strip()[:200]
+    image = raw.get("image") if "image" in raw else old.get("image")
+    if isinstance(image, str) and image.startswith("https://") and len(image) <= 500:
+        out["image"] = image
+    return out
 
 
 def find_recipe(store: RemaPlanStore, recipe_id: str | None) -> dict[str, Any] | None:
@@ -160,6 +191,11 @@ async def async_save_recipe(store: RemaPlanStore, raw: dict[str, Any]) -> dict[s
     existing = find_recipe(store, raw.get("id"))
     if raw.get("id") and existing is None:
         raise _invalid("recipe_not_found")
+    if existing is None and raw.get("rema_slug"):
+        # A REMA recipe saved again is the same recipe (its ratings stay).
+        existing = next((r for r in store.recipes if r.get("rema_slug") == raw["rema_slug"]), None)
+        if existing is not None:
+            raw = {k: v for k, v in raw.items() if k not in ("rating", "favorite") or v}
     recipe = clean_recipe(raw, existing)
     if existing is not None:
         existing.clear()
@@ -306,8 +342,18 @@ def recipe_to_day(recipe: dict[str, Any], day: dict[str, Any]) -> None:
 
 
 def ingredient_texts(recipe: dict[str, Any]) -> list[str]:
-    """'600 g laksefilet', for prompts."""
-    return [" ".join(p for p in (i["amount"], i["name"]) if p) for i in recipe["ingredients"]]
+    """'600 g laksefilet', for prompts; with the REMA product a REMA recipe names."""
+    out = []
+    for item in recipe["ingredients"]:
+        text = " ".join(p for p in (item["amount"], item["name"]) if p)
+        if product := item.get("product"):
+            text += (
+                f" (REMA-vare: {' '.join(p for p in (product['name'], product['underline']) if p)})"
+            )
+        if item.get("basic"):
+            text += " (basisvare)"
+        out.append(text)
+    return out
 
 
 # ------------------------------------------------------------------ links
