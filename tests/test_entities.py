@@ -64,7 +64,7 @@ async def test_entities_and_device(
     device = device_registry.async_get(entries[0].device_id)
     assert device is not None
     assert (DOMAIN, "4242") in device.identifiers
-    assert device.name == "REMA 1000"
+    assert device.name == "Middagsro"
     assert device.entry_type is dr.DeviceEntryType.SERVICE
     assert {e.device_id for e in entries} == {device.id}
 

@@ -316,3 +316,29 @@ window.DEMO.health = {
   unknown: ["Broccoli", "Spidskål"],
   labels: { keyhole: 34, organic: 18, asc_msc: 9, known: true },
 };
+
+// The recipe collection.
+window.DEMO.recipes = [
+  { id: "r1", name: "Ovnbagt kylling med rodfrugter og flødekartofler", type: "normal", servings: 4, active_minutes: 25, total_minutes: 70,
+    rating: "like", favorite: true, source: "plan", created: "2026-10-12T18:00:00+02:00", times_planned: 4, last_planned: "2026-10-18",
+    ingredients: [{ amount: "1 kg", name: "kyllingeoverlår" }, { amount: "800 g", name: "rodfrugter" }, { amount: "1 kg", name: "kartofler" }, { amount: "2 dl", name: "fløde" }],
+    steps: [{ text: "Tænd ovnen på 200 grader.", minutes: 0 }, { text: "Skær rodfrugterne i stave, og vend dem med olie, salt og timian.", minutes: 10 }, { text: "Læg kyllingen ovenpå, og bag det hele i 45 minutter.", minutes: 45 }],
+    tip: "Gem resterne af kyllingen til wraps i morgen." },
+  { id: "r2", name: "Laks med spinatfettuccine, pesto og broccoli", type: "normal", servings: 4, active_minutes: 20, total_minutes: 30,
+    rating: "like", favorite: true, source: "plan", created: "2026-10-05T18:00:00+02:00", times_planned: 6, last_planned: "2026-10-09",
+    ingredients: [{ amount: "600 g", name: "laksefilet" }, { amount: "500 g", name: "frisk spinatfettuccine" }, { amount: "1", name: "broccoli" }], steps: [], tip: "" },
+  { id: "r3", name: "Koreansk bulgogi-bowl med ris og agurkesalat", type: "normal", servings: 4, active_minutes: 25, total_minutes: 35,
+    rating: "like", favorite: false, source: "plan", created: "2026-10-15T18:00:00+02:00", times_planned: 1, last_planned: "2026-10-15",
+    ingredients: [{ amount: "500 g", name: "oksekød i strimler" }, { amount: "300 g", name: "jasminris" }], steps: [], tip: "" },
+  { id: "r4", name: "Linsesuppe med kokos og naanbrød", type: "vegetar", servings: 4, active_minutes: 15, total_minutes: 35,
+    rating: "like", favorite: false, source: "link", created: "2026-10-16T18:00:00+02:00", times_planned: 2, last_planned: "2026-10-22",
+    ingredients: [{ amount: "250 g", name: "røde linser" }, { amount: "400 ml", name: "kokosmælk" }], steps: [], tip: "" },
+  { id: "r5", name: "Fiskefrikadeller med rugbrød", type: "normal", servings: 4, active_minutes: 30, total_minutes: 40,
+    rating: "dislike", favorite: false, source: "plan", created: "2026-09-28T18:00:00+02:00", times_planned: 1, last_planned: "2026-09-29",
+    ingredients: [{ amount: "500 g", name: "fiskefars" }], steps: [], tip: "" },
+  { id: "r6", name: "Mormors boller i karry", type: "normal", servings: 4, active_minutes: 35, total_minutes: 50,
+    rating: null, favorite: false, source: "manual", created: "2026-10-17T18:00:00+02:00", times_planned: 0, last_planned: null,
+    ingredients: [{ amount: "500 g", name: "hakket svinekød" }, { amount: "2 spsk", name: "karry" }], steps: [], tip: "" },
+];
+window.DEMO.state.recipes = window.DEMO.recipes.map(({ ingredients, steps, tip, ...r }) => ({ ...r, ingredient_names: ingredients.map((i) => i.name) }));
+window.DEMO.state.latest_plan.days[0].recipe_id = "r1";

@@ -179,6 +179,7 @@ class RemaPlanStore:
         self.favorites: list[dict[str, Any]] = []
         self.plans: list[dict[str, Any]] = []
         self.note = ""  # the family's wishes for the next plan only
+        self.recipes: list[dict[str, Any]] = []  # the recipe collection (recipes.py)
 
     async def async_load(self) -> None:
         """Load from disk."""
@@ -187,6 +188,7 @@ class RemaPlanStore:
         self.favorites = list(data.get("favorites") or [])
         self.plans = list(data.get("plans") or [])
         self.note = str(data.get("note") or "")
+        self.recipes = [r for r in data.get("recipes") or [] if isinstance(r, dict) and r.get("id")]
         for plan in self.plans:
             ensure_line_ids(plan)
 
@@ -200,6 +202,7 @@ class RemaPlanStore:
                 "favorites": self.favorites,
                 "plans": self.plans,
                 "note": self.note,
+                "recipes": self.recipes,
             }
         )
 
