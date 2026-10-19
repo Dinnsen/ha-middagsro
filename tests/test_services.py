@@ -121,7 +121,7 @@ async def test_generate_and_send_meal_plan(
         {"amount": 1, "product_id": None, "name": "Persille (1 bundt)"},
         {"amount": 1, "product_id": None, "name": "Spaghetti"},
     ]
-    assert hass.states.get("sensor.rema_1000_meal_plan").state == "sent"
+    assert hass.states.get("sensor.middagsro_meal_plan").state == "sent"
 
     with pytest.raises(ServiceValidationError) as err:
         await hass.services.async_call(DOMAIN, "send_meal_plan", {"plan_id": "nope"}, blocking=True)
