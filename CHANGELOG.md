@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.4.2] - 2026-10-19
+
+### Changed
+- The recipe pop-up is at most 80 % of the screen, with a ✕ at the top and the buttons at the bottom kept in place while you scroll. On a phone the fields sit two by two and the buttons are smaller.
+
 ## [1.4.1] - 2026-10-19
 
 ### Added

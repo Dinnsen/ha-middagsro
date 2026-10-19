@@ -2197,10 +2197,11 @@ class Rema1000Panel extends HTMLElement {
       : "";
     return `
       <div class="scrim" data-action="modal-close"></div>
-      <div class="dialog wide" role="dialog" aria-modal="true" aria-label="Opskrift">
-        <div class="rc-head">
+      <div class="dialog wide sheet rc-sheet" role="dialog" aria-modal="true" aria-label="Opskrift">
+        <div class="dialog-top rc-head">
           <input type="text" class="rc-name" data-bind="rcp" data-field="name" value="${esc(r.name)}" placeholder="Rettens navn">
           ${this._recipeRateButtons(r)}
+          <button class="icon-btn close" data-action="modal-close" aria-label="Luk" ${busy ? "disabled" : ""}>${CLOSE_ICON}</button>
         </div>
         ${r.image ? `<img class="rc-photo" src="${esc(r.image)}" alt="">` : ""}
         ${r.rema_slug
@@ -2229,8 +2230,8 @@ class Rema1000Panel extends HTMLElement {
         <button class="btn small" data-action="rc-row" data-arg="steps|add">+ Trin</button>
         <label class="field">Tip <textarea rows="2" data-bind="rcp" data-field="tip">${esc(r.tip || "")}</textarea></label>
         ${targets}
-        <div class="row wrap dialog-actions">
-          <button class="btn primary" data-action="rc-save" ${busy ? "disabled" : ""}>${r.id ? "Gem" : "Gem i opskriftsamlingen"}</button>
+        <div class="dialog-bottom wrap">
+          <button class="btn primary" data-action="rc-save" ${busy ? "disabled" : ""}>${r.id ? "Gem" : "Gem i samlingen"}</button>
           ${r.id || r.rema_slug ? `<button class="btn" data-action="rc-plan" ${busy ? "disabled" : ""}>${aiLabel("Tilføj til madplan")}</button>` : ""}
           ${r.id ? `<button class="btn danger" data-action="rc-delete" ${busy ? "disabled" : ""}>Slet</button>` : ""}
           <span class="spacer"></span>
@@ -2347,7 +2348,7 @@ class Rema1000Panel extends HTMLElement {
     if (this._modal?.kind === "where") {
       const e = this._everywhere;
       node.innerHTML = `<div class="scrim" data-action="modal-close"></div>
-        <div class="dialog wide where" role="dialog" aria-modal="true" aria-label="Priser">
+        <div class="dialog wide sheet" role="dialog" aria-modal="true" aria-label="Priser">
           <div class="dialog-top"><h2>${esc(this._modal.title)}</h2>
             <button class="icon-btn close" data-action="modal-close" aria-label="Luk">${CLOSE_ICON}</button></div>
           <div class="row wrap everywhere">
@@ -3507,7 +3508,18 @@ const STYLE = `
   .help-q { flex: none; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--divider-color); background: none; cursor: pointer;
     color: var(--secondary-text-color); font-weight: 700; font-size: .8rem; line-height: 1; display: grid; place-items: center; padding: 0; }
   .help-q[aria-expanded="true"] { background: var(--secondary-background-color); color: var(--primary-text-color); }
-  .dialog.where { padding-top: 0; padding-bottom: 0; max-height: min(80vh, 720px); max-height: min(80dvh, 720px); }
+  /* A tall dialog: at most 80 % of the screen, with its top (✕) and bottom (buttons) kept in place. */
+  .dialog.sheet { padding-top: 0; padding-bottom: 0; max-height: min(80vh, 760px); max-height: min(80dvh, 760px); }
+  .dialog-bottom.wrap { flex-wrap: wrap; justify-content: flex-start; }
+  .dialog-bottom .spacer { flex: 1; }
+  @media (max-width: 600px) {
+    .dialog-bottom { gap: 6px; padding: 8px 0 12px; }
+    .dialog-bottom .btn { padding: 6px 12px; min-height: 0; font-size: .9rem; }
+    .dialog-top .close { width: 32px; height: 32px; }
+    /* The ✕ at the top closes it; the buttons stay on one line. */
+    .rc-sheet .dialog-bottom [data-action="modal-close"] { display: none; }
+    .rc-sheet .rc-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  }
   .dialog-top, .dialog-bottom { position: sticky; z-index: 1; background: var(--rema-solid-card); display: flex; align-items: center; gap: 8px; }
   .dialog-top { top: 0; padding: 14px 0 8px; margin-bottom: 4px; }
   .dialog-top h2 { margin: 0; flex: 1; font-size: 1.15rem; overflow-wrap: anywhere; }
