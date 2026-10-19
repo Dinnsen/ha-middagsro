@@ -74,7 +74,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version="$(python3 -c 'import json; print(json.load(open("custom_components/rema1000/manifest.json"))["version"])')"
+          version="$(python3 -c 'import json; print(json.load(open("custom_components/middagsro/manifest.json"))["version"])')"
           tag="v$version"
           echo "Manifest version: $version"
           if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_NAME" != "$tag" ]; then
