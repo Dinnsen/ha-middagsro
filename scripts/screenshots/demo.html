@@ -75,6 +75,27 @@
       };
     },
     "middagsro/note": (msg) => ({ note: (D.state.note = msg.text) }),
+    // REMA 1000's recipes (made up, in the shape the integration sends).
+    "middagsro/rema_recipes/list": async (msg) => {
+      await wait(200);
+      const all = D.remaRecipes.filter((r) => !msg.tag || r.tag === msg.tag);
+      const page = msg.page || 1;
+      return { recipes: all.slice((page - 1) * 4, page * 4), page, last_page: Math.max(1, Math.ceil(all.length / 4)), total: all.length,
+        tags: [{ id: "avis", title: "Avisopskrifter" }, { id: "aften", title: "Aftensmad" }, { id: "born", title: "Mad for børn" }, { id: "kodfri", title: "Kødfri" }] };
+    },
+    "middagsro/rema_recipes/get": (msg) => {
+      const r = D.remaRecipes.find((x) => x.slug === msg.slug);
+      return { id: null, name: r.title, type: r.vegetarian ? "vegetar" : "normal", servings: r.servings, active_minutes: 0, total_minutes: r.total_minutes || 0,
+        ingredients: [
+          { name: "kyllingeinderfilet", amount: "300 g", product: { id: 1, name: "KYLLINGEINDERFILET", underline: "300 GR. / DANSK" } },
+          { name: "champignon", amount: "400 g", product: { id: 2, name: "CHAMPIGNON", underline: "400 GR. / DANMARK KL. 1" } },
+          { name: "piskefløde", amount: "2,5 dl", product: { id: 3, name: "PISKEFLØDE 38%", underline: "250 ML. / REMA 1000" } },
+          { name: "olivenolie", amount: "", product: { id: 4, name: "OLIVENOLIE", underline: "500 ML." }, basic: true },
+        ],
+        steps: [{ text: "Kog risene efter anvisningen på posen.", minutes: 0 }, { text: "Steg kyllingen gylden, og læg den til side.", minutes: 0 }],
+        tip: "", rating: null, favorite: false, source: "rema", rema_slug: r.slug, image: r.image };
+    },
+    "middagsro/rema_recipes/plan": async () => { await wait(300); return D.state.latest_plan; },
     "middagsro/search": (msg) => (/kaffe/i.test(msg.query) ? D.coffee : D.search),
     // Swapping a dish, the basic items and adding products (made-up answers).
     "middagsro/swap/options": async (msg) => {

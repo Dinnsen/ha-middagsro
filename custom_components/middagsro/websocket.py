@@ -49,6 +49,7 @@ from .recipes import (
     async_save_recipe,
     find_recipe,
 )
+from .rema_recipes import TAGS as REMA_TAGS
 from .schema import vol
 from .storage import ALLERGY_OPTIONS, AVOID_OPTIONS, FAVORITE_FREQUENCIES
 
@@ -1006,6 +1007,72 @@ async def ws_rema_offer_add(
     connection.send_result(msg["id"], result)
 
 
+# ------------------------------------------------------------------ REMA's recipes
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/rema_recipes/list",
+        ENTRY: str,
+        vol.Optional("tag"): vol.Any(str, None),
+        vol.Optional("sort", default="popular"): vol.In(["popular", "newest"]),
+        vol.Optional("page", default=1): vol.All(int, vol.Range(min=1, max=100)),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_rema_recipes(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """A page of REMA 1000's recipes, in a category or all of them."""
+    planner = _entry(hass, msg).runtime_data.planner
+    result = await planner.rema_recipes.async_list(msg.get("tag"), msg["sort"], msg["page"])
+    connection.send_result(msg["id"], {**result, "tags": REMA_TAGS})
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "middagsro/rema_recipes/get", ENTRY: str, vol.Required("slug"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_rema_recipe(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """One of REMA's recipes, ready to look over and save (not saved yet)."""
+    planner = _entry(hass, msg).runtime_data.planner
+    connection.send_result(msg["id"], await planner.rema_recipes.async_get(msg["slug"]))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/rema_recipes/plan",
+        ENTRY: str,
+        vol.Required("slug"): str,
+        vol.Required("plan_id"): str,
+        vol.Required("date"): str,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_rema_recipe_plan(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Put a REMA recipe on a day: it is saved in the collection, and its items go on the list."""
+    planner = _entry(hass, msg).runtime_data.planner
+    recipe = await async_save_recipe(
+        planner.store, await planner.rema_recipes.async_get(msg["slug"])
+    )
+    option = {
+        "dish": recipe["name"],
+        "type": recipe["type"],
+        "active_minutes": recipe["active_minutes"],
+        "total_minutes": recipe["total_minutes"],
+        "recipe_id": recipe["id"],
+    }
+    plan = await async_swap_dish(planner, msg["plan_id"], msg["date"], option)
+    connection.send_result(msg["id"], plan)
+
+
 @callback
 def async_register_websocket(hass: HomeAssistant) -> None:
     """Register the panel's commands."""
@@ -1053,5 +1120,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_chain_clear,
         ws_search_everywhere,
         ws_rema_offer_add,
+        ws_rema_recipes,
+        ws_rema_recipe,
+        ws_rema_recipe_plan,
     ):
         websocket_api.async_register_command(hass, command)

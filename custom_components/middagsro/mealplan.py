@@ -31,6 +31,7 @@ from .recipes import (
     prompt_recipes,
     recipe_to_day,
 )
+from .rema_recipes import RemaRecipes
 from .storage import RemaPlanStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -1019,6 +1020,7 @@ class MealPlanner:
         self._auto_attempted: set[str] = set()
         self.mealie = MealieLink(hass)
         self.chains = ChainOffers(hass)
+        self.rema_recipes = RemaRecipes(self)
         # Automatic sends waiting for REMA's prices: (plan id, key) -> cancel.
         self._sends: dict[tuple[str, str], Callable[[], None]] = {}
 

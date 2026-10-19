@@ -194,6 +194,9 @@
     },
     "avis_not_out": {
       "message": "Næste uges tilbudsavis er ikke udkommet endnu, så madplanen fra {date} kan ikke laves med de rigtige priser. Vælg en første dag til og med {last}, eller vent til den nye avis er ude."
+    },
+    "rema_recipes_failed": {
+      "message": "REMA 1000's opskrifter kunne ikke hentes: {error}"
     }
   },
   "issues": {

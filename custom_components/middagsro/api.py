@@ -826,6 +826,38 @@ class RemaClient:
 
     # ------------------------------------------------------------ products
 
+    # ------------------------------------------------------------------ recipes
+
+    async def async_get_recipes(
+        self,
+        *,
+        tag: str | None = None,
+        page: int = 1,
+        per_page: int = 20,
+        sort: str = "-popularity",
+    ) -> dict[str, Any]:
+        """A page of REMA 1000's own recipes (raw entities and pagination)."""
+        params: dict[str, Any] = {
+            "filter[type]": "recipe",
+            "per_page": per_page,
+            "page": page,
+            "sort": sort,
+        }
+        if tag:
+            params["filter[tags.sys.id]"] = tag
+        data = await self._async_request("GET", "/rema1000dk/entities", params=params)
+        return data if isinstance(data, dict) else {}
+
+    async def async_get_recipe(self, slug: str) -> dict[str, Any] | None:
+        """One of REMA 1000's recipes by its slug (raw entity), or None."""
+        data = await self._async_request(
+            "GET", "/rema1000dk/entities", params={"filter[type]": "recipe", "filter[slug]": slug}
+        )
+        items = (data or {}).get("data") if isinstance(data, dict) else None
+        return (
+            items[0] if isinstance(items, list) and items and isinstance(items[0], dict) else None
+        )
+
     async def async_search_products(
         self, query: str, limit: int = 24, at: datetime | None = None
     ) -> list[Product]:

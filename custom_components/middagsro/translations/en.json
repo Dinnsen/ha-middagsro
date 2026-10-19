@@ -194,6 +194,9 @@
     },
     "avis_not_out": {
       "message": "Next week's avis is not out yet, so the meal plan from {date} can't be priced. Pick a first day up to {last}, or wait for the new avis."
+    },
+    "rema_recipes_failed": {
+      "message": "REMA 1000's recipes could not be read: {error}"
     }
   },
   "issues": {

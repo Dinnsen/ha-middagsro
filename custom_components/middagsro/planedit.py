@@ -270,6 +270,15 @@ def build_swap_items_prompt(
         "- uses: navnene på ALLE de varer fra listen og fra add, som den nye ret bruger.",
         "Brug de nemmeste hverdagsvarer (hakkede tomater på dåse til kødsovs, ikke friske tomater).",
         *([f"Familiens egen opskrift bruger: {', '.join(ingredients)}."] if ingredients else []),
+        *(
+            [
+                "Står der en REMA-vare i parentes, så brug den vares navn som søgeord – det er "
+                "den vare, opskriften er lavet til. Basisvarer kommer kun på listen, hvis "
+                "familien ikke har dem."
+            ]
+            if ingredients and any("(REMA-vare:" in i for i in ingredients)
+            else []
+        ),
     ]
     if not known_uses:
         out.append(
