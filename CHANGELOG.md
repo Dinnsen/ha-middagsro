@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.4.1] - 2026-10-19
+
+### Added
+- Search in REMA 1000's recipes (*Opskrifter → REMA-opskrifter*), like on REMA's own site. Empty the field to go back to the popular ones.
+
 ## [1.4.0] - 2026-10-19
 
 ### Added

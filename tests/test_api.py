@@ -487,6 +487,33 @@ async def test_shopping_lists() -> None:
     }
 
 
+async def test_recipes() -> None:
+    """REMA's own recipes: a page of a category, a search, and one by its slug."""
+    client, session = await logged_in()
+    entities = f"{API}/rema1000dk/entities"
+    session.on(
+        "GET", entities, lambda **kw: FakeResponse(data={"data": [{"params": kw["params"]}]})
+    )
+    page = await client.async_get_recipes(tag="t1", page=2)
+    assert page["data"][0]["params"] == {
+        "filter[type]": "recipe", "per_page": 20, "page": 2, "sort": "-popularity",
+        "filter[tags.sys.id]": "t1",
+    }  # fmt: skip
+    assert (await client.async_get_recipe("lasagne")) == {
+        "params": {"filter[type]": "recipe", "filter[slug]": "lasagne"}
+    }
+    session.on("GET", f"{API}/search/recipes", lambda **kw: FakeResponse(data={"q": kw["params"]}))
+    assert (await client.async_get_recipes(query="laks")) == {
+        "q": {"query": "laks", "page": 1, "per_page": 20}
+    }
+    session.on("GET", entities, FakeResponse(data={"data": []}))
+    assert await client.async_get_recipe("findes-ikke") is None
+    session.on("GET", entities, FakeResponse(data=["ikke en side"]))
+    assert await client.async_get_recipes() == {}
+    session.on("GET", f"{API}/search/recipes", FakeResponse(data=None))
+    assert await client.async_get_recipes(query="x") == {}
+
+
 async def test_add_to_list_merges_like_the_app() -> None:
     """Existing lines get more; bought lines start over."""
     client, session = await logged_in()

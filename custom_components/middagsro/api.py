@@ -835,8 +835,16 @@ class RemaClient:
         page: int = 1,
         per_page: int = 20,
         sort: str = "-popularity",
+        query: str | None = None,
     ) -> dict[str, Any]:
-        """A page of REMA 1000's own recipes (raw entities and pagination)."""
+        """A page of REMA 1000's own recipes (raw entities and pagination), or a search."""
+        if query:
+            data = await self._async_request(
+                "GET",
+                "/search/recipes",
+                params={"query": query, "page": page, "per_page": per_page},
+            )
+            return data if isinstance(data, dict) else {}
         params: dict[str, Any] = {
             "filter[type]": "recipe",
             "per_page": per_page,

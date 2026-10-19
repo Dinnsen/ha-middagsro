@@ -214,21 +214,28 @@ class RemaRecipes:
         self._pages: dict[tuple[str, str, int], tuple[datetime, dict[str, Any]]] = {}
 
     async def async_list(
-        self, tag: str | None = None, sort: str = "popular", page: int = 1
+        self,
+        tag: str | None = None,
+        sort: str = "popular",
+        page: int = 1,
+        query: str | None = None,
     ) -> dict[str, Any]:
-        """A page of recipe cards: {recipes, page, last_page, total}."""
+        """A page of recipe cards: {recipes, page, last_page, total}; a search if query."""
+        query = " ".join(str(query or "").split())[:80] or None
+        if query:
+            tag = None  # REMA's search covers every category
         if tag and tag not in TAG_IDS:
             raise _invalid("rema_recipes_failed", error="ukendt kategori")
         order = SORTS.get(sort, SORTS["popular"])
         page = max(1, min(int(page or 1), 100))
-        key = (tag or "", order, page)
+        key = (f"?{query.lower()}" if query else tag or "", order, page)
         now = dt_util.utcnow()
         cached = self._pages.get(key)
         if cached and now - cached[0] < CACHE_TTL:
             return cached[1]
         try:
             data = await self._planner.client.async_get_recipes(
-                tag=tag, page=page, per_page=PER_PAGE, sort=order
+                tag=tag, page=page, per_page=PER_PAGE, sort=order, query=query
             )
         except RemaError as err:
             raise _invalid("rema_recipes_failed", error=str(err)) from err

@@ -78,7 +78,7 @@
     // REMA 1000's recipes (made up, in the shape the integration sends).
     "middagsro/rema_recipes/list": async (msg) => {
       await wait(200);
-      const all = D.remaRecipes.filter((r) => !msg.tag || r.tag === msg.tag);
+      const all = D.remaRecipes.filter((r) => (!msg.tag || r.tag === msg.tag) && (!msg.query || r.title.toLowerCase().includes(msg.query.toLowerCase())));
       const page = msg.page || 1;
       return { recipes: all.slice((page - 1) * 4, page * 4), page, last_page: Math.max(1, Math.ceil(all.length / 4)), total: all.length,
         tags: [{ id: "avis", title: "Avisopskrifter" }, { id: "aften", title: "Aftensmad" }, { id: "born", title: "Mad for børn" }, { id: "kodfri", title: "Kødfri" }] };

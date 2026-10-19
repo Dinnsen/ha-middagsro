@@ -1017,6 +1017,7 @@ async def ws_rema_offer_add(
         vol.Optional("tag"): vol.Any(str, None),
         vol.Optional("sort", default="popular"): vol.In(["popular", "newest"]),
         vol.Optional("page", default=1): vol.All(int, vol.Range(min=1, max=100)),
+        vol.Optional("query"): vol.Any(str, None),
     }
 )
 @websocket_api.async_response
@@ -1024,9 +1025,11 @@ async def ws_rema_offer_add(
 async def ws_rema_recipes(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """A page of REMA 1000's recipes, in a category or all of them."""
+    """A page of REMA 1000's recipes: in a category, all of them, or a search."""
     planner = _entry(hass, msg).runtime_data.planner
-    result = await planner.rema_recipes.async_list(msg.get("tag"), msg["sort"], msg["page"])
+    result = await planner.rema_recipes.async_list(
+        msg.get("tag"), msg["sort"], msg["page"], msg.get("query")
+    )
     connection.send_result(msg["id"], {**result, "tags": REMA_TAGS})
 
 
