@@ -133,6 +133,26 @@
       return plan;
     },
     "rema1000/health": () => D.health,
+    "rema1000/chains": () => ({ chains: D.chains }),
+    "rema1000/chains/offers": (msg) => ({ dealer_id: msg.dealer_id, offers: D.chainOffers.filter((o) => o.dealer_id === msg.dealer_id) }),
+    "rema1000/chains/compare": () => D.compare,
+    "rema1000/chains/products": () => ({ products: { [D.remaFavorites[0].id]: { dealer_id: "9ba51", heading: "Kaffe", price: 39, per_package: 39, saving: 10 } } }),
+    "rema1000/chains/move": (msg) => {
+      const plan = D.state.latest_plan;
+      const line = plan.shopping.find((l) => l.id === msg.line_id);
+      if (msg.dealer_id) Object.assign(line, { buy_at: msg.dealer_id, chain_price: msg.price, chain_heading: msg.heading, bought: false, cost: msg.price * line.packages });
+      else delete line.buy_at;
+      delete D.compare.lines[msg.line_id];
+      return plan;
+    },
+    "rema1000/chains/line": (msg) => {
+      const plan = D.state.latest_plan;
+      const line = plan.shopping.find((l) => l.id === msg.line_id);
+      if (msg.delete) plan.shopping = plan.shopping.filter((l) => l !== line);
+      if (msg.bought != null) line.bought = msg.bought;
+      if (msg.packages) Object.assign(line, { packages: msg.packages, cost: (line.chain_price || 0) * msg.packages });
+      return plan;
+    },
     "rema1000/recipes/get": (msg) => D.recipes.find((r) => r.id === msg.recipe_id),
     "rema1000/recipes/import": async () => {
       await wait(400);

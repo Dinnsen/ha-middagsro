@@ -107,6 +107,7 @@ const SETTING_ICONS = {
   rules: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>',
   nutrition: TAB_ICONS.health,
   mealie: TAB_ICONS.recipes,
+  chains: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5 5.5 4h13L20 9.5M4 9.5h16M4 9.5c0 1.7 1.3 2.5 2.7 2.5S9.3 11.2 9.3 9.5c0 1.7 1.3 2.5 2.7 2.5s2.7-.8 2.7-2.5c0 1.7 1.3 2.5 2.7 2.5S20 11.2 20 9.5M5.5 12v8h13v-8M10 20v-4.5h4V20"/></svg>',
   app: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>',
 };
 
@@ -130,6 +131,8 @@ const SETTINGS_SECTIONS = (panel) => {
       summary: `${(state.settings.rules || []).length} punkter` },
     { key: "nutrition", title: "Næring", form: true,
       summary: f.nutrition_enabled ? `${f.kcal_min}–${f.kcal_max} kcal · ${f.protein_pct}/${f.carb_pct}/${f.fat_pct} %` : "Slået fra" },
+    { key: "chains", title: "Andre butikker", form: true,
+      summary: f.chains?.length ? f.chains.map((id) => panel._chainName(id)).join(", ") : "Kun REMA 1000" },
     { key: "mealie", title: "Mealie", form: true,
       summary: state.mealie?.available ? (f.mealie_recipes || f.mealie_calendar ? "Slået til" : "Slået fra") : "Ikke sat op" },
     { key: "app", title: "App på hjemmeskærmen", form: false, summary: "Åbn Middagsro som en app på telefonen" },
@@ -201,6 +204,12 @@ class Rema1000Panel extends HTMLElement {
     this._settingsSection = null; // the open sub-page of the settings
     this._recipesSub = "week"; // "week" (the plan's recipes) or "collection"
     this._rc = { query: "", sort: "newest", filter: "all", link: "", importing: false };
+    this._chains = null; // the chains that can be chosen, with logos
+    this._chain = null; // the chain whose offers page is open
+    this._chainOffers = {}; // dealer id -> {offers, loading, error}
+    this._chainQuery = "";
+    this._compare = null; // {key, lines, chains, loading}: plan items cheaper elsewhere
+    this._favCompare = {}; // week -> {product id: cheaper offer}
     this._newFav = { text: "", frequency: "weekly" };
     this._newDislike = "";
     this._startDate = null;
@@ -307,6 +316,7 @@ class Rema1000Panel extends HTMLElement {
       if (!this._startDate) this._startDate = state.default_start;
       if (this._viewingLatest) this._plan = state.latest_plan;
       if (!this._form || !this._dirty) this._form = clone(state.settings);
+      if (!this._chains && state.settings.chains?.length) this._loadChains();
     } catch (err) {
       this._error = err?.message || String(err);
     }
@@ -418,6 +428,7 @@ class Rema1000Panel extends HTMLElement {
     const actions = {
       tab: () => {
         this._moreOpen = false;
+        this._chain = null;
         if (arg === "settings") this._settingsSection = null;
         if (arg === this._tab) this._render();
         else this._goTab(arg);
@@ -574,7 +585,67 @@ class Rema1000Panel extends HTMLElement {
       },
       "rc-plan-day": () => this._recipeToPlan(arg),
       surprise: () => this._run(() => this._generate(true), "Madplanen med nye, overraskende retter er ved at blive lavet – det tager typisk 1-2 minutter."),
+      "chain-open": () => {
+        this._chain = arg;
+        this._chainQuery = "";
+        this._render();
+        this.shadowRoot.querySelector("main")?.scrollIntoView?.({ block: "start" });
+        if (!this._chainOffers[arg]?.offers) this._loadChainOffers(arg);
+      },
+      "chain-close": () => {
+        this._chain = null;
+        this._render();
+      },
+      "chain-refresh": () => this._loadChainOffers(this._chain, true),
+      "chain-add": () => {
+        const offer = (this._chainOffers[this._chain]?.offers || []).find((o) => o.id === arg);
+        const plan = this._state?.latest_plan;
+        if (!offer || !plan) return this._say("Lav en madplan først – så kan tilbuddet komme på indkøbslisten.");
+        this._editPlan(
+          () => this._ws("rema1000/chains/add", { plan_id: plan.id, offer }),
+          `${offer.heading} er sat på ${this._chainName(offer.dealer_id)}-listen under Indkøb.`
+        );
+      },
+      "chain-move": () => {
+        const [lineId, dealer] = String(arg).split("|");
+        const found = this._compare?.lines?.[lineId];
+        this._compare = null;
+        this._editPlan(
+          () => this._ws("rema1000/chains/move", { plan_id: this._plan.id, line_id: lineId, dealer_id: dealer || null,
+            price: dealer && found ? found.per_package : null, heading: dealer && found ? found.heading : null }),
+          dealer ? `Flyttet til ${this._chainName(dealer)}-listen.` : "Flyttet tilbage til REMA-listen."
+        );
+      },
+      "chain-move-all": () => {
+        const lines = Object.entries(this._compare?.lines || {}).filter(([, f]) => f.dealer_id === arg);
+        this._compare = null;
+        this._editPlan(async () => {
+          for (const [lineId, f] of lines) {
+            await this._ws("rema1000/chains/move", { plan_id: this._plan.id, line_id: lineId, dealer_id: arg, price: f.per_package, heading: f.heading });
+          }
+        }, `${lines.length} varer er flyttet til ${this._chainName(arg)}-listen.`);
+      },
+      "chain-tick": () => {
+        const line = this._plan?.shopping.find((l) => l.id === arg);
+        if (!line) return;
+        this._editPlan(() => this._ws("rema1000/chains/line", { plan_id: this._plan.id, line_id: arg, bought: !line.bought }));
+      },
+      "chain-count": () => {
+        const [lineId, delta] = String(arg).split("|");
+        const line = this._plan?.shopping.find((l) => l.id === lineId);
+        if (!line) return;
+        const packages = Math.max(1, Math.min(99, (line.packages || 1) + Number(delta)));
+        this._editPlan(() => this._ws("rema1000/chains/line", { plan_id: this._plan.id, line_id: lineId, packages }));
+      },
+      "chain-delete": () =>
+        this._editPlan(() => this._ws("rema1000/chains/line", { plan_id: this._plan.id, line_id: arg, delete: true }), "Varen er slettet."),
+      "chain-clear": () => {
+        const bought = this._plan.shopping.filter((l) => l.buy_at === arg && l.bought).length;
+        if (!bought) return this._say("Sæt flueben ved det, I har købt – så ryddes det fra listen.");
+        this._editPlan(() => this._ws("rema1000/chains/clear", { plan_id: this._plan.id, dealer_id: arg }), `Kurven er ryddet – ${bought} varer er købt.`);
+      },
       "settings-section": () => {
+        if (arg === "chains" && !this._chains) this._loadChains();
         this._settingsSection = arg || null;
         this._render();
         this.scrollTo?.(0, 0);
@@ -800,6 +871,12 @@ class Rema1000Panel extends HTMLElement {
       if (list) list.innerHTML = this._favRows();
       return;
     }
+    if (ds.bind === "chainquery") {
+      this._chainQuery = el.value;
+      const list = this.shadowRoot.querySelector("#chain-offers");
+      if (list) list.innerHTML = this._chainOfferRows();
+      return;
+    }
     if (ds.bind === "rc") {
       this._rc[ds.field] = el.value;
       if (ds.field === "link") return;
@@ -883,11 +960,33 @@ class Rema1000Panel extends HTMLElement {
     this._render();
     try {
       this._favCache[week] = await this._ws("rema1000/favorites", { force, week });
+      this._loadFavCompare(week);
     } catch (err) {
       this._favsError = err?.message || String(err);
     }
     this._favsLoading = false;
     this._render();
+  }
+
+  // Favourites that are cheaper in one of the chosen chains that week.
+  async _loadFavCompare(week) {
+    const data = this._favCache[week];
+    if (!data || !(this._state?.settings?.chains || []).length) return;
+    const date = week === "next" && !data.fallback && data.catalog?.valid_from ? localDay(data.catalog.valid_from) : null;
+    const products = (data.products || []).map((p) => ({ id: p.id, name: p.name, underline: p.underline, price: p.price, is_organic: p.is_organic }));
+    try {
+      this._favCompare[week] = (await this._ws("rema1000/chains/products", { products, date })).products;
+      if (this._tab === "favorites") this._render();
+    } catch (err) {
+      this._favCompare[week] = {};
+    }
+  }
+
+  _favCheaper(p) {
+    const found = this._favCompare[this._favWeek]?.[String(p.id)];
+    return found
+      ? `<span class="cheaper static">${this._chainLogo(found.dealer_id, "tiny")}<span>${kr(found.per_package)} i ${esc(this._chainName(found.dealer_id))}</span></span>`
+      : "";
   }
 
   async _generate(surprise = false) {
@@ -1518,6 +1617,165 @@ class Rema1000Panel extends HTMLElement {
 
   // ------------------------------------------------------------------ render
 
+  // ------------------------------------------------------------------ other chains
+
+  async _loadChains() {
+    if (this._chainsLoading) return;
+    this._chainsLoading = true;
+    try {
+      this._chains = (await this._ws("rema1000/chains")).chains;
+    } catch (err) {
+      this._chains = [];
+    }
+    this._chainsLoading = false;
+    this._render();
+  }
+
+  _chainInfo(id) {
+    return (this._chains || []).find((c) => c.id === id) || { id, name: id, color: null, logo: null };
+  }
+
+  _chainName(id) {
+    return this._chainInfo(id).name;
+  }
+
+  // A chain's logo in a circle, so they stand out from REMA's own things.
+  _chainLogo(id, cls = "") {
+    const c = this._chainInfo(id);
+    return `<span class="chain-logo ${cls}" style="--c:${esc(c.color || "#888")}">${c.logo
+      ? `<img src="${esc(c.logo)}" alt="${esc(c.name)}" loading="lazy">`
+      : `<span>${esc(c.name.slice(0, 2))}</span>`}</span>`;
+  }
+
+  async _loadChainOffers(id, force = false) {
+    this._chainOffers[id] = { ...(this._chainOffers[id] || {}), loading: true, error: null };
+    this._render();
+    try {
+      const data = await this._ws("rema1000/chains/offers", { dealer_id: id, force });
+      this._chainOffers[id] = { offers: data.offers, loading: false };
+    } catch (err) {
+      this._chainOffers[id] = { offers: null, loading: false, error: err?.message || String(err) };
+    }
+    this._render();
+  }
+
+  _chainOfferRows() {
+    const data = this._chainOffers[this._chain] || {};
+    const words = normName(this._chainQuery).split(" ").filter(Boolean);
+    const offers = (data.offers || []).filter((o) => {
+      const text = normName(`${o.heading} ${o.description || ""}`);
+      return words.every((w) => text.includes(w));
+    });
+    if (!offers.length) return `<p class="muted">${data.offers?.length ? "Ingen tilbud passer til søgningen." : "Ingen madtilbud lige nu."}</p>`;
+    const plan = this._state?.latest_plan;
+    return offers
+      .slice(0, 300)
+      .map(
+        (o) => `<div class="prod">
+          ${o.image ? `<img src="${esc(o.image)}" alt="" loading="lazy">` : '<span class="noimg">?</span>'}
+          <div class="prod-body">
+            <b>${esc(o.heading)}</b>
+            ${o.description ? `<span class="muted small clamp">${esc(o.description)}</span>` : ""}
+            <span class="prod-price"><b class="sale">${o.price != null ? kr(o.price) : ""}</b>${o.pre_price ? ` <s class="muted">${kr(o.pre_price)}</s>` : ""}</span>
+            <span class="muted small">${o.quantity ? `${esc(o.quantity)} · ` : ""}${o.valid_to ? `til ${esc(shortDate(localDay(o.valid_to)))}` : ""}</span>
+          </div>
+          ${plan ? `<button class="btn small" data-action="chain-add" data-arg="${esc(o.id)}" ${this._busy ? "disabled" : ""}>+ Indkøb</button>` : ""}
+        </div>`
+      )
+      .join("");
+  }
+
+  _chainView() {
+    const id = this._chain;
+    const c = this._chainInfo(id);
+    const data = this._chainOffers[id] || {};
+    const count = data.offers?.length;
+    return `
+      <div class="settings-head">
+        <button class="btn back" data-action="chain-close">‹ Madplan</button>
+        ${this._chainLogo(id, "big")}
+        <h1>Tilbud i ${esc(c.name)}</h1>
+      </div>
+      <div class="card">
+        <div class="row wrap">
+          <input class="grow" type="search" data-bind="chainquery" value="${esc(this._chainQuery)}" placeholder="Søg i tilbuddene, fx kaffe">
+          <button class="btn small" data-action="chain-refresh" ${data.loading ? "disabled" : ""}>${data.loading ? '<span class="spinner small"></span>' : "Opdatér"}</button>
+        </div>
+        <p class="muted small">${count != null ? `${count} madtilbud fra ${esc(c.name)}s aviser. ` : ""}Med "+ Indkøb" kommer et tilbud på ${esc(c.name)}-listen under Indkøb – REMA-listen er uændret.</p>
+        ${data.error ? `<div class="banner error">${esc(data.error)}</div>` : ""}
+        ${data.loading && !data.offers ? '<p class="muted"><span class="spinner small"></span> Henter tilbud …</p>' : `<div class="prod-grid" id="chain-offers">${this._chainOfferRows()}</div>`}
+      </div>`;
+  }
+
+  // The chosen chains on the front page.
+  _chainsCard() {
+    const ids = this._state.settings.chains || [];
+    if (!ids.length) return "";
+    return `<div class="card chains-card">
+      <h2 class="flush">Tilbud i andre butikker</h2>
+      <div class="chain-row">${ids
+        .map((id) => `<button class="chain-btn" data-action="chain-open" data-arg="${esc(id)}">${this._chainLogo(id)}<span>${esc(this._chainName(id))}</span></button>`)
+        .join("")}</div>
+    </div>`;
+  }
+
+  // Which of the plan's items are cheaper in the chosen chains (read once per change of the list).
+  _ensureCompare() {
+    const plan = this._plan;
+    if (!plan || !(this._state.settings.chains || []).length) return null;
+    const key = `${plan.id}|${plan.total}|${plan.shopping.length}|${(this._state.settings.chains || []).join(",")}`;
+    if (this._compare?.key === key) return this._compare;
+    this._compare = { key, loading: true, lines: {}, chains: {} };
+    this._ws("rema1000/chains/compare", { plan_id: plan.id })
+      .then((data) => {
+        if (this._compare?.key === key) this._compare = { key, loading: false, ...data };
+      })
+      .catch(() => {
+        if (this._compare?.key === key) this._compare = { key, loading: false, lines: {}, chains: {} };
+      })
+      .finally(() => this._tab === "shopping" && this._render());
+    return this._compare;
+  }
+
+  _chainListsHtml(plan) {
+    const byChain = {};
+    plan.shopping.filter((l) => l.buy_at).forEach((l) => (byChain[l.buy_at] ||= []).push(l));
+    return Object.entries(byChain)
+      .map(([id, lines]) => {
+        const total = lines.filter((l) => !l.bought).reduce((sum, l) => sum + (l.cost || 0), 0);
+        const bought = lines.filter((l) => l.bought).length;
+        const rows = lines
+          .map(
+            (l) => `<li class="cline ${l.bought ? "bought" : ""}">
+              <button class="box" data-action="chain-tick" data-arg="${esc(l.id)}" aria-label="Købt" aria-pressed="${!!l.bought}">${l.bought ? "✓" : ""}</button>
+              <div class="what"><b>${esc(l.chain_heading || l.product?.name || l.name)}</b>
+                <span class="muted small">${l.chain_only ? esc(l.note || "") : `I stedet for ${esc(l.product?.name || l.name)} hos REMA`}</span></div>
+              <span class="stepper">
+                <button class="icon-btn" data-action="chain-count" data-arg="${esc(l.id)}|-1" aria-label="Færre">−</button>
+                <b>${l.packages || 1}</b>
+                <button class="icon-btn" data-action="chain-count" data-arg="${esc(l.id)}|1" aria-label="Flere">+</button>
+              </span>
+              <span class="cost"><b>${kr(l.cost)}</b></span>
+              ${l.chain_only ? "" : `<button class="icon-btn" data-action="chain-move" data-arg="${esc(l.id)}|" title="Tilbage på REMA-listen" aria-label="Tilbage på REMA-listen">↩</button>`}
+              <button class="icon-btn" data-action="chain-delete" data-arg="${esc(l.id)}" aria-label="Slet">${CLOSE_ICON}</button>
+            </li>`
+          )
+          .join("");
+        return `<div class="card chain-list" style="--c:${esc(this._chainInfo(id).color || "#888")}">
+          <div class="row between wrap">
+            <div class="row">${this._chainLogo(id)}<h1 class="flush">Indkøb i ${esc(this._chainName(id))}</h1></div>
+            <div class="price"><span class="big">${kr(total)}</span><span class="muted">${lines.length - bought} mangler</span></div>
+          </div>
+          <ul class="clines">${rows}</ul>
+          <div class="row wrap actions">
+            <button class="btn" data-action="chain-clear" data-arg="${esc(id)}" ${this._busy ? "disabled" : ""}>Ryd kurven${bought ? ` (${bought} købt)` : ""}</button>
+            <button class="btn" data-action="chain-open" data-arg="${esc(id)}" ${this._busy ? "disabled" : ""}>Se tilbud i ${esc(this._chainName(id))}</button>
+          </div>
+        </div>`;
+      })
+      .join("");
+  }
+
   // ------------------------------------------------------------------ recipe collection
 
   // The collection's recipe for a plan's dinner (leftovers: the dish they are from).
@@ -1825,6 +2083,7 @@ class Rema1000Panel extends HTMLElement {
         history: () => this._historyView(),
         settings: () => this._settingsView(),
       }[this._tab]();
+      if (this._tab === "plan" && this._chain) body = this._chainView();
       if (this._tab === "plan") body += CREDIT;
     }
     const root = this.shadowRoot;
@@ -2110,7 +2369,7 @@ class Rema1000Panel extends HTMLElement {
         <p>Madplanen laves med AI ud fra ugens tilbud og jeres indstillinger. Tjek indstillingerne først, og tryk så på knappen.</p>
         ${this._generateControls("Lav madplan")}
         <p class="muted">${catLine}</p>
-      </div>`;
+      </div>${this._chainsCard()}`;
     }
     const over = plan.budget && plan.total > plan.budget;
     const today = localToday();
@@ -2150,6 +2409,7 @@ class Rema1000Panel extends HTMLElement {
       .join("");
     return `
       ${this._viewingLatest ? "" : `<div class="banner info">Du ser en ældre madplan. <button class="link" data-action="view-latest">Vis nyeste</button></div>`}
+      ${this._chainsCard()}
       ${restCard}
       <div class="card">
         <div class="row between wrap">
@@ -2295,9 +2555,10 @@ class Rema1000Panel extends HTMLElement {
     let planHtml = `<div class="card">Der er ingen madplan endnu.</div>`;
     if (plan) {
       const groups = {};
-      const lateLines = plan.shopping.filter((line) => line.buy_from);
+      const compare = this._ensureCompare();
+      const lateLines = plan.shopping.filter((line) => line.buy_from && !line.buy_at);
       plan.shopping
-        .filter((line) => !line.buy_from)
+        .filter((line) => !line.buy_from && !line.buy_at)
         .forEach((line) => (groups[line.category || "Andet"] ||= []).push(line));
       const row = (line) => {
               // An offer only sold in the shops (partivare) has the avis's name and price.
@@ -2317,6 +2578,11 @@ class Rema1000Panel extends HTMLElement {
                   <span class="muted">${esc(p?.underline || "Tilføjes som fritekst")}${need ? ` · behov ${esc(need)}` : ""}</span>
                   ${line.offer_name ? `<span class="muted">Avisvare: ${esc(line.offer_name)}</span>` : ""}
                   ${line.note ? `<span class="note">${esc(line.note)}</span>` : ""}
+                  ${compare?.lines?.[line.id]
+                    ? `<button class="cheaper" data-action="chain-move" data-arg="${esc(line.id)}|${esc(compare.lines[line.id].dealer_id)}"
+                        title="Flyt til ${esc(this._chainName(compare.lines[line.id].dealer_id))}-listen">${this._chainLogo(compare.lines[line.id].dealer_id, "tiny")}
+                        <span>${esc(compare.lines[line.id].heading)}: spar ${kr(compare.lines[line.id].saving)}</span></button>`
+                    : ""}
                 </div>
                 <div class="cost">${p && p.price != null ? `${line.packages} × ${kr(p.price)}<b>${kr(line.cost)}</b>` : line.packages > 1 ? `${line.packages} stk.` : "–"}</div>
               </li>`;
@@ -2348,6 +2614,14 @@ class Rema1000Panel extends HTMLElement {
           <span class="muted">${plan.budget ? `budget ${kr(plan.budget)}` : ""}</span></div>
         </div>
         <p class="muted small">Tryk på en vare for at rette antal, skifte den ud eller slette den.</p>
+        ${Object.entries(compare?.chains || {})
+          .map(
+            ([id, t]) => `<div class="banner info chain-save">${this._chainLogo(id)}
+              <span><b>${t.count} ${t.count === 1 ? "vare er" : "varer er"} billigere i ${esc(this._chainName(id))}</b> – spar ${kr(t.saving)} Tryk på logoet ved en vare for at købe den der.</span>
+              <button class="btn small" data-action="chain-move-all" data-arg="${esc(id)}" ${this._busy ? "disabled" : ""}>Lav ${esc(this._chainName(id))}-liste</button></div>`
+          )
+          .join("")}
+        ${compare?.loading ? '<p class="muted small"><span class="spinner small"></span> Sammenligner med de andre butikkers tilbud …</p>' : ""}
         ${sections}
         ${this._shopSearchHtml("main")}
         <div class="row wrap actions">
@@ -2356,7 +2630,7 @@ class Rema1000Panel extends HTMLElement {
           <button class="btn" data-action="pantry-open">Basisvarer i madplanen</button>
           <button class="btn" data-action="plan-refresh" ${this._busy ? "disabled" : ""}>Opdatér tilbudsvarer</button>
         </div>
-      </div>${lateHtml}`;
+      </div>${lateHtml}${this._chainListsHtml(plan)}`;
     }
     const remaItems = rema?.items?.length
       ? rema.items
@@ -2392,6 +2666,7 @@ class Rema1000Panel extends HTMLElement {
             ? `<span class="badge from">fra ${esc(dayShort(p.offer_from))}</span>`
             : sale && until ? `<span class="muted small">til ${esc(until)}</span>` : ""}</span>
         ${p.avis ? `<span class="muted small avis">Avis: ${esc(p.avis)}${p.avis_quantity ? ` · ${esc(p.avis_quantity)}` : ""}</span>` : ""}
+        ${this._favCheaper(p)}
       </div>
       <button class="btn small primary" data-action="fav-add" data-arg="${esc(p.id)}" ${this._busy ? "disabled" : ""}>+ Tilføj</button>
     </div>`;
@@ -2403,7 +2678,7 @@ class Rema1000Panel extends HTMLElement {
       .filter((p) => !filter || `${p.name} ${p.underline || ""}`.toLowerCase().includes(filter))
       .map(
         (p) => `<li class="fav-row">
-          <div class="what"><b>${esc(p.name)}</b><span class="muted small">${esc(p.underline || "")}</span></div>
+          <div class="what"><b>${esc(p.name)}</b><span class="muted small">${esc(p.underline || "")}</span>${this._favCheaper(p)}</div>
           <span class="${onOffer(p) ? "sale" : ""}">${kr(p.price)}</span>
           <button class="btn small" data-action="fav-add" data-arg="${esc(p.id)}">+ Tilføj</button>
         </li>`
@@ -2671,6 +2946,14 @@ class Rema1000Panel extends HTMLElement {
         </div>
         <p class="muted small">Fx 40 % protein, 35 % kulhydrat og 25 % fedt og 800–900 kcal. De officielle anbefalinger for voksne er ca. 10–20 % protein, 45–60 % kulhydrat og 25–40 % fedt af energien.</p>
         `),
+      chains: () => card(`<h2 class="flush">Andre butikker</h2>
+        <p class="muted">Vælg de kæder, I også handler i. Deres madtilbud vises på forsiden, og i indkøbslisten og favoritterne står der, når en vare er billigere hos dem denne uge. Madplanen laves stadig med REMA 1000.</p>
+        ${this._chains
+          ? `<div class="chain-pick">${this._chains
+              .map((c) => `<label class="chain-choice"><input type="checkbox" data-list="chains" value="${esc(c.id)}" ${f.chains.includes(c.id) ? "checked" : ""}>${this._chainLogo(c.id)}<span>${esc(c.name)}</span></label>`)
+              .join("")}</div>`
+          : '<p class="muted"><span class="spinner small"></span> Henter kæderne …</p>'}
+        <p class="muted small">Tilbuddene kommer fra kædernes tilbudsaviser (Tjek/eTilbudsavis). En vare tæller kun som billigere, når det er den samme slags vare i samme størrelse.</p>`),
       mealie: () => card(`        <h2 class="flush">Mealie</h2>
         ${this._state.mealie?.available
           ? `<p class="muted">Bruger Mealie-integrationen i Home Assistant${this._state.mealie.url ? ` (${esc(this._state.mealie.url)})` : ""}.</p>
@@ -2747,8 +3030,8 @@ const STYLE = `
     border-bottom: 1px solid var(--divider-color); position: sticky; top: 0; z-index: 3; }
   .brand { display: inline-flex; align-items: center; gap: 10px; }
   .logo { height: min(36px, calc(var(--header-height, 56px) - 16px)); border-radius: 9px; }
-  .wordmark { font-family: Lora, Georgia, "Times New Roman", serif; font-weight: 600; font-size: 22px;
-    letter-spacing: -.01em; color: var(--app-header-text-color, var(--primary-text-color)); }
+  .wordmark { font-family: "Inter Display", Inter, var(--ha-font-family-body, system-ui), sans-serif; font-weight: 650; font-size: 22px;
+    letter-spacing: -.025em; color: var(--app-header-text-color, var(--primary-text-color)); }
   .spacer { flex: 1; }
   .tabs { display: flex; gap: 4px; overflow-x: auto; padding: 8px 12px 0; background: var(--rema-solid-card);
     border-bottom: 1px solid var(--divider-color); position: sticky; top: calc(var(--header-height, 56px) + var(--rema-safe-top, 0px)); z-index: 2; }
@@ -2814,6 +3097,41 @@ const STYLE = `
     color: var(--secondary-text-color); display: grid; place-items: center; }
   .icon-btn svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 2; fill: none; }
   .rc-targets { display: grid; gap: 6px; margin-top: 12px; }
+  .chain-logo { --c: #888; flex: none; width: 52px; height: 52px; border-radius: 50%; background: #fff; display: grid; place-items: center;
+    overflow: hidden; box-shadow: 0 0 0 3px var(--c), 0 2px 8px rgba(0, 0, 0, .12); }
+  .chain-logo img { width: 80%; height: 80%; object-fit: contain; }
+  .chain-logo span { font-weight: 700; color: var(--c); text-transform: uppercase; }
+  .chain-logo.big { width: 44px; height: 44px; }
+  .chain-logo.tiny { width: 22px; height: 22px; box-shadow: 0 0 0 2px var(--c); }
+  .chain-list .chain-logo, .chain-save .chain-logo { width: 36px; height: 36px; box-shadow: 0 0 0 2px var(--c); }
+  .chain-row { display: flex; gap: 14px; overflow-x: auto; padding: 8px 4px 4px; }
+  .chain-btn { display: grid; justify-items: center; gap: 8px; background: none; border: none; cursor: pointer; color: var(--primary-text-color);
+    font-size: 13px; min-width: 64px; padding: 4px; }
+  .chain-btn:focus-visible, .cheaper:focus-visible { outline: 2px solid var(--rema-accent); outline-offset: 2px; border-radius: 12px; }
+  .cheaper { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; border: 1px solid var(--divider-color); background: var(--rema-card);
+    color: var(--primary-text-color); border-radius: 999px; padding: 3px 10px 3px 4px; font-size: 12px; cursor: pointer; max-width: 100%; }
+  .cheaper.static { cursor: default; }
+  .cheaper { justify-self: start; width: fit-content; }
+  .cheaper > span:not(.chain-logo) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chain-save { align-items: center; }
+  .chain-save > span:not(.chain-logo) { flex: 1; min-width: 200px; }
+  .chain-list { border-top: 4px solid var(--c); }
+  .chain-list .row { gap: 12px; align-items: center; }
+  .clines { list-style: none; padding: 0; margin: 8px 0 0; }
+  .cline { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto auto; gap: 8px; align-items: center;
+    padding: 10px 0; border-top: 1px solid var(--divider-color); }
+  .cline .what { display: grid; min-width: 0; } .cline .what b { overflow-wrap: anywhere; }
+  .cline.bought .what b { text-decoration: line-through; opacity: .6; }
+  .cline .box { width: 28px; height: 28px; border-radius: 8px; border: 2px solid var(--c, var(--rema-accent)); background: none; cursor: pointer;
+    color: var(--rema-on-accent); font-weight: 700; }
+  .cline.bought .box { background: var(--c, var(--rema-accent)); color: #fff; }
+  .stepper { display: inline-flex; align-items: center; gap: 2px; }
+  .stepper .icon-btn { font-size: 18px; }
+  .chain-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 12px 0; }
+  .chain-choice { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 12px; border: 1px solid var(--divider-color); cursor: pointer; }
+  .chain-choice .chain-logo { width: 36px; height: 36px; box-shadow: 0 0 0 2px var(--c); }
+  .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  @media (max-width: 600px) { .cline { grid-template-columns: auto minmax(0, 1fr) auto auto; } .cline .stepper { grid-column: 2; } }
   .setting-rows { display: grid; margin-top: 8px; }
   .setting-row { display: grid; grid-template-columns: 40px 1fr auto; gap: 12px; align-items: center; width: 100%; text-align: left;
     background: none; border: none; border-top: 1px solid var(--divider-color); padding: 14px 4px; color: var(--primary-text-color);

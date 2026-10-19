@@ -184,6 +184,9 @@
     },
     "recipe_not_on_page": {
       "message": "No recipe was found on the page."
+    },
+    "chain_not_found": {
+      "message": "Unknown chain."
     }
   },
   "issues": {

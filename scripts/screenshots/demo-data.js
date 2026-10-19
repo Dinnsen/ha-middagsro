@@ -342,3 +342,31 @@ window.DEMO.recipes = [
 ];
 window.DEMO.state.recipes = window.DEMO.recipes.map(({ ingredients, steps, tip, ...r }) => ({ ...r, ingredient_names: ingredients.map((i) => i.name) }));
 window.DEMO.state.latest_plan.days[0].recipe_id = "r1";
+
+// Other chains (made-up offers; the demo has no logos, so the chains' initials are shown).
+window.DEMO.state.settings.chains = ["9ba51", "71c90", "bdf5A"];
+window.DEMO.chains = [
+  { id: "9ba51", name: "Netto", color: "#FFD950", logo: null },
+  { id: "71c90", name: "Lidl", color: "#0050AA", logo: null },
+  { id: "bdf5A", name: "føtex", color: "#00205B", logo: null },
+  { id: "93f13", name: "Bilka", color: "#00AEEF", logo: null },
+  { id: "DWZE1w", name: "365discount", color: "#01AA46", logo: null },
+  { id: "267e1m", name: "MENY", color: "#C8102E", logo: null },
+];
+window.DEMO.chainOffers = [
+  { id: "n1", dealer_id: "9ba51", heading: "Danske frilandsæg", description: "10 stk. Str. M/L", price: 22, pre_price: 29, quantity: "10 stk.", valid_to: "2026-10-23T21:59:59+00:00", image: pic("🥚", "#FBF3DC") },
+  { id: "n2", dealer_id: "9ba51", heading: "Letmælk", description: "1 liter. Økologisk", price: 9.95, pre_price: 13.5, quantity: "1 l", valid_to: "2026-10-23T21:59:59+00:00", image: pic("🥛", "#E7EEF8") },
+  { id: "n3", dealer_id: "9ba51", heading: "Kaffe", description: "400 g. Flere varianter", price: 39, pre_price: 55, quantity: "400 g", valid_to: "2026-10-23T21:59:59+00:00", image: pic("☕", "#EFE7E1") },
+  { id: "n4", dealer_id: "9ba51", heading: "Bananer", description: "Pr. bakke. 5 stk.", price: 10, pre_price: null, quantity: "5 stk.", valid_to: "2026-10-23T21:59:59+00:00", image: pic("🍌", "#FBF3DC") },
+  { id: "n5", dealer_id: "9ba51", heading: "Hakket svinekød 8-12%", description: "500 g", price: 25, pre_price: 35, quantity: "500 g", valid_to: "2026-10-23T21:59:59+00:00", image: pic("🥩", "#FBE1E1") },
+  { id: "n6", dealer_id: "9ba51", heading: "Agurk", description: "Pr. stk.", price: 5, pre_price: 8, quantity: "1 stk.", valid_to: "2026-10-23T21:59:59+00:00", image: pic("🥒", "#E2F2DF") },
+];
+window.DEMO.compare = {
+  plan_id: "plan-43",
+  lines: {
+    l12: { dealer_id: "9ba51", offer_id: "n1", heading: "Danske frilandsæg", price: 22, per_package: 22, saving: 7 },
+    l11: { dealer_id: "9ba51", offer_id: "n2", heading: "Letmælk", price: 9.95, per_package: 9.95, saving: 10.65 },
+    l13: { dealer_id: "71c90", offer_id: "x1", heading: "Revet mozzarella", price: 13, per_package: 13, saving: 5 },
+  },
+  chains: { "9ba51": { count: 2, saving: 17.65 }, "71c90": { count: 1, saving: 5 } },
+};

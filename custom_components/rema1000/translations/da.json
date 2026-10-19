@@ -184,6 +184,9 @@
     },
     "recipe_not_on_page": {
       "message": "Der blev ikke fundet en opskrift på siden."
+    },
+    "chain_not_found": {
+      "message": "Kæden findes ikke."
     }
   },
   "issues": {

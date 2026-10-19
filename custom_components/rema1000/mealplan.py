@@ -20,6 +20,7 @@ from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util import dt as dt_util
 
 from .api import DANISH_TIME, Catalog, Offer, Product, RemaClient, RemaError, parse_time
+from .chains import ChainOffers
 from .const import DOMAIN
 from .mealie import MealieError, MealieLink
 from .recipes import (
@@ -1017,6 +1018,7 @@ class MealPlanner:
         self._task: asyncio.Task[None] | None = None
         self._auto_attempted: set[str] = set()
         self.mealie = MealieLink(hass)
+        self.chains = ChainOffers(hass)
         # Automatic sends waiting for REMA's prices: (plan id, key) -> cancel.
         self._sends: dict[tuple[str, str], Callable[[], None]] = {}
 
@@ -2005,7 +2007,8 @@ class MealPlanner:
         lines = [
             line
             for line in plan["shopping"]
-            if part == "all" or bool(line.get("buy_from")) == (part == "late")
+            if (part == "all" or bool(line.get("buy_from")) == (part == "late"))
+            and not line.get("buy_at")  # bought in another shop
         ]
         # The offers' products and prices as REMA has them now (once they run).
         try:
@@ -2100,6 +2103,7 @@ class MealPlanner:
             and not line.get("must_have")
             and not line.get("added")
             and not line.get("product_id")
+            and not line.get("buy_at")
             and prices_from(date.fromisoformat(line.get("buy_from") or plan["start_date"])) <= now
         ]
         catalog_id = (plan.get("catalog") or {}).get("id")

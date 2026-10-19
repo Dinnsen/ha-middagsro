@@ -12,6 +12,16 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.util import dt as dt_util
 
 from .api import Catalog, RemaError
+from .chains import (
+    CHAINS,
+    ChainError,
+    async_add_offer,
+    async_chain_line,
+    async_clear_chain,
+    async_compare,
+    async_compare_products,
+    async_move_line,
+)
 from .const import DOMAIN
 from .coordinator import RemaConfigEntry
 from .health import plan_health
@@ -782,6 +792,171 @@ async def ws_recipe_plan(
     connection.send_result(msg["id"], plan)
 
 
+# ------------------------------------------------------------------ other chains
+
+
+@websocket_api.websocket_command({vol.Required("type"): "rema1000/chains", ENTRY: str})
+@websocket_api.async_response
+@_wrap
+async def ws_chains(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The chains that can be chosen, with their logos."""
+    planner = _entry(hass, msg).runtime_data.planner
+    dealers = await planner.chains.async_dealers()
+    connection.send_result(msg["id"], {"chains": list(dealers.values())})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/chains/offers",
+        ENTRY: str,
+        vol.Required("dealer_id"): vol.In(list(CHAINS)),
+        vol.Optional("force", default=False): bool,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_chain_offers(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """A chain's food offers."""
+    planner = _entry(hass, msg).runtime_data.planner
+    try:
+        offers = await planner.chains.async_offers(msg["dealer_id"], msg["force"])
+    except ChainError as err:
+        raise HomeAssistantError(str(err)) from err
+    connection.send_result(msg["id"], {"dealer_id": msg["dealer_id"], "offers": offers})
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "rema1000/chains/compare", ENTRY: str, vol.Required("plan_id"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_chain_compare(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Where the plan's items are cheaper than at REMA this week."""
+    planner = _entry(hass, msg).runtime_data.planner
+    connection.send_result(msg["id"], await async_compare(planner, msg["plan_id"]))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/chains/products",
+        ENTRY: str,
+        vol.Required("products"): [dict],
+        vol.Optional("date"): vol.Any(None, str),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_chain_products(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Which of some REMA products are cheaper in another chain on a day (default today)."""
+    planner = _entry(hass, msg).runtime_data.planner
+    day = parse_date(msg.get("date")) or dt_util.now().date()
+    found = await async_compare_products(planner, msg["products"], day)
+    connection.send_result(msg["id"], {"products": found})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/chains/move",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("line_id"): str,
+        vol.Required("dealer_id"): vol.Any(None, vol.In(list(CHAINS))),
+        vol.Optional("price"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("heading"): vol.Any(None, str),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_chain_move(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Buy an item in another shop instead (or back at REMA)."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_move_line(
+        planner,
+        msg["plan_id"],
+        msg["line_id"],
+        msg["dealer_id"],
+        msg.get("price"),
+        msg.get("heading"),
+    )
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/chains/add",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("offer"): dict,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_chain_add(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Put another chain's offer on that shop's list."""
+    planner = _entry(hass, msg).runtime_data.planner
+    connection.send_result(msg["id"], await async_add_offer(planner, msg["plan_id"], msg["offer"]))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/chains/line",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("line_id"): str,
+        vol.Optional("bought"): bool,
+        vol.Optional("packages"): vol.All(int, vol.Range(min=1, max=99)),
+        vol.Optional("delete", default=False): bool,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_chain_line(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Tick off, change how many or delete an item on a shop's list."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_chain_line(
+        planner,
+        msg["plan_id"],
+        msg["line_id"],
+        bought=msg.get("bought"),
+        packages=msg.get("packages"),
+        delete=msg["delete"],
+    )
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/chains/clear",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("dealer_id"): vol.In(list(CHAINS)),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_chain_clear(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Empty a shop's basket: the ticked-off items are bought."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_clear_chain(planner, msg["plan_id"], msg["dealer_id"])
+    connection.send_result(msg["id"], plan)
+
+
 @callback
 def async_register_websocket(hass: HomeAssistant) -> None:
     """Register the panel's commands."""
@@ -819,5 +994,13 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_recipe_rate_day,
         ws_recipe_import,
         ws_recipe_plan,
+        ws_chains,
+        ws_chain_offers,
+        ws_chain_compare,
+        ws_chain_products,
+        ws_chain_move,
+        ws_chain_add,
+        ws_chain_line,
+        ws_chain_clear,
     ):
         websocket_api.async_register_command(hass, command)
