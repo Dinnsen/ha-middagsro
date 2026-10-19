@@ -257,8 +257,10 @@ async def test_commands(
     init_integration: MockConfigEntry,
     hass_ws_client: WebSocketGenerator,
     mock_client: MagicMock,
+    freezer: Any,
 ) -> None:
     """The panel's commands: cards, one recipe, and a recipe on the plan."""
+    freezer.move_to(NOW)  # the week the chicken is on offer
     client = await hass_ws_client(hass)
     mock_client.async_get_recipes = AsyncMock(return_value={"data": [ENTITY]})
     await client.send_json({"id": 1, "type": "middagsro/rema_recipes/list"})

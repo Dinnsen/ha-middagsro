@@ -105,10 +105,12 @@ def _ingredients(entity: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _product(item: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """(digital product, REMA's product for sale) of an ingredient."""
-    digital = item.get("digitalProduct") if isinstance(item.get("digitalProduct"), dict) else {}
-    active = (
-        digital.get("active_product") if isinstance(digital.get("active_product"), dict) else {}
-    )
+    digital = item.get("digitalProduct")
+    if not isinstance(digital, dict):
+        digital = {}
+    active = digital.get("active_product")
+    if not isinstance(active, dict):
+        active = {}
     return digital, active
 
 
