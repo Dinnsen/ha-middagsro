@@ -260,8 +260,8 @@ async def test_commands(
     freezer: Any,
 ) -> None:
     """The panel's commands: cards, one recipe, and a recipe on the plan."""
-    freezer.move_to(NOW)  # the week the chicken is on offer
     client = await hass_ws_client(hass)
+    freezer.move_to(NOW)  # the week the chicken is on offer (after logging in)
     mock_client.async_get_recipes = AsyncMock(return_value={"data": [ENTITY]})
     await client.send_json({"id": 1, "type": "middagsro/rema_recipes/list"})
     msg = await client.receive_json()
