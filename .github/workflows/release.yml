@@ -171,8 +171,18 @@ jobs:
             exit 0
           fi
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            gh release create "$TAG" --title "REMA 1000 $TAG" --notes-file release-notes.md --verify-tag --latest="$LATEST"
+            gh release create "$TAG" --title "$TAG" --notes-file release-notes.md --verify-tag --latest="$LATEST"
           else
-            gh release create "$TAG" --title "REMA 1000 $TAG" --notes-file release-notes.md --target "$SHA" --latest="$LATEST"
+            gh release create "$TAG" --title "$TAG" --notes-file release-notes.md --target "$SHA" --latest="$LATEST"
           fi
           echo "Published $TAG."
+
+      - name: Release titles are just the version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --limit 200 --json tagName,name --jq '.[] | select(.name != .tagName) | .tagName' |
+            while read -r tag; do
+              gh release edit "$tag" --title "$tag"
+              echo "Renamed the release $tag."
+            done
