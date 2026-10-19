@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.2.4] - 2026-10-19
+
+### Fixed
+- A meal plan can no longer be made for a week whose avis isn't out yet. Before, it was made with the running week's prices, which end before the plan starts. Until the new avis is out, *Første dag* is today (the rest of this week), the date picker stops at the last day of the avis, and the plan ends that day. Once the new avis is out, the family's usual first day is back.
+
 ## [1.2.3] - 2026-10-19
 
 ### Changed

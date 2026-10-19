@@ -285,6 +285,7 @@ async def test_plans_start_from_mealie(
     await planner.store.async_set_settings(
         {"days": 2, "mealie_recipes": True, "mealie_calendar": True}
     )
+    planner._get_catalogs = lambda: (None, None)  # no avis known: any week can be made
     with (
         patch.object(planner.mealie, "async_prompt_recipes", return_value=_recipes()),
         patch.object(planner.mealie, "async_recipe", return_value=ml.clean_recipe(LAKS)),
