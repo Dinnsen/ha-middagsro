@@ -206,7 +206,7 @@ class Rema1000Panel extends HTMLElement {
     this._recipesSub = "week"; // "week" (the plan's recipes) or "collection"
     this._rc = { query: "", sort: "newest", filter: "all", link: "", importing: false };
     // REMA 1000's own recipes: the chosen category, the pages read, and a day to put one on.
-    this._rr = { key: "popular", page: 0, last: 1, total: 0, recipes: [], tags: [], loading: false, error: null };
+    this._rr = { key: "popular", query: "", page: 0, last: 1, total: 0, recipes: [], tags: [], loading: false, error: null };
     this._remaPick = null;
     this._chains = null; // the chains that can be chosen, with logos
     this._chain = null; // the chain whose offers page is open
@@ -569,10 +569,12 @@ class Rema1000Panel extends HTMLElement {
       },
       "rr-tag": () => {
         if (this._rr.loading) return;
-        this._rr = { ...this._rr, key: arg, page: 0, last: 1, recipes: [], error: null };
+        this._rrQuery = "";
+        this._rr = { ...this._rr, key: arg, query: "", page: 0, last: 1, recipes: [], loading: false, error: null };
         this._rrLoad();
       },
       "rr-more": () => this._rrLoad(),
+      "rr-search": () => this._rrSearch(this._rrQuery || ""),
       "rr-open": () => this._rrOpen(arg),
       "rr-pick": () => this._rrPick(arg),
       "rr-pick-cancel": () => {
@@ -958,6 +960,12 @@ class Rema1000Panel extends HTMLElement {
       this._favFilter = el.value;
       const list = this.shadowRoot.querySelector("#fav-all");
       if (list) list.innerHTML = this._favRows();
+      return;
+    }
+    if (ds.bind === "rrquery") {
+      this._rrQuery = el.value;
+      if (!el.value.trim() && this._rr.key === "search") this._rrSearch("");
+      else if (ev.type === "change" && el.value.trim()) this._rrSearch(el.value);
       return;
     }
     if (ds.bind === "everywhere") {
@@ -2685,6 +2693,7 @@ class Rema1000Panel extends HTMLElement {
     const chip = (key, label) =>
       `<button class="chip ${rr.key === key ? "active" : ""}" data-action="rr-tag" data-arg="${esc(key)}" ${rr.loading ? "disabled" : ""}>${esc(label)}</button>`;
     const chips = [chip("popular", "Populære"), chip("newest", "Nyeste"), ...rr.tags.map((t) => chip(t.id, t.title))].join("");
+    const searching = rr.key === "search";
     const cards = rr.recipes
       .map(
         (r) => `<div class="rr-card">
@@ -2704,13 +2713,17 @@ class Rema1000Panel extends HTMLElement {
             <span class="spacer"></span><button class="btn small" data-action="rr-pick-cancel">Annullér</button></div>`
         : ""}
       <h2 class="flush">REMA 1000's opskrifter</h2>
-      <p class="muted small">${rr.total ? `${rr.total} opskrifter. ` : ""}Ingredienserne er koblet til REMA's varer, så indkøbslisten får de rigtige varer – også dem på tilbud.</p>
+      <p class="muted small">${rr.total ? `${rr.total} ${searching ? `opskrifter med "${esc(rr.query)}"` : "opskrifter"}. ` : ""}Ingredienserne er koblet til REMA's varer, så indkøbslisten får de rigtige varer – også dem på tilbud.</p>
+      <div class="row wrap">
+        <input class="grow" type="search" data-bind="rrquery" value="${esc(this._rrQuery ?? rr.query)}" placeholder="Søg fx frikadeller, laks eller spinatpandekager" enterkeyhint="search">
+        <button class="btn" data-action="rr-search" ${rr.loading ? "disabled" : ""}>Søg</button>
+      </div>
       <div class="chips">${chips}</div>
       ${rr.error ? `<div class="banner error">${esc(rr.error)}</div>` : ""}
       <div class="rr-grid">${cards}</div>
       ${rr.loading ? '<p class="muted"><span class="spinner small"></span> Henter opskrifter …</p>' : ""}
       ${!rr.loading && rr.page && rr.page < rr.last ? '<button class="btn" data-action="rr-more">Vis flere</button>' : ""}
-      ${!rr.loading && rr.page && !rr.recipes.length ? '<p class="muted">Ingen opskrifter her.</p>' : ""}
+      ${!rr.loading && rr.page && !rr.recipes.length ? `<p class="muted">${searching ? `Ingen af REMA's opskrifter passer til "${esc(rr.query)}".` : "Ingen opskrifter her."}</p>` : ""}
     </div>`;
   }
 
@@ -2723,7 +2736,8 @@ class Rema1000Panel extends HTMLElement {
     const sorted = rr.key === "popular" || rr.key === "newest";
     try {
       const data = await this._ws("middagsro/rema_recipes/list", {
-        tag: sorted ? null : rr.key,
+        query: rr.key === "search" ? rr.query : null,
+        tag: sorted || rr.key === "search" ? null : rr.key,
         sort: rr.key === "newest" ? "newest" : "popular",
         page: rr.page + 1,
       });
@@ -2736,6 +2750,16 @@ class Rema1000Panel extends HTMLElement {
     }
     rr.loading = false;
     if (this._tab === "recipes") this._render();
+  }
+
+  // Search REMA's recipes; an empty search goes back to the popular ones.
+  _rrSearch(text) {
+    const query = String(text || "").trim();
+    if (!query) {
+      this._rrQuery = "";
+      this._rr = { ...this._rr, key: "popular", query: "", page: 0, last: 1, recipes: [], loading: false, error: null };
+    } else this._rr = { ...this._rr, key: "search", query, page: 0, last: 1, recipes: [], loading: false, error: null };
+    this._rrLoad();
   }
 
   async _rrOpen(slug) {

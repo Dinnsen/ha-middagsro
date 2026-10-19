@@ -182,10 +182,19 @@ async def test_list_and_get(
     ]
     assert (result["page"], result["last_page"], result["total"]) == (2, 9, 170)
     mock_client.async_get_recipes.assert_awaited_once_with(
-        tag=rr.TAGS[1]["id"], page=2, per_page=rr.PER_PAGE, sort="-created_at"
+        tag=rr.TAGS[1]["id"], page=2, per_page=rr.PER_PAGE, sort="-created_at", query=None
     )
     await planner.rema_recipes.async_list(rr.TAGS[1]["id"], "newest", 2)
     assert mock_client.async_get_recipes.await_count == 1  # cached
+    # A search covers every category.
+    await planner.rema_recipes.async_list(rr.TAGS[1]["id"], "popular", 1, "  Frikadeller ")
+    assert mock_client.async_get_recipes.await_args.kwargs == {
+        "tag": None,
+        "page": 1,
+        "per_page": rr.PER_PAGE,
+        "sort": "-popularity",
+        "query": "Frikadeller",
+    }
     with pytest.raises(ServiceValidationError) as err:
         await planner.rema_recipes.async_list("ukendt")
     assert err.value.translation_key == "rema_recipes_failed"
