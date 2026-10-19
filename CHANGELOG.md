@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.3.1] - 2026-10-19
+
+### Fixed
+- Days skipped at the start of a plan ("vi har mad søndag til tirsdag") belong to that plan, so an older plan's dishes no longer fill them in the week, the calendar or the *dinner today* sensor.
+
 ## [1.3.0] - 2026-10-19
 
 ### Changed
