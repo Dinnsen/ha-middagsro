@@ -379,6 +379,7 @@ class Rema1000Panel extends HTMLElement {
   _goTab(key, direction = 0) {
     if (!key || key === this._tab) return;
     this._moreOpen = false;
+    this._everywhere = { query: "", loading: false, data: null, error: null };
     this._tab = key;
     if (key !== "recipes") this._releaseWake();
     if (key === "favorites" && !this._favCache[this._favWeek] && !this._favsLoading) this._loadFavs();
@@ -432,7 +433,10 @@ class Rema1000Panel extends HTMLElement {
         this._moreOpen = false;
         this._chain = null;
         if (arg === "settings") this._settingsSection = null;
-        if (arg === this._tab) this._render();
+        if (arg === this._tab) {
+          this._everywhere = { query: "", loading: false, data: null, error: null };
+          this._render();
+        }
         else this._goTab(arg);
       },
       more: () => {
@@ -588,6 +592,14 @@ class Rema1000Panel extends HTMLElement {
       "rc-plan-day": () => this._recipeToPlan(arg),
       surprise: () => this._run(() => this._generate(true), "Madplanen med nye, overraskende retter er ved at blive lavet – det tager typisk 1-2 minutter."),
       everywhere: () => this._everywhereRun(),
+      "everywhere-clear": () => {
+        this._everywhere = { query: "", loading: false, data: null, error: null };
+        if (this._modal?.kind === "where") {
+          this._modal = null;
+          this._renderModal();
+        }
+        this._render();
+      },
       "ev-rema": () => {
         const product = this._everywhere.data?.products.find((p) => String(p.id) === arg);
         if (!product) return;
@@ -780,6 +792,7 @@ class Rema1000Panel extends HTMLElement {
       },
       "modal-close": () => {
         if (this._modal?.busy) return;
+        if (this._modal?.kind === "where") this._everywhere = { query: "", loading: false, data: null, error: null };
         this._modal = null;
         this._renderModal();
       },
@@ -910,6 +923,12 @@ class Rema1000Panel extends HTMLElement {
     }
     if (ds.bind === "everywhere") {
       this._everywhere.query = el.value;
+      if (!el.value.trim()) {
+        // Emptied (also with the field's own ✕): the results go away.
+        this._everywhere = { query: "", loading: false, data: null, error: null };
+        this.shadowRoot.querySelectorAll(".ev-out").forEach((n) => (n.innerHTML = ""));
+        return;
+      }
       if (ev.type === "change") this._everywhereRun();
       return;
     }
@@ -1762,9 +1781,9 @@ class Rema1000Panel extends HTMLElement {
       <div class="row wrap everywhere">
         <input class="grow" type="search" data-bind="everywhere" value="${esc(e.query)}" placeholder="Søg på en vare – fx kaffe, smør eller laks" enterkeyhint="search">
         <button class="btn" data-action="everywhere" ${e.loading ? "disabled" : ""}>${e.loading ? '<span class="spinner small"></span>' : "Søg"}</button>
+        ${e.data || e.error ? '<button class="btn" data-action="everywhere-clear">Ryd</button>' : ""}
       </div>
-      ${e.error ? `<div class="banner error">${esc(e.error)}</div>` : ""}
-      ${e.data ? this._everywhereHtml(e.data) : ""}
+      <div class="ev-out">${e.error ? `<div class="banner error">${esc(e.error)}</div>` : ""}${e.data ? this._everywhereHtml(e.data) : ""}</div>
     </div>`;
   }
 
@@ -2269,8 +2288,8 @@ class Rema1000Panel extends HTMLElement {
             <input class="grow" type="search" data-bind="everywhere" value="${esc(e.query)}" placeholder="Søg på en vare">
             <button class="btn" data-action="everywhere" ${e.loading ? "disabled" : ""}>${e.loading ? '<span class="spinner small"></span>' : "Søg"}</button>
           </div>
-          ${e.error ? `<div class="banner error">${esc(e.error)}</div>` : ""}
-          ${e.loading && !e.data ? '<p class="muted"><span class="spinner small"></span> Finder priserne …</p>' : e.data ? this._everywhereHtml(e.data) : ""}
+          <div class="ev-out">${e.error ? `<div class="banner error">${esc(e.error)}</div>` : ""}
+          ${e.loading && !e.data ? '<p class="muted"><span class="spinner small"></span> Finder priserne …</p>' : e.data ? this._everywhereHtml(e.data) : ""}</div>
           <div class="row wrap dialog-actions"><span class="spacer"></span><button class="btn" data-action="modal-close">Luk</button></div>
         </div>`;
       return;
