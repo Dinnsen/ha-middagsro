@@ -1750,14 +1750,16 @@ class Rema1000Panel extends HTMLElement {
               <button class="box" data-action="chain-tick" data-arg="${esc(l.id)}" aria-label="Købt" aria-pressed="${!!l.bought}">${l.bought ? "✓" : ""}</button>
               <div class="what"><b>${esc(l.chain_heading || l.product?.name || l.name)}</b>
                 <span class="muted small">${l.chain_only ? esc(l.note || "") : `I stedet for ${esc(l.product?.name || l.name)} hos REMA`}</span></div>
-              <span class="stepper">
-                <button class="icon-btn" data-action="chain-count" data-arg="${esc(l.id)}|-1" aria-label="Færre">−</button>
-                <b>${l.packages || 1}</b>
-                <button class="icon-btn" data-action="chain-count" data-arg="${esc(l.id)}|1" aria-label="Flere">+</button>
-              </span>
               <span class="cost"><b>${kr(l.cost)}</b></span>
-              ${l.chain_only ? "" : `<button class="icon-btn" data-action="chain-move" data-arg="${esc(l.id)}|" title="Tilbage på REMA-listen" aria-label="Tilbage på REMA-listen">↩</button>`}
-              <button class="icon-btn" data-action="chain-delete" data-arg="${esc(l.id)}" aria-label="Slet">${CLOSE_ICON}</button>
+              <span class="ctrl">
+                <span class="stepper">
+                  <button class="icon-btn" data-action="chain-count" data-arg="${esc(l.id)}|-1" aria-label="Færre">−</button>
+                  <b>${l.packages || 1}</b>
+                  <button class="icon-btn" data-action="chain-count" data-arg="${esc(l.id)}|1" aria-label="Flere">+</button>
+                </span>
+                ${l.chain_only ? "" : `<button class="icon-btn" data-action="chain-move" data-arg="${esc(l.id)}|" title="Tilbage på REMA-listen" aria-label="Tilbage på REMA-listen">↩</button>`}
+                <button class="icon-btn" data-action="chain-delete" data-arg="${esc(l.id)}" aria-label="Slet">${CLOSE_ICON}</button>
+              </span>
             </li>`
           )
           .join("");
@@ -3118,8 +3120,10 @@ const STYLE = `
   .chain-list { border-top: 4px solid var(--c); }
   .chain-list .row { gap: 12px; align-items: center; }
   .clines { list-style: none; padding: 0; margin: 8px 0 0; }
-  .cline { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto auto; gap: 8px; align-items: center;
-    padding: 10px 0; border-top: 1px solid var(--divider-color); }
+  .cline { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "box what cost ctrl"; gap: 8px;
+    align-items: center; padding: 10px 0; border-top: 1px solid var(--divider-color); }
+  .cline .box { grid-area: box; } .cline .what { grid-area: what; } .cline .cost { grid-area: cost; }
+  .cline .ctrl { grid-area: ctrl; display: inline-flex; align-items: center; gap: 4px; }
   .cline .what { display: grid; min-width: 0; } .cline .what b { overflow-wrap: anywhere; }
   .cline.bought .what b { text-decoration: line-through; opacity: .6; }
   .cline .box { width: 28px; height: 28px; border-radius: 8px; border: 2px solid var(--c, var(--rema-accent)); background: none; cursor: pointer;
@@ -3131,7 +3135,7 @@ const STYLE = `
   .chain-choice { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 12px; border: 1px solid var(--divider-color); cursor: pointer; }
   .chain-choice .chain-logo { width: 36px; height: 36px; box-shadow: 0 0 0 2px var(--c); }
   .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  @media (max-width: 600px) { .cline { grid-template-columns: auto minmax(0, 1fr) auto auto; } .cline .stepper { grid-column: 2; } }
+  @media (max-width: 600px) { .cline { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "box what cost" ". ctrl ctrl"; row-gap: 2px; } }
   .setting-rows { display: grid; margin-top: 8px; }
   .setting-row { display: grid; grid-template-columns: 40px 1fr auto; gap: 12px; align-items: center; width: 100%; text-align: left;
     background: none; border: none; border-top: 1px solid var(--divider-color); padding: 14px 4px; color: var(--primary-text-color);

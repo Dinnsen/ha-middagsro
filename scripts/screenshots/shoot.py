@@ -74,7 +74,10 @@ async def main() -> None:
         browser = await pw.chromium.launch()
         phones = [
             ("plan", "tab=plan&narrow=1&phone=1&theme=light"),
-            ("recipe", "tab=recipes&narrow=1&phone=1&theme=light&day=0&tick=i0,i1,i2,s0,s1&timer=s3"),
+            (
+                "recipe",
+                "tab=recipes&narrow=1&phone=1&theme=light&day=0&tick=i0,i1,i2,s0,s1&timer=s3",
+            ),
             ("shopping", "tab=shopping&narrow=1&phone=1&theme=dark"),
         ]
         for name, query in phones:
@@ -96,7 +99,9 @@ async def main() -> None:
         await card(page, ".card", "plan.png", nth=1)
         await page.close()
 
-        page = await open_page(browser, base, "tab=recipes&day=0&tick=i0,i1,i2,s0,s1&timer=s3", DESK)
+        page = await open_page(
+            browser, base, "tab=recipes&day=0&tick=i0,i1,i2,s0,s1&timer=s3", DESK
+        )
         await card(page, ".card.recipe", "recipe.png")
         await page.close()
 
