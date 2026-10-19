@@ -60,15 +60,21 @@ async def async_migrate(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     devices = dr.async_get(hass)
     for device in dr.async_entries_for_config_entry(devices, old_id):
-        devices.async_update_device(
-            device.id,
-            add_config_entry_id=entry.entry_id,
-            remove_config_entry_id=old_id,
-            new_identifiers={
-                (DOMAIN if domain == OLD_DOMAIN else domain, value)
-                for domain, value in device.identifiers
-            },
-        )
+        identifiers = {
+            (DOMAIN if domain == OLD_DOMAIN else domain, value)
+            for domain, value in device.identifiers
+        }
+        try:  # a device belongs to one config entry (Home Assistant 2026.8+)
+            devices.async_update_device(
+                device.id, new_config_entry_id=entry.entry_id, new_identifiers=identifiers
+            )
+        except TypeError:  # older Home Assistant
+            devices.async_update_device(
+                device.id,
+                add_config_entry_id=entry.entry_id,
+                remove_config_entry_id=old_id,
+                new_identifiers=identifiers,
+            )
 
     if old is not None:
         await hass.config_entries.async_remove(old_id)
