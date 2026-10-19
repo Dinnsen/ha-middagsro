@@ -794,7 +794,7 @@ class Rema1000Panel extends HTMLElement {
       // A day of the plan: see the recipe, or swap the dish for another.
       "day-menu": () => {
         const [planId, date] = String(arg).split("|");
-        const plan = [this._plan, this._state?.current_plan].find((p) => p?.id === planId);
+        const plan = this._planOf(planId);
         const day = plan?.days.find((d) => d.date === date);
         if (!day) return;
         this._modal = { kind: "day", planId, date, dish: day.dish, leftovers: !!day.uses_leftovers_from || day.type === "rester" };
@@ -1086,20 +1086,33 @@ class Rema1000Panel extends HTMLElement {
     );
   }
 
-  // Tonight and the rest of the running plan, then the plan being viewed.
+  // Every plan the panel has in full: the viewed one, the newest and those this week's days come from.
+  _planOf(id) {
+    const s = this._state || {};
+    return [this._plan, s.latest_plan, s.current_plan, ...(s.timeline_plans || [])].find((p) => p && p.id === id) || null;
+  }
+
+  // This week and the coming days as one plan: each date from the newest plan that covers it.
+  // Null when looking at an older plan, or when nothing is planned from today on.
+  _timeline() {
+    if (!this._viewingLatest) return null;
+    const today = localToday();
+    const list = (this._state?.timeline || [])
+      .map((e) => {
+        const plan = this._planOf(e.plan_id);
+        return plan ? { ...e, plan, day: e.skipped ? null : plan.days.find((d) => d.date === e.date) || null } : null;
+      })
+      .filter(Boolean);
+    return list.some((e) => e.date >= today) ? list : null;
+  }
+
+  // The dinners of the week (or of the plan being viewed), in order.
   _recipeDays() {
     const plan = this._plan;
     if (!plan) return [];
-    const list = [];
-    const running = this._viewingLatest ? this._state?.current_plan : null;
-    if (running) {
-      const today = localToday();
-      running.days.forEach((day) => {
-        if (day.date >= today && (day.date < plan.start_date || day.date > plan.end_date)) list.push({ plan: running, day });
-      });
-    }
-    plan.days.forEach((day) => list.push({ plan, day }));
-    return list;
+    const timeline = this._timeline();
+    if (timeline) return timeline.filter((e) => e.day).map((e) => ({ plan: e.plan, day: e.day }));
+    return plan.days.map((day) => ({ plan, day }));
   }
 
   // "planId|date" -> position in _recipeDays(); otherwise today, else the first day.
@@ -2082,14 +2095,10 @@ class Rema1000Panel extends HTMLElement {
   // The days a recipe can be put on: the newest plan's, from today.
   _planTargets() {
     const today = localToday();
-    const plans = [this._state?.current_plan, this._state?.latest_plan].filter(Boolean);
-    const out = [];
-    for (const plan of plans) {
-      for (const day of plan.days) {
-        if (day.date >= today && !out.some((o) => o.day.date === day.date)) out.push({ plan, day });
-      }
-    }
-    return out.sort((a, b) => a.day.date.localeCompare(b.day.date));
+    const timeline = this._timeline();
+    if (timeline) return timeline.filter((e) => e.day && e.date >= today).map((e) => ({ plan: e.plan, day: e.day }));
+    const plan = this._state?.latest_plan;
+    return plan ? plan.days.filter((d) => d.date >= today).map((day) => ({ plan, day })) : [];
   }
 
   async _recipeToPlan(arg) {
@@ -2345,7 +2354,7 @@ class Rema1000Panel extends HTMLElement {
   _mealieButton(planId, date) {
     const mealie = this._state?.mealie;
     if (!mealie?.available) return "";
-    const plan = [this._plan, this._state?.current_plan].find((p) => p?.id === planId);
+    const plan = this._planOf(planId);
     let day = plan?.days.find((d) => d.date === date);
     if (day?.uses_leftovers_from) day = plan.days.find((d) => d.date === day.uses_leftovers_from) || day;
     if (!day?.dish) return "";
@@ -2539,53 +2548,58 @@ class Rema1000Panel extends HTMLElement {
     }
     const over = plan.budget && plan.total > plan.budget;
     const today = localToday();
-    const running = this._viewingLatest ? this._state.current_plan : null;
-    // The new plan's whole period replaces the running plan, also its skipped days.
-    const rest = running
-      ? running.days.filter((d) => d.date >= today && (d.date < plan.start_date || d.date > plan.end_date))
-      : [];
-    const onlyTonight = rest.length === 1 && rest[0].date === today;
-    const restCard = rest.length
-      ? `<div class="card">
-          <h2 class="flush">${onlyTonight ? "I aften" : "Resten af denne uge"}</h2>
-          <p class="muted">${esc(running.title)}</p>
-          <div class="days">${rest
-            .map(
-              (day) => `<div class="day-row"><button class="day ${day.date === today ? "today" : ""}" data-action="day-menu" data-arg="${esc(running.id)}|${day.date}">
-                <span class="date">${day.date === today && !onlyTonight ? "I aften" : esc(dateLabel(day.date))}</span>
-                <span class="dish ${day.dish ? "" : "muted"}">${esc(day.dish || "Ingen ret – tryk for at vælge en")}</span>
-                <span class="meta">${day.total_minutes ? `${day.total_minutes} min` : ""}</span>
-              </button>${this._rateButtons(running, day)}</div>`
-            )
-            .join("")}</div>
-        </div>`
-      : "";
-    const days = plan.days
-      .map((day) => {
-        const type = TYPE_LABELS[day.type] ?? day.type;
-        return `<div class="day-row"><button class="day ${day.date === today ? "today" : ""}" data-action="day-menu" data-arg="${esc(plan.id)}|${day.date}">
-          <span class="date">${esc(dateLabel(day.date))}</span>
+    const dayRow = (owner, day) => {
+      const type = TYPE_LABELS[day.type] ?? day.type;
+      const past = day.date < today;
+      return `<div class="day-row ${past ? "past" : ""}"><button class="day ${day.date === today ? "today" : ""}" data-action="day-menu" data-arg="${esc(owner.id)}|${day.date}">
+          <span class="date">${day.date === today ? `I aften · ${esc(dateLabel(day.date))}` : esc(dateLabel(day.date))}</span>
           <span class="dish ${day.dish ? "" : "muted"}">${esc(day.dish || "Ingen ret – tryk for at vælge en")}</span>
-          <span class="meta">${day.total_minutes ? `${day.total_minutes} min` : ""}${type ? ` <span class="badge">${esc(type)}</span>` : ""}${day.mealie ? ' <span class="badge mealie">Mealie</span>' : ""}${plan.surprise ? ' <span class="badge surprise">Overraskelse</span>' : ""}</span>
-        </button>${this._rateButtons(plan, day)}</div>`;
-      })
-      .join("");
+          <span class="meta">${day.total_minutes ? `${day.total_minutes} min` : ""}${type ? ` <span class="badge">${esc(type)}</span>` : ""}${day.mealie ? ' <span class="badge mealie">Mealie</span>' : ""}${owner.surprise ? ' <span class="badge surprise">Overraskelse</span>' : ""}</span>
+        </button>${this._rateButtons(owner, day)}</div>`;
+    };
+    // The newest plan decides each date; this week and the coming days show as one plan.
+    const timeline = this._timeline();
+    let title = plan.title;
+    let period = `${dateLabel(plan.start_date)} – ${dateLabel(plan.end_date)}`;
+    let skipped = plan.skipped || [];
+    let avis = plan.catalog ? ` · ${plan.catalog.label || ""}` : "";
+    let shopFrom = "";
+    let days;
+    if (timeline) {
+      const weeks = [...new Set(timeline.map((e) => e.week))];
+      title = weeks.length > 1 ? `Madplan uge ${weeks[0]}–${weeks[weeks.length - 1]}` : `Madplan uge ${weeks[0]}`;
+      const shown = timeline.filter((e) => e.day);
+      period = shown.length ? `${dateLabel(shown[0].date)} – ${dateLabel(shown[shown.length - 1].date)}` : period;
+      skipped = timeline.filter((e) => e.skipped && e.date >= today).map((e) => e.date);
+      avis = "";
+      // Days from older plans: the price and the list are the newest plan's.
+      if (timeline.some((e) => e.plan.id !== plan.id)) shopFrom = `indkøb fra ${dateLabel(plan.start_date)}`;
+      let week = null;
+      days = shown
+        .map((e) => {
+          const head = weeks.length > 1 && e.week !== week ? `<h3 class="week-head">Uge ${esc(e.week)}</h3>` : "";
+          week = e.week;
+          return head + dayRow(e.plan, e.day);
+        })
+        .join("");
+    } else {
+      days = plan.days.map((day) => dayRow(plan, day)).join("");
+    }
     const checklist = (plan.checklist || [])
       .map((c) => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.requirement)}</li>`)
       .join("");
     return `
       ${this._viewingLatest ? "" : `<div class="banner info">Du ser en ældre madplan. <button class="link" data-action="view-latest">Vis nyeste</button></div>`}
       ${this._chainsCard()}
-      ${restCard}
       <div class="card">
         <div class="row between wrap">
           <div>
-            <h1>${esc(plan.title)}</h1>
-            <p class="muted">${esc(dateLabel(plan.start_date))} – ${esc(dateLabel(plan.end_date))}${plan.catalog ? ` · ${esc(plan.catalog.label || "")}` : ""}${plan.skipped?.length ? `<br>Springes over: ${plan.skipped.map((d) => esc(dateLabel(d))).join(", ")}` : ""}</p>
+            <h1>${esc(title)}</h1>
+            <p class="muted">${esc(period)}${esc(avis)}${skipped.length ? `<br>Springes over: ${skipped.map((d) => esc(dateLabel(d))).join(", ")}` : ""}</p>
           </div>
           <div class="price ${over ? "over" : ""}">
             <span class="big">${kr(plan.total)}</span>
-            <span class="muted">${plan.budget ? `budget ${kr(plan.budget)}` : ""}</span>
+            <span class="muted">${[shopFrom, plan.budget ? `budget ${kr(plan.budget)}` : ""].filter(Boolean).map(esc).join(" · ")}</span>
           </div>
         </div>
         ${plan.summary ? `<p>${esc(plan.summary)}</p>` : ""}
@@ -3304,6 +3318,8 @@ const STYLE = `
     .ev > .btn { grid-column: 4; grid-row: 2; justify-self: end; align-self: start; padding: 4px 10px; min-height: 0; font-size: .85rem; }
     .ev img, .ev .noimg { width: 40px; height: 40px; }
   }
+  .day-row.past { opacity: .55; }
+  .week-head { margin: 14px 0 4px; font-size: .95rem; color: var(--secondary-text-color); }
   .help-row { display: flex; align-items: flex-start; justify-content: flex-end; gap: 8px; margin: 6px 0; }
   .help-row .help-text { flex: 1; margin: 2px 0; }
   .help-q { flex: none; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--divider-color); background: none; cursor: pointer;

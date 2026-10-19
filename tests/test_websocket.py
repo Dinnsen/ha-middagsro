@@ -51,6 +51,7 @@ async def test_state(
     assert state["rema_list"]["total"] == 21.9
     assert "fish" in state["options"]["allergies"]
     assert state["default_start"] == "2026-10-18"
+    assert (state["timeline"], state["timeline_plans"]) == ([], [])  # the plan has ended
 
     calls = mock_client.async_get_primary_list.await_count
     msg = await _ws(client, 2, type="middagsro/state", refresh=True)

@@ -62,9 +62,13 @@ class RemaMealPlanCalendar(CalendarEntity):
         self._attr_device_info = device_info(entry)
 
     def _events(self) -> list[CalendarEvent]:
-        """One event per dinner; a newer plan wins for the same day."""
+        """One event per dinner; a newer plan replaces older ones for its whole period
+        (also the days it skips), like in the panel."""
         by_day: dict[str, CalendarEvent] = {}
         for plan in reversed(self._entry.runtime_data.store.plans):
+            start, end = plan.get("start_date", ""), plan.get("end_date", "")
+            for key in [k for k in by_day if start <= k <= end]:
+                del by_day[key]
             for day in plan.get("days", []):
                 by_day[day["date"]] = _event(day, plan)
         return sorted(by_day.values(), key=lambda e: e.start)
