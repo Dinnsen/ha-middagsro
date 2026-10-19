@@ -376,6 +376,13 @@ class Rema1000Panel extends HTMLElement {
     }, okMessage);
   }
 
+  // To the top of the page. Scrolling <main> into view would tuck its start under the sticky toolbar.
+  _toTop() {
+    const top = this.shadowRoot.querySelector("#top");
+    if (top?.scrollIntoView) top.scrollIntoView({ block: "start" });
+    else this.scrollTo?.(0, 0);
+  }
+
   _goTab(key, direction = 0) {
     if (!key || key === this._tab) return;
     this._moreOpen = false;
@@ -632,7 +639,7 @@ class Rema1000Panel extends HTMLElement {
         this._chain = arg;
         this._chainQuery = "";
         this._render();
-        this.shadowRoot.querySelector("main")?.scrollIntoView?.({ block: "start" });
+        this._toTop();
         if (!this._chainOffers[arg]?.offers) this._loadChainOffers(arg);
       },
       "chain-close": () => {
@@ -697,8 +704,7 @@ class Rema1000Panel extends HTMLElement {
         if (arg === "chains" && !this._chains) this._loadChains();
         this._settingsSection = arg || null;
         this._render();
-        this.scrollTo?.(0, 0);
-        this.shadowRoot.querySelector("main")?.scrollIntoView?.({ block: "start" });
+        this._toTop();
       },
       "save-settings": () =>
         this._run(async () => {
@@ -1705,7 +1711,7 @@ class Rema1000Panel extends HTMLElement {
   _chainLogo(id, cls = "") {
     const c = this._chainInfo(id);
     return `<span class="chain-logo ${cls}" style="--c:${esc(c.color || "#888")}">${c.logo
-      ? `<img src="${esc(c.logo)}" alt="${esc(c.name)}" loading="lazy">`
+      ? `<img class="cl" src="${esc(c.logo)}" alt="${esc(c.name)}">`
       : `<span>${esc(c.name.slice(0, 2))}</span>`}</span>`;
   }
 
@@ -2225,6 +2231,7 @@ class Rema1000Panel extends HTMLElement {
         .join("");
       root.innerHTML = `
         <style>${STYLE}</style>
+        <div id="top"></div>
         <div class="toolbar">
           <ha-menu-button></ha-menu-button>
           <span class="brand"><img class="logo" src="${this._img("icon.svg")}" alt=""><span class="wordmark">Middagsro</span></span>
@@ -3241,10 +3248,12 @@ const STYLE = `
   .rc-targets { display: grid; gap: 6px; margin-top: 12px; }
   .chain-logo { --c: #888; flex: none; width: 52px; height: 52px; border-radius: 50%; background: #fff; display: grid; place-items: center;
     overflow: hidden; box-shadow: 0 0 0 3px var(--c), 0 2px 8px rgba(0, 0, 0, .12); }
-  .chain-logo img { width: 80%; height: 80%; object-fit: contain; }
+  /* Beats the product-photo rules (.ev img, .prod img, .line img) the logo sits inside. */
+  .chain-logo > img.cl { width: 78%; height: 78%; max-width: none; margin: 0; padding: 0; border: 0; border-radius: 0;
+    background: none; object-fit: contain; display: block; }
   .chain-logo span { font-weight: 700; color: var(--c); text-transform: uppercase; }
   .chain-logo.big { width: 44px; height: 44px; }
-  .chain-logo.tiny { width: 22px; height: 22px; box-shadow: 0 0 0 2px var(--c); }
+  .chain-logo.tiny { width: 28px; height: 28px; box-shadow: 0 0 0 2px var(--c); }
   .chain-list .chain-logo, .chain-save .chain-logo { width: 36px; height: 36px; box-shadow: 0 0 0 2px var(--c); }
   .chain-row { display: flex; gap: 14px; overflow-x: auto; padding: 8px 4px 4px; }
   .chain-btn { display: grid; justify-items: center; gap: 8px; background: none; border: none; cursor: pointer; color: var(--primary-text-color);
