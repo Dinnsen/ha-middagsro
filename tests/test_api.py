@@ -13,8 +13,8 @@ import aiohttp
 import pytest
 from yarl import URL
 
-from custom_components.rema1000 import api
-from custom_components.rema1000.api import (
+from custom_components.middagsro import api
+from custom_components.middagsro.api import (
     Catalog,
     Offer,
     Product,

@@ -11,9 +11,9 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
-from custom_components.rema1000 import health as hl, mealplan as mp, planedit as pe
-from custom_components.rema1000.api import RemaError
-from custom_components.rema1000.storage import clean_settings, ensure_line_ids
+from custom_components.middagsro import health as hl, mealplan as mp, planedit as pe
+from custom_components.middagsro.api import RemaError
+from custom_components.middagsro.storage import clean_settings, ensure_line_ids
 import homeassistant.components.ai_task as ai_task_component  # noqa: F401 - patched in the tests
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -296,16 +296,16 @@ async def test_websocket_commands(
         result: dict[str, Any] = await client.receive_json()
         return result
 
-    health = await ws(1, type="rema1000/health")
+    health = await ws(1, type="middagsro/health")
     assert health["result"]["plan_id"] == "p"
-    assert (await ws(2, type="rema1000/health", plan_id="p"))["success"]
-    changed = await ws(3, type="rema1000/plan/line", plan_id="p", line_id=line_id, packages=2)
+    assert (await ws(2, type="middagsro/health", plan_id="p"))["success"]
+    changed = await ws(3, type="middagsro/plan/line", plan_id="p", line_id=line_id, packages=2)
     assert changed["result"]["shopping"][1]["packages"] == 2
-    cleared = await ws(4, type="rema1000/day/clear", plan_id="p", date="2026-10-20", skip=True)
+    cleared = await ws(4, type="middagsro/day/clear", plan_id="p", date="2026-10-20", skip=True)
     assert cleared["result"]["skipped"] == ["2026-10-20"]
     store.plans.clear()
-    missing = await ws(5, type="rema1000/health")
-    assert missing["error"]["code"] == "rema1000_error"
+    missing = await ws(5, type="middagsro/health")
+    assert missing["error"]["code"] == "middagsro_error"
 
 
 def test_rema_nutrition() -> None:
@@ -341,10 +341,10 @@ async def test_nutrition_commands(
     """Nutrition for one product, and REMA's data in the health summary."""
     client = await hass_ws_client(hass)
     mock_client.async_get_nutrition = AsyncMock(return_value={30001: {"kcal": 200}})
-    await client.send_json({"id": 1, "type": "rema1000/nutrition", "product_id": 30001})
+    await client.send_json({"id": 1, "type": "middagsro/nutrition", "product_id": 30001})
     assert (await client.receive_json())["result"] == {"kcal": 200}
-    await client.send_json({"id": 2, "type": "rema1000/nutrition", "product_id": 5})
+    await client.send_json({"id": 2, "type": "middagsro/nutrition", "product_id": 5})
     assert (await client.receive_json())["result"] == {}
     mock_client.async_get_nutrition.side_effect = RemaError("down")
-    await client.send_json({"id": 3, "type": "rema1000/health"})
+    await client.send_json({"id": 3, "type": "middagsro/health"})
     assert (await client.receive_json())["success"]

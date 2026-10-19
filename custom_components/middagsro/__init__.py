@@ -1,4 +1,4 @@
-"""The REMA 1000 integration."""
+"""Middagsro: meal plans, recipes and REMA 1000 shopping in Home Assistant."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from .coordinator import (
 )
 from .favorites import FavoriteOffers
 from .mealplan import MealPlanner
+from .migrate import async_migrate
 from .panel import async_register_panel, async_unregister_panel
 from .services import async_setup_services
 from .storage import RemaPlanStore
@@ -43,7 +44,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool:
-    """Set up REMA 1000 from a config entry."""
+    """Set up Middagsro for a REMA 1000 account."""
+    await async_migrate(hass, entry)
     # Own session so the login cookies of this account are kept apart.
     session = async_create_clientsession(hass)
     client = RemaClient(session, entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD])

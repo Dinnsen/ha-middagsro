@@ -167,7 +167,7 @@ async function start() {
 
   let panel;
   try {
-    panel = (await ws({ type: "get_panels" })).rema1000;
+    panel = (await ws({ type: "get_panels" })).middagsro;
   } catch {}
   const custom = panel?.config?._panel_custom;
   if (!custom?.module_url) {
@@ -180,7 +180,7 @@ async function start() {
     say("Panelet kunne ikke hentes.", true);
     return;
   }
-  const element = document.createElement(custom.name || "rema1000-panel");
+  const element = document.createElement(custom.name || "middagsro-panel");
   element.panel = panel;
   element.narrow = innerWidth < 870;
   element.hass = { callWS: ws, connection: conn, auth };

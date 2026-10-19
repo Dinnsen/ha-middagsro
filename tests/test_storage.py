@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from custom_components.rema1000.storage import (
+from custom_components.middagsro.storage import (
     DEFAULT_SETTINGS,
     MAX_PLANS,
     RemaPlanStore,

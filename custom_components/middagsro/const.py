@@ -3,7 +3,7 @@
 from datetime import timedelta
 from typing import Final
 
-DOMAIN: Final = "rema1000"
+DOMAIN: Final = "middagsro"
 
 LIST_SCAN_INTERVAL: Final = timedelta(minutes=2)
 OFFERS_SCAN_INTERVAL: Final = timedelta(hours=3)

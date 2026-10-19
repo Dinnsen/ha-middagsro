@@ -12,8 +12,8 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
-from custom_components.rema1000 import chains as ch
-from custom_components.rema1000.storage import clean_settings
+from custom_components.middagsro import chains as ch
+from custom_components.middagsro.storage import clean_settings
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
@@ -332,25 +332,25 @@ async def test_commands(
 
     fake = FakeTjek()
     with patch.object(planner.chains, "_get", new=fake):
-        chains = (await ws(1, type="rema1000/chains"))["result"]["chains"]
+        chains = (await ws(1, type="middagsro/chains"))["result"]["chains"]
         assert chains[0]["name"] == "Netto"
-        offers = (await ws(2, type="rema1000/chains/offers", dealer_id=NETTO))["result"]
+        offers = (await ws(2, type="middagsro/chains/offers", dealer_id=NETTO))["result"]
         assert len(offers["offers"]) == 4
-        compare = (await ws(3, type="rema1000/chains/compare", plan_id="p"))["result"]
+        compare = (await ws(3, type="middagsro/chains/compare", plan_id="p"))["result"]
         assert compare["chains"][NETTO]["count"] == 2
         found = await ws(
             4,
-            type="rema1000/chains/products",
+            type="middagsro/chains/products",
             products=[{"id": 7, "name": "PERSILLE", "underline": "BUNDT", "price": 30}],
             date="2026-10-20",
         )
         assert list(found["result"]["products"]) == ["7"]
         fake.fail.add("/v2/catalogs")
-        failed = await ws(5, type="rema1000/chains/offers", dealer_id=LIDL, force=True)
-        assert failed["error"]["code"] == "rema1000_error"
+        failed = await ws(5, type="middagsro/chains/offers", dealer_id=LIDL, force=True)
+        assert failed["error"]["code"] == "middagsro_error"
     moved = await ws(
         6,
-        type="rema1000/chains/move",
+        type="middagsro/chains/move",
         plan_id="p",
         line_id="egg",
         dealer_id=NETTO,
@@ -358,14 +358,14 @@ async def test_commands(
         heading="Æg",
     )
     assert moved["result"]["shopping"][-1]["buy_at"] == NETTO
-    ticked = await ws(7, type="rema1000/chains/line", plan_id="p", line_id="egg", bought=True)
+    ticked = await ws(7, type="middagsro/chains/line", plan_id="p", line_id="egg", bought=True)
     assert ticked["result"]["shopping"][-1]["bought"]
     added = await ws(
         8,
-        type="rema1000/chains/add",
+        type="middagsro/chains/add",
         plan_id="p",
         offer={"dealer_id": NETTO, "heading": "Kaffe", "price": 39},
     )
     assert added["result"]["shopping"][-1]["name"] == "Kaffe"
-    cleared = await ws(9, type="rema1000/chains/clear", plan_id="p", dealer_id=NETTO)
+    cleared = await ws(9, type="middagsro/chains/clear", plan_id="p", dealer_id=NETTO)
     assert "egg" not in {line["id"] for line in cleared["result"]["shopping"]}

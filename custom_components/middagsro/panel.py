@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 from homeassistant.components import frontend, panel_custom
@@ -11,10 +12,11 @@ from homeassistant.loader import async_get_integration
 
 from .const import DOMAIN
 
-PANEL_URL = "rema1000"
-STATIC_URL = "/rema1000_static"
-APP_URL = "/rema1000_app"
-WEBCOMPONENT = "rema1000-panel"
+PANEL_URL = "middagsro"
+STATIC_URL = "/middagsro_static"
+APP_URL = "/middagsro_app"
+LEGACY_APP_URL = "/rema1000_app"
+WEBCOMPONENT = "middagsro-panel"
 _STATIC_KEY = f"{DOMAIN}_static_registered"
 
 
@@ -28,6 +30,12 @@ async def async_register_panel(hass: HomeAssistant) -> None:
                 StaticPathConfig(APP_URL, str(Path(__file__).parent / "app"), False),
             ]
         )
+        # Home-screen apps added before 1.1.0 open the old address (unless the
+        # old integration still serves it).
+        with contextlib.suppress(RuntimeError, ValueError):
+            await hass.http.async_register_static_paths(
+                [StaticPathConfig(LEGACY_APP_URL, str(Path(__file__).parent / "app"), False)]
+            )
         hass.data[_STATIC_KEY] = True
 
     if PANEL_URL in hass.data.get(frontend.DATA_PANELS, {}):

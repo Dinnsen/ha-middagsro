@@ -53,13 +53,13 @@
 <script type="module">
   const q = new URLSearchParams(location.search);
   document.documentElement.dataset.theme = q.get("theme") || "light";
-  await import("../../custom_components/rema1000/frontend/rema1000-panel.js");
+  await import("../../custom_components/middagsro/frontend/middagsro-panel.js");
   const D = window.DEMO;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const handlers = {
-    "rema1000/state": () => D.state,
-    "rema1000/plan": () => D.state.latest_plan,
-    "rema1000/favorites": (msg) => {
+    "middagsro/state": () => D.state,
+    "middagsro/plan": () => D.state.latest_plan,
+    "middagsro/favorites": (msg) => {
       const next = msg.week === "next";
       const sale = (p) => p.is_advertised || p.is_campaign || p.price < p.normal_price - 0.01;
       return {
@@ -74,28 +74,28 @@
           : D.remaFavorites.filter(sale),
       };
     },
-    "rema1000/note": (msg) => ({ note: (D.state.note = msg.text) }),
-    "rema1000/search": (msg) => (/kaffe/i.test(msg.query) ? D.coffee : D.search),
+    "middagsro/note": (msg) => ({ note: (D.state.note = msg.text) }),
+    "middagsro/search": (msg) => (/kaffe/i.test(msg.query) ? D.coffee : D.search),
     // Swapping a dish, the basic items and adding products (made-up answers).
-    "rema1000/swap/options": async (msg) => {
+    "middagsro/swap/options": async (msg) => {
       await wait(Number(q.get("ai") || 5));
       const plan = D.state.latest_plan;
       const day = plan.days.find((d) => d.date === msg.date);
       return { plan_id: plan.id, date: day.date, dish: day.dish, options: D.swapOptions };
     },
-    "rema1000/swap": async (msg) => {
+    "middagsro/swap": async (msg) => {
       await wait(Number(q.get("ai") || 5));
       const plan = D.state.latest_plan;
       const day = plan.days.find((d) => d.date === msg.date);
       Object.assign(day, { dish: msg.option.dish, type: msg.option.type, total_minutes: msg.option.total_minutes });
       return plan;
     },
-    "rema1000/pantry": () => D.pantry,
-    "rema1000/send": () => {
+    "middagsro/pantry": () => D.pantry,
+    "middagsro/send": () => {
       D.state.latest_plan.status = "sent";
       return { plan_id: D.state.latest_plan.id, status: "sent" };
     },
-    "rema1000/plan/add": (msg) => {
+    "middagsro/plan/add": (msg) => {
       const plan = D.state.latest_plan;
       const product = msg.pantry
         ? D.pantryProducts[msg.pantry]
@@ -112,8 +112,8 @@
       if (need) need.on_list = true;
       return line;
     },
-    "rema1000/settings": (msg) => (D.state.settings = { ...D.state.settings, ...msg.settings }),
-    "rema1000/day/clear": (msg) => {
+    "middagsro/settings": (msg) => (D.state.settings = { ...D.state.settings, ...msg.settings }),
+    "middagsro/day/clear": (msg) => {
       const plan = D.state.latest_plan;
       const day = plan.days.find((d) => d.date === msg.date);
       if (msg.skip) {
@@ -122,7 +122,7 @@
       } else Object.assign(day, { dish: "", type: "tom", ingredients: [], steps: [] });
       return plan;
     },
-    "rema1000/plan/line": (msg) => {
+    "middagsro/plan/line": (msg) => {
       const plan = D.state.latest_plan;
       const line = plan.shopping.find((l) => l.id === msg.line_id);
       if (msg.delete) plan.shopping = plan.shopping.filter((l) => l !== line);
@@ -132,12 +132,12 @@
       } else if (msg.packages) Object.assign(line, { packages: msg.packages, cost: (line.product?.price || 0) * msg.packages });
       return plan;
     },
-    "rema1000/health": () => D.health,
-    "rema1000/chains": () => ({ chains: D.chains }),
-    "rema1000/chains/offers": (msg) => ({ dealer_id: msg.dealer_id, offers: D.chainOffers.filter((o) => o.dealer_id === msg.dealer_id) }),
-    "rema1000/chains/compare": () => D.compare,
-    "rema1000/chains/products": () => ({ products: { [D.remaFavorites[0].id]: { dealer_id: "9ba51", heading: "Kaffe", price: 39, per_package: 39, saving: 10 } } }),
-    "rema1000/chains/move": (msg) => {
+    "middagsro/health": () => D.health,
+    "middagsro/chains": () => ({ chains: D.chains }),
+    "middagsro/chains/offers": (msg) => ({ dealer_id: msg.dealer_id, offers: D.chainOffers.filter((o) => o.dealer_id === msg.dealer_id) }),
+    "middagsro/chains/compare": () => D.compare,
+    "middagsro/chains/products": () => ({ products: { [D.remaFavorites[0].id]: { dealer_id: "9ba51", heading: "Kaffe", price: 39, per_package: 39, saving: 10 } } }),
+    "middagsro/chains/move": (msg) => {
       const plan = D.state.latest_plan;
       const line = plan.shopping.find((l) => l.id === msg.line_id);
       if (msg.dealer_id) Object.assign(line, { buy_at: msg.dealer_id, chain_price: msg.price, chain_heading: msg.heading, bought: false, cost: msg.price * line.packages });
@@ -145,7 +145,7 @@
       delete D.compare.lines[msg.line_id];
       return plan;
     },
-    "rema1000/chains/line": (msg) => {
+    "middagsro/chains/line": (msg) => {
       const plan = D.state.latest_plan;
       const line = plan.shopping.find((l) => l.id === msg.line_id);
       if (msg.delete) plan.shopping = plan.shopping.filter((l) => l !== line);
@@ -153,21 +153,21 @@
       if (msg.packages) Object.assign(line, { packages: msg.packages, cost: (line.chain_price || 0) * msg.packages });
       return plan;
     },
-    "rema1000/recipes/get": (msg) => D.recipes.find((r) => r.id === msg.recipe_id),
-    "rema1000/recipes/import": async () => {
+    "middagsro/recipes/get": (msg) => D.recipes.find((r) => r.id === msg.recipe_id),
+    "middagsro/recipes/import": async () => {
       await wait(400);
       return { id: null, name: "Thai rød karry med kylling og ris", type: "normal", servings: 4, active_minutes: 20, total_minutes: 30, rating: null, favorite: false, source: "link",
         ingredients: [{ amount: "600 g", name: "kyllingebryst" }, { amount: "2 spsk", name: "rød karrypasta" }, { amount: "400 ml", name: "kokosmælk" }, { amount: "1", name: "rød peberfrugt" }, { amount: "300 g", name: "jasminris" }],
         steps: [{ text: "Skær kyllingen i strimler.", minutes: 5 }, { text: "Svits karrypastaen, og tilsæt kokosmælk og kylling.", minutes: 15 }], tip: "" };
     },
-    "rema1000/recipes/rate": (msg) => {
+    "middagsro/recipes/rate": (msg) => {
       const r = D.state.recipes.find((x) => x.id === msg.recipe_id);
       if (msg.action === "favorite") Object.assign(r, r.favorite ? { favorite: false } : { favorite: true, rating: "like" });
       else if (r.rating === msg.action) Object.assign(r, { rating: null, favorite: false });
       else Object.assign(r, { rating: msg.action, favorite: msg.action === "like" ? r.favorite : false });
       return r;
     },
-    "rema1000/recipes/rate_day": (msg) => {
+    "middagsro/recipes/rate_day": (msg) => {
       const day = D.state.latest_plan.days.find((d) => d.date === msg.date);
       let r = D.state.recipes.find((x) => x.id === day.recipe_id || x.name === day.dish);
       if (!r) {
@@ -175,15 +175,15 @@
         D.state.recipes.unshift(r);
         day.recipe_id = r.id;
       }
-      return handlers["rema1000/recipes/rate"]({ recipe_id: r.id, action: msg.action });
+      return handlers["middagsro/recipes/rate"]({ recipe_id: r.id, action: msg.action });
     },
-    "rema1000/recipes/save": (msg) => {
+    "middagsro/recipes/save": (msg) => {
       const r = { ...msg.recipe, id: msg.recipe.id || `r${D.state.recipes.length + 1}`, created: new Date().toISOString() };
       D.recipes = [r, ...D.recipes.filter((x) => x.id !== r.id)];
       D.state.recipes = [{ ...r, ingredient_names: r.ingredients.map((i) => i.name) }, ...D.state.recipes.filter((x) => x.id !== r.id)];
       return r;
     },
-    "rema1000/plan/remove": (msg) => {
+    "middagsro/plan/remove": (msg) => {
       const plan = D.state.latest_plan;
       plan.shopping = plan.shopping.filter((l) => l.id !== msg.line_id);
       return true;
@@ -198,8 +198,8 @@
       return JSON.parse(JSON.stringify(await fn(msg)));
     },
   };
-  const panel = document.createElement("rema1000-panel");
-  panel.panel = { config: { static_url: "../../custom_components/rema1000/frontend", version: "demo" } };
+  const panel = document.createElement("middagsro-panel");
+  panel.panel = { config: { static_url: "../../custom_components/middagsro/frontend", version: "demo" } };
   panel.narrow = q.get("narrow") === "1";
   if (q.get("phone") === "1") {
     // Room for the status bar and the home bar, like the app on the home screen.

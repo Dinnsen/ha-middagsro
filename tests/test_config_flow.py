@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.rema1000.api import RemaAuthError, RemaConnectionError
-from custom_components.rema1000.const import DOMAIN
+from custom_components.middagsro.api import RemaAuthError, RemaConnectionError
+from custom_components.middagsro.const import DOMAIN
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant

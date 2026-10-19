@@ -3,11 +3,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Dinnsen/middagsro/releases"><img alt="Version" src="https://img.shields.io/github/v/release/Dinnsen/middagsro?style=flat-square&label=version&color=0e2a8a"></a>
+  <a href="https://github.com/Dinnsen/ha-middagsro/releases"><img alt="Version" src="https://img.shields.io/github/v/release/Dinnsen/ha-middagsro?style=flat-square&label=version&color=0e2a8a"></a>
   <a href="https://hacs.xyz"><img alt="HACS" src="https://img.shields.io/badge/HACS-custom-41BDF5?style=flat-square"></a>
   <img alt="Home Assistant 2026.1+" src="https://img.shields.io/badge/Home%20Assistant-2026.1%2B-18BCF2?style=flat-square&logo=homeassistant&logoColor=white">
   <img alt="Quality scale: Platinum" src="https://img.shields.io/badge/quality-platinum-7f8c99?style=flat-square">
-  <a href="https://github.com/Dinnsen/middagsro/actions/workflows/tests.yml"><img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/Dinnsen/middagsro/tests.yml?branch=main&style=flat-square&label=tests"></a>
+  <a href="https://github.com/Dinnsen/ha-middagsro/actions/workflows/tests.yml"><img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/Dinnsen/ha-middagsro/tests.yml?branch=main&style=flat-square&label=tests"></a>
   <a href="LICENSE"><img alt="Licence: MIT" src="https://img.shields.io/badge/licence-MIT-97ca00?style=flat-square"></a>
   <a href="https://buymeacoffee.com/dinnsen"><img alt="Buy Me a Coffee" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-ffdd00?style=flat-square&logo=buymeacoffee&logoColor=black"></a>
 </p>
@@ -128,7 +128,7 @@ The integration uses the Mealie integration's address and API token, so nothing 
 
 ### App on the home screen
 
-Open `https://<your-home-assistant>/rema1000_app/app.html` in Safari or Chrome, log in and choose **Share → Add to Home Screen**. Middagsro then opens full screen with its icon and your Home Assistant theme – also behind the notch and home bar. Pull down to refresh. The link is also under **Indstillinger** (settings) in the panel.
+Open `https://<your-home-assistant>/middagsro_app/app.html` in Safari or Chrome, log in and choose **Share → Add to Home Screen**. Middagsro then opens full screen with its icon and your Home Assistant theme – also behind the notch and home bar. Pull down to refresh. The link is also under **Indstillinger** (settings) in the panel.
 
 ## Requirements
 
@@ -140,21 +140,31 @@ Open `https://<your-home-assistant>/rema1000_app/app.html` in Safari or Chrome, 
 
 ### With HACS (recommended)
 
-[![Open your Home Assistant and add the repository to HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Dinnsen&repository=middagsro&category=integration)
+[![Open your Home Assistant and add the repository to HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Dinnsen&repository=ha-middagsro&category=integration)
 
-1. Tap the button above, or go to **HACS → ⋮ → Custom repositories** and add `https://github.com/Dinnsen/middagsro` as an **Integration**.
+1. Tap the button above, or go to **HACS → ⋮ → Custom repositories** and add `https://github.com/Dinnsen/ha-middagsro` as an **Integration**.
 2. Search for **Middagsro** in HACS and tap **Download**.
 3. Restart Home Assistant.
 
 ### Manually
 
-1. Download the source code of the latest version under [Releases](https://github.com/Dinnsen/middagsro/releases).
-2. Copy the folder `custom_components/rema1000` to `config/custom_components/` in Home Assistant.
+1. Download the source code of the latest version under [Releases](https://github.com/Dinnsen/ha-middagsro/releases).
+2. Copy the folder `custom_components/middagsro` to `config/custom_components/` in Home Assistant.
 3. Restart Home Assistant.
+
+### Updating from the REMA 1000 integration (before 1.1.0)
+
+From 1.1.0 the integration's id and folder are `middagsro` (before: `rema1000`). After updating in HACS and restarting Home Assistant:
+
+1. Go to **Settings → Devices & services → Add integration** and choose **Middagsro**.
+2. It finds your REMA 1000 setup – tap **Submit**. The meal plans, settings, recipe collection, device and entities are moved over; the entities keep their IDs, and you don't log in again.
+3. Delete the old folder `config/custom_components/rema1000` if HACS hasn't, and restart once more.
+
+Actions are now called `middagsro.…` (before `rema1000.…`); change them in your automations and scripts. The home-screen app's old address still works.
 
 ## Setup
 
-[![Open your Home Assistant and add Middagsro.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=rema1000)
+[![Open your Home Assistant and add Middagsro.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=middagsro)
 
 1. Go to **Settings → Devices & services → Add integration** and choose **Middagsro**.
 2. Log in:
@@ -219,11 +229,11 @@ Each REMA 1000 account becomes a service with these entities:
 
 | Action | Description | Fields |
 |---|---|---|
-| `rema1000.search_products` | Search REMA 1000's range with price, offers and organic. Returns a response. | `query` (required), `limit` (1–100, default 10), `config_entry_id` |
-| `rema1000.get_offers` | All offers in the current or next catalogue. Returns a response. | `catalog` (`current` or `upcoming`), `config_entry_id` |
-| `rema1000.add_items` | Add products (REMA product number or free text) to the REMA list. | `items` (required, list with `product_id` or `name` and optionally `amount`), `config_entry_id` |
-| `rema1000.generate_meal_plan` | Make a meal plan in the background. | `start_date`, `send` (send the list when the plan is ready), `config_entry_id` |
-| `rema1000.send_meal_plan` | Send a meal plan's shopping list to the REMA list. | `plan_id` (empty = newest), `part` (`main` = the shopping day, `late` = the Thursday items, `all`; default `main`), `config_entry_id` |
+| `middagsro.search_products` | Search REMA 1000's range with price, offers and organic. Returns a response. | `query` (required), `limit` (1–100, default 10), `config_entry_id` |
+| `middagsro.get_offers` | All offers in the current or next catalogue. Returns a response. | `catalog` (`current` or `upcoming`), `config_entry_id` |
+| `middagsro.add_items` | Add products (REMA product number or free text) to the REMA list. | `items` (required, list with `product_id` or `name` and optionally `amount`), `config_entry_id` |
+| `middagsro.generate_meal_plan` | Make a meal plan in the background. | `start_date`, `send` (send the list when the plan is ready), `config_entry_id` |
+| `middagsro.send_meal_plan` | Send a meal plan's shopping list to the REMA list. | `plan_id` (empty = newest), `part` (`main` = the shopping day, `late` = the Thursday items, `all`; default `main`), `config_entry_id` |
 
 `config_entry_id` is only needed if you have several REMA 1000 accounts.
 
@@ -232,7 +242,7 @@ Each REMA 1000 account becomes a service with these entities:
 **Add products from an automation:**
 
 ```yaml
-action: rema1000.add_items
+action: middagsro.add_items
 data:
   items:
     - product_id: 20494
@@ -243,7 +253,7 @@ data:
 **Search for a product and use the response:**
 
 ```yaml
-action: rema1000.search_products
+action: middagsro.search_products
 data:
   query: letmælk
   limit: 5
@@ -273,7 +283,7 @@ conditions:
   - condition: time
     weekday: sat
 actions:
-  - action: rema1000.generate_meal_plan
+  - action: middagsro.generate_meal_plan
     data:
       send: true
 ```
@@ -311,12 +321,12 @@ The entity IDs depend on the account's name and your language; find them under *
 - **Debug log:** go to the integration and choose **Enable debug logging**. Repeat the error, then turn it off again to download the log. The password is never logged.
 - **Diagnostics:** choose **⋮ → Download diagnostics** on the integration. E-mail, password, tokens and other personal data are removed before the file is saved.
 
-Feel free to open an [issue](https://github.com/Dinnsen/middagsro/issues) with the diagnostics file and a description. Please report security issues privately, see [SECURITY.md](SECURITY.md).
+Feel free to open an [issue](https://github.com/Dinnsen/ha-middagsro/issues) with the diagnostics file and a description. Please report security issues privately, see [SECURITY.md](SECURITY.md).
 
 ## Removing the integration
 
 1. Go to **Settings → Devices & services → Middagsro** and choose **⋮ → Delete** for each account. The panel disappears when the last account is deleted. Your list in the REMA 1000 app is not touched.
-2. Installed with HACS: open **Middagsro** in HACS and choose **⋮ → Remove**. Manually: delete the folder `config/custom_components/rema1000`.
+2. Installed with HACS: open **Middagsro** in HACS and choose **⋮ → Remove**. Manually: delete the folder `config/custom_components/middagsro`.
 3. Restart Home Assistant.
 
 ## Privacy

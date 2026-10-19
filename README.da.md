@@ -3,11 +3,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Dinnsen/middagsro/releases"><img alt="Version" src="https://img.shields.io/github/v/release/Dinnsen/middagsro?style=flat-square&label=version&color=0e2a8a"></a>
+  <a href="https://github.com/Dinnsen/ha-middagsro/releases"><img alt="Version" src="https://img.shields.io/github/v/release/Dinnsen/ha-middagsro?style=flat-square&label=version&color=0e2a8a"></a>
   <a href="https://hacs.xyz"><img alt="HACS" src="https://img.shields.io/badge/HACS-brugerdefineret-41BDF5?style=flat-square"></a>
   <img alt="Home Assistant 2026.1+" src="https://img.shields.io/badge/Home%20Assistant-2026.1%2B-18BCF2?style=flat-square&logo=homeassistant&logoColor=white">
   <img alt="Kvalitetsskala: Platin" src="https://img.shields.io/badge/kvalitet-platin-7f8c99?style=flat-square">
-  <a href="https://github.com/Dinnsen/middagsro/actions/workflows/tests.yml"><img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/Dinnsen/middagsro/tests.yml?branch=main&style=flat-square&label=tests"></a>
+  <a href="https://github.com/Dinnsen/ha-middagsro/actions/workflows/tests.yml"><img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/Dinnsen/ha-middagsro/tests.yml?branch=main&style=flat-square&label=tests"></a>
   <a href="LICENSE"><img alt="Licence: MIT" src="https://img.shields.io/badge/licence-MIT-97ca00?style=flat-square"></a>
   <a href="https://buymeacoffee.com/dinnsen"><img alt="Buy Me a Coffee" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-ffdd00?style=flat-square&logo=buymeacoffee&logoColor=black"></a>
 </p>
@@ -128,7 +128,7 @@ Integrationen bruger Mealie-integrationens adresse og API-token, så intet skal 
 
 ### App på hjemmeskærmen
 
-Åbn `https://<din-home-assistant>/rema1000_app/app.html` i Safari eller Chrome, log ind og vælg **Del → Føj til hjemmeskærm**. Så åbner Middagsro i fuld skærm med sit ikon og dit Home Assistant-tema – også bag notch og hjemmebjælke. Træk ned for at opdatere. Linket står også under **Indstillinger** i panelet.
+Åbn `https://<din-home-assistant>/middagsro_app/app.html` i Safari eller Chrome, log ind og vælg **Del → Føj til hjemmeskærm**. Så åbner Middagsro i fuld skærm med sit ikon og dit Home Assistant-tema – også bag notch og hjemmebjælke. Træk ned for at opdatere. Linket står også under **Indstillinger** i panelet.
 
 ## Krav
 
@@ -140,21 +140,31 @@ Integrationen bruger Mealie-integrationens adresse og API-token, så intet skal 
 
 ### Med HACS (anbefalet)
 
-[![Åbn dit Home Assistant og tilføj repositoriet i HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Dinnsen&repository=middagsro&category=integration)
+[![Åbn dit Home Assistant og tilføj repositoriet i HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Dinnsen&repository=ha-middagsro&category=integration)
 
-1. Tryk på knappen ovenfor, eller gå til **HACS → ⋮ → Brugerdefinerede repositories**, og tilføj `https://github.com/Dinnsen/middagsro` som **Integration**.
+1. Tryk på knappen ovenfor, eller gå til **HACS → ⋮ → Brugerdefinerede repositories**, og tilføj `https://github.com/Dinnsen/ha-middagsro` som **Integration**.
 2. Søg efter **Middagsro** i HACS, og tryk **Download**.
 3. Genstart Home Assistant.
 
 ### Manuelt
 
-1. Hent kildekoden for den nyeste version under [Releases](https://github.com/Dinnsen/middagsro/releases).
-2. Kopiér mappen `custom_components/rema1000` til `config/custom_components/` i Home Assistant.
+1. Hent kildekoden for den nyeste version under [Releases](https://github.com/Dinnsen/ha-middagsro/releases).
+2. Kopiér mappen `custom_components/middagsro` til `config/custom_components/` i Home Assistant.
 3. Genstart Home Assistant.
+
+### Opdatering fra REMA 1000-integrationen (før 1.1.0)
+
+Fra 1.1.0 hedder integrationens id og mappe `middagsro` (før: `rema1000`). Når du har opdateret i HACS og genstartet Home Assistant:
+
+1. Gå til **Indstillinger → Enheder og tjenester → Tilføj integration**, og vælg **Middagsro**.
+2. Den finder jeres REMA 1000-opsætning – tryk **Indsend**. Madplaner, indstillinger, opskriftsamling, enhed og entiteter flyttes med; entiteterne beholder deres id'er, og I skal ikke logge ind igen.
+3. Slet den gamle mappe `config/custom_components/rema1000`, hvis HACS ikke har gjort det, og genstart én gang til.
+
+Handlingerne hedder nu `middagsro.…` (før `rema1000.…`); ret dem i jeres automatiseringer og scripts. Appens gamle adresse på hjemmeskærmen virker stadig.
 
 ## Opsætning
 
-[![Åbn dit Home Assistant og tilføj Middagsro.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=rema1000)
+[![Åbn dit Home Assistant og tilføj Middagsro.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=middagsro)
 
 1. Gå til **Indstillinger → Enheder og tjenester → Tilføj integration**, og vælg **Middagsro**.
 2. Log ind:
@@ -219,11 +229,11 @@ Hver REMA 1000-konto bliver en tjeneste med disse entiteter:
 
 | Handling | Beskrivelse | Felter |
 |---|---|---|
-| `rema1000.search_products` | Søg i REMA 1000's sortiment med pris, tilbud og økologi. Giver et svar. | `query` (påkrævet), `limit` (1–100, standard 10), `config_entry_id` |
-| `rema1000.get_offers` | Alle tilbud i den aktuelle eller næste tilbudsavis. Giver et svar. | `catalog` (`current` eller `upcoming`), `config_entry_id` |
-| `rema1000.add_items` | Tilføj varer (REMA-varenummer eller fritekst) til REMA-listen. | `items` (påkrævet, liste med `product_id` eller `name` og evt. `amount`), `config_entry_id` |
-| `rema1000.generate_meal_plan` | Lav en madplan i baggrunden. | `start_date`, `send` (send listen, når planen er klar), `config_entry_id` |
-| `rema1000.send_meal_plan` | Send en madplans indkøbsliste til REMA-listen. | `plan_id` (tom = nyeste), `part` (`main` = indkøbsdagen, `late` = torsdagsvarerne, `all`; standard `main`), `config_entry_id` |
+| `middagsro.search_products` | Søg i REMA 1000's sortiment med pris, tilbud og økologi. Giver et svar. | `query` (påkrævet), `limit` (1–100, standard 10), `config_entry_id` |
+| `middagsro.get_offers` | Alle tilbud i den aktuelle eller næste tilbudsavis. Giver et svar. | `catalog` (`current` eller `upcoming`), `config_entry_id` |
+| `middagsro.add_items` | Tilføj varer (REMA-varenummer eller fritekst) til REMA-listen. | `items` (påkrævet, liste med `product_id` eller `name` og evt. `amount`), `config_entry_id` |
+| `middagsro.generate_meal_plan` | Lav en madplan i baggrunden. | `start_date`, `send` (send listen, når planen er klar), `config_entry_id` |
+| `middagsro.send_meal_plan` | Send en madplans indkøbsliste til REMA-listen. | `plan_id` (tom = nyeste), `part` (`main` = indkøbsdagen, `late` = torsdagsvarerne, `all`; standard `main`), `config_entry_id` |
 
 `config_entry_id` skal kun udfyldes, hvis du har flere REMA 1000-konti.
 
@@ -232,7 +242,7 @@ Hver REMA 1000-konto bliver en tjeneste med disse entiteter:
 **Tilføj varer fra en automatisering:**
 
 ```yaml
-action: rema1000.add_items
+action: middagsro.add_items
 data:
   items:
     - product_id: 20494
@@ -243,7 +253,7 @@ data:
 **Søg efter en vare og brug svaret:**
 
 ```yaml
-action: rema1000.search_products
+action: middagsro.search_products
 data:
   query: letmælk
   limit: 5
@@ -273,7 +283,7 @@ conditions:
   - condition: time
     weekday: sat
 actions:
-  - action: rema1000.generate_meal_plan
+  - action: middagsro.generate_meal_plan
     data:
       send: true
 ```
@@ -310,12 +320,12 @@ Entitets-id'erne afhænger af kontoens navn; find dem under **Indstillinger → 
 - **Debug-log:** Gå til integrationen, og vælg **Aktivér debuglogning**. Gentag fejlen, og slå det fra igen for at hente loggen. Adgangskoden logges aldrig.
 - **Diagnostik:** Vælg **⋮ → Hent diagnostik** på integrationen. E-mail, adgangskode, tokens og andre personlige oplysninger fjernes, før filen gemmes.
 
-Opret gerne et [issue](https://github.com/Dinnsen/middagsro/issues) med diagnostikfilen og en beskrivelse.
+Opret gerne et [issue](https://github.com/Dinnsen/ha-middagsro/issues) med diagnostikfilen og en beskrivelse.
 
 ## Fjern integrationen
 
 1. Gå til **Indstillinger → Enheder og tjenester → Middagsro**, vælg **⋮ → Slet** for hver konto. Panelet forsvinder, når den sidste konto er slettet. Din liste i REMA 1000-appen røres ikke.
-2. Installeret med HACS: åbn **Middagsro** i HACS, og vælg **⋮ → Fjern**. Manuelt: slet mappen `config/custom_components/rema1000`.
+2. Installeret med HACS: åbn **Middagsro** i HACS, og vælg **⋮ → Fjern**. Manuelt: slet mappen `config/custom_components/middagsro`.
 3. Genstart Home Assistant.
 
 ## Privatliv

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from custom_components.rema1000 import panel
+from custom_components.middagsro import panel
 from homeassistant.components import frontend
 from homeassistant.core import HomeAssistant
 
@@ -24,22 +24,23 @@ async def test_register_and_remove_panel(hass: HomeAssistant) -> None:
         await panel.async_register_panel(hass)
         await panel.async_register_panel(hass)  # second account: nothing new
 
-        hass.http.async_register_static_paths.assert_awaited_once()
-        paths = hass.http.async_register_static_paths.call_args.args[0]
+        assert hass.http.async_register_static_paths.await_count == 2
+        paths = [p for c in hass.http.async_register_static_paths.call_args_list for p in c.args[0]]
         assert [(p.url_path, p.cache_headers) for p in paths] == [
-            ("/rema1000_static", True),
-            ("/rema1000_app", False),
+            ("/middagsro_static", True),
+            ("/middagsro_app", False),
+            ("/rema1000_app", False),  # home-screen apps from before 1.1.0
         ]
         add.assert_called_once()
         kwargs = add.call_args.kwargs
-        assert kwargs["frontend_url_path"] == "rema1000"
-        assert kwargs["webcomponent_name"] == "rema1000-panel"
+        assert kwargs["frontend_url_path"] == "middagsro"
+        assert kwargs["webcomponent_name"] == "middagsro-panel"
         version = kwargs["config"]["version"]
-        assert kwargs["module_url"] == f"/rema1000_static/rema1000-panel.js?v={version}"
+        assert kwargs["module_url"] == f"/middagsro_static/middagsro-panel.js?v={version}"
         assert kwargs["require_admin"] is False
 
         panel.async_unregister_panel(hass)
-        remove.assert_called_once_with(hass, "rema1000")
+        remove.assert_called_once_with(hass, "middagsro")
 
         hass.data[frontend.DATA_PANELS].clear()
         panel.async_unregister_panel(hass)  # already gone

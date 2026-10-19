@@ -9,7 +9,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
-from custom_components.rema1000.api import RemaError
+from custom_components.middagsro.api import RemaError
 from homeassistant.core import HomeAssistant
 
 from .conftest import make_plan
@@ -39,7 +39,7 @@ async def test_state(
 ) -> None:
     """Everything the panel shows."""
     client = await hass_ws_client(hass)
-    msg = await _ws(client, 1, type="rema1000/state")
+    msg = await _ws(client, 1, type="middagsro/state")
     assert msg["success"]
     state = msg["result"]
     assert state["entry_id"] == init_integration.entry_id
@@ -53,13 +53,13 @@ async def test_state(
     assert state["default_start"] == "2026-10-18"
 
     calls = mock_client.async_get_primary_list.await_count
-    msg = await _ws(client, 2, type="rema1000/state", refresh=True)
+    msg = await _ws(client, 2, type="middagsro/state", refresh=True)
     assert msg["success"]
     assert mock_client.async_get_primary_list.await_count == calls + 1
 
-    msg = await _ws(client, 3, type="rema1000/state", entry_id="missing")
+    msg = await _ws(client, 3, type="middagsro/state", entry_id="missing")
     assert not msg["success"]
-    assert msg["error"]["code"] == "rema1000_error"
+    assert msg["error"]["code"] == "middagsro_error"
 
 
 async def test_plans(
@@ -67,17 +67,17 @@ async def test_plans(
 ) -> None:
     """Read, delete and regenerate recipes of plans."""
     client = await hass_ws_client(hass)
-    msg = await _ws(client, 1, type="rema1000/plan", plan_id="plan-1")
+    msg = await _ws(client, 1, type="middagsro/plan", plan_id="plan-1")
     assert msg["result"]["title"] == "Madplan uge 42"
-    msg = await _ws(client, 2, type="rema1000/plan", plan_id="nope")
+    msg = await _ws(client, 2, type="middagsro/plan", plan_id="nope")
     assert not msg["success"]
 
     planner = init_integration.runtime_data.planner
     with patch.object(planner, "async_regenerate_recipe", return_value={"date": "2026-10-11"}):
-        msg = await _ws(client, 3, type="rema1000/recipe", plan_id="plan-1", date="2026-10-11")
+        msg = await _ws(client, 3, type="middagsro/recipe", plan_id="plan-1", date="2026-10-11")
     assert msg["result"] == {"date": "2026-10-11"}
 
-    msg = await _ws(client, 4, type="rema1000/plan/delete", plan_id="plan-1")
+    msg = await _ws(client, 4, type="middagsro/plan/delete", plan_id="plan-1")
     assert msg["success"]
     assert init_integration.runtime_data.store.plans == []
 
@@ -87,21 +87,21 @@ async def test_settings_and_favorites(
 ) -> None:
     """Settings are cleaned and saved; favourites can be changed."""
     client = await hass_ws_client(hass)
-    msg = await _ws(client, 1, type="rema1000/settings", settings={"budget": "650", "days": 99})
+    msg = await _ws(client, 1, type="middagsro/settings", settings={"budget": "650", "days": 99})
     assert msg["result"]["budget"] == 650
     assert msg["result"]["days"] == 14
 
     msg = await _ws(
-        client, 2, type="rema1000/favorite/save", favorite={"text": "Tacos", "frequency": "weekly"}
+        client, 2, type="middagsro/favorite/save", favorite={"text": "Tacos", "frequency": "weekly"}
     )
     new_id = msg["result"]["id"]
     msg = await _ws(
-        client, 3, type="rema1000/favorite/save", favorite={"id": new_id, "text": "Fisketacos"}
+        client, 3, type="middagsro/favorite/save", favorite={"id": new_id, "text": "Fisketacos"}
     )
     assert msg["result"]["frequency"] == "inspiration"
-    msg = await _ws(client, 4, type="rema1000/favorite/save", favorite={"text": " "})
+    msg = await _ws(client, 4, type="middagsro/favorite/save", favorite={"text": " "})
     assert not msg["success"]
-    msg = await _ws(client, 5, type="rema1000/favorite/delete", favorite_id=new_id)
+    msg = await _ws(client, 5, type="middagsro/favorite/delete", favorite_id=new_id)
     assert msg["success"]
     assert [f["id"] for f in init_integration.runtime_data.store.favorites] == ["fav1"]
 
@@ -119,23 +119,23 @@ async def test_generate_and_send(
         msg = await _ws(
             client,
             1,
-            type="rema1000/generate",
+            type="middagsro/generate",
             start_date="2026-10-18",
             skip_dates=["2026-10-19", "bad"],
         )
     assert not msg["success"]  # "bad" is not a date
     with patch.object(planner, "async_start_generation") as start:
         msg = await _ws(
-            client, 2, type="rema1000/generate", start_date="2026-10-18", skip_dates=["2026-10-19"]
+            client, 2, type="middagsro/generate", start_date="2026-10-18", skip_dates=["2026-10-19"]
         )
     assert msg["success"]
     assert start.call_args.kwargs["skip"] == {start.call_args.args[0].replace(day=19)}
 
-    msg = await _ws(client, 3, type="rema1000/send", plan_id="plan-1")
+    msg = await _ws(client, 3, type="middagsro/send", plan_id="plan-1")
     assert msg["result"] == {"plan_id": "plan-1", "status": "sent"}
 
     mock_client.async_add_to_list.side_effect = RemaError("HTTP 500")
-    msg = await _ws(client, 4, type="rema1000/send")
+    msg = await _ws(client, 4, type="middagsro/send")
     assert not msg["success"]
     assert "HTTP 500" in msg["error"]["message"]
 
@@ -148,18 +148,18 @@ async def test_products_and_list(
 ) -> None:
     """Search, favourites, add one product and clear the list."""
     client = await hass_ws_client(hass)
-    msg = await _ws(client, 1, type="rema1000/search", query="broccoli")
+    msg = await _ws(client, 1, type="middagsro/search", query="broccoli")
     assert [p["name"] for p in msg["result"]] == ["BROCCOLI", "ØKO. BROCCOLI"]
 
-    msg = await _ws(client, 2, type="rema1000/favorites", force=True)
+    msg = await _ws(client, 2, type="middagsro/favorites", force=True)
     mock_client.async_get_favorites.assert_awaited_with(force=True)
     assert len(msg["result"]["products"]) == 3
 
-    msg = await _ws(client, 3, type="rema1000/list/add", product_id=20494, amount=500)
+    msg = await _ws(client, 3, type="middagsro/list/add", product_id=20494, amount=500)
     assert msg["success"]
     assert mock_client.async_add_to_list.call_args.kwargs["amount"] == 99
 
-    msg = await _ws(client, 4, type="rema1000/list/clear")
+    msg = await _ws(client, 4, type="middagsro/list/clear")
     assert msg["result"] == {"removed": 3}
     mock_client.async_delete_items.assert_awaited_with(777, [1, 2, 3])
 
@@ -171,15 +171,15 @@ async def test_running_plan_and_note(
     store = init_integration.runtime_data.store
     store.plans[:] = [make_plan("next", start="2026-10-18"), make_plan("now", start="2026-10-13")]
     client = await hass_ws_client(hass)
-    state = (await _ws(client, 1, type="rema1000/state"))["result"]
+    state = (await _ws(client, 1, type="middagsro/state"))["result"]
     assert state["latest_plan"]["id"] == "next"
     assert state["current_plan"]["id"] == "now"
     assert state["note"] == ""
 
-    msg = await _ws(client, 2, type="rema1000/note", text="  Pizza fredag ")
+    msg = await _ws(client, 2, type="middagsro/note", text="  Pizza fredag ")
     assert msg["result"] == {"note": "Pizza fredag"}
     store.plans[:] = [make_plan("now", start="2026-10-13")]
-    state = (await _ws(client, 3, type="rema1000/state"))["result"]
+    state = (await _ws(client, 3, type="middagsro/state"))["result"]
     assert state["current_plan"] is None  # the newest plan has tonight's dinner
     assert state["note"] == "Pizza fredag"
 
@@ -192,14 +192,14 @@ async def test_favorite_weeks(
 ) -> None:
     """Favourites on offer this week and next week, with this week as a fallback."""
     client = await hass_ws_client(hass)
-    result = (await _ws(client, 1, type="rema1000/favorites"))["result"]
+    result = (await _ws(client, 1, type="middagsro/favorites"))["result"]
     assert result["week"] == "current"
     assert result["fallback"] is False
     assert result["catalog"]["label"] == "Uge 42"
     assert len(result["products"]) == 3
     assert result["on_offer"] == []
 
-    result = (await _ws(client, 2, type="rema1000/favorites", week="next"))["result"]
+    result = (await _ws(client, 2, type="middagsro/favorites", week="next"))["result"]
     assert result["catalog"]["label"] == "Uge 43"
     assert result["fallback"] is False
 
@@ -207,9 +207,9 @@ async def test_favorite_weeks(
     offers = init_integration.runtime_data.offers.data
     assert offers is not None
     offers.upcoming = None
-    result = (await _ws(client, 3, type="rema1000/favorites", week="next", force=True))["result"]
+    result = (await _ws(client, 3, type="middagsro/favorites", week="next", force=True))["result"]
     assert result["fallback"] is True
     assert result["catalog"]["label"] == "Uge 42"
 
-    msg = await _ws(client, 4, type="rema1000/favorites", week="later")
+    msg = await _ws(client, 4, type="middagsro/favorites", week="later")
     assert not msg["success"]

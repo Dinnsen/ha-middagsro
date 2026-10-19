@@ -159,13 +159,13 @@ def _wrap(handler: _Handler) -> _Handler:
         try:
             await handler(hass, connection, msg)
         except (HomeAssistantError, RemaError, ValueError) as err:
-            connection.send_error(msg["id"], "rema1000_error", str(err))
+            connection.send_error(msg["id"], "middagsro_error", str(err))
 
     return wrapper
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/state", ENTRY: str, vol.Optional("refresh"): bool}
+    {vol.Required("type"): "middagsro/state", ENTRY: str, vol.Optional("refresh"): bool}
 )
 @websocket_api.async_response
 @_wrap
@@ -180,7 +180,7 @@ async def ws_state(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/plan", ENTRY: str, vol.Required("plan_id"): str}
+    {vol.Required("type"): "middagsro/plan", ENTRY: str, vol.Required("plan_id"): str}
 )
 @websocket_api.async_response
 @_wrap
@@ -195,7 +195,7 @@ async def ws_plan(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/settings", ENTRY: str, vol.Required("settings"): dict}
+    {vol.Required("type"): "middagsro/settings", ENTRY: str, vol.Required("settings"): dict}
 )
 @websocket_api.async_response
 @_wrap
@@ -209,7 +209,7 @@ async def ws_settings(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/note", ENTRY: str, vol.Required("text"): str}
+    {vol.Required("type"): "middagsro/note", ENTRY: str, vol.Required("text"): str}
 )
 @websocket_api.async_response
 @_wrap
@@ -222,7 +222,7 @@ async def ws_note(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/favorite/save", ENTRY: str, vol.Required("favorite"): dict}
+    {vol.Required("type"): "middagsro/favorite/save", ENTRY: str, vol.Required("favorite"): dict}
 )
 @websocket_api.async_response
 @_wrap
@@ -235,7 +235,11 @@ async def ws_favorite_save(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/favorite/delete", ENTRY: str, vol.Required("favorite_id"): str}
+    {
+        vol.Required("type"): "middagsro/favorite/delete",
+        ENTRY: str,
+        vol.Required("favorite_id"): str,
+    }
 )
 @websocket_api.async_response
 @_wrap
@@ -249,7 +253,7 @@ async def ws_favorite_delete(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/generate",
+        vol.Required("type"): "middagsro/generate",
         ENTRY: str,
         vol.Optional("start_date"): vol.Any(str, None),
         vol.Optional("skip_dates"): [str],
@@ -272,7 +276,7 @@ async def ws_generate(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/send",
+        vol.Required("type"): "middagsro/send",
         ENTRY: str,
         vol.Optional("plan_id"): vol.Any(str, None),
         vol.Optional("part", default="main"): vol.In(["main", "late", "all"]),
@@ -290,7 +294,7 @@ async def ws_send(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/recipe",
+        vol.Required("type"): "middagsro/recipe",
         ENTRY: str,
         vol.Required("plan_id"): str,
         vol.Required("date"): str,
@@ -308,7 +312,7 @@ async def ws_recipe(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/plan/delete", ENTRY: str, vol.Required("plan_id"): str}
+    {vol.Required("type"): "middagsro/plan/delete", ENTRY: str, vol.Required("plan_id"): str}
 )
 @websocket_api.async_response
 @_wrap
@@ -321,7 +325,7 @@ async def ws_plan_delete(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/search", ENTRY: str, vol.Required("query"): str}
+    {vol.Required("type"): "middagsro/search", ENTRY: str, vol.Required("query"): str}
 )
 @websocket_api.async_response
 @_wrap
@@ -336,7 +340,7 @@ async def ws_search(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/favorites",
+        vol.Required("type"): "middagsro/favorites",
         ENTRY: str,
         vol.Optional("force"): bool,
         vol.Optional("week", default="current"): vol.In(["current", "next"]),
@@ -377,7 +381,7 @@ async def ws_favorites(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/list/add",
+        vol.Required("type"): "middagsro/list/add",
         ENTRY: str,
         vol.Required("product_id"): int,
         vol.Optional("amount", default=1): int,
@@ -396,7 +400,7 @@ async def ws_list_add(
     connection.send_result(msg["id"], True)
 
 
-@websocket_api.websocket_command({vol.Required("type"): "rema1000/list/clear", ENTRY: str})
+@websocket_api.websocket_command({vol.Required("type"): "middagsro/list/clear", ENTRY: str})
 @websocket_api.async_response
 @_wrap
 async def ws_list_clear(
@@ -409,7 +413,7 @@ async def ws_list_clear(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/swap/options",
+        vol.Required("type"): "middagsro/swap/options",
         ENTRY: str,
         vol.Required("plan_id"): str,
         vol.Required("date"): str,
@@ -428,7 +432,7 @@ async def ws_swap_options(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/swap",
+        vol.Required("type"): "middagsro/swap",
         ENTRY: str,
         vol.Required("plan_id"): str,
         vol.Required("date"): str,
@@ -447,7 +451,7 @@ async def ws_swap(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/pantry", ENTRY: str, vol.Required("plan_id"): str}
+    {vol.Required("type"): "middagsro/pantry", ENTRY: str, vol.Required("plan_id"): str}
 )
 @websocket_api.async_response
 @_wrap
@@ -464,7 +468,7 @@ async def ws_pantry(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/plan/add",
+        vol.Required("type"): "middagsro/plan/add",
         ENTRY: str,
         vol.Required("plan_id"): str,
         vol.Exclusive("product_id", "what"): int,
@@ -492,7 +496,7 @@ async def ws_plan_add(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/plan/refresh", ENTRY: str, vol.Required("plan_id"): str}
+    {vol.Required("type"): "middagsro/plan/refresh", ENTRY: str, vol.Required("plan_id"): str}
 )
 @websocket_api.async_response
 @_wrap
@@ -506,7 +510,7 @@ async def ws_plan_refresh(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/plan/remove",
+        vol.Required("type"): "middagsro/plan/remove",
         ENTRY: str,
         vol.Required("plan_id"): str,
         vol.Required("line_id"): str,
@@ -525,7 +529,7 @@ async def ws_plan_remove(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/day/clear",
+        vol.Required("type"): "middagsro/day/clear",
         ENTRY: str,
         vol.Required("plan_id"): str,
         vol.Required("date"): str,
@@ -545,7 +549,7 @@ async def ws_day_clear(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/plan/line",
+        vol.Required("type"): "middagsro/plan/line",
         ENTRY: str,
         vol.Required("plan_id"): str,
         vol.Required("line_id"): str,
@@ -574,7 +578,7 @@ async def ws_plan_line(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/health",
+        vol.Required("type"): "middagsro/health",
         ENTRY: str,
         vol.Optional("plan_id"): vol.Any(str, None),
     }
@@ -603,7 +607,7 @@ async def ws_health(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/nutrition", ENTRY: str, vol.Required("product_id"): int}
+    {vol.Required("type"): "middagsro/nutrition", ENTRY: str, vol.Required("product_id"): int}
 )
 @websocket_api.async_response
 @_wrap
@@ -618,7 +622,7 @@ async def ws_nutrition(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/mealie/save",
+        vol.Required("type"): "middagsro/mealie/save",
         ENTRY: str,
         vol.Required("plan_id"): str,
         vol.Required("date"): str,
@@ -644,7 +648,7 @@ async def ws_mealie_save(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/mealie/sync", ENTRY: str, vol.Required("plan_id"): str}
+    {vol.Required("type"): "middagsro/mealie/sync", ENTRY: str, vol.Required("plan_id"): str}
 )
 @websocket_api.async_response
 @_wrap
@@ -664,7 +668,7 @@ async def ws_mealie_sync(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/recipes/get", ENTRY: str, vol.Required("recipe_id"): str}
+    {vol.Required("type"): "middagsro/recipes/get", ENTRY: str, vol.Required("recipe_id"): str}
 )
 @websocket_api.async_response
 @_wrap
@@ -680,7 +684,7 @@ async def ws_recipe_get(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/recipes/save", ENTRY: str, vol.Required("recipe"): dict}
+    {vol.Required("type"): "middagsro/recipes/save", ENTRY: str, vol.Required("recipe"): dict}
 )
 @websocket_api.async_response
 @_wrap
@@ -695,7 +699,7 @@ async def ws_recipe_save(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/recipes/delete", ENTRY: str, vol.Required("recipe_id"): str}
+    {vol.Required("type"): "middagsro/recipes/delete", ENTRY: str, vol.Required("recipe_id"): str}
 )
 @websocket_api.async_response
 @_wrap
@@ -711,7 +715,7 @@ async def ws_recipe_delete(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/recipes/rate",
+        vol.Required("type"): "middagsro/recipes/rate",
         ENTRY: str,
         vol.Required("recipe_id"): str,
         vol.Required("action"): vol.In(ACTIONS),
@@ -731,7 +735,7 @@ async def ws_recipe_rate(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/recipes/rate_day",
+        vol.Required("type"): "middagsro/recipes/rate_day",
         ENTRY: str,
         vol.Required("plan_id"): str,
         vol.Required("date"): str,
@@ -750,7 +754,7 @@ async def ws_recipe_rate_day(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/recipes/import", ENTRY: str, vol.Required("url"): str}
+    {vol.Required("type"): "middagsro/recipes/import", ENTRY: str, vol.Required("url"): str}
 )
 @websocket_api.async_response
 @_wrap
@@ -764,7 +768,7 @@ async def ws_recipe_import(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/recipes/plan",
+        vol.Required("type"): "middagsro/recipes/plan",
         ENTRY: str,
         vol.Required("recipe_id"): str,
         vol.Required("plan_id"): str,
@@ -795,7 +799,7 @@ async def ws_recipe_plan(
 # ------------------------------------------------------------------ other chains
 
 
-@websocket_api.websocket_command({vol.Required("type"): "rema1000/chains", ENTRY: str})
+@websocket_api.websocket_command({vol.Required("type"): "middagsro/chains", ENTRY: str})
 @websocket_api.async_response
 @_wrap
 async def ws_chains(
@@ -809,7 +813,7 @@ async def ws_chains(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/chains/offers",
+        vol.Required("type"): "middagsro/chains/offers",
         ENTRY: str,
         vol.Required("dealer_id"): vol.In(list(CHAINS)),
         vol.Optional("force", default=False): bool,
@@ -830,7 +834,7 @@ async def ws_chain_offers(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "rema1000/chains/compare", ENTRY: str, vol.Required("plan_id"): str}
+    {vol.Required("type"): "middagsro/chains/compare", ENTRY: str, vol.Required("plan_id"): str}
 )
 @websocket_api.async_response
 @_wrap
@@ -844,7 +848,7 @@ async def ws_chain_compare(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/chains/products",
+        vol.Required("type"): "middagsro/chains/products",
         ENTRY: str,
         vol.Required("products"): [dict],
         vol.Optional("date"): vol.Any(None, str),
@@ -864,7 +868,7 @@ async def ws_chain_products(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/chains/move",
+        vol.Required("type"): "middagsro/chains/move",
         ENTRY: str,
         vol.Required("plan_id"): str,
         vol.Required("line_id"): str,
@@ -893,7 +897,7 @@ async def ws_chain_move(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/chains/add",
+        vol.Required("type"): "middagsro/chains/add",
         ENTRY: str,
         vol.Required("plan_id"): str,
         vol.Required("offer"): dict,
@@ -911,7 +915,7 @@ async def ws_chain_add(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/chains/line",
+        vol.Required("type"): "middagsro/chains/line",
         ENTRY: str,
         vol.Required("plan_id"): str,
         vol.Required("line_id"): str,
@@ -940,7 +944,7 @@ async def ws_chain_line(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "rema1000/chains/clear",
+        vol.Required("type"): "middagsro/chains/clear",
         ENTRY: str,
         vol.Required("plan_id"): str,
         vol.Required("dealer_id"): vol.In(list(CHAINS)),

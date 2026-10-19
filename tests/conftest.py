@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.rema1000.api import (
+from custom_components.middagsro.api import (
     Catalog,
     Offer,
     Product,
@@ -18,7 +18,7 @@ from custom_components.rema1000.api import (
     ShoppingList,
     ShoppingListItem,
 )
-from custom_components.rema1000.const import DOMAIN
+from custom_components.middagsro.const import DOMAIN
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 
@@ -262,8 +262,8 @@ def mock_client() -> Generator[MagicMock]:
     client.async_get_products = AsyncMock(return_value=[])
     client.async_get_nutrition = AsyncMock(return_value={})
     with (
-        patch("custom_components.rema1000.RemaClient", return_value=client),
-        patch("custom_components.rema1000.config_flow.RemaClient", return_value=client),
+        patch("custom_components.middagsro.RemaClient", return_value=client),
+        patch("custom_components.middagsro.config_flow.RemaClient", return_value=client),
     ):
         yield client
 
@@ -272,8 +272,8 @@ def mock_client() -> Generator[MagicMock]:
 def mock_panel() -> Generator[tuple[AsyncMock, MagicMock]]:
     """Don't serve the panel files in tests (that needs the real frontend)."""
     with (
-        patch("custom_components.rema1000.async_register_panel") as register,
-        patch("custom_components.rema1000.async_unregister_panel") as unregister,
+        patch("custom_components.middagsro.async_register_panel") as register,
+        patch("custom_components.middagsro.async_unregister_panel") as unregister,
     ):
         yield register, unregister
 

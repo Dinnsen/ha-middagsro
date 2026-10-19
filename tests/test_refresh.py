@@ -11,7 +11,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
-from custom_components.rema1000.api import Offer, RemaError
+from custom_components.middagsro.api import Offer, RemaError
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
@@ -193,6 +193,6 @@ async def test_refresh_command(
     await init_integration.runtime_data.store.async_add_plan(salmon_plan())
     client = await hass_ws_client(hass)  # signed in before the clock moves on
     freezer.move_to(datetime(2026, 10, 18, 8, tzinfo=UTC))
-    await client.send_json({"id": 1, "type": "rema1000/plan/refresh", "plan_id": "laks"})
+    await client.send_json({"id": 1, "type": "middagsro/plan/refresh", "plan_id": "laks"})
     result = await client.receive_json()
     assert result["result"]["shopping"][0]["product"]["id"] == 440095

@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.rema1000.api import RemaAuthError, RemaConnectionError, RemaError
-from custom_components.rema1000.const import DOMAIN
+from custom_components.middagsro.api import RemaAuthError, RemaConnectionError, RemaError
+from custom_components.middagsro.const import DOMAIN
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
@@ -142,7 +142,7 @@ async def test_auto_generate_on_new_catalogue(
         "data": {"settings": {"auto_generate": True, "auto_send": True}, "plans": []},
     }
     config_entry.add_to_hass(hass)
-    with patch("custom_components.rema1000.mealplan.MealPlanner.async_start_generation") as start:
+    with patch("custom_components.middagsro.mealplan.MealPlanner.async_start_generation") as start:
         assert await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
     start.assert_called_once()

@@ -11,8 +11,8 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
-from custom_components.rema1000 import planedit as pe
-from custom_components.rema1000.api import RemaError
+from custom_components.middagsro import planedit as pe
+from custom_components.middagsro.api import RemaError
 import homeassistant.components.ai_task as ai_task_component  # noqa: F401 - patched in the tests
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -334,23 +334,25 @@ async def test_websocket_commands(
     client = await hass_ws_client(hass)
     ai = FakeAI(options=OPTIONS, items={"add": [], "uses": []})
     with patch("homeassistant.components.ai_task.async_generate_data", new=ai):
-        options = await _ws(client, 1, type="rema1000/swap/options", plan_id="p", date="2026-10-20")
+        options = await _ws(
+            client, 1, type="middagsro/swap/options", plan_id="p", date="2026-10-20"
+        )
         assert options["result"]["options"][0]["dish"] == "Kyllingewok"
-        swapped = await _ws(client, 2, type="rema1000/swap", plan_id="p", date="2026-10-20",
+        swapped = await _ws(client, 2, type="middagsro/swap", plan_id="p", date="2026-10-20",
                             option={"dish": "Kyllingewok"})  # fmt: skip
         assert swapped["result"]["days"][2]["dish"] == "Kyllingewok"
 
-    pantry = await _ws(client, 3, type="rema1000/pantry", plan_id="p")
+    pantry = await _ws(client, 3, type="middagsro/pantry", plan_id="p")
     assert pantry["result"] == []  # salt, peber … aren't in these recipes
-    missing = await _ws(client, 4, type="rema1000/pantry", plan_id="x")
-    assert missing["error"]["code"] == "rema1000_error"
+    missing = await _ws(client, 4, type="middagsro/pantry", plan_id="x")
+    assert missing["error"]["code"] == "middagsro_error"
 
     mock_client.async_get_products.return_value = [make_product(90010, "KAFFE", 42.0)]
-    added = await _ws(client, 5, type="rema1000/plan/add", plan_id="p", product_id=90010)
+    added = await _ws(client, 5, type="middagsro/plan/add", plan_id="p", product_id=90010)
     line_id = added["result"]["id"]
-    removed = await _ws(client, 6, type="rema1000/plan/remove", plan_id="p", line_id=line_id)
+    removed = await _ws(client, 6, type="middagsro/plan/remove", plan_id="p", line_id=line_id)
     assert removed["result"] is True
-    nothing = await _ws(client, 7, type="rema1000/plan/add", plan_id="p")
+    nothing = await _ws(client, 7, type="middagsro/plan/add", plan_id="p")
     assert not nothing["success"]
-    pantry_add = await _ws(client, 8, type="rema1000/plan/add", plan_id="p", pantry="salt")
-    assert pantry_add["error"]["code"] == "rema1000_error"  # no recipe uses salt
+    pantry_add = await _ws(client, 8, type="middagsro/plan/add", plan_id="p", pantry="salt")
+    assert pantry_add["error"]["code"] == "middagsro_error"  # no recipe uses salt
