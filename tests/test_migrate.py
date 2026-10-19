@@ -75,7 +75,7 @@ async def test_moving_the_old_integration(
     device = devices.async_get(device.id)
     assert device is not None
     assert device.identifiers == {(DOMAIN, "749434")}
-    assert device.config_entries == {entry.entry_id}
+    assert device.config_entry_id == entry.entry_id
     assert old_entries(hass) == []
 
     # Nothing more to move: the normal login.
