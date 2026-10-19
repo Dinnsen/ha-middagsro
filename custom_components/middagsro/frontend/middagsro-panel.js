@@ -67,6 +67,7 @@ const RATE_ICONS = {
   dislike: '<svg viewBox="0 0 24 24" aria-hidden="true" style="transform:rotate(180deg)"><path d="M7 10.5V20H4.2a.7.7 0 0 1-.7-.7v-8.1a.7.7 0 0 1 .7-.7H7zm0 0 3.6-6.2c.4-.7 1.3-.9 2-.5.6.4.9 1.1.7 1.8L12.6 9h5.6a2 2 0 0 1 2 2.4l-1.3 6.9a2 2 0 0 1-2 1.7H7"/></svg>',
   favorite: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z"/></svg>',
 };
+const REMA_ID = "11deC"; // REMA 1000 on Tjek: its avis is shown first among the shops
 const RATE_LABELS = { like: "Synes om", dislike: "Synes ikke om", favorite: "Favorit" };
 const SURPRISE_ICON = '<svg class="ai" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11h16v9H4zM12 11v9M3 7.5h18V11H3zM12 7.5C10 3 6 4 7.5 6.5 8.4 8 12 7.5 12 7.5zm0 0c2-4.5 6-3.5 4.5-1C15.6 8 12 7.5 12 7.5z"/></svg>';
 const RECIPE_SORTS = { name: "Navn", newest: "Senest tilføjet", most_used: "Mest brugt", quickest: "Hurtigst" };
@@ -210,6 +211,7 @@ class Rema1000Panel extends HTMLElement {
     this._chainQuery = "";
     this._compare = null; // {key, lines, chains, loading}: plan items cheaper elsewhere
     this._favCompare = {}; // week -> {product id: cheaper offer}
+    this._everywhere = { query: "", loading: false, data: null, error: null }; // one search, every shop
     this._newFav = { text: "", frequency: "weekly" };
     this._newDislike = "";
     this._startDate = null;
@@ -316,7 +318,7 @@ class Rema1000Panel extends HTMLElement {
       if (!this._startDate) this._startDate = state.default_start;
       if (this._viewingLatest) this._plan = state.latest_plan;
       if (!this._form || !this._dirty) this._form = clone(state.settings);
-      if (!this._chains && state.settings.chains?.length) this._loadChains();
+      if (!this._chains) this._loadChains();
     } catch (err) {
       this._error = err?.message || String(err);
     }
@@ -585,6 +587,35 @@ class Rema1000Panel extends HTMLElement {
       },
       "rc-plan-day": () => this._recipeToPlan(arg),
       surprise: () => this._run(() => this._generate(true), "Madplanen med nye, overraskende retter er ved at blive lavet – det tager typisk 1-2 minutter."),
+      everywhere: () => this._everywhereRun(),
+      "ev-rema": () => {
+        const product = this._everywhere.data?.products.find((p) => String(p.id) === arg);
+        if (!product) return;
+        const plan = this._state?.latest_plan;
+        this._editPlan(
+          () => (plan
+            ? this._ws("middagsro/plan/add", { plan_id: plan.id, product_id: product.id, part: "main" })
+            : this._ws("middagsro/list/add", { product_id: product.id, amount: 1 })),
+          plan ? `${product.name} er sat på indkøbslisten.` : `${product.name} er sat på REMA-listen.`
+        );
+      },
+      "ev-chain": () => {
+        const offer = this._everywhere.data?.offers.find((o) => o.id === arg);
+        const plan = this._state?.latest_plan;
+        if (!offer || !plan) return;
+        this._editPlan(
+          () => this._ws("middagsro/chains/add", { plan_id: plan.id, offer }),
+          `${offer.heading} er sat på ${this._chainName(offer.dealer_id)}-listen under Indkøb.`
+        );
+      },
+      "fav-where": () => {
+        const p = (this._favCache[this._favWeek]?.products || []).find((x) => String(x.id) === arg)
+          || (this._favCache[this._favWeek]?.on_offer || []).find((x) => String(x.id) === arg);
+        if (!p) return;
+        this._modal = { kind: "where", title: p.name };
+        this._renderModal();
+        this._everywhereRun(p.name);
+      },
       "chain-open": () => {
         this._chain = arg;
         this._chainQuery = "";
@@ -600,6 +631,12 @@ class Rema1000Panel extends HTMLElement {
       "chain-add": () => {
         const offer = (this._chainOffers[this._chain]?.offers || []).find((o) => o.id === arg);
         const plan = this._state?.latest_plan;
+        if (offer && offer.dealer_id === REMA_ID) {
+          return this._editPlan(async () => {
+            const res = await this._ws("middagsro/chains/rema_add", { offer, plan_id: plan?.id || null });
+            this._toast = res.added_to === "plan" ? `${res.name} er sat på indkøbslisten.` : `${res.name} er sat på REMA-listen.`;
+          });
+        }
         if (!offer || !plan) return this._say("Lav en madplan først – så kan tilbuddet komme på indkøbslisten.");
         this._editPlan(
           () => this._ws("middagsro/chains/add", { plan_id: plan.id, offer }),
@@ -871,6 +908,11 @@ class Rema1000Panel extends HTMLElement {
       if (list) list.innerHTML = this._favRows();
       return;
     }
+    if (ds.bind === "everywhere") {
+      this._everywhere.query = el.value;
+      if (ev.type === "change") this._everywhereRun();
+      return;
+    }
     if (ds.bind === "chainquery") {
       this._chainQuery = el.value;
       const list = this.shadowRoot.querySelector("#chain-offers");
@@ -985,8 +1027,8 @@ class Rema1000Panel extends HTMLElement {
   _favCheaper(p) {
     const found = this._favCompare[this._favWeek]?.[String(p.id)];
     return found
-      ? `<span class="cheaper static">${this._chainLogo(found.dealer_id, "tiny")}<span>${kr(found.per_package)} i ${esc(this._chainName(found.dealer_id))}</span></span>`
-      : "";
+      ? `<button class="cheaper" data-action="fav-where" data-arg="${esc(p.id)}" title="Se priserne i butikkerne">${this._chainLogo(found.dealer_id, "tiny")}<span>${kr(found.per_package)} i ${esc(this._chainName(found.dealer_id))}</span></button>`
+      : `<button class="cheaper plain" data-action="fav-where" data-arg="${esc(p.id)}">Sammenlign priser</button>`;
   }
 
   async _generate(surprise = false) {
@@ -1632,7 +1674,8 @@ class Rema1000Panel extends HTMLElement {
   }
 
   _chainInfo(id) {
-    return (this._chains || []).find((c) => c.id === id) || { id, name: id, color: null, logo: null };
+    const fallback = { id, name: id === REMA_ID ? "REMA 1000" : id, color: id === REMA_ID ? "#0B2D8B" : null, logo: null };
+    return (this._chains || []).find((c) => c.id === id) || fallback;
   }
 
   _chainName(id) {
@@ -1701,7 +1744,7 @@ class Rema1000Panel extends HTMLElement {
           <input class="grow" type="search" data-bind="chainquery" value="${esc(this._chainQuery)}" placeholder="Søg i tilbuddene, fx kaffe">
           <button class="btn small" data-action="chain-refresh" ${data.loading ? "disabled" : ""}>${data.loading ? '<span class="spinner small"></span>' : "Opdatér"}</button>
         </div>
-        <p class="muted small">${count != null ? `${count} madtilbud fra ${esc(c.name)}s aviser. ` : ""}Med "+ Indkøb" kommer et tilbud på ${esc(c.name)}-listen under Indkøb – REMA-listen er uændret.</p>
+        <p class="muted small">${count != null ? `${count} madtilbud fra ${esc(c.name)}${c.name.endsWith("s") ? "'" : "s"} aviser. ` : ""}${id === REMA_ID ? 'Med "+ Indkøb" kommer tilbuddet på indkøbslisten og sendes til REMA-appen med resten.' : `Med "+ Indkøb" kommer et tilbud på ${esc(c.name)}-listen under Indkøb – REMA-listen er uændret.`}</p>
         ${data.error ? `<div class="banner error">${esc(data.error)}</div>` : ""}
         ${data.loading && !data.offers ? '<p class="muted"><span class="spinner small"></span> Henter tilbud …</p>' : `<div class="prod-grid" id="chain-offers">${this._chainOfferRows()}</div>`}
       </div>`;
@@ -1709,13 +1752,76 @@ class Rema1000Panel extends HTMLElement {
 
   // The chosen chains on the front page.
   _chainsCard() {
-    const ids = this._state.settings.chains || [];
-    if (!ids.length) return "";
+    const ids = [REMA_ID, ...(this._state.settings.chains || [])];
+    const e = this._everywhere;
     return `<div class="card chains-card">
-      <h2 class="flush">Tilbud i andre butikker</h2>
+      <h2 class="flush">Tilbud og priser</h2>
       <div class="chain-row">${ids
         .map((id) => `<button class="chain-btn" data-action="chain-open" data-arg="${esc(id)}">${this._chainLogo(id)}<span>${esc(this._chainName(id))}</span></button>`)
         .join("")}</div>
+      <div class="row wrap everywhere">
+        <input class="grow" type="search" data-bind="everywhere" value="${esc(e.query)}" placeholder="Søg på en vare – fx kaffe, smør eller laks" enterkeyhint="search">
+        <button class="btn" data-action="everywhere" ${e.loading ? "disabled" : ""}>${e.loading ? '<span class="spinner small"></span>' : "Søg"}</button>
+      </div>
+      ${e.error ? `<div class="banner error">${esc(e.error)}</div>` : ""}
+      ${e.data ? this._everywhereHtml(e.data) : ""}
+    </div>`;
+  }
+
+  async _everywhereRun(query) {
+    const q = String(query ?? this._everywhere.query).trim();
+    if (!q) return this._say("Skriv en vare først.");
+    this._everywhere = { query: q, loading: true, data: this._everywhere.data, error: null };
+    this._render();
+    try {
+      this._everywhere = { query: q, loading: false, data: await this._ws("middagsro/search/everywhere", { query: q }), error: null };
+    } catch (err) {
+      this._everywhere = { query: q, loading: false, data: null, error: err?.message || String(err) };
+    }
+    this._render();
+    this._renderModal();
+  }
+
+  // REMA's products and the other shops' offers for a search, cheapest marked.
+  _everywhereHtml(data) {
+    const unit = (u) => (u ? `${kr(u.price)}/${u.unit}` : "");
+    const best = data.best;
+    const isBest = (source, id) => best && best.source === source && String(best.id) === String(id);
+    const plan = this._state?.latest_plan;
+    const products = data.products
+      .map(
+        (p) => `<li class="ev ${isBest("rema", p.id) ? "best" : ""}">
+          ${this._chainLogo(REMA_ID, "tiny")}
+          ${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy">` : '<span class="noimg">?</span>'}
+          <div class="what"><b>${esc(p.name)}</b><span class="muted small">${esc(p.underline || "")}${p.unit_price ? ` · ${unit(p.unit_price)}` : ""}</span>
+            ${isBest("rema", p.id) ? '<span class="badge eco">Billigst</span>' : ""}</div>
+          <span class="ev-price ${onOffer(p) ? "sale" : ""}">${kr(p.price)}</span>
+          <button class="btn small" data-action="ev-rema" data-arg="${esc(p.id)}" ${this._busy ? "disabled" : ""}>+ ${plan ? "Indkøb" : "REMA-listen"}</button>
+        </li>`
+      )
+      .join("");
+    const offers = data.offers
+      .map(
+        (o) => `<li class="ev ${isBest("chain", o.id) ? "best" : ""}">
+          ${this._chainLogo(o.dealer_id, "tiny")}
+          ${o.image ? `<img src="${esc(o.image)}" alt="" loading="lazy">` : '<span class="noimg">?</span>'}
+          <div class="what"><b>${esc(o.heading)}</b><span class="muted small">${esc(this._chainName(o.dealer_id))}${o.description ? ` · ${esc(o.description)}` : ""}${o.unit_price ? ` · ${unit(o.unit_price)}` : ""}</span>
+            ${isBest("chain", o.id) ? '<span class="badge eco">Billigst</span>' : ""}</div>
+          <span class="ev-price sale">${o.price != null ? kr(o.price) : ""}</span>
+          <button class="btn small" data-action="ev-chain" data-arg="${esc(o.id)}" ${this._busy || !plan ? "disabled" : ""} title="${plan ? "" : "Lav en madplan først"}">+ ${esc(this._chainName(o.dealer_id))}</button>
+        </li>`
+      )
+      .join("");
+    const chains = (this._state.settings.chains || []).length;
+    return `<div class="everywhere-results">
+      ${best
+        ? `<p class="best-line">Billigst: <b>${unit(best.unit_price)}</b> hos ${esc(best.source === "rema" ? "REMA 1000" : this._chainName((data.offers.find((o) => o.id === best.id) || {}).dealer_id))}</p>`
+        : ""}
+      <h3>REMA 1000</h3>
+      <ul class="evs">${products || '<li class="muted">Ingen varer fundet hos REMA.</li>'}</ul>
+      ${chains
+        ? `<h3>Tilbud i andre butikker</h3><ul class="evs">${offers || '<li class="muted">Ingen af de andre butikker har den på tilbud lige nu.</li>'}</ul>`
+        : '<p class="muted small">Vælg andre butikker under Indstillinger › Andre butikker for at sammenligne med deres tilbud.</p>'}
     </div>`;
   }
 
@@ -2152,6 +2258,21 @@ class Rema1000Panel extends HTMLElement {
     }
     if (this._modal?.kind === "pantry") {
       node.innerHTML = this._pantryModal(this._modal);
+      return;
+    }
+    if (this._modal?.kind === "where") {
+      const e = this._everywhere;
+      node.innerHTML = `<div class="scrim" data-action="modal-close"></div>
+        <div class="dialog wide" role="dialog" aria-modal="true" aria-label="Priser">
+          <h2>${esc(this._modal.title)}</h2>
+          <div class="row wrap everywhere">
+            <input class="grow" type="search" data-bind="everywhere" value="${esc(e.query)}" placeholder="Søg på en vare">
+            <button class="btn" data-action="everywhere" ${e.loading ? "disabled" : ""}>${e.loading ? '<span class="spinner small"></span>' : "Søg"}</button>
+          </div>
+          ${e.error ? `<div class="banner error">${esc(e.error)}</div>` : ""}
+          ${e.loading && !e.data ? '<p class="muted"><span class="spinner small"></span> Finder priserne …</p>' : e.data ? this._everywhereHtml(e.data) : ""}
+          <div class="row wrap dialog-actions"><span class="spacer"></span><button class="btn" data-action="modal-close">Luk</button></div>
+        </div>`;
       return;
     }
     if (this._modal?.kind === "recipe") {
@@ -3113,6 +3234,20 @@ const STYLE = `
   .cheaper { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; border: 1px solid var(--divider-color); background: var(--rema-card);
     color: var(--primary-text-color); border-radius: 999px; padding: 3px 10px 3px 4px; font-size: 12px; cursor: pointer; max-width: 100%; }
   .cheaper.static { cursor: default; }
+  .cheaper.plain { padding: 3px 10px; color: var(--secondary-text-color); }
+  .everywhere { margin-top: 12px; }
+  .everywhere-results h3 { margin: 14px 0 4px; }
+  .best-line { margin: 12px 0 0; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--rema-ok) 14%, transparent); }
+  .evs { list-style: none; padding: 0; margin: 0; }
+  .ev { display: grid; grid-template-columns: auto 44px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 4px;
+    border-top: 1px solid var(--divider-color); }
+  .ev:first-child { border-top: none; }
+  .ev.best { background: color-mix(in srgb, var(--rema-ok) 9%, transparent); border-radius: 10px; }
+  .ev img, .ev .noimg { width: 44px; height: 44px; object-fit: contain; border-radius: 8px; background: #fff; }
+  .ev .what { display: grid; min-width: 0; } .ev .what b { overflow-wrap: anywhere; }
+  .ev .badge { justify-self: start; margin-top: 2px; }
+  .ev-price { font-weight: 700; white-space: nowrap; } .ev-price.sale { color: var(--rema-sale); }
+  @media (max-width: 600px) { .ev { grid-template-columns: auto 40px minmax(0, 1fr) auto; } .ev .btn { grid-column: 3 / 5; justify-self: start; } }
   .cheaper { justify-self: start; width: fit-content; }
   .cheaper > span:not(.chain-logo) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chain-save { align-items: center; }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -17,7 +18,7 @@ from custom_components.middagsro.storage import clean_settings
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
-from .conftest import make_plan
+from .conftest import make_plan, make_product
 
 NETTO = "9ba51"
 LIDL = "71c90"
@@ -369,3 +370,115 @@ async def test_commands(
     assert added["result"]["shopping"][-1]["name"] == "Kaffe"
     cleared = await ws(9, type="middagsro/chains/clear", plan_id="p", dealer_id=NETTO)
     assert "egg" not in {line["id"] for line in cleared["result"]["shopping"]}
+
+
+def test_unit_prices_and_words() -> None:
+    """Prices per kg, litre or piece, and search words inside longer words."""
+    assert ch.product_unit_price({"underline": "500 GR.", "price": 35}) == {
+        "unit": "kg",
+        "price": 70.0,
+    }
+    assert ch.product_unit_price({"underline": "1 LTR.", "price": 10}) == {
+        "unit": "l",
+        "price": 10.0,
+    }
+    assert ch.product_unit_price({"underline": "10 STK.", "price": 30}) == {
+        "unit": "stk",
+        "price": 3.0,
+    }
+    assert ch.product_unit_price({"underline": "BUNDT", "price": 10}) is None
+    assert ch.product_unit_price({"underline": "1 PK", "price": 10}) is None
+    eggs = ch.offer_dict(OFFERS[1], NETTO)
+    assert ch.offer_unit_price(eggs) == {"unit": "stk", "price": 2.0}
+    assert ch.offer_unit_price({**eggs, "price": None}) is None
+    assert ch.offer_unit_price(ch.offer_dict(OFFERS[3], NETTO)) is None  # "Pr. bundt"
+    assert ch.query_words("Let mælk") == ["let", "mælk"]
+    assert ch.text_has(["mælk"], "Arla Letmælk 1 l")
+    assert not ch.text_has(["mælk"], "Smør")
+    assert not ch.text_has([], "Smør")
+
+
+async def test_search_everywhere(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """REMA's products and the chains' offers for a search, the cheapest marked."""
+    planner = init_integration.runtime_data.planner
+    fake = FakeTjek()
+    with patch.object(planner.chains, "_get", new=fake):
+        found = await ch.async_search_everywhere(planner, "frilandsæg")
+        assert [p["name"] for p in found["products"]] == ["FRILANDSÆG"]
+        assert found["products"][0]["unit_price"] == {"unit": "stk", "price": 3.2}
+        assert [o["id"] for o in found["offers"]] == ["o2"]
+        assert found["best"] == {
+            "source": "chain",
+            "id": "o2",
+            "unit_price": {"unit": "stk", "price": 2.0},
+        }
+        assert (await ch.async_search_everywhere(planner, " "))["best"] is None
+        persille = await ch.async_search_everywhere(planner, "persille")
+        assert persille["best"] is None  # no sizes to compare
+        assert [o["id"] for o in persille["offers"]] == ["o4"]
+        fake.fail.add("/v2/catalogs")
+        planner.chains._offers.clear()
+        assert (await ch.async_search_everywhere(planner, "frilandsæg"))["offers"] == []
+    # REMA's own avis can be read too.
+    with patch.object(planner.chains, "_get", new=FakeTjek()):
+        assert len(await planner.chains.async_offers(ch.REMA_ID)) == 4
+
+
+async def test_rema_offers_on_the_list(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """An offer from REMA's avis goes on the plan's list as REMA's product, or as text."""
+    planner = init_integration.runtime_data.planner
+    offer = ch.offer_dict(OFFERS[0], ch.REMA_ID)
+    product = make_product(30001, "HK. OKSEKØD 8-12%", 35.0, underline="500 GR. / DANSK")
+    mock_client.async_get_products.return_value = [product]
+    mock_client.async_get_offer_products.side_effect = lambda offers: [
+        replace(offers[0], product_ids=(30001,))
+    ]
+    result = await ch.async_add_rema_offer(planner, offer, "p")
+    assert result == {"added_to": "plan", "name": "HK. OKSEKØD 8-12%"}
+    with patch.object(planner, "_add_items") as add:
+        assert (await ch.async_add_rema_offer(planner, offer, None))["added_to"] == "rema_list"
+    assert add.call_args.args[0] == [{"product_id": 30001, "amount": 1}]
+    # Not in REMA's webshop (a partivare): the avis's text.
+    mock_client.async_get_offer_products.side_effect = lambda offers: offers
+    result = await ch.async_add_rema_offer(planner, {**offer, "price": 25}, "p")
+    plan = planner.store.get_plan("p")
+    assert plan is not None
+    assert (plan["shopping"][-1]["name"], plan["shopping"][-1]["cost"]) == (
+        "Hakket oksekød 8-12%",
+        25.0,
+    )
+    with patch.object(planner, "_add_items") as add:
+        await ch.async_add_rema_offer(planner, offer, None)
+    assert add.call_args.args[0] == [{"name": "Hakket oksekød 8-12%", "amount": 1}]
+    with pytest.raises(ServiceValidationError):
+        await ch.async_add_rema_offer(planner, {"heading": ""}, "p")
+
+
+async def test_search_commands(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    hass_ws_client: WebSocketGenerator,
+    mock_client: MagicMock,
+) -> None:
+    """The panel's commands for the search and REMA's offers."""
+    planner = init_integration.runtime_data.planner
+    client = await hass_ws_client(hass)
+    with patch.object(planner.chains, "_get", new=FakeTjek()):
+        await client.send_json(
+            {"id": 1, "type": "middagsro/search/everywhere", "query": "frilandsæg"}
+        )
+        msg = await client.receive_json()
+        assert msg["result"]["best"]["id"] == "o2"
+        await client.send_json(
+            {"id": 2, "type": "middagsro/chains/offers", "dealer_id": ch.REMA_ID}
+        )
+        assert len((await client.receive_json())["result"]["offers"]) == 4
+    offer = ch.offer_dict(OFFERS[2], ch.REMA_ID)
+    await client.send_json(
+        {"id": 3, "type": "middagsro/chains/rema_add", "offer": offer, "plan_id": "p"}
+    )
+    assert (await client.receive_json())["result"] == {"added_to": "plan", "name": "Spaghetti"}

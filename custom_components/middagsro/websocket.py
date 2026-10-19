@@ -14,13 +14,16 @@ from homeassistant.util import dt as dt_util
 from .api import Catalog, RemaError
 from .chains import (
     CHAINS,
+    REMA_ID,
     ChainError,
     async_add_offer,
+    async_add_rema_offer,
     async_chain_line,
     async_clear_chain,
     async_compare,
     async_compare_products,
     async_move_line,
+    async_search_everywhere,
 )
 from .const import DOMAIN
 from .coordinator import RemaConfigEntry
@@ -815,7 +818,7 @@ async def ws_chains(
     {
         vol.Required("type"): "middagsro/chains/offers",
         ENTRY: str,
-        vol.Required("dealer_id"): vol.In(list(CHAINS)),
+        vol.Required("dealer_id"): vol.In([REMA_ID, *CHAINS]),
         vol.Optional("force", default=False): bool,
     }
 )
@@ -961,6 +964,38 @@ async def ws_chain_clear(
     connection.send_result(msg["id"], plan)
 
 
+@websocket_api.websocket_command(
+    {vol.Required("type"): "middagsro/search/everywhere", ENTRY: str, vol.Required("query"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_search_everywhere(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """A product at REMA and in the chosen chains' offers, cheapest marked."""
+    planner = _entry(hass, msg).runtime_data.planner
+    connection.send_result(msg["id"], await async_search_everywhere(planner, msg["query"]))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/chains/rema_add",
+        ENTRY: str,
+        vol.Required("offer"): dict,
+        vol.Optional("plan_id"): vol.Any(None, str),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_rema_offer_add(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Put an offer from REMA's avis on the plan's list (or the REMA list)."""
+    planner = _entry(hass, msg).runtime_data.planner
+    result = await async_add_rema_offer(planner, msg["offer"], msg.get("plan_id"))
+    connection.send_result(msg["id"], result)
+
+
 @callback
 def async_register_websocket(hass: HomeAssistant) -> None:
     """Register the panel's commands."""
@@ -1006,5 +1041,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_chain_add,
         ws_chain_line,
         ws_chain_clear,
+        ws_search_everywhere,
+        ws_rema_offer_add,
     ):
         websocket_api.async_register_command(hass, command)

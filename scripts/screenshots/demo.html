@@ -137,6 +137,22 @@
     "middagsro/chains/offers": (msg) => ({ dealer_id: msg.dealer_id, offers: D.chainOffers.filter((o) => o.dealer_id === msg.dealer_id) }),
     "middagsro/chains/compare": () => D.compare,
     "middagsro/chains/products": () => ({ products: { [D.remaFavorites[0].id]: { dealer_id: "9ba51", heading: "Kaffe", price: 39, per_package: 39, saving: 10 } } }),
+    "middagsro/search/everywhere": async (msg) => {
+      await wait(200);
+      const P = D.products;
+      return {
+        query: msg.query,
+        products: [
+          { ...D.search[0], unit_price: { unit: "l", price: 13.5 } },
+          { ...D.search[1], unit_price: { unit: "l", price: 10.95 } },
+        ],
+        offers: [
+          { ...D.chainOffers[1], unit_price: { unit: "l", price: 9.95 } },
+        ],
+        best: { source: "chain", id: "n2", unit_price: { unit: "l", price: 9.95 } },
+      };
+    },
+    "middagsro/chains/rema_add": (msg) => ({ added_to: "plan", name: msg.offer.heading }),
     "middagsro/chains/add": (msg) => {
       const plan = D.state.latest_plan;
       plan.shopping.push({ id: `c${plan.shopping.length}`, name: msg.offer.heading, chain_heading: msg.offer.heading, chain_only: true,
