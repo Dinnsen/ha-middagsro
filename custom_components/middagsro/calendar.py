@@ -14,6 +14,7 @@ from homeassistant.util import dt as dt_util
 from .coordinator import RemaConfigEntry
 from .entity import device_info
 from .mealplan import signal_plans_updated
+from .storage import plan_period
 
 PARALLEL_UPDATES = 0
 
@@ -66,7 +67,7 @@ class RemaMealPlanCalendar(CalendarEntity):
         (also the days it skips), like in the panel."""
         by_day: dict[str, CalendarEvent] = {}
         for plan in reversed(self._entry.runtime_data.store.plans):
-            start, end = plan.get("start_date", ""), plan.get("end_date", "")
+            start, end = plan_period(plan)
             for key in [k for k in by_day if start <= k <= end]:
                 del by_day[key]
             for day in plan.get("days", []):

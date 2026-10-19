@@ -12,6 +12,7 @@ from custom_components.middagsro.storage import (
     MAX_PLANS,
     RemaPlanStore,
     clean_settings,
+    plan_period,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -220,3 +221,11 @@ async def test_timeline(hass: HomeAssistant, hass_storage: dict[str, Any]) -> No
     assert (weeks["2026-10-24"], weeks["2026-10-25"]) == (43, 44)
     # Everything has ended.
     assert store.timeline(date(2026, 11, 2), 6) == []
+
+    # Days skipped before a plan's first dinner are its own: no dinner there.
+    late = make_plan("late", start="2026-10-21")  # 21-23 Oct
+    late["skipped"] = ["2026-10-18", "2026-10-19", "2026-10-20"]
+    await store.async_add_plan(late)
+    assert plan_period(late) == ("2026-10-18", "2026-10-23")
+    first = store.timeline(date(2026, 10, 19), 6)[:3]
+    assert [(e["plan_id"], e["skipped"]) for e in first] == [("late", True)] * 3

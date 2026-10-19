@@ -173,6 +173,16 @@ def ensure_line_ids(plan: dict[str, Any]) -> None:
             line["id"] = uuid.uuid4().hex[:8]
 
 
+def plan_period(plan: dict[str, Any]) -> tuple[str, str]:
+    """The first and last day a plan decides, as ISO dates.
+
+    Its start date is its first dinner; days skipped before it ("we have food
+    sunday to tuesday") are part of it too.
+    """
+    start = min([plan.get("start_date", ""), *(plan.get("skipped") or [])])
+    return start, plan.get("end_date", "")
+
+
 class RemaPlanStore:
     """Persist settings, favourites and plan history for one account."""
 
@@ -335,14 +345,8 @@ class RemaPlanStore:
 
     def plan_covering(self, day: date) -> dict[str, Any] | None:
         """The newest plan whose period includes a day (also if that day is skipped)."""
-        return next(
-            (
-                p
-                for p in self.plans
-                if p.get("start_date", "") <= day.isoformat() <= p.get("end_date", "")
-            ),
-            None,
-        )
+        iso = day.isoformat()
+        return next((p for p in self.plans if plan_period(p)[0] <= iso <= plan_period(p)[1]), None)
 
     def recent_dishes(self, before: date, weeks: int) -> list[str]:
         """Dish names from plans in the weeks before a date."""
