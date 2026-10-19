@@ -2,6 +2,12 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.2.2] - 2026-10-19
+
+### Fixed
+- The shops' logos fill their circle on phones too – in the search on the front page, the shopping list and favourites they were drawn at the size of a product photo, so only a corner showed.
+- Tapping a shop on the front page opens its page at the top; before, the page's start was hidden under the bar at the top, so it looked as if it jumped down to the search field.
+
 ## [1.2.1] - 2026-10-19
 
 ### Fixed
