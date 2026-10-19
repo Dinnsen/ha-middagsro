@@ -103,6 +103,8 @@ Next to **Lav ny madplan** on the front page: a plan with dishes the family has 
 
 Middagsro is still about REMA 1000, but under **Indstillinger → Andre butikker** you can choose other chains you also shop in (Netto, Lidl, føtex, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, Brugsen, SPAR, Løvbjerg, Min Købmand, ABC Lavpris).
 
+- REMA 1000's logo comes first: its page shows all the offers in REMA's avis.
+- **Search every shop** under the logos: a product's price at REMA and in the other shops' offers, per kilo, litre or piece, with the cheapest marked – and put it on the REMA list or the cheaper shop's list.
 - Their **logos are shown in circles on the front page**; tap one to see that chain's food offers, search them and put one on that shop's list.
 - In the **shopping list**, a small logo shows when an item is cheaper in one of them this week, and how much you save. **Tap the logo** to buy it there: the item moves to a separate list for that shop under the REMA list, and is not sent to the REMA app. Each shop's list can be ticked off, amounts changed, items deleted or moved back to REMA, and **Ryd kurven** (empty the basket) removes what has been bought – the list disappears when it is empty.
 - In **Favoritter**, the same logo shows which of your favourite products are cheaper elsewhere that week.

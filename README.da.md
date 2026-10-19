@@ -103,6 +103,8 @@ Ved siden af **Lav ny madplan** på forsiden: en madplan med retter, familien al
 
 Middagsro handler stadig om REMA 1000, men under **Indstillinger → Andre butikker** kan I vælge andre kæder, I også handler i (Netto, Lidl, føtex, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, Brugsen, SPAR, Løvbjerg, Min Købmand og ABC Lavpris).
 
+- REMA 1000's logo står først: siden viser alle tilbud i REMA's avis.
+- **Søg i alle butikker** under logoerne: en vares pris hos REMA og i de andre butikkers tilbud, pr. kilo, liter eller stk., med den billigste markeret – og sæt den på REMA-listen eller den billigere butiks liste.
 - Deres **logoer vises i runde cirkler på forsiden**. Tryk på et for at se kædens madtilbud, søge i dem og lægge et på butikkens liste.
 - I **indkøbslisten** viser et lille logo, når en vare er billigere i en af dem denne uge, og hvor meget I sparer. **Tryk på logoet** for at købe den der: varen flytter til en særskilt liste for butikken under REMA-listen og sendes ikke til REMA-appen. Hver butiksliste kan krydses af, mængder rettes, og varer slettes eller flyttes tilbage til REMA. **Ryd kurven** fjerner det, der er købt, og listen forsvinder, når den er tom.
 - Under **Favoritter** viser det samme logo, hvilke af dine favoritvarer der er billigere andre steder den uge.

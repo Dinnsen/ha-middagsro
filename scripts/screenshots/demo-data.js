@@ -346,6 +346,7 @@ window.DEMO.state.latest_plan.days[0].recipe_id = "r1";
 // Other chains (made-up offers; the demo has no logos, so the chains' initials are shown).
 window.DEMO.state.settings.chains = ["9ba51", "71c90", "bdf5A"];
 window.DEMO.chains = [
+  { id: "11deC", name: "REMA 1000", color: "#0B2D8B", logo: null },
   { id: "9ba51", name: "Netto", color: "#FFD950", logo: null },
   { id: "71c90", name: "Lidl", color: "#0050AA", logo: null },
   { id: "bdf5A", name: "føtex", color: "#00205B", logo: null },
@@ -361,6 +362,10 @@ window.DEMO.chainOffers = [
   { id: "n5", dealer_id: "9ba51", heading: "Hakket svinekød 8-12%", description: "500 g", price: 25, pre_price: 35, quantity: "500 g", valid_to: "2026-10-23T21:59:59+00:00", image: pic("🥩", "#FBE1E1") },
   { id: "n6", dealer_id: "9ba51", heading: "Agurk", description: "Pr. stk.", price: 5, pre_price: 8, quantity: "1 stk.", valid_to: "2026-10-23T21:59:59+00:00", image: pic("🥒", "#E2F2DF") },
 ];
+window.DEMO.chainOffers.push(
+  { id: "r1", dealer_id: "11deC", heading: "REMA 1000 Hakket oksekød 8-12%", description: "500 g", price: 35, pre_price: 45, quantity: "500 g", valid_to: "2026-10-24T21:59:59+00:00", image: pic("🥩", "#FBE1E1") },
+  { id: "r2", dealer_id: "11deC", heading: "Broccoli", description: "Pr. stk.", price: 10, pre_price: 14, quantity: "1 stk.", valid_to: "2026-10-24T21:59:59+00:00", image: pic("🥦", "#E2F2DF") },
+);
 window.DEMO.compare = {
   plan_id: "plan-43",
   lines: {

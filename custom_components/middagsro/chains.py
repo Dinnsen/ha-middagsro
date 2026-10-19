@@ -34,6 +34,8 @@ OFFER_CACHE = 3600
 DEALER_CACHE = 86400
 MAX_OFFERS = 800
 MIN_SAVING = 1.0  # kr. per item; less is not worth a trip
+# REMA 1000 on Tjek: its avis is shown with the other chains' on the front page.
+REMA_ID = "11deC"
 # Grocery chains on Tjek (eTilbudsavis): their dealer ids.
 CHAINS: dict[str, str] = {
     "9ba51": "Netto",
@@ -141,11 +143,11 @@ class ChainOffers:
             return self._dealers[1]
         dealers = {
             dealer_id: {"id": dealer_id, "name": name, "color": None, "logo": None}
-            for dealer_id, name in CHAINS.items()
+            for dealer_id, name in {REMA_ID: "REMA 1000", **CHAINS}.items()
         }
         try:
             data = await self._get(
-                "/v2/dealers", {"dealer_ids": ",".join(CHAINS), "limit": len(CHAINS)}
+                "/v2/dealers", {"dealer_ids": ",".join(dealers), "limit": len(dealers)}
             )
         except ChainError as err:
             _LOGGER.debug("Chain logos not read: %s", err)
@@ -161,7 +163,7 @@ class ChainOffers:
 
     async def async_offers(self, dealer_id: str, force: bool = False) -> list[dict[str, Any]]:
         """A chain's food offers now and in its next avis (cached for an hour)."""
-        if dealer_id not in CHAINS:
+        if dealer_id not in CHAINS and dealer_id != REMA_ID:
             raise _invalid("chain_not_found")
         cached = self._offers.get(dealer_id)
         if cached and not force and time.monotonic() - cached[0] < OFFER_CACHE:
@@ -222,12 +224,16 @@ def _equivalent_price(product: dict[str, Any], offer: Offer) -> float | None:
 
 
 def _same_kind(product: dict[str, Any], offer: Offer) -> bool:
-    """Every word of REMA's name is in the offer, with the same fat % and organic or not."""
-    from .mealplan import _name_words, _percents, _tokens  # noqa: PLC0415
+    """Every word of REMA's name is in the offer (also inside a compound word, "mælk" in
+    "letmælk"), nothing in it makes it another product, and fat % and organic are the same."""
+    from .mealplan import _NEUTRAL_WORDS, _percents, _tokens, name_fit  # noqa: PLC0415
 
     name = str(product.get("name") or "")
-    words = _name_words(name)
-    if not words or not words <= _name_words(offer.heading):
+    words = [w for w in _tokens(name) if len(w) > 1 and w not in _NEUTRAL_WORDS]
+    if not words:
+        return False
+    matched, penalty = name_fit(words, f"{offer.heading} {offer.description or ''}")
+    if matched < len(words) or penalty >= 5:
         return False
     text = f"{offer.heading}\n{offer.description or ''}"
     theirs, ours = _percents(text), _percents(name)
@@ -311,6 +317,136 @@ async def async_compare_products(
             if found:
                 out[str(product["id"])] = found
     return out
+
+
+# ------------------------------------------------------------------ one search, every shop
+
+
+def _unit(kind: str, amount: float, price: float) -> dict[str, Any]:
+    if kind == "g":
+        return {"unit": "kg", "price": round(price / amount * 1000, 2)}
+    if kind == "ml":
+        return {"unit": "l", "price": round(price / amount * 1000, 2)}
+    return {"unit": "stk", "price": round(price / amount, 2)}
+
+
+def product_unit_price(product: dict[str, Any]) -> dict[str, Any] | None:
+    """A REMA product's price per kg, litre or piece (from its underline)."""
+    from .mealplan import package_size  # noqa: PLC0415
+
+    size = package_size(product.get("underline"))
+    price = product.get("price")
+    if not size or not price or size[0] == "pack" or size[1] <= 0:
+        return None
+    return _unit(size[0], size[1], float(price))
+
+
+def offer_unit_price(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """An offer's price per kg, litre or piece (its smallest size, so never too low)."""
+    from .mealplan import avis_size  # noqa: PLC0415
+
+    offer = as_offer(entry)
+    if offer.price is None:
+        return None
+    for kind in ("g", "ml", "stk"):
+        if (sizes := avis_size(offer, kind)) and sizes[0] > 0:
+            return _unit(kind, sizes[0], offer.price)
+    return None
+
+
+def query_words(query: str) -> list[str]:
+    """The words of a search ("let mælk" -> ["let", "mælk"])."""
+    from .mealplan import _tokens  # noqa: PLC0415
+
+    return [w for w in _tokens(query) if len(w) > 1]
+
+
+def text_has(words: list[str], text: str) -> bool:
+    """Every word is in the text, also inside a longer word ("mælk" in "letmælk")."""
+    from .mealplan import _tokens  # noqa: PLC0415
+
+    tokens = _tokens(text)
+    return bool(words) and all(any(w in t for t in tokens) for w in words)
+
+
+async def async_search_everywhere(planner: MealPlanner, query: str) -> dict[str, Any]:
+    """REMA's products and the chosen chains' offers for a search, cheapest first."""
+    words = query_words(query)
+    if not words:
+        return {"query": query, "products": [], "offers": [], "best": None}
+    products = [p.as_dict() for p in await planner.client.async_search_products(query, 8)]
+    for product in products:
+        product["unit_price"] = product_unit_price(product)
+    now = datetime.now(UTC)
+    offers: list[dict[str, Any]] = []
+    for dealer_id in [d for d in planner.store.settings["chains"] if d in CHAINS]:
+        try:
+            found = await planner.chains.async_offers(dealer_id)
+        except ChainError as err:
+            _LOGGER.debug("Offers of %s not read: %s", dealer_id, err)
+            continue
+        for entry in found:
+            end = parse_time(entry.get("valid_to"))
+            if (end is None or end >= now) and text_has(
+                words, f"{entry['heading']} {entry.get('description') or ''}"
+            ):
+                offers.append({**entry, "unit_price": offer_unit_price(entry)})
+
+    def order(item: dict[str, Any]) -> tuple[int, float]:
+        unit = item.get("unit_price")
+        return (0, unit["price"]) if unit else (1, float(item.get("price") or 1e9))
+
+    offers.sort(key=order)
+    offers = offers[:30]
+    # The cheapest, compared per kg, litre or piece in the unit most results have.
+    candidates = [("rema", p) for p in products if p.get("unit_price")] + [
+        ("chain", o) for o in offers if o.get("unit_price")
+    ]
+    best: dict[str, Any] | None = None
+    if candidates:
+        units = [c[1]["unit_price"]["unit"] for c in candidates]
+        unit = max(set(units), key=units.count)
+        source, item = min(
+            (c for c in candidates if c[1]["unit_price"]["unit"] == unit),
+            key=lambda c: c[1]["unit_price"]["price"],
+        )
+        best = {"source": source, "id": item["id"], "unit_price": item["unit_price"]}
+    return {"query": query, "products": products, "offers": offers, "best": best}
+
+
+async def async_add_rema_offer(
+    planner: MealPlanner, offer: dict[str, Any], plan_id: str | None
+) -> dict[str, Any]:
+    """An offer from REMA's avis on the plan's shopping list (else the REMA list)."""
+    from .planedit import ADDED_CATEGORY, _new_line, async_add_product, update_total  # noqa: PLC0415
+
+    heading = str(offer.get("heading") or "").strip()[:200]
+    if not heading or not offer.get("id"):
+        raise _invalid("chain_not_found")
+    found = await planner.client.async_get_offer_products([as_offer({**offer, "heading": heading})])
+    ids = list(found[0].product_ids or ()) if found else []
+    plan = planner.store.get_plan(plan_id) if plan_id else None
+    if plan is None:
+        await planner._add_items(
+            [{"product_id": ids[0], "amount": 1}] if ids else [{"name": heading, "amount": 1}]
+        )
+        return {"added_to": "rema_list", "name": heading}
+    if ids:
+        line = await async_add_product(planner, plan["id"], ids[0])
+        return {"added_to": "plan", "name": line["name"]}
+    line = _new_line(heading, heading, ADDED_CATEGORY, buy_from=None)
+    price = offer.get("price")
+    line.update(
+        amount=1,
+        packages=1,
+        cost=round(float(price), 2) if price else 0,
+        note=offer.get("description"),
+    )
+    plan["shopping"].append(line)
+    update_total(plan)
+    await planner.store.async_save()
+    planner._notify()
+    return {"added_to": "plan", "name": heading}
 
 
 # ------------------------------------------------------------------ the shops' own lists

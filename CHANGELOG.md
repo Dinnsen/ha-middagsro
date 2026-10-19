@@ -2,6 +2,16 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.2.0] - 2026-10-19
+
+### Added
+- **REMA 1000 among the shops on the front page:** its logo comes first, and its page shows all the offers in REMA's avis; *+ Indkøb* puts one on the shopping list (as REMA's product, or the avis's text for an item only sold in the shops).
+- **Search every shop** under the logos: a product's prices at REMA and in the other shops' offers, compared per kilo, litre or piece, with the cheapest marked. Put it on the REMA shopping list or on the cheaper shop's list.
+- **Favourites:** every favourite has *Sammenlign priser*, which opens the same comparison; when another shop is cheaper, its logo and price are shown and can be tapped.
+
+### Fixed
+- Favourites cheaper in another shop were missed when the other shop's name for it was a compound word or had more words ("mælk" in "Arla Letmælk"); the chains' logos are now always read.
+
 ## [1.1.0] - 2026-10-19
 
 ### Changed
