@@ -2,6 +2,21 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.0.0] - 2026-10-19
+
+The integration is now called **Middagsro**. It is still about REMA 1000 and its shopping list; the new name and icon are its own.
+
+### Changed
+- **New name, icon and logo:** Middagsro, with an AI spark over a bowl between a knife and fork. The panel, the sidebar, the home-screen app, HACS and the device are renamed. The technical id stays `rema1000`, so installations, automations and entity IDs are unchanged (new installations get `middagsro_…` entity IDs). The repository is now `Dinnsen/middagsro`; GitHub forwards the old address.
+- **Settings in sub-pages:** meal plan and week, the family, dishes, shopping, what the AI must remember, nutrition, other shops, Mealie and the app – each with a summary of what is chosen.
+
+### Added
+- **Recipe collection** (*Opskrifter → Opskriftsamling*): search, sort and filter the family's recipes; open one in a popup to edit its name, times, ingredients and steps, or put it on the meal plan on a chosen day (its items go on the shopping list).
+- **👍, 👎 and ❤️** on every dinner in the plan, in the rest of this week and on the recipe – and in the collection. ❤️ is a favourite (with 👍, and a red heart). Tap again to take it back; 👍 after 👎 changes it. The rated dish is saved in the collection with its recipe. New plans and swap suggestions use favourites and liked dishes when they fit the offers, and never disliked ones.
+- **Add a recipe from a link:** the recipe is read from the page's recipe data (or by the AI from its text) and shown to be checked before it is saved. The link is not kept. Pages on the home network can't be read.
+- **Overrask os** (surprise us): a meal plan with dishes the family has never had, still within budget, allergies and rules.
+- **Offers from other shops** (*Indstillinger → Andre butikker*): Netto, Lidl, føtex, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, Brugsen, SPAR, Løvbjerg, Min Købmand and ABC Lavpris, from their own aviser on Tjek. Their round logos on the front page open a page with their food offers. The shopping list and the favourites show when an item is cheaper in one of them that week (the same kind of item, compared per kilo, litre or piece). Tapping the logo moves the item to a list for that shop under the REMA list (not sent to the REMA app), where it can be ticked off, changed, deleted or moved back; *Ryd kurven* removes what was bought.
+
 ## [0.10.0] - 2026-10-18
 
 ### Added

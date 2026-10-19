@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.storage import Store
 
+from .chains import CHAINS
 from .const import DOMAIN
 
 STORE_VERSION = 1
@@ -84,6 +85,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # Mealie (when its integration is set up): the family's recipes first, and its calendar.
     "mealie_recipes": False,
     "mealie_calendar": False,
+    # Other chains whose offers are shown (Tjek dealer ids, see chains.py).
+    "chains": [],
 }
 
 
@@ -148,6 +151,9 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
     settings["nutrition_enabled"] = bool(settings["nutrition_enabled"])
     settings["mealie_recipes"] = bool(settings["mealie_recipes"])
     settings["mealie_calendar"] = bool(settings["mealie_calendar"])
+    settings["chains"] = list(
+        dict.fromkeys(c for c in settings["chains"] or [] if isinstance(c, str) and c in CHAINS)
+    )
     for key, default in (("protein_pct", 30), ("carb_pct", 45), ("fat_pct", 25)):
         settings[key] = _clamp(settings[key], 0, 100, default)
     settings["kcal_min"] = _clamp(settings["kcal_min"], 100, 3000, 600)
@@ -179,6 +185,7 @@ class RemaPlanStore:
         self.favorites: list[dict[str, Any]] = []
         self.plans: list[dict[str, Any]] = []
         self.note = ""  # the family's wishes for the next plan only
+        self.recipes: list[dict[str, Any]] = []  # the recipe collection (recipes.py)
 
     async def async_load(self) -> None:
         """Load from disk."""
@@ -187,6 +194,7 @@ class RemaPlanStore:
         self.favorites = list(data.get("favorites") or [])
         self.plans = list(data.get("plans") or [])
         self.note = str(data.get("note") or "")
+        self.recipes = [r for r in data.get("recipes") or [] if isinstance(r, dict) and r.get("id")]
         for plan in self.plans:
             ensure_line_ids(plan)
 
@@ -200,6 +208,7 @@ class RemaPlanStore:
                 "favorites": self.favorites,
                 "plans": self.plans,
                 "note": self.note,
+                "recipes": self.recipes,
             }
         )
 

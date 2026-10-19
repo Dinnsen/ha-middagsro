@@ -15,9 +15,9 @@ def device_info(entry: RemaConfigEntry) -> DeviceInfo:
     """The one service device per REMA 1000 account."""
     return DeviceInfo(
         identifiers={(DOMAIN, str(entry.unique_id))},
-        name="REMA 1000",
-        manufacturer="REMA 1000",
-        model=entry.title,
+        name="Middagsro",
+        manufacturer="Middagsro",
+        model=f"REMA 1000-konto: {entry.title}",
         entry_type=DeviceEntryType.SERVICE,
         configuration_url="https://shop.rema1000.dk",
     )

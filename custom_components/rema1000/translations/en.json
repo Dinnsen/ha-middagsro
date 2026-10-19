@@ -123,7 +123,7 @@
       "message": "Every day of the plan was skipped."
     },
     "no_ai_task": {
-      "message": "No AI Task entity was found. Set up an AI service such as Google Generative AI, OpenAI or Ollama, and choose it in the REMA 1000 panel's settings."
+      "message": "No AI Task entity was found. Set up an AI service such as Google Generative AI, OpenAI or Ollama, and choose it in the Middagsro panel's settings."
     },
     "ai_answer_too_long": {
       "message": "{error} - the AI's answer was too long. Raise the maximum number of tokens in the AI Task's settings (for example to 8000), or make a shorter plan."
@@ -163,12 +163,36 @@
     },
     "no_late_list": {
       "message": "The meal plan has no shopping later in the week."
+    },
+    "recipe_name_required": {
+      "message": "The recipe needs a name."
+    },
+    "recipe_not_found": {
+      "message": "The recipe is not in the recipe collection."
+    },
+    "too_many_recipes": {
+      "message": "The recipe collection can hold at most {limit} recipes."
+    },
+    "recipe_bad_action": {
+      "message": "Unknown action for a recipe."
+    },
+    "recipe_bad_link": {
+      "message": "The link must be an ordinary web page (http:// or https://) on the internet."
+    },
+    "recipe_link_failed": {
+      "message": "Could not read the page: {error}"
+    },
+    "recipe_not_on_page": {
+      "message": "No recipe was found on the page."
+    },
+    "chain_not_found": {
+      "message": "Unknown chain."
     }
   },
   "issues": {
     "no_ai_task": {
-      "title": "No AI Task for REMA 1000 meal plans",
-      "description": "REMA 1000 makes meal plans with an AI Task entity, but none was found.\n\nSet up an AI service that offers AI Tasks, for example Google Generative AI, OpenAI or Ollama (Settings → Devices & services → Add integration). Then choose it under Settings in the REMA 1000 panel, or set a preferred AI Task in Home Assistant.\n\nThis message goes away by itself the next time a meal plan is made."
+      "title": "No AI Task for Middagsro",
+      "description": "Middagsro makes meal plans with an AI Task entity, but none was found.\n\nSet up an AI service that offers AI Tasks, for example Google Generative AI, OpenAI or Ollama (Settings → Devices & services → Add integration). Then choose it under Settings in the Middagsro panel, or set a preferred AI Task in Home Assistant.\n\nThis message goes away by itself the next time a meal plan is made."
     }
   },
   "selector": {
@@ -235,7 +259,7 @@
     },
     "generate_meal_plan": {
       "name": "Make meal plan",
-      "description": "Makes a dinner plan with AI from the tilbudsavis and your settings in the REMA 1000 panel.",
+      "description": "Makes a dinner plan with AI from the tilbudsavis and your settings in the Middagsro panel.",
       "fields": {
         "config_entry_id": {
           "name": "Account",

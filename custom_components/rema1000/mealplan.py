@@ -20,8 +20,17 @@ from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util import dt as dt_util
 
 from .api import DANISH_TIME, Catalog, Offer, Product, RemaClient, RemaError, parse_time
+from .chains import ChainOffers
 from .const import DOMAIN
 from .mealie import MealieError, MealieLink
+from .recipes import (
+    disliked_names,
+    find_recipe,
+    ingredient_texts,
+    mark_planned,
+    prompt_recipes,
+    recipe_to_day,
+)
 from .storage import RemaPlanStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -646,6 +655,9 @@ def build_prompt(
     note: str | None = None,
     late: dict[int, date] | None = None,
     mealie: list[dict[str, Any]] | None = None,
+    own: list[dict[str, Any]] | None = None,
+    disliked: list[str] | None = None,
+    surprise: bool = False,
 ) -> str:
     """Build the instructions for the AI."""
     s = settings
@@ -696,10 +708,10 @@ def build_prompt(
     out.append(
         f"- Mandag til fredag højst {s['max_cook_minutes_weekday']} minutters aktiv tilberedning."
     )
-    if s["disliked_dishes"]:
+    if dislikes := [*s["disliked_dishes"], *(disliked or [])]:
         out.append(
             "- Familien kan ikke lide disse retter – brug dem ALDRIG, heller ikke varianter af dem: "
-            + "; ".join(s["disliked_dishes"])
+            + "; ".join(dislikes)
             + "."
         )
     if recent_dishes:
@@ -736,16 +748,24 @@ def build_prompt(
         out.append(f"- VIGTIGT fra sidste forsøg: {feedback}")
 
     out += ["", "ØNSKER:"]
+    if surprise:
+        out.append(
+            "- OVERRASK FAMILIEN: lav en uge med retter, de aldrig har fået – fra andre køkkener "
+            "(fx koreansk, peruviansk, etiopisk, georgisk, libanesisk, vietnamesisk), med "
+            "spændende smage, teknikker og overraskende kombinationer. Hver dag skal være "
+            "forskellig og føles som en lille opdagelse, men stadig til at lave på en hverdag, "
+            "børnevenlig og inden for alle krav ovenfor. Brug ikke familiens kendte retter."
+        )
     if s["wishes"].strip():
         out.append(f"- {s['wishes'].strip()}")
     out.append(
         "- Byg retterne op omkring ugens tilbud nedenfor, og marker tilbudsvarer på "
         "indkøbslisten med tilbuddets id."
     )
-    if favorites_due:
+    if favorites_due and not surprise:
         out.append("- Disse familiefavoritter SKAL med i perioden (angiv favorite_id på dagen):")
         out += [f"  [{f['id']}] {f['text']}" for f in favorites_due]
-    if favorites_optional:
+    if favorites_optional and not surprise:
         out.append(
             '- Familiefavoritter til inspiration (ikke krav). Dem markeret "kun på tilbud" '
             "bruges kun, hvis hovedingrediensen er på tilbud. Angiv favorite_id, hvis du bruger én:"
@@ -774,6 +794,19 @@ def build_prompt(
             "id | ret | ingredienser:",
         ]
         out += [f"{r['slug']} | {r['name']} | {', '.join(r['ingredients'])[:300]}" for r in mealie]
+    if own and not surprise:
+        out += [
+            "",
+            "FAMILIENS OPSKRIFTSSAMLING – retter de synes om (❤️ = favorit, brug dem gerne "
+            "ofte). Brug en af dem, når den passer til ugens tilbud og kravene: skriv dens id i "
+            "recipe_id på dagen og opskriftens navn som dish; indkøbslisten følger opskriftens "
+            "ingredienser. Ellers recipe_id: null. id | ret | ingredienser:",
+        ]
+        out += [
+            f"{r['id']} | {'❤️ ' if r['favorite'] else ''}{r['name']} | "
+            f"{', '.join(ingredient_texts(r))[:300]}"
+            for r in own
+        ]
     if offers:
         label = catalog.label if catalog and catalog.label else "Ugens tilbud"
         late = late or {}
@@ -838,6 +871,7 @@ def build_prompt(
                         "total_minutes": 35,
                         "uses": ["Laksefilet", "Spinatpasta", "Pesto", "Broccoli"],
                         "mealie": None,
+                        "recipe_id": None,
                     }
                 ],
                 "shopping": [
@@ -984,6 +1018,7 @@ class MealPlanner:
         self._task: asyncio.Task[None] | None = None
         self._auto_attempted: set[str] = set()
         self.mealie = MealieLink(hass)
+        self.chains = ChainOffers(hass)
         # Automatic sends waiting for REMA's prices: (plan id, key) -> cancel.
         self._sends: dict[tuple[str, str], Callable[[], None]] = {}
 
@@ -1016,8 +1051,12 @@ class MealPlanner:
         start: date | None = None,
         send: bool = False,
         skip: set[date] | None = None,
+        surprise: bool = False,
     ) -> None:
-        """Start making a plan in the background. Days in skip get no dinner."""
+        """Start making a plan in the background. Days in skip get no dinner.
+
+        surprise: dishes the family has never had (Overrask os).
+        """
         if self.generating:
             raise _invalid("already_generating")
         start = start or self.default_start()
@@ -1028,13 +1067,15 @@ class MealPlanner:
             raise _invalid("no_ai_task")
         self._set_status("generating", "Laver madplan …")
         self._task = self.hass.async_create_background_task(
-            self._async_run(start, send, skip or set()),
+            self._async_run(start, send, skip or set(), surprise),
             name=f"{DOMAIN} meal plan",
         )
 
-    async def _async_run(self, start: date, send: bool, skip: set[date]) -> None:
+    async def _async_run(
+        self, start: date, send: bool, skip: set[date], surprise: bool = False
+    ) -> None:
         try:
-            plan = await self.async_generate(start, skip)
+            plan = await self.async_generate(start, skip, surprise=surprise)
             if send:
                 await self._async_send_when_ready(plan)
         except Exception as err:
@@ -1156,6 +1197,10 @@ class MealPlanner:
             return
         if day.get("mealie") and await self._async_mealie_recipe(day):
             return
+        own = find_recipe(self.store, day.get("recipe_id"))
+        if own and (own["ingredients"] or own["steps"]):
+            recipe_to_day(own, day)
+            return
         prompt = build_recipe_prompt(settings=self.store.settings, day=day, plan=plan)
         try:
             raw = await self._async_ask_ai(prompt, f"REMA 1000 opskrift {day['date']}")
@@ -1247,7 +1292,9 @@ class MealPlanner:
         """
         return noon(start)
 
-    async def async_generate(self, start: date, skip: set[date] | None = None) -> dict[str, Any]:
+    async def async_generate(
+        self, start: date, skip: set[date] | None = None, *, surprise: bool = False
+    ) -> dict[str, Any]:
         """Make, price and store a plan. Returns the plan."""
         settings = self.store.settings
         dates = plan_dates(start, settings["days"], skip)
@@ -1269,8 +1316,9 @@ class MealPlanner:
         due, optional = self.store.favorites_due(start)
         recent = self.store.recent_dishes(start, settings["no_repeat_weeks"])
         note = self.store.note.strip()
+        own = [] if surprise else prompt_recipes(self.store, recent)
         mealie: list[dict[str, Any]] = []
-        if settings["mealie_recipes"] and self.mealie.available:
+        if settings["mealie_recipes"] and self.mealie.available and not surprise:
             self._set_status("generating", "Henter jeres opskrifter fra Mealie …")
             try:
                 mealie = await self.mealie.async_prompt_recipes(recent)
@@ -1299,6 +1347,9 @@ class MealPlanner:
                 note=note or None,
                 late=late,
                 mealie=mealie,
+                own=own,
+                disliked=disliked_names(self.store),
+                surprise=surprise,
             )
             raw = await self._async_ask_ai(prompt, "REMA 1000 madplan")
             self._set_status("generating", "Finder varer og priser i REMA 1000 …")
@@ -1306,9 +1357,12 @@ class MealPlanner:
                 raw, dates, catalog, offers, self.price_time(start), late
             )
             known = {r["slug"] for r in mealie}
+            ours = {r["id"] for r in own}
             for day in plan["days"]:
                 if day.get("mealie") not in known:
                     day["mealie"] = None  # not one of the family's recipes
+                if day.get("recipe_id") not in ours:
+                    day["recipe_id"] = None
             if best is None or plan["total"] < best["total"]:
                 best = plan
             if not settings["budget"] or plan["total"] <= settings["budget"]:
@@ -1330,7 +1384,9 @@ class MealPlanner:
         best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
         best["skipped"] = [d.isoformat() for d in skipped]
         best["note"] = note
+        best["surprise"] = surprise
         await self._async_add_recipes(best)
+        mark_planned(self.store, best)
         await self.store.async_add_plan(best)
         self._schedule_refreshes(best)
         await self.async_mealie_sync(best)
@@ -1477,6 +1533,7 @@ class MealPlanner:
                     ],
                     "tip": str(day.get("tip") or "")[:500],
                     "mealie": str(day["mealie"])[:200] if day.get("mealie") else None,
+                    "recipe_id": str(day["recipe_id"])[:40] if day.get("recipe_id") else None,
                     # The shopping list's items for this dish (from the overview).
                     "uses": [
                         str(name).strip()[:200]
@@ -1950,7 +2007,8 @@ class MealPlanner:
         lines = [
             line
             for line in plan["shopping"]
-            if part == "all" or bool(line.get("buy_from")) == (part == "late")
+            if (part == "all" or bool(line.get("buy_from")) == (part == "late"))
+            and not line.get("buy_at")  # bought in another shop
         ]
         # The offers' products and prices as REMA has them now (once they run).
         try:
@@ -2045,6 +2103,7 @@ class MealPlanner:
             and not line.get("must_have")
             and not line.get("added")
             and not line.get("product_id")
+            and not line.get("buy_at")
             and prices_from(date.fromisoformat(line.get("buy_from") or plan["start_date"])) <= now
         ]
         catalog_id = (plan.get("catalog") or {}).get("id")

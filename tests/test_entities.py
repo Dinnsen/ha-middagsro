@@ -19,16 +19,16 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from .conftest import NOW, make_plan
 
-LIST_TOTAL = "sensor.rema_1000_shopping_list_total"
-CURRENT = "sensor.rema_1000_current_offer_catalogue"
-UPCOMING = "sensor.rema_1000_next_offer_catalogue"
-MEAL_PLAN = "sensor.rema_1000_meal_plan"
-DINNER = "sensor.rema_1000_dinner_today"
-CALENDAR = "calendar.rema_1000_meal_plan"
-TODO = "todo.rema_1000_shopping_list"
-QUICK_ADD = "text.rema_1000_add_to_shopping_list"
-GENERATE = "button.rema_1000_make_meal_plan"
-SEND = "button.rema_1000_send_meal_plan_to_shopping_list"
+LIST_TOTAL = "sensor.middagsro_shopping_list_total"
+CURRENT = "sensor.middagsro_current_offer_catalogue"
+UPCOMING = "sensor.middagsro_next_offer_catalogue"
+MEAL_PLAN = "sensor.middagsro_meal_plan"
+DINNER = "sensor.middagsro_dinner_today"
+CALENDAR = "calendar.middagsro_meal_plan"
+TODO = "todo.middagsro_shopping_list"
+QUICK_ADD = "text.middagsro_add_to_shopping_list"
+GENERATE = "button.middagsro_make_meal_plan"
+SEND = "button.middagsro_send_meal_plan_to_shopping_list"
 
 
 @pytest.fixture
@@ -64,7 +64,7 @@ async def test_entities_and_device(
     device = device_registry.async_get(entries[0].device_id)
     assert device is not None
     assert (DOMAIN, "4242") in device.identifiers
-    assert device.name == "REMA 1000"
+    assert device.name == "Middagsro"
     assert device.entry_type is dr.DeviceEntryType.SERVICE
     assert {e.device_id for e in entries} == {device.id}
 

@@ -221,7 +221,7 @@ class MealieLink:
             for i in day.get("ingredients") or []
         ]
         patch: dict[str, Any] = {
-            "description": "Fra REMA 1000-madplanen i Home Assistant."
+            "description": "Fra Middagsro i Home Assistant."
             + (f" {day['tip']}" if day.get("tip") else ""),
             "recipeServings": day.get("servings") or None,
             "recipeYield": f"{day['servings']} personer" if day.get("servings") else "",
@@ -288,7 +288,7 @@ class MealieLink:
                 entry["recipeId"] = recipe_id
             else:
                 entry["title"] = day["dish"]
-                entry["text"] = "Fra REMA 1000-madplanen"
+                entry["text"] = "Fra Middagsro"
             made = await self._request("POST", "/api/households/mealplans", json=entry)
             day["mealie_entry"] = (made or {}).get("id")
             count += 1

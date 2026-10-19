@@ -36,6 +36,7 @@ from .mealplan import (
     rule_lines,
     to_base,
 )
+from .recipes import disliked_names, find_recipe, ingredient_texts, prompt_recipes
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -153,6 +154,7 @@ def build_swap_prompt(
     day: dict[str, Any],
     offer_lines: list[str],
     mealie: list[dict[str, Any]] | None = None,
+    own: list[dict[str, Any]] | None = None,
 ) -> str:
     """Ask the AI for three other dishes for a day."""
     when = date.fromisoformat(day["date"])
@@ -197,6 +199,13 @@ def build_swap_prompt(
             "i mealie, og brug opskriftens navn som dish):",
             *(f"{r['slug']} | {r['name']}" for r in mealie),
         ]
+    if own:
+        out += [
+            "",
+            "Fra familiens opskriftssamling (retter de synes om, ❤️ = favorit) – foreslå gerne "
+            "en, der passer (skriv dens id i recipe_id, og brug opskriftens navn som dish):",
+            *(f"{r['id']} | {'❤️ ' if r['favorite'] else ''}{r['name']}" for r in own),
+        ]
     out += [
         "",
         "SVARFORMAT: Svar KUN med gyldig JSON uden markdown, præcis sådan:",
@@ -210,6 +219,7 @@ def build_swap_prompt(
                         "total_minutes": 25,
                         "why": "Én kort sætning, fx hvilket tilbud den bruger",
                         "mealie": None,
+                        "recipe_id": None,
                     }
                 ]
             },
@@ -259,11 +269,7 @@ def build_swap_items_prompt(
         "vare allerede på listen, og skal der mere til, så skriv kun den ekstra mængde.",
         "- uses: navnene på ALLE de varer fra listen og fra add, som den nye ret bruger.",
         "Brug de nemmeste hverdagsvarer (hakkede tomater på dåse til kødsovs, ikke friske tomater).",
-        *(
-            [f"Familiens opskrift (fra Mealie) bruger: {', '.join(ingredients)}."]
-            if ingredients
-            else []
-        ),
+        *([f"Familiens egen opskrift bruger: {', '.join(ingredients)}."] if ingredients else []),
     ]
     if not known_uses:
         out.append(
@@ -314,6 +320,7 @@ def _clean_option(raw: Any) -> dict[str, Any] | None:
         "total_minutes": minutes(raw.get("total_minutes")),
         "why": str(raw.get("why") or "").strip()[:300],
         "mealie": str(raw["mealie"])[:200] if raw.get("mealie") else None,
+        "recipe_id": str(raw["recipe_id"])[:40] if raw.get("recipe_id") else None,
     }
 
 
@@ -341,22 +348,37 @@ async def async_swap_options(planner: MealPlanner, plan_id: str, day_date: str) 
     when = date.fromisoformat(day["date"])
     late = late_offers(offers, date.fromisoformat(plan["start_date"]))
     mealie = await _async_mealie_list(planner)
+    recent = [d["dish"] for d in plan["days"]]
+    own = prompt_recipes(planner.store, recent)
     prompt = build_swap_prompt(
-        settings=planner.store.settings,
+        settings=_with_dislikes(planner),
         plan=plan,
         day=day,
         offer_lines=_offer_lines(offers, when, late),
         mealie=mealie,
+        own=own,
     )
     raw = await planner._async_ask_ai(prompt, "REMA 1000 andre retter")
     options = [o for o in (_clean_option(item) for item in raw.get("options") or []) if o][:3]
     known = {r["slug"] for r in mealie}
+    ours = {r["id"] for r in own}
     for option in options:
         if option["mealie"] not in known:
             option["mealie"] = None
+        if option["recipe_id"] not in ours:
+            option["recipe_id"] = None
     if not options:
         raise _failed("swap_failed", error="AI'en kom ikke med nogen forslag")
     return {"plan_id": plan["id"], "date": day["date"], "dish": day["dish"], "options": options}
+
+
+def _with_dislikes(planner: MealPlanner) -> dict[str, Any]:
+    """The settings, with the collection's thumbs-down dishes among the dishes they don't like."""
+    settings = planner.store.settings
+    return {
+        **settings,
+        "disliked_dishes": [*settings["disliked_dishes"], *disliked_names(planner.store)],
+    }
 
 
 def _names(items: Any) -> list[str]:
@@ -376,7 +398,7 @@ async def async_swap_dish(
         raise _invalid("swap_failed", error="ingen ret valgt")
     if not planner.ai_available():
         raise _invalid("no_ai_task")
-    settings = planner.store.settings
+    settings = _with_dislikes(planner)
     offers = await _async_offers(planner, plan)
     first = date.fromisoformat(plan["start_date"])
     late = late_offers(offers, first)
@@ -393,6 +415,11 @@ async def async_swap_dish(
             recipe = await planner.mealie.async_recipe(choice["mealie"])
         except MealieError as err:
             _LOGGER.debug("Could not read %s from Mealie: %s", choice["mealie"], err)
+    own = find_recipe(planner.store, choice["recipe_id"])
+    if own is None:
+        choice["recipe_id"] = None
+    elif own["ingredients"]:
+        recipe = {"ingredients": ingredient_texts(own)}
     prompt = build_swap_items_prompt(
         settings=settings,
         plan=plan,
@@ -450,7 +477,11 @@ async def async_swap_dish(
         total_minutes=choice["total_minutes"] or day.get("total_minutes", 0),
         uses=_names(raw.get("uses")),
         mealie=choice["mealie"],
+        recipe_id=choice["recipe_id"],
     )
+    if own is not None:
+        own["times_planned"] = own.get("times_planned", 0) + 1
+        own["last_planned"] = day["date"]
     update_total(plan)
     await planner._async_recipe(day, plan)
     for leftover in plan["days"]:
@@ -695,6 +726,7 @@ def _empty(day: dict[str, Any]) -> None:
         tip="",
         uses=[],
         nutrition=None,
+        recipe_id=None,
     )
     day.pop("recipe_error", None)
 

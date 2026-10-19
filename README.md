@@ -1,31 +1,31 @@
 <p align="center">
-  <img src="docs/images/hero.png" alt="REMA 1000 for Home Assistant: meal plan, recipe and shopping list on a phone" width="100%">
+  <img src="docs/images/hero.png" alt="Middagsro: meal plan, recipe and shopping list on a phone" width="100%">
 </p>
 
 <p align="center">
-  <a href="https://github.com/Dinnsen/ha-rema1000/releases"><img alt="Version" src="https://img.shields.io/github/v/release/Dinnsen/ha-rema1000?style=flat-square&label=version&color=0e2a8a"></a>
+  <a href="https://github.com/Dinnsen/middagsro/releases"><img alt="Version" src="https://img.shields.io/github/v/release/Dinnsen/middagsro?style=flat-square&label=version&color=0e2a8a"></a>
   <a href="https://hacs.xyz"><img alt="HACS" src="https://img.shields.io/badge/HACS-custom-41BDF5?style=flat-square"></a>
   <img alt="Home Assistant 2026.1+" src="https://img.shields.io/badge/Home%20Assistant-2026.1%2B-18BCF2?style=flat-square&logo=homeassistant&logoColor=white">
   <img alt="Quality scale: Platinum" src="https://img.shields.io/badge/quality-platinum-7f8c99?style=flat-square">
-  <a href="https://github.com/Dinnsen/ha-rema1000/actions/workflows/tests.yml"><img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/Dinnsen/ha-rema1000/tests.yml?branch=main&style=flat-square&label=tests"></a>
+  <a href="https://github.com/Dinnsen/middagsro/actions/workflows/tests.yml"><img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/Dinnsen/middagsro/tests.yml?branch=main&style=flat-square&label=tests"></a>
   <a href="LICENSE"><img alt="Licence: MIT" src="https://img.shields.io/badge/licence-MIT-97ca00?style=flat-square"></a>
   <a href="https://buymeacoffee.com/dinnsen"><img alt="Buy Me a Coffee" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-ffdd00?style=flat-square&logo=buymeacoffee&logoColor=black"></a>
 </p>
 
-# REMA 1000 for Home Assistant
+# Middagsro – meal plans and REMA 1000 shopping in Home Assistant
 
 🇩🇰 [Læs på dansk](README.da.md)
 
-Plan the week's dinners with AI from REMA 1000's weekly offers (*tilbudsavis*), bring the recipes up in the kitchen, and send the shopping list straight to the REMA 1000 app with one tap. The shopping list in the app also becomes a to-do list in Home Assistant, so you can add items by voice, from an automation or from a dashboard.
+**Middagsro** (Danish for *dinner calm*) plans the week's dinners with AI from REMA 1000's weekly offers (*tilbudsavis*), brings the recipes up in the kitchen, keeps the family's recipe collection and sends the shopping list straight to the REMA 1000 app with one tap. The shopping list in the app also becomes a to-do list in Home Assistant, so you can add items by voice, from an automation or from a dashboard.
 
 > [!NOTE]
-> Unofficial integration, not made by or affiliated with REMA 1000. REMA 1000 has no public API, so the integration uses the same calls as rema1000.dk and the web shop. It may stop working if REMA changes its site. For personal use with your own REMA 1000 account in Denmark. The panel and the meal plans are in Danish.
+> Unofficial integration, not made by or affiliated with REMA 1000 or the other chains it shows offers from. REMA 1000 has no public API, so the integration uses the same calls as rema1000.dk and the web shop. It may stop working if REMA changes its site. For personal use with your own REMA 1000 account in Denmark. The panel and the meal plans are in Danish.
 
 **Contents:** [Features](#features) · [Requirements](#requirements) · [Installation](#installation) · [Setup](#setup) · [Settings](#settings-in-the-panel) · [Entities](#entities) · [Actions](#actions) · [Examples](#examples) · [How it works](#how-it-works) · [Limitations](#known-limitations) · [Troubleshooting](#troubleshooting) · [Removal](#removing-the-integration) · [Privacy](#privacy)
 
 ## Features
 
-The integration adds a **REMA 1000 panel** to the sidebar. It follows your Home Assistant theme, light and dark mode, and works on a computer, tablet and phone, where the tabs sit at the bottom and you can swipe between them.
+The integration adds a **Middagsro panel** to the sidebar. It follows your Home Assistant theme, light and dark mode, and works on a computer, tablet and phone, where the tabs sit at the bottom and you can swipe between them.
 
 ### The week's meal plan, made with AI
 
@@ -81,6 +81,37 @@ Earlier meal plans with price, status and dishes. Open an old plan and send it t
 
 Describe the dishes the family loves and how often they should be on the plan (every week, every 2 weeks, every month, only when the ingredients are on offer, or just for inspiration). Dishes you don't like never go on the plan.
 
+### Recipe collection – 👍, 👎 and ❤️
+
+<img src="docs/images/collection.png" alt="The recipe collection with search, sorting and thumbs up, down and heart" width="100%">
+
+The **Opskrifter** (recipes) tab has two pages: **Ugens opskrifter** (the week's recipes) as before, and **Opskriftsamling** (the recipe collection).
+
+- **👍, 👎 and ❤️** on every dinner in the plan – also in the rest of this week and on the recipe. 👍 saves the dish in the collection as one you like, 👎 as one you don't like (it is never put on a plan again), and ❤️ as a favourite (it also gets 👍, and the heart turns red). Tap again to take it back; 👍 after 👎 changes it.
+- **Search, sort and filter** the collection (name, newest, most used, quickest; all, favourites, liked, disliked).
+- **Add a recipe from a link:** paste the link to a recipe page and tap **Hent opskrift**. The recipe is read from the page (most recipe sites have it as data; otherwise the AI reads the page), and you can correct it before it is saved. The link itself is not kept. Or write a recipe yourself.
+- **Open a recipe** to edit the name, times, ingredients and steps, rate it, or **put it on the meal plan** on a day you choose – its items go on the shopping list.
+- New plans and swap suggestions use the family's favourites and liked dishes when they fit the week's offers, and never the disliked ones.
+
+### Overrask os (surprise us)
+
+Next to **Lav ny madplan** on the front page: a plan with dishes the family has never had – from other cuisines, with exciting flavours and surprising combinations, but still within your budget, allergies, rules and weekday time.
+
+### Offers from other shops
+
+<img src="docs/images/chains.png" alt="Round logos of other chains on the front page and items that are cheaper elsewhere in the shopping list" width="100%">
+
+Middagsro is still about REMA 1000, but under **Indstillinger → Andre butikker** you can choose other chains you also shop in (Netto, Lidl, føtex, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, Brugsen, SPAR, Løvbjerg, Min Købmand, ABC Lavpris).
+
+- Their **logos are shown in circles on the front page**; tap one to see that chain's food offers, search them and put one on that shop's list.
+- In the **shopping list**, a small logo shows when an item is cheaper in one of them this week, and how much you save. **Tap the logo** to buy it there: the item moves to a separate list for that shop under the REMA list, and is not sent to the REMA app. Each shop's list can be ticked off, amounts changed, items deleted or moved back to REMA, and **Ryd kurven** (empty the basket) removes what has been bought – the list disappears when it is empty.
+- In **Favoritter**, the same logo shows which of your favourite products are cheaper elsewhere that week.
+- The offers come from the chains' own weekly aviser on Tjek (eTilbudsavis), the same source as REMA's avis. An item only counts as cheaper when it is the same kind of item (same words, fat percentage and organic or not), compared per kilo, litre or piece.
+
+### Settings in sub-pages
+
+The settings are split into pages – meal plan and week, the family, dishes, shopping, what the AI must remember, nutrition, other shops, Mealie and the app – each with a short summary of what is chosen.
+
 ### Mealie
 
 If [Mealie](https://mealie.io) is set up in Home Assistant (the official Mealie integration), the plan can work with it – switch it on under **Indstillinger → Mealie**:
@@ -97,7 +128,7 @@ The integration uses the Mealie integration's address and API token, so nothing 
 
 ### App on the home screen
 
-Open `https://<your-home-assistant>/rema1000_app/app.html` in Safari or Chrome, log in and choose **Share → Add to Home Screen**. REMA 1000 then opens full screen with the REMA icon and your Home Assistant theme – also behind the notch and home bar. Pull down to refresh. The link is also under **Indstillinger** (settings) in the panel.
+Open `https://<your-home-assistant>/rema1000_app/app.html` in Safari or Chrome, log in and choose **Share → Add to Home Screen**. Middagsro then opens full screen with its icon and your Home Assistant theme – also behind the notch and home bar. Pull down to refresh. The link is also under **Indstillinger** (settings) in the panel.
 
 ## Requirements
 
@@ -109,23 +140,23 @@ Open `https://<your-home-assistant>/rema1000_app/app.html` in Safari or Chrome, 
 
 ### With HACS (recommended)
 
-[![Open your Home Assistant and add the repository to HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Dinnsen&repository=ha-rema1000&category=integration)
+[![Open your Home Assistant and add the repository to HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Dinnsen&repository=middagsro&category=integration)
 
-1. Tap the button above, or go to **HACS → ⋮ → Custom repositories** and add `https://github.com/Dinnsen/ha-rema1000` as an **Integration**.
-2. Search for **REMA 1000** in HACS and tap **Download**.
+1. Tap the button above, or go to **HACS → ⋮ → Custom repositories** and add `https://github.com/Dinnsen/middagsro` as an **Integration**.
+2. Search for **Middagsro** in HACS and tap **Download**.
 3. Restart Home Assistant.
 
 ### Manually
 
-1. Download the source code of the latest version under [Releases](https://github.com/Dinnsen/ha-rema1000/releases).
+1. Download the source code of the latest version under [Releases](https://github.com/Dinnsen/middagsro/releases).
 2. Copy the folder `custom_components/rema1000` to `config/custom_components/` in Home Assistant.
 3. Restart Home Assistant.
 
 ## Setup
 
-[![Open your Home Assistant and add REMA 1000.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=rema1000)
+[![Open your Home Assistant and add Middagsro.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=rema1000)
 
-1. Go to **Settings → Devices & services → Add integration** and choose **REMA 1000**.
+1. Go to **Settings → Devices & services → Add integration** and choose **Middagsro**.
 2. Log in:
 
    | Field | Description |
@@ -133,9 +164,9 @@ Open `https://<your-home-assistant>/rema1000_app/app.html` in Safari or Chrome, 
    | **E-mail** | The e-mail you log in to rema1000.dk and the REMA 1000 app with. |
    | **Password** | Your REMA 1000 password. It is stored in Home Assistant and only sent to REMA 1000. |
 
-3. Open **REMA 1000** in the sidebar, go to **Indstillinger** (settings) and choose the family's rules. Then tap **Lav madplan** (make meal plan).
+3. Open **Middagsro** in the sidebar, go to **Indstillinger** (settings) and choose the family's rules. Then tap **Lav madplan** (make meal plan).
 
-The integration logs in again by itself when the session expires. If you change your password, Home Assistant asks you for the new one (**Settings → Devices & services → REMA 1000**). To change the e-mail or password yourself, choose **⋮ → Reconfigure** on the integration. You can add several REMA 1000 accounts. Each gets its own entities, and the actions can target a given account; the panel shows the one added first.
+The integration logs in again by itself when the session expires. If you change your password, Home Assistant asks you for the new one (**Settings → Devices & services → Middagsro**). To change the e-mail or password yourself, choose **⋮ → Reconfigure** on the integration. You can add several REMA 1000 accounts. Each gets its own entities, and the actions can target a given account; the panel shows the one added first.
 
 ## Settings in the panel
 
@@ -224,7 +255,7 @@ response_variable: result
 ```yaml
 triggers:
   - trigger: state
-    entity_id: sensor.rema_1000_next_offer_catalogue  # your id for Next offer catalogue
+    entity_id: sensor.middagsro_next_offer_catalogue  # your id for Next offer catalogue
     from: unknown
 actions:
   - action: notify.mobile_app_your_phone
@@ -251,7 +282,7 @@ actions:
 
 **On a dashboard:** Show **Dinner today** in a tile card, **Shopping list** in a to-do list card and the **Meal plan** calendar in a calendar card.
 
-The entity IDs depend on the account's name and your language; find them under **Settings → Devices & services → REMA 1000**.
+The entity IDs depend on the account's name and your language; find them under **Settings → Devices & services → Middagsro**. Installations from before 1.0.0 keep their `rema_1000_…` entity IDs; new ones get `middagsro_…`.
 
 ## How it works
 
@@ -280,12 +311,12 @@ The entity IDs depend on the account's name and your language; find them under *
 - **Debug log:** go to the integration and choose **Enable debug logging**. Repeat the error, then turn it off again to download the log. The password is never logged.
 - **Diagnostics:** choose **⋮ → Download diagnostics** on the integration. E-mail, password, tokens and other personal data are removed before the file is saved.
 
-Feel free to open an [issue](https://github.com/Dinnsen/ha-rema1000/issues) with the diagnostics file and a description. Please report security issues privately, see [SECURITY.md](SECURITY.md).
+Feel free to open an [issue](https://github.com/Dinnsen/middagsro/issues) with the diagnostics file and a description. Please report security issues privately, see [SECURITY.md](SECURITY.md).
 
 ## Removing the integration
 
-1. Go to **Settings → Devices & services → REMA 1000** and choose **⋮ → Delete** for each account. The panel disappears when the last account is deleted. Your list in the REMA 1000 app is not touched.
-2. Installed with HACS: open **REMA 1000** in HACS and choose **⋮ → Remove**. Manually: delete the folder `config/custom_components/rema1000`.
+1. Go to **Settings → Devices & services → Middagsro** and choose **⋮ → Delete** for each account. The panel disappears when the last account is deleted. Your list in the REMA 1000 app is not touched.
+2. Installed with HACS: open **Middagsro** in HACS and choose **⋮ → Remove**. Manually: delete the folder `config/custom_components/rema1000`.
 3. Restart Home Assistant.
 
 ## Privacy
@@ -294,8 +325,8 @@ Your REMA 1000 login is stored in Home Assistant and only sent to REMA 1000. For
 
 ## Support
 
-If you like REMA 1000 for Home Assistant, you can [buy me a coffee](https://buymeacoffee.com/dinnsen).
+If you like Middagsro, you can [buy me a coffee](https://buymeacoffee.com/dinnsen).
 
 ## Licence
 
-[MIT](LICENSE). The home-screen app includes [home-assistant-js-websocket](https://github.com/home-assistant/home-assistant-js-websocket) under the Apache-2.0 licence. REMA 1000 is a trademark of its owner; this project is not affiliated with REMA 1000.
+[MIT](LICENSE). The home-screen app includes [home-assistant-js-websocket](https://github.com/home-assistant/home-assistant-js-websocket) under the Apache-2.0 licence. REMA 1000 is a trademark of its owner; this project is not affiliated with REMA 1000 or the other chains. The other chains' names and logos are only used to show their offers.

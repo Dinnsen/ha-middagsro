@@ -1,6 +1,6 @@
 {
   "domain": "rema1000",
-  "name": "REMA 1000",
+  "name": "Middagsro",
   "after_dependencies": [
     "ai_task"
   ],
@@ -14,11 +14,11 @@
     "panel_custom",
     "websocket_api"
   ],
-  "documentation": "https://github.com/Dinnsen/ha-rema1000",
+  "documentation": "https://github.com/Dinnsen/middagsro",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/Dinnsen/ha-rema1000/issues",
+  "issue_tracker": "https://github.com/Dinnsen/middagsro/issues",
   "quality_scale": "platinum",
   "requirements": [],
-  "version": "0.10.0"
+  "version": "1.0.0"
 }

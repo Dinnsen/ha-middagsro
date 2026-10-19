@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>REMA 1000 – demo</title>
+<title>Middagsro – demo</title>
 <!-- Shows the real panel with demo data and Home Assistant's look, for the README
      screenshots. Open with ?theme=light|dark&tab=plan|recipes|shopping|favorites|history|settings -->
 <style>
@@ -133,6 +133,56 @@
       return plan;
     },
     "rema1000/health": () => D.health,
+    "rema1000/chains": () => ({ chains: D.chains }),
+    "rema1000/chains/offers": (msg) => ({ dealer_id: msg.dealer_id, offers: D.chainOffers.filter((o) => o.dealer_id === msg.dealer_id) }),
+    "rema1000/chains/compare": () => D.compare,
+    "rema1000/chains/products": () => ({ products: { [D.remaFavorites[0].id]: { dealer_id: "9ba51", heading: "Kaffe", price: 39, per_package: 39, saving: 10 } } }),
+    "rema1000/chains/move": (msg) => {
+      const plan = D.state.latest_plan;
+      const line = plan.shopping.find((l) => l.id === msg.line_id);
+      if (msg.dealer_id) Object.assign(line, { buy_at: msg.dealer_id, chain_price: msg.price, chain_heading: msg.heading, bought: false, cost: msg.price * line.packages });
+      else delete line.buy_at;
+      delete D.compare.lines[msg.line_id];
+      return plan;
+    },
+    "rema1000/chains/line": (msg) => {
+      const plan = D.state.latest_plan;
+      const line = plan.shopping.find((l) => l.id === msg.line_id);
+      if (msg.delete) plan.shopping = plan.shopping.filter((l) => l !== line);
+      if (msg.bought != null) line.bought = msg.bought;
+      if (msg.packages) Object.assign(line, { packages: msg.packages, cost: (line.chain_price || 0) * msg.packages });
+      return plan;
+    },
+    "rema1000/recipes/get": (msg) => D.recipes.find((r) => r.id === msg.recipe_id),
+    "rema1000/recipes/import": async () => {
+      await wait(400);
+      return { id: null, name: "Thai rød karry med kylling og ris", type: "normal", servings: 4, active_minutes: 20, total_minutes: 30, rating: null, favorite: false, source: "link",
+        ingredients: [{ amount: "600 g", name: "kyllingebryst" }, { amount: "2 spsk", name: "rød karrypasta" }, { amount: "400 ml", name: "kokosmælk" }, { amount: "1", name: "rød peberfrugt" }, { amount: "300 g", name: "jasminris" }],
+        steps: [{ text: "Skær kyllingen i strimler.", minutes: 5 }, { text: "Svits karrypastaen, og tilsæt kokosmælk og kylling.", minutes: 15 }], tip: "" };
+    },
+    "rema1000/recipes/rate": (msg) => {
+      const r = D.state.recipes.find((x) => x.id === msg.recipe_id);
+      if (msg.action === "favorite") Object.assign(r, r.favorite ? { favorite: false } : { favorite: true, rating: "like" });
+      else if (r.rating === msg.action) Object.assign(r, { rating: null, favorite: false });
+      else Object.assign(r, { rating: msg.action, favorite: msg.action === "like" ? r.favorite : false });
+      return r;
+    },
+    "rema1000/recipes/rate_day": (msg) => {
+      const day = D.state.latest_plan.days.find((d) => d.date === msg.date);
+      let r = D.state.recipes.find((x) => x.id === day.recipe_id || x.name === day.dish);
+      if (!r) {
+        r = { id: `r${D.state.recipes.length + 1}`, name: day.dish, type: "normal", rating: null, favorite: false, source: "plan", created: new Date().toISOString(), times_planned: 1, ingredient_names: [] };
+        D.state.recipes.unshift(r);
+        day.recipe_id = r.id;
+      }
+      return handlers["rema1000/recipes/rate"]({ recipe_id: r.id, action: msg.action });
+    },
+    "rema1000/recipes/save": (msg) => {
+      const r = { ...msg.recipe, id: msg.recipe.id || `r${D.state.recipes.length + 1}`, created: new Date().toISOString() };
+      D.recipes = [r, ...D.recipes.filter((x) => x.id !== r.id)];
+      D.state.recipes = [{ ...r, ingredient_names: r.ingredients.map((i) => i.name) }, ...D.state.recipes.filter((x) => x.id !== r.id)];
+      return r;
+    },
     "rema1000/plan/remove": (msg) => {
       const plan = D.state.latest_plan;
       plan.shopping = plan.shopping.filter((l) => l.id !== msg.line_id);

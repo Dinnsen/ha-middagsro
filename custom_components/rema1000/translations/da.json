@@ -123,7 +123,7 @@
       "message": "Alle dage i madplanen er sprunget over."
     },
     "no_ai_task": {
-      "message": "Der blev ikke fundet en AI-opgave (AI Task). Opsæt en AI-tjeneste, fx Google Generative AI, OpenAI eller Ollama, og vælg den under Indstillinger i REMA 1000-panelet."
+      "message": "Der blev ikke fundet en AI-opgave (AI Task). Opsæt en AI-tjeneste, fx Google Generative AI, OpenAI eller Ollama, og vælg den under Indstillinger i Middagsro-panelet."
     },
     "ai_answer_too_long": {
       "message": "{error} – AI'ens svar blev for langt. Hæv det maksimale antal tokens i AI-opgavens indstillinger (fx 8000), eller lav en kortere madplan."
@@ -163,12 +163,36 @@
     },
     "no_late_list": {
       "message": "Madplanen har ingen indkøb senere på ugen."
+    },
+    "recipe_name_required": {
+      "message": "Opskriften skal have et navn."
+    },
+    "recipe_not_found": {
+      "message": "Opskriften findes ikke i opskriftsamlingen."
+    },
+    "too_many_recipes": {
+      "message": "Opskriftsamlingen kan højst have {limit} opskrifter."
+    },
+    "recipe_bad_action": {
+      "message": "Ukendt handling for en opskrift."
+    },
+    "recipe_bad_link": {
+      "message": "Linket skal være en almindelig hjemmeside (http:// eller https://) på internettet."
+    },
+    "recipe_link_failed": {
+      "message": "Kunne ikke læse siden: {error}"
+    },
+    "recipe_not_on_page": {
+      "message": "Der blev ikke fundet en opskrift på siden."
+    },
+    "chain_not_found": {
+      "message": "Kæden findes ikke."
     }
   },
   "issues": {
     "no_ai_task": {
-      "title": "Ingen AI-opgave til REMA 1000-madplaner",
-      "description": "REMA 1000 laver madplaner med en AI-opgave (AI Task), men der blev ikke fundet nogen.\n\nOpsæt en AI-tjeneste, der kan løse AI-opgaver, fx Google Generative AI, OpenAI eller Ollama (Indstillinger → Enheder og tjenester → Tilføj integration). Vælg den derefter under Indstillinger i REMA 1000-panelet, eller vælg en foretrukken AI-opgave i Home Assistant.\n\nBeskeden forsvinder af sig selv, næste gang der laves en madplan."
+      "title": "Ingen AI-opgave til Middagsro",
+      "description": "Middagsro laver madplaner med en AI-opgave (AI Task), men der blev ikke fundet nogen.\n\nOpsæt en AI-tjeneste, der kan løse AI-opgaver, fx Google Generative AI, OpenAI eller Ollama (Indstillinger → Enheder og tjenester → Tilføj integration). Vælg den derefter under Indstillinger i Middagsro-panelet, eller vælg en foretrukken AI-opgave i Home Assistant.\n\nBeskeden forsvinder af sig selv, næste gang der laves en madplan."
     }
   },
   "selector": {
@@ -235,7 +259,7 @@
     },
     "generate_meal_plan": {
       "name": "Lav madplan",
-      "description": "Laver en madplan med aftensmad med AI ud fra tilbudsavisen og dine indstillinger i REMA 1000-panelet.",
+      "description": "Laver en madplan med aftensmad med AI ud fra tilbudsavisen og dine indstillinger i Middagsro-panelet.",
       "fields": {
         "config_entry_id": {
           "name": "Konto",

@@ -121,7 +121,7 @@ async def test_setup_without_offers(
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
     assert config_entry.state is ConfigEntryState.LOADED
-    assert hass.states.get("sensor.rema_1000_current_offer_catalogue").state == "unavailable"
+    assert hass.states.get("sensor.middagsro_current_offer_catalogue").state == "unavailable"
 
 
 async def test_auto_generate_on_new_catalogue(

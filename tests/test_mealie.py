@@ -198,7 +198,7 @@ async def test_mealie_api(hass: HomeAssistant, mealie: MockConfigEntry) -> None:
         body = fake.bodies("PATCH", "/api/recipes/kyllingewok")[0]
         assert [i["note"] for i in body["recipeIngredient"]] == ["600 g kyllingebryst"]
         assert [s["text"] for s in body["recipeInstructions"]] == ["Steg kyllingen."]
-        assert body["description"] == "Fra REMA 1000-madplanen i Home Assistant. Brug wokpande."
+        assert body["description"] == "Fra Middagsro i Home Assistant. Brug wokpande."
         assert body["totalTime"] == "25 minutter"
         with pytest.raises(ml.MealieError):
             await link.async_save_recipe({"dish": " "})
@@ -223,7 +223,7 @@ async def test_mealie_api(hass: HomeAssistant, mealie: MockConfigEntry) -> None:
         "date": "2026-10-20",
         "entryType": "dinner",
         "title": "Kyllingewok",
-        "text": "Fra REMA 1000-madplanen",
+        "text": "Fra Middagsro",
     }  # its recipe can't be read: a note
     assert [d.get("mealie_entry") for d in plan["days"]] == [11, 11, None]
     assert "skipped_entries" not in plan
@@ -350,10 +350,7 @@ async def test_swap_with_mealie(
         plan = await pe.async_swap_dish(planner, "p", "2026-10-20", result["options"][0])
     tuesday = plan["days"][2]
     assert (tuesday["mealie"], tuesday["steps"][0]["text"]) == ("laks-med-spinat", "Bag laksen.")
-    assert (
-        "Familiens opskrift (fra Mealie) bruger: 600 g laksefilet"
-        in ai.prompts["REMA 1000 ny ret"][0]
-    )
+    assert "Familiens egen opskrift bruger: 600 g laksefilet" in ai.prompts["REMA 1000 ny ret"][0]
     sync.assert_called()
 
     # Mealie down: suggestions without its recipes, and the AI's own recipe.

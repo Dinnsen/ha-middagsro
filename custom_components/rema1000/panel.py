@@ -1,4 +1,4 @@
-"""Sidebar panel for REMA 1000 meal plans."""
+"""Sidebar panel for Middagsro."""
 
 from __future__ import annotations
 
@@ -37,8 +37,8 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         hass,
         frontend_url_path=PANEL_URL,
         webcomponent_name=WEBCOMPONENT,
-        sidebar_title="REMA 1000",
-        sidebar_icon="mdi:cart-variant",
+        sidebar_title="Middagsro",
+        sidebar_icon="mdi:pot-steam-outline",
         module_url=f"{STATIC_URL}/{WEBCOMPONENT}.js?v={version}",
         config={"static_url": STATIC_URL, "version": version},
         require_admin=False,

@@ -1,4 +1,4 @@
-"""Websocket commands used by the REMA 1000 panel."""
+"""Websocket commands used by the Middagsro panel."""
 
 from __future__ import annotations
 
@@ -12,6 +12,16 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.util import dt as dt_util
 
 from .api import Catalog, RemaError
+from .chains import (
+    CHAINS,
+    ChainError,
+    async_add_offer,
+    async_chain_line,
+    async_clear_chain,
+    async_compare,
+    async_compare_products,
+    async_move_line,
+)
 from .const import DOMAIN
 from .coordinator import RemaConfigEntry
 from .health import plan_health
@@ -26,6 +36,15 @@ from .planedit import (
     async_swap_options,
     cooked_day,
     pantry_needs,
+)
+from .recipes import (
+    ACTIONS,
+    async_delete_recipe,
+    async_import,
+    async_rate,
+    async_rate_day,
+    async_save_recipe,
+    find_recipe,
 )
 from .schema import vol
 from .storage import ALLERGY_OPTIONS, AVOID_OPTIONS, FAVORITE_FREQUENCIES
@@ -57,6 +76,27 @@ def _catalog(cat: Catalog | None) -> dict[str, Any] | None:
     }
 
 
+def _recipe_summary(recipe: dict[str, Any]) -> dict[str, Any]:
+    """A recipe in the collection without its ingredients and steps (those come on request)."""
+    return {
+        key: recipe.get(key)
+        for key in (
+            "id",
+            "name",
+            "type",
+            "servings",
+            "total_minutes",
+            "active_minutes",
+            "rating",
+            "favorite",
+            "source",
+            "created",
+            "times_planned",
+            "last_planned",
+        )
+    } | {"ingredient_names": [i["name"] for i in recipe.get("ingredients") or []][:30]}
+
+
 def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
     data = entry.runtime_data
     store = data.store
@@ -75,6 +115,7 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
         # The plan with tonight's dinner, when it is not the newest one.
         "current_plan": current if current is not latest else None,
         "note": store.note,
+        "recipes": [_recipe_summary(r) for r in store.recipes],
         "status": data.planner.status,
         "default_start": data.planner.default_start().isoformat(),
         "ai_entities": [
@@ -212,6 +253,7 @@ async def ws_favorite_delete(
         ENTRY: str,
         vol.Optional("start_date"): vol.Any(str, None),
         vol.Optional("skip_dates"): [str],
+        vol.Optional("surprise", default=False): bool,
     }
 )
 @websocket_api.async_response
@@ -222,7 +264,9 @@ async def ws_generate(
     """Start making a meal plan; skip_dates get no dinner."""
     planner = _entry(hass, msg).runtime_data.planner
     skip = {d for d in (parse_date(v) for v in msg.get("skip_dates") or []) if d}
-    planner.async_start_generation(parse_date(msg.get("start_date")), skip=skip)
+    planner.async_start_generation(
+        parse_date(msg.get("start_date")), skip=skip, surprise=msg["surprise"]
+    )
     connection.send_result(msg["id"], planner.status)
 
 
@@ -616,6 +660,303 @@ async def ws_mealie_sync(
     connection.send_result(msg["id"], {"count": count})
 
 
+# ------------------------------------------------------------------ recipe collection
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "rema1000/recipes/get", ENTRY: str, vol.Required("recipe_id"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_recipe_get(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """One recipe in the collection, with ingredients and steps."""
+    store = _entry(hass, msg).runtime_data.store
+    recipe = find_recipe(store, msg["recipe_id"])
+    if recipe is None:
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key="recipe_not_found")
+    connection.send_result(msg["id"], recipe)
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "rema1000/recipes/save", ENTRY: str, vol.Required("recipe"): dict}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_recipe_save(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Add a recipe to the collection, or save changes to one."""
+    data = _entry(hass, msg).runtime_data
+    recipe = await async_save_recipe(data.store, msg["recipe"])
+    data.planner._notify()
+    connection.send_result(msg["id"], recipe)
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "rema1000/recipes/delete", ENTRY: str, vol.Required("recipe_id"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_recipe_delete(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Delete a recipe from the collection."""
+    data = _entry(hass, msg).runtime_data
+    await async_delete_recipe(data.store, msg["recipe_id"])
+    data.planner._notify()
+    connection.send_result(msg["id"])
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/recipes/rate",
+        ENTRY: str,
+        vol.Required("recipe_id"): str,
+        vol.Required("action"): vol.In(ACTIONS),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_recipe_rate(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """👍, 👎 or ❤️ a recipe (pressing again takes it back)."""
+    data = _entry(hass, msg).runtime_data
+    recipe = await async_rate(data.store, msg["recipe_id"], msg["action"])
+    data.planner._notify()
+    connection.send_result(msg["id"], recipe)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/recipes/rate_day",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("date"): str,
+        vol.Required("action"): vol.In(ACTIONS),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_recipe_rate_day(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """👍, 👎 or ❤️ a dinner in a plan: it goes in the recipe collection."""
+    planner = _entry(hass, msg).runtime_data.planner
+    recipe = await async_rate_day(planner, msg["plan_id"], msg["date"], msg["action"])
+    connection.send_result(msg["id"], recipe)
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "rema1000/recipes/import", ENTRY: str, vol.Required("url"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_recipe_import(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Read the recipe behind a link; it is saved when the family has looked it over."""
+    planner = _entry(hass, msg).runtime_data.planner
+    connection.send_result(msg["id"], await async_import(planner, msg["url"]))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/recipes/plan",
+        ENTRY: str,
+        vol.Required("recipe_id"): str,
+        vol.Required("plan_id"): str,
+        vol.Required("date"): str,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_recipe_plan(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Put a recipe from the collection on a day of a plan (its items go on the list)."""
+    planner = _entry(hass, msg).runtime_data.planner
+    recipe = find_recipe(planner.store, msg["recipe_id"])
+    if recipe is None:
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key="recipe_not_found")
+    option = {
+        "dish": recipe["name"],
+        "type": recipe["type"],
+        "active_minutes": recipe["active_minutes"],
+        "total_minutes": recipe["total_minutes"],
+        "recipe_id": recipe["id"],
+    }
+    plan = await async_swap_dish(planner, msg["plan_id"], msg["date"], option)
+    connection.send_result(msg["id"], plan)
+
+
+# ------------------------------------------------------------------ other chains
+
+
+@websocket_api.websocket_command({vol.Required("type"): "rema1000/chains", ENTRY: str})
+@websocket_api.async_response
+@_wrap
+async def ws_chains(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The chains that can be chosen, with their logos."""
+    planner = _entry(hass, msg).runtime_data.planner
+    dealers = await planner.chains.async_dealers()
+    connection.send_result(msg["id"], {"chains": list(dealers.values())})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/chains/offers",
+        ENTRY: str,
+        vol.Required("dealer_id"): vol.In(list(CHAINS)),
+        vol.Optional("force", default=False): bool,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_chain_offers(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """A chain's food offers."""
+    planner = _entry(hass, msg).runtime_data.planner
+    try:
+        offers = await planner.chains.async_offers(msg["dealer_id"], msg["force"])
+    except ChainError as err:
+        raise HomeAssistantError(str(err)) from err
+    connection.send_result(msg["id"], {"dealer_id": msg["dealer_id"], "offers": offers})
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "rema1000/chains/compare", ENTRY: str, vol.Required("plan_id"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_chain_compare(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Where the plan's items are cheaper than at REMA this week."""
+    planner = _entry(hass, msg).runtime_data.planner
+    connection.send_result(msg["id"], await async_compare(planner, msg["plan_id"]))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/chains/products",
+        ENTRY: str,
+        vol.Required("products"): [dict],
+        vol.Optional("date"): vol.Any(None, str),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_chain_products(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Which of some REMA products are cheaper in another chain on a day (default today)."""
+    planner = _entry(hass, msg).runtime_data.planner
+    day = parse_date(msg.get("date")) or dt_util.now().date()
+    found = await async_compare_products(planner, msg["products"], day)
+    connection.send_result(msg["id"], {"products": found})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/chains/move",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("line_id"): str,
+        vol.Required("dealer_id"): vol.Any(None, vol.In(list(CHAINS))),
+        vol.Optional("price"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("heading"): vol.Any(None, str),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_chain_move(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Buy an item in another shop instead (or back at REMA)."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_move_line(
+        planner,
+        msg["plan_id"],
+        msg["line_id"],
+        msg["dealer_id"],
+        msg.get("price"),
+        msg.get("heading"),
+    )
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/chains/add",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("offer"): dict,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_chain_add(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Put another chain's offer on that shop's list."""
+    planner = _entry(hass, msg).runtime_data.planner
+    connection.send_result(msg["id"], await async_add_offer(planner, msg["plan_id"], msg["offer"]))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/chains/line",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("line_id"): str,
+        vol.Optional("bought"): bool,
+        vol.Optional("packages"): vol.All(int, vol.Range(min=1, max=99)),
+        vol.Optional("delete", default=False): bool,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_chain_line(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Tick off, change how many or delete an item on a shop's list."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_chain_line(
+        planner,
+        msg["plan_id"],
+        msg["line_id"],
+        bought=msg.get("bought"),
+        packages=msg.get("packages"),
+        delete=msg["delete"],
+    )
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rema1000/chains/clear",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("dealer_id"): vol.In(list(CHAINS)),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_chain_clear(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Empty a shop's basket: the ticked-off items are bought."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_clear_chain(planner, msg["plan_id"], msg["dealer_id"])
+    connection.send_result(msg["id"], plan)
+
+
 @callback
 def async_register_websocket(hass: HomeAssistant) -> None:
     """Register the panel's commands."""
@@ -646,5 +987,20 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_nutrition,
         ws_mealie_save,
         ws_mealie_sync,
+        ws_recipe_get,
+        ws_recipe_save,
+        ws_recipe_delete,
+        ws_recipe_rate,
+        ws_recipe_rate_day,
+        ws_recipe_import,
+        ws_recipe_plan,
+        ws_chains,
+        ws_chain_offers,
+        ws_chain_compare,
+        ws_chain_products,
+        ws_chain_move,
+        ws_chain_add,
+        ws_chain_line,
+        ws_chain_clear,
     ):
         websocket_api.async_register_command(hass, command)
