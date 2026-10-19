@@ -323,7 +323,9 @@ async def ws_plan_delete(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Delete a plan from the history."""
-    await _entry(hass, msg).runtime_data.store.async_delete_plan(msg["plan_id"])
+    data = _entry(hass, msg).runtime_data
+    await data.store.async_delete_plan(msg["plan_id"])
+    data.planner._notify()  # the sensors and calendar show the plan before it
     connection.send_result(msg["id"], True)
 
 

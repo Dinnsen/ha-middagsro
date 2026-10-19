@@ -77,9 +77,12 @@ async def test_plans(
         msg = await _ws(client, 3, type="middagsro/recipe", plan_id="plan-1", date="2026-10-11")
     assert msg["result"] == {"date": "2026-10-11"}
 
+    assert hass.states.get("sensor.middagsro_meal_plan").state != "none"  # type: ignore[union-attr]
     msg = await _ws(client, 4, type="middagsro/plan/delete", plan_id="plan-1")
     assert msg["success"]
     assert init_integration.runtime_data.store.plans == []
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.middagsro_meal_plan").state == "none"  # type: ignore[union-attr]
 
 
 async def test_settings_and_favorites(
