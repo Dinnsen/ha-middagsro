@@ -334,7 +334,7 @@ async def test_commands(
     fake = FakeTjek()
     with patch.object(planner.chains, "_get", new=fake):
         chains = (await ws(1, type="middagsro/chains"))["result"]["chains"]
-        assert chains[0]["name"] == "Netto"
+        assert [c["name"] for c in chains[:2]] == ["REMA 1000", "Netto"]
         offers = (await ws(2, type="middagsro/chains/offers", dealer_id=NETTO))["result"]
         assert len(offers["offers"]) == 4
         compare = (await ws(3, type="middagsro/chains/compare", plan_id="p"))["result"]
