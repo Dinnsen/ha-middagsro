@@ -34,6 +34,10 @@
           "email": "The e-mail you log in to rema1000.dk and the REMA 1000 app with.",
           "password": "The current password for the REMA 1000 account."
         }
+      },
+      "migrate": {
+        "title": "Move your REMA 1000 setup",
+        "description": "There is a setup of the old REMA 1000 integration for {account}. Submit to move it to Middagsro with its meal plans, settings, recipe collection and entities (they keep their IDs). You don't have to log in again."
       }
     },
     "error": {

@@ -3,7 +3,7 @@ search_products:
     config_entry_id:
       selector:
         config_entry:
-          integration: rema1000
+          integration: middagsro
     query:
       required: true
       example: "letmælk"
@@ -22,7 +22,7 @@ add_items:
     config_entry_id:
       selector:
         config_entry:
-          integration: rema1000
+          integration: middagsro
     items:
       required: true
       example: '[{"product_id": 20494, "amount": 2}, {"name": "Sæbe", "amount": 1}]'
@@ -34,7 +34,7 @@ get_offers:
     config_entry_id:
       selector:
         config_entry:
-          integration: rema1000
+          integration: middagsro
     catalog:
       default: current
       selector:
@@ -49,7 +49,7 @@ generate_meal_plan:
     config_entry_id:
       selector:
         config_entry:
-          integration: rema1000
+          integration: middagsro
     start_date:
       example: "2026-10-18"
       selector:
@@ -64,7 +64,7 @@ send_meal_plan:
     config_entry_id:
       selector:
         config_entry:
-          integration: rema1000
+          integration: middagsro
     plan_id:
       selector:
         text:

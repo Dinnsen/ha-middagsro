@@ -13,8 +13,8 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
-from custom_components.rema1000 import mealplan as mp, planedit as pe, recipes as rc
-from custom_components.rema1000.storage import clean_settings
+from custom_components.middagsro import mealplan as mp, planedit as pe, recipes as rc
+from custom_components.middagsro.storage import clean_settings
 import homeassistant.components.ai_task as ai_task_component  # noqa: F401 - patched in the tests
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -407,39 +407,39 @@ async def test_commands(
         result: dict[str, Any] = await client.receive_json()
         return result
 
-    state = (await ws(1, type="rema1000/state"))["result"]
+    state = (await ws(1, type="middagsro/state"))["result"]
     assert [r["id"] for r in state["recipes"]] == ["laks", "fisk", "boller"]
     assert "ingredients" not in state["recipes"][0]
     assert state["recipes"][0]["ingredient_names"] == ["laksefilet", "spinat"]
-    got = await ws(2, type="rema1000/recipes/get", recipe_id="laks")
+    got = await ws(2, type="middagsro/recipes/get", recipe_id="laks")
     assert got["result"]["steps"] == [{"text": "Bag laksen.", "minutes": 0}]
-    assert not (await ws(3, type="rema1000/recipes/get", recipe_id="nope"))["success"]
-    saved = await ws(4, type="rema1000/recipes/save", recipe={"name": "Tacos", "rating": "like"})
+    assert not (await ws(3, type="middagsro/recipes/get", recipe_id="nope"))["success"]
+    saved = await ws(4, type="middagsro/recipes/save", recipe={"name": "Tacos", "rating": "like"})
     tacos = saved["result"]["id"]
     assert saved["result"]["rating"] == "like"
-    rated = await ws(5, type="rema1000/recipes/rate", recipe_id=tacos, action="dislike")
+    rated = await ws(5, type="middagsro/recipes/rate", recipe_id=tacos, action="dislike")
     assert rated["result"]["rating"] == "dislike"
     day = await ws(
-        6, type="rema1000/recipes/rate_day", plan_id="p", date="2026-10-18", action="like"
+        6, type="middagsro/recipes/rate_day", plan_id="p", date="2026-10-18", action="like"
     )
     assert day["result"]["name"] == "Spaghetti bolognese"
-    assert (await ws(7, type="rema1000/recipes/delete", recipe_id=tacos))["success"]
+    assert (await ws(7, type="middagsro/recipes/delete", recipe_id=tacos))["success"]
     with patch.object(rc, "async_fetch_page", return_value=PAGE):
-        imported = await ws(8, type="rema1000/recipes/import", url="https://opskrift.dk/karry")
+        imported = await ws(8, type="middagsro/recipes/import", url="https://opskrift.dk/karry")
     assert imported["result"]["name"] == "Kylling i karry & ris"
 
     ai = FakeAI(items={"add": [], "uses": []})
     with patch("homeassistant.components.ai_task.async_generate_data", new=ai):
         planned = await ws(
-            9, type="rema1000/recipes/plan", recipe_id="laks", plan_id="p", date="2026-10-20"
+            9, type="middagsro/recipes/plan", recipe_id="laks", plan_id="p", date="2026-10-20"
         )
     assert planned["result"]["days"][2]["dish"] == "Laks med spinat"
     missing = await ws(
-        10, type="rema1000/recipes/plan", recipe_id="x", plan_id="p", date="2026-10-20"
+        10, type="middagsro/recipes/plan", recipe_id="x", plan_id="p", date="2026-10-20"
     )
-    assert missing["error"]["code"] == "rema1000_error"
+    assert missing["error"]["code"] == "middagsro_error"
 
     planner = init_integration.runtime_data.planner
     with patch.object(planner, "async_start_generation") as start:
-        assert (await ws(11, type="rema1000/generate", surprise=True))["success"]
+        assert (await ws(11, type="middagsro/generate", surprise=True))["success"]
     assert start.call_args.kwargs["surprise"] is True

@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.rema1000.diagnostics import async_get_config_entry_diagnostics
+from custom_components.middagsro.diagnostics import async_get_config_entry_diagnostics
 from homeassistant.core import HomeAssistant
 
 from .conftest import EMAIL, PASSWORD, make_plan

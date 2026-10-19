@@ -13,10 +13,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
-from custom_components.rema1000 import mealplan as mp
-from custom_components.rema1000.api import Offer, RemaError
-from custom_components.rema1000.const import DOMAIN
-from custom_components.rema1000.storage import clean_settings
+from custom_components.middagsro import mealplan as mp
+from custom_components.middagsro.api import Offer, RemaError
+from custom_components.middagsro.const import DOMAIN
+from custom_components.middagsro.storage import clean_settings
 import homeassistant.components.ai_task as ai_task_component  # noqa: F401 - patched in the tests
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError

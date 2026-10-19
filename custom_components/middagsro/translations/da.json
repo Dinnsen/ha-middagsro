@@ -34,6 +34,10 @@
           "email": "Den e-mail, du logger ind på rema1000.dk og i REMA 1000-appen med.",
           "password": "Den nuværende adgangskode til REMA 1000-kontoen."
         }
+      },
+      "migrate": {
+        "title": "Flyt jeres REMA 1000-opsætning",
+        "description": "Der er en opsætning af den gamle REMA 1000-integration for {account}. Tryk på Indsend for at flytte den til Middagsro med madplaner, indstillinger, opskriftsamling og entiteter (de beholder deres id'er). Der skal ikke logges ind igen."
       }
     },
     "error": {

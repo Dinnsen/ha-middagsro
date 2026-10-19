@@ -15,8 +15,8 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
-from custom_components.rema1000 import mealie as ml, mealplan as mp, planedit as pe
-from custom_components.rema1000.storage import clean_settings
+from custom_components.middagsro import mealie as ml, mealplan as mp, planedit as pe
+from custom_components.middagsro.storage import clean_settings
 import homeassistant.components.ai_task as ai_task_component  # noqa: F401 - patched in the tests
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -388,7 +388,7 @@ async def test_mealie_commands(
         result: dict[str, Any] = await client.receive_json()
         return result
 
-    state = await ws(1, type="rema1000/state")
+    state = await ws(1, type="middagsro/state")
     assert state["result"]["mealie"] == {
         "available": True,
         "url": URL,
@@ -403,18 +403,18 @@ async def test_mealie_commands(
         patch.object(planner.mealie, "async_save_recipe", return_value=saved),
         patch.object(planner.mealie, "async_sync_calendar", return_value=3) as sync,
     ):
-        result = await ws(2, type="rema1000/mealie/save", plan_id="p", date="2026-10-19")
+        result = await ws(2, type="middagsro/mealie/save", plan_id="p", date="2026-10-19")
         assert result["result"] == saved
         assert planner.store.get_plan("p")["days"][0]["mealie"] == "spaghetti-bolognese"
-        assert (await ws(3, type="rema1000/mealie/sync", plan_id="p"))["result"] == {"count": 3}
+        assert (await ws(3, type="middagsro/mealie/sync", plan_id="p"))["result"] == {"count": 3}
         assert sync.call_count == 2
-    missing = await ws(4, type="rema1000/mealie/save", plan_id="p", date="2026-01-01")
-    assert missing["error"]["code"] == "rema1000_error"
-    missing = await ws(5, type="rema1000/mealie/sync", plan_id="x")
-    assert missing["error"]["code"] == "rema1000_error"
+    missing = await ws(4, type="middagsro/mealie/save", plan_id="p", date="2026-01-01")
+    assert missing["error"]["code"] == "middagsro_error"
+    missing = await ws(5, type="middagsro/mealie/sync", plan_id="x")
+    assert missing["error"]["code"] == "middagsro_error"
     with patch.object(planner.mealie, "async_sync_calendar", side_effect=ml.MealieError("down")):
-        failed = await ws(6, type="rema1000/mealie/sync", plan_id="p")
-        assert failed["error"]["code"] == "rema1000_error"
+        failed = await ws(6, type="middagsro/mealie/sync", plan_id="p")
+        assert failed["error"]["code"] == "middagsro_error"
     # Switched off: nothing is sent unless asked.
     await planner.store.async_set_settings({"mealie_calendar": False})
     assert await planner.async_mealie_sync(planner.store.get_plan("p")) == 0

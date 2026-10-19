@@ -44,7 +44,7 @@ async def open_page(browser, base: str, query: str, size: dict, js: str | None =
     await page.wait_for_selector('body[data-ready="1"]')
     if js:
         await page.evaluate(
-            f"async () => {{ const p = document.querySelector('rema1000-panel'); {js} }}"
+            f"async () => {{ const p = document.querySelector('middagsro-panel'); {js} }}"
         )
     await page.wait_for_timeout(400)
     return page
@@ -52,7 +52,7 @@ async def open_page(browser, base: str, query: str, size: dict, js: str | None =
 
 async def card(page: Page, selector: str, file: str, max_height: int = 0, nth: int = 0) -> None:
     """A card, cut to at most max_height CSS pixels high."""
-    box = await page.locator(f"rema1000-panel >> {selector}").nth(nth).bounding_box()
+    box = await page.locator(f"middagsro-panel >> {selector}").nth(nth).bounding_box()
     assert box, selector
     pad = 14
     height = min(box["height"], max_height) if max_height else box["height"]
@@ -123,8 +123,8 @@ async def main() -> None:
             "tab=shopping",
             DESK,
             "await new Promise((r) => setTimeout(r, 300));"
-            "await p._ws('rema1000/chains/move', {plan_id: 'plan-43', line_id: 'l12', dealer_id: '9ba51', price: 22, heading: 'Danske frilandsæg'});"
-            "await p._ws('rema1000/chains/move', {plan_id: 'plan-43', line_id: 'l11', dealer_id: '9ba51', price: 9.95, heading: 'Letmælk'});"
+            "await p._ws('middagsro/chains/move', {plan_id: 'plan-43', line_id: 'l12', dealer_id: '9ba51', price: 22, heading: 'Danske frilandsæg'});"
+            "await p._ws('middagsro/chains/move', {plan_id: 'plan-43', line_id: 'l11', dealer_id: '9ba51', price: 9.95, heading: 'Letmælk'});"
             "await p._load();",
         )
         await card(page, ".chain-list", "chains.png")

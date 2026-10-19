@@ -7,7 +7,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 
 [tool.coverage.run]
-source = ["custom_components/rema1000"]
+source = ["custom_components/middagsro"]
 
 [tool.coverage.report]
 fail_under = 95
@@ -16,7 +16,7 @@ skip_covered = true
 
 [tool.mypy]
 python_version = "3.14"
-files = ["custom_components/rema1000"]
+files = ["custom_components/middagsro"]
 strict = true
 # Home Assistant re-exports names from its packages without __all__.
 implicit_reexport = true

@@ -9,7 +9,7 @@ Only the latest release gets fixes. Update through HACS.
 ## Reporting a vulnerability
 
 Please **do not** open a public issue. Report it privately through
-[GitHub's private vulnerability reporting](https://github.com/Dinnsen/middagsro/security/advisories/new)
+[GitHub's private vulnerability reporting](https://github.com/Dinnsen/ha-middagsro/security/advisories/new)
 with a description and, if possible, how to reproduce it. Don't include your
 REMA 1000 password or tokens.
 
@@ -26,7 +26,7 @@ What the integration does with your data is described under *Privacy* in the
 Kun den nyeste version får rettelser. Opdatér via HACS.
 
 Opret **ikke** et offentligt issue. Rapportér sikkerhedsfejl privat via
-[GitHubs private sikkerhedsrapportering](https://github.com/Dinnsen/middagsro/security/advisories/new)
+[GitHubs private sikkerhedsrapportering](https://github.com/Dinnsen/ha-middagsro/security/advisories/new)
 med en beskrivelse og gerne, hvordan fejlen kan genskabes. Send ikke din
 REMA 1000-adgangskode eller tokens.
 

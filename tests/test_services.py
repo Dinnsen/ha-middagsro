@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.rema1000.api import RemaError
-from custom_components.rema1000.const import DOMAIN
+from custom_components.middagsro.api import RemaError
+from custom_components.middagsro.const import DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 

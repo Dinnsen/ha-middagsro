@@ -2,12 +2,17 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.1.0] - 2026-10-19
+
+### Changed
+- **The integration's id and folder are now `middagsro`** (before `rema1000`), and the repository is `Dinnsen/ha-middagsro`. Add **Middagsro** under *Add integration* after updating: it finds the old REMA 1000 setup and moves the meal plans, settings, recipe collection, device and entities over – the entities keep their IDs, and there is no new login. Actions are now `middagsro.…`. The home-screen app's old address (`/rema1000_app/app.html`) still works.
+
 ## [1.0.0] - 2026-10-19
 
 The integration is now called **Middagsro**. It is still about REMA 1000 and its shopping list; the new name and icon are its own.
 
 ### Changed
-- **New name, icon and logo:** Middagsro, with an AI spark over a bowl between a knife and fork. The panel, the sidebar, the home-screen app, HACS and the device are renamed. The technical id stays `rema1000`, so installations, automations and entity IDs are unchanged (new installations get `middagsro_…` entity IDs). The repository is now `Dinnsen/middagsro`; GitHub forwards the old address.
+- **New name, icon and logo:** Middagsro, with an AI spark over a bowl between a knife and fork. The panel, the sidebar, the home-screen app, HACS and the device are renamed. The technical id stays `rema1000`, so installations, automations and entity IDs are unchanged (new installations get `middagsro_…` entity IDs). The repository is now `Dinnsen/ha-middagsro`; GitHub forwards the old address.
 - **Settings in sub-pages:** meal plan and week, the family, dishes, shopping, what the AI must remember, nutrition, other shops, Mealie and the app – each with a summary of what is chosen.
 
 ### Added

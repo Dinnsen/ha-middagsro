@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from custom_components.rema1000.api import Offer, RemaClient, RemaError
-from custom_components.rema1000.favorites import FavoriteOffers, match_offer, offer_start, on_offer
+from custom_components.middagsro.api import Offer, RemaClient, RemaError
+from custom_components.middagsro.favorites import FavoriteOffers, match_offer, offer_start, on_offer
 
 from .conftest import CURRENT, UPCOMING, make_product
 

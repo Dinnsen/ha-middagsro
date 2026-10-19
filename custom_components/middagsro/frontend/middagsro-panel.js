@@ -269,7 +269,7 @@ class Rema1000Panel extends HTMLElement {
   }
 
   get _static() {
-    return this._panel?.config?.static_url || "/rema1000_static";
+    return this._panel?.config?.static_url || "/middagsro_static";
   }
 
   /* Images are cached for a long time: the version in the address makes a new version load new images */
@@ -310,7 +310,7 @@ class Rema1000Panel extends HTMLElement {
 
   async _load(silent = false, refresh = false) {
     try {
-      const state = await this._ws("rema1000/state", refresh ? { refresh: true } : {});
+      const state = await this._ws("middagsro/state", refresh ? { refresh: true } : {});
       this._state = state;
       this._error = null;
       if (!this._startDate) this._startDate = state.default_start;
@@ -367,7 +367,7 @@ class Rema1000Panel extends HTMLElement {
   // Saved right away like the favourites, without saving other unsaved settings.
   _saveDislikes(list, okMessage) {
     this._run(async () => {
-      const saved = await this._ws("rema1000/settings", {
+      const saved = await this._ws("middagsro/settings", {
         settings: { ...this._state.settings, disliked_dishes: list },
       });
       if (this._form) this._form.disliked_dishes = saved.disliked_dishes;
@@ -462,19 +462,19 @@ class Rema1000Panel extends HTMLElement {
       "note-generate": () => this._saveNote(true),
       "fav-add": () =>
         this._run(
-          () => this._ws("rema1000/list/add", { product_id: Number(arg), amount: 1 }),
+          () => this._ws("middagsro/list/add", { product_id: Number(arg), amount: 1 }),
           "Tilføjet til REMA-listen."
         ),
       "clear-list": () => {
         const count = this._state?.rema_list?.items?.length || 0;
         if (!count) return this._say("REMA-listen er allerede tom.");
         if (!confirm(`Fjern alle ${count} varer fra REMA-listen? Listen er delt, så den bliver også tom i appen.`)) return;
-        this._run(() => this._ws("rema1000/list/clear"), "REMA-listen er tømt.");
+        this._run(() => this._ws("middagsro/list/clear"), "REMA-listen er tømt.");
       },
       generate: () => this._run(() => this._generate(), GENERATING_MESSAGE),
       send: () =>
         this._run(
-          () => this._ws("rema1000/send", { plan_id: this._plan?.id, part: arg === "late" ? "late" : "main" }),
+          () => this._ws("middagsro/send", { plan_id: this._plan?.id, part: arg === "late" ? "late" : "main" }),
           arg === "late" ? "Torsdagsvarerne er sendt til REMA 1000-appen." : "Indkøbslisten er sendt til REMA 1000-appen."
         ),
       "open-day": () => {
@@ -504,7 +504,7 @@ class Rema1000Panel extends HTMLElement {
       wake: () => (this._wakeWanted ? this._releaseWake(true) : this._requestWake()),
       "view-plan": () =>
         this._run(async () => {
-          this._plan = await this._ws("rema1000/plan", { plan_id: arg });
+          this._plan = await this._ws("middagsro/plan", { plan_id: arg });
           this._viewingLatest = this._plan?.id === this._state?.latest_plan?.id;
           this._tab = "plan";
         }),
@@ -516,7 +516,7 @@ class Rema1000Panel extends HTMLElement {
       "delete-plan": () => {
         if (!confirm("Slet denne madplan fra historikken?")) return;
         this._run(async () => {
-          await this._ws("rema1000/plan/delete", { plan_id: arg });
+          await this._ws("middagsro/plan/delete", { plan_id: arg });
           if (this._plan?.id === arg) {
             this._viewingLatest = true;
           }
@@ -525,7 +525,7 @@ class Rema1000Panel extends HTMLElement {
       "rate-day": () => {
         const [planId, date, rate] = String(arg).split("|");
         this._run(async () => {
-          this._toast = rateToast(await this._ws("rema1000/recipes/rate_day", { plan_id: planId, date, action: rate }));
+          this._toast = rateToast(await this._ws("middagsro/recipes/rate_day", { plan_id: planId, date, action: rate }));
         });
       },
       "rate-recipe": () => {
@@ -537,7 +537,7 @@ class Rema1000Panel extends HTMLElement {
           return this._renderModal();
         }
         this._run(async () => {
-          const recipe = await this._ws("rema1000/recipes/rate", { recipe_id: id, action: rate });
+          const recipe = await this._ws("middagsro/recipes/rate", { recipe_id: id, action: rate });
           this._toast = rateToast(recipe);
           if (m?.kind === "recipe" && m.recipe.id === id) {
             m.recipe = { ...m.recipe, rating: recipe.rating, favorite: recipe.favorite };
@@ -575,7 +575,7 @@ class Rema1000Panel extends HTMLElement {
         if (!m?.recipe?.id || !confirm(`Slet "${m.recipe.name}" fra opskriftsamlingen?`)) return;
         this._modal = null;
         this._renderModal();
-        this._run(() => this._ws("rema1000/recipes/delete", { recipe_id: m.recipe.id }), "Opskriften er slettet.");
+        this._run(() => this._ws("middagsro/recipes/delete", { recipe_id: m.recipe.id }), "Opskriften er slettet.");
       },
       "rc-plan": () => {
         const m = this._modal;
@@ -602,7 +602,7 @@ class Rema1000Panel extends HTMLElement {
         const plan = this._state?.latest_plan;
         if (!offer || !plan) return this._say("Lav en madplan først – så kan tilbuddet komme på indkøbslisten.");
         this._editPlan(
-          () => this._ws("rema1000/chains/add", { plan_id: plan.id, offer }),
+          () => this._ws("middagsro/chains/add", { plan_id: plan.id, offer }),
           `${offer.heading} er sat på ${this._chainName(offer.dealer_id)}-listen under Indkøb.`
         );
       },
@@ -611,7 +611,7 @@ class Rema1000Panel extends HTMLElement {
         const found = this._compare?.lines?.[lineId];
         this._compare = null;
         this._editPlan(
-          () => this._ws("rema1000/chains/move", { plan_id: this._plan.id, line_id: lineId, dealer_id: dealer || null,
+          () => this._ws("middagsro/chains/move", { plan_id: this._plan.id, line_id: lineId, dealer_id: dealer || null,
             price: dealer && found ? found.per_package : null, heading: dealer && found ? found.heading : null }),
           dealer ? `Flyttet til ${this._chainName(dealer)}-listen.` : "Flyttet tilbage til REMA-listen."
         );
@@ -621,28 +621,28 @@ class Rema1000Panel extends HTMLElement {
         this._compare = null;
         this._editPlan(async () => {
           for (const [lineId, f] of lines) {
-            await this._ws("rema1000/chains/move", { plan_id: this._plan.id, line_id: lineId, dealer_id: arg, price: f.per_package, heading: f.heading });
+            await this._ws("middagsro/chains/move", { plan_id: this._plan.id, line_id: lineId, dealer_id: arg, price: f.per_package, heading: f.heading });
           }
         }, `${lines.length} varer er flyttet til ${this._chainName(arg)}-listen.`);
       },
       "chain-tick": () => {
         const line = this._plan?.shopping.find((l) => l.id === arg);
         if (!line) return;
-        this._editPlan(() => this._ws("rema1000/chains/line", { plan_id: this._plan.id, line_id: arg, bought: !line.bought }));
+        this._editPlan(() => this._ws("middagsro/chains/line", { plan_id: this._plan.id, line_id: arg, bought: !line.bought }));
       },
       "chain-count": () => {
         const [lineId, delta] = String(arg).split("|");
         const line = this._plan?.shopping.find((l) => l.id === lineId);
         if (!line) return;
         const packages = Math.max(1, Math.min(99, (line.packages || 1) + Number(delta)));
-        this._editPlan(() => this._ws("rema1000/chains/line", { plan_id: this._plan.id, line_id: lineId, packages }));
+        this._editPlan(() => this._ws("middagsro/chains/line", { plan_id: this._plan.id, line_id: lineId, packages }));
       },
       "chain-delete": () =>
-        this._editPlan(() => this._ws("rema1000/chains/line", { plan_id: this._plan.id, line_id: arg, delete: true }), "Varen er slettet."),
+        this._editPlan(() => this._ws("middagsro/chains/line", { plan_id: this._plan.id, line_id: arg, delete: true }), "Varen er slettet."),
       "chain-clear": () => {
         const bought = this._plan.shopping.filter((l) => l.buy_at === arg && l.bought).length;
         if (!bought) return this._say("Sæt flueben ved det, I har købt – så ryddes det fra listen.");
-        this._editPlan(() => this._ws("rema1000/chains/clear", { plan_id: this._plan.id, dealer_id: arg }), `Kurven er ryddet – ${bought} varer er købt.`);
+        this._editPlan(() => this._ws("middagsro/chains/clear", { plan_id: this._plan.id, dealer_id: arg }), `Kurven er ryddet – ${bought} varer er købt.`);
       },
       "settings-section": () => {
         if (arg === "chains" && !this._chains) this._loadChains();
@@ -653,7 +653,7 @@ class Rema1000Panel extends HTMLElement {
       },
       "save-settings": () =>
         this._run(async () => {
-          await this._ws("rema1000/settings", { settings: this._form });
+          await this._ws("middagsro/settings", { settings: this._form });
           this._dirty = false;
         }, "Indstillingerne er gemt."),
       "add-dislike": () => {
@@ -701,7 +701,7 @@ class Rema1000Panel extends HTMLElement {
       "add-fav": () => {
         if (!this._newFav.text.trim()) return this._say("Skriv en ret først.");
         this._run(async () => {
-          await this._ws("rema1000/favorite/save", { favorite: this._newFav });
+          await this._ws("middagsro/favorite/save", { favorite: this._newFav });
           this._newFav = { text: "", frequency: "weekly" };
         }, "Favoritten er tilføjet.");
       },
@@ -712,7 +712,7 @@ class Rema1000Panel extends HTMLElement {
       },
       "save-fav": () =>
         this._run(async () => {
-          await this._ws("rema1000/favorite/save", { favorite: this._editFav });
+          await this._ws("middagsro/favorite/save", { favorite: this._editFav });
           this._editFav = null;
         }, "Favoritten er gemt."),
       "cancel-fav": () => {
@@ -721,15 +721,15 @@ class Rema1000Panel extends HTMLElement {
       },
       "delete-fav": () => {
         if (!confirm("Slet denne favorit?")) return;
-        this._run(() => this._ws("rema1000/favorite/delete", { favorite_id: arg }), "Favoritten er slettet.");
+        this._run(() => this._ws("middagsro/favorite/delete", { favorite_id: arg }), "Favoritten er slettet.");
       },
       recipe: () =>
         this._run(async () => {
           const item = this._recipeDays()[this._day];
           if (!item) return;
           // The plans are read again afterwards, so the new recipe shows up.
-          await this._ws("rema1000/recipe", { plan_id: item.plan.id, date: item.day.date });
-          if (!this._viewingLatest) this._plan = await this._ws("rema1000/plan", { plan_id: this._plan.id });
+          await this._ws("middagsro/recipe", { plan_id: item.plan.id, date: item.day.date });
+          if (!this._viewingLatest) this._plan = await this._ws("middagsro/plan", { plan_id: this._plan.id });
         }, "Opskriften er lavet igen."),
       refresh: () => this._load(),
       // A day of the plan: see the recipe, or swap the dish for another.
@@ -766,7 +766,7 @@ class Rema1000Panel extends HTMLElement {
         this._modal = null;
         this._renderModal();
         this._editPlan(
-          () => this._ws("rema1000/day/clear", { plan_id: m.planId, date: m.date, skip }),
+          () => this._ws("middagsro/day/clear", { plan_id: m.planId, date: m.date, skip }),
           skip ? "Dagen springes over." : "Retten er slettet."
         );
       },
@@ -819,15 +819,15 @@ class Rema1000Panel extends HTMLElement {
           this._modal = null;
           this._renderModal();
         }
-        this._editPlan(() => this._ws("rema1000/mealie/save", { plan_id: planId, date }), "Opskriften er gemt i Mealie.");
+        this._editPlan(() => this._ws("middagsro/mealie/save", { plan_id: planId, date }), "Opskriften er gemt i Mealie.");
       },
       "mealie-sync": () =>
-        this._run(() => this._ws("rema1000/mealie/sync", { plan_id: this._plan.id }), "Ugen er sat i Mealie-kalenderen."),
+        this._run(() => this._ws("middagsro/mealie/sync", { plan_id: this._plan.id }), "Ugen er sat i Mealie-kalenderen."),
       "swap-pick": () => this._swapPick(Number(arg)),
       "pantry-open": () => this._pantryOpen(),
       "plan-refresh": () =>
         this._editPlan(
-          () => this._ws("rema1000/plan/refresh", { plan_id: this._plan.id }),
+          () => this._ws("middagsro/plan/refresh", { plan_id: this._plan.id }),
           "Tilbudsvarerne er fundet igen med REMA's varer og priser lige nu."
         ),
       "pantry-add": () => this._pantryAdd(arg),
@@ -838,12 +838,12 @@ class Rema1000Panel extends HTMLElement {
         if (!product || !this._plan) return;
         this._shopSearch[part] = { query: "", results: [], loading: false };
         this._editPlan(
-          () => this._ws("rema1000/plan/add", { plan_id: this._plan.id, product_id: product.id, part }),
+          () => this._ws("middagsro/plan/add", { plan_id: this._plan.id, product_id: product.id, part }),
           `${product.name} er tilføjet til indkøbslisten.`
         );
       },
       "line-remove": () =>
-        this._editPlan(() => this._ws("rema1000/plan/remove", { plan_id: this._plan.id, line_id: arg }), "Varen er fjernet."),
+        this._editPlan(() => this._ws("middagsro/plan/remove", { plan_id: this._plan.id, line_id: arg }), "Varen er fjernet."),
     };
     actions[action]?.();
   }
@@ -959,7 +959,7 @@ class Rema1000Panel extends HTMLElement {
     this._favsError = null;
     this._render();
     try {
-      this._favCache[week] = await this._ws("rema1000/favorites", { force, week });
+      this._favCache[week] = await this._ws("middagsro/favorites", { force, week });
       this._loadFavCompare(week);
     } catch (err) {
       this._favsError = err?.message || String(err);
@@ -975,7 +975,7 @@ class Rema1000Panel extends HTMLElement {
     const date = week === "next" && !data.fallback && data.catalog?.valid_from ? localDay(data.catalog.valid_from) : null;
     const products = (data.products || []).map((p) => ({ id: p.id, name: p.name, underline: p.underline, price: p.price, is_organic: p.is_organic }));
     try {
-      this._favCompare[week] = (await this._ws("rema1000/chains/products", { products, date })).products;
+      this._favCompare[week] = (await this._ws("middagsro/chains/products", { products, date })).products;
       if (this._tab === "favorites") this._render();
     } catch (err) {
       this._favCompare[week] = {};
@@ -991,7 +991,7 @@ class Rema1000Panel extends HTMLElement {
 
   async _generate(surprise = false) {
     const days = new Set(this._planDates());
-    await this._ws("rema1000/generate", {
+    await this._ws("middagsro/generate", {
       start_date: this._startDate || null,
       skip_dates: [...this._skip].filter((d) => days.has(d)),
       surprise,
@@ -1008,7 +1008,7 @@ class Rema1000Panel extends HTMLElement {
     this._renderModal();
     this._run(
       async () => {
-        await this._ws("rema1000/note", { text });
+        await this._ws("middagsro/note", { text });
         if (generate) await this._generate();
       },
       generate ? GENERATING_MESSAGE : text ? "Ønskerne bruges i næste madplan." : "Ønskerne er fjernet."
@@ -1046,7 +1046,7 @@ class Rema1000Panel extends HTMLElement {
     this._search.loading = true;
     this._render();
     try {
-      this._search.results = await this._ws("rema1000/search", { query });
+      this._search.results = await this._ws("middagsro/search", { query });
     } catch (err) {
       this._say(`Søgningen fejlede: ${err?.message || err}`);
     }
@@ -1058,7 +1058,7 @@ class Rema1000Panel extends HTMLElement {
   _editPlan(fn, okMessage) {
     return this._run(async () => {
       await fn();
-      if (!this._viewingLatest && this._plan) this._plan = await this._ws("rema1000/plan", { plan_id: this._plan.id });
+      if (!this._viewingLatest && this._plan) this._plan = await this._ws("middagsro/plan", { plan_id: this._plan.id });
     }, okMessage);
   }
 
@@ -1069,7 +1069,7 @@ class Rema1000Panel extends HTMLElement {
     search.loading = true;
     this._render();
     try {
-      search.results = await this._ws("rema1000/search", { query });
+      search.results = await this._ws("middagsro/search", { query });
       if (!search.results.length) this._say(`Ingen varer fundet for "${query}".`);
     } catch (err) {
       this._say(`Søgningen fejlede: ${err?.message || err}`);
@@ -1085,7 +1085,7 @@ class Rema1000Panel extends HTMLElement {
     m.error = null;
     this._renderModal();
     try {
-      const result = await this._ws("rema1000/swap/options", { plan_id: m.planId, date: m.date });
+      const result = await this._ws("middagsro/swap/options", { plan_id: m.planId, date: m.date });
       Object.assign(m, { date: result.date, dish: result.dish, options: result.options });
     } catch (err) {
       m.error = err?.message || String(err);
@@ -1103,7 +1103,7 @@ class Rema1000Panel extends HTMLElement {
     m.error = null;
     this._renderModal();
     try {
-      const plan = await this._ws("rema1000/swap", { plan_id: m.planId, date: m.date, option });
+      const plan = await this._ws("middagsro/swap", { plan_id: m.planId, date: m.date, option });
       if (!this._viewingLatest && this._plan?.id === plan.id) this._plan = plan;
       this._modal = null;
       this._renderModal();
@@ -1127,7 +1127,7 @@ class Rema1000Panel extends HTMLElement {
     const m = this._modal;
     if (!m) return;
     try {
-      m.items = await this._ws("rema1000/pantry", { plan_id: this._plan.id });
+      m.items = await this._ws("middagsro/pantry", { plan_id: this._plan.id });
       m.error = null;
     } catch (err) {
       m.error = err?.message || String(err);
@@ -1142,8 +1142,8 @@ class Rema1000Panel extends HTMLElement {
     m.busy = name;
     this._renderModal();
     try {
-      const line = await this._ws("rema1000/plan/add", { plan_id: this._plan.id, pantry: name });
-      if (!this._viewingLatest) this._plan = await this._ws("rema1000/plan", { plan_id: this._plan.id });
+      const line = await this._ws("middagsro/plan/add", { plan_id: this._plan.id, pantry: name });
+      if (!this._viewingLatest) this._plan = await this._ws("middagsro/plan", { plan_id: this._plan.id });
       await this._load();
       this._say(line.product ? `${line.product.name} er tilføjet til indkøbslisten.` : `${line.name} er tilføjet som fritekst.`);
     } catch (err) {
@@ -1156,7 +1156,7 @@ class Rema1000Panel extends HTMLElement {
 
   _saveRules(list, okMessage) {
     this._run(async () => {
-      const saved = await this._ws("rema1000/settings", { settings: { ...this._state.settings, rules: list } });
+      const saved = await this._ws("middagsro/settings", { settings: { ...this._state.settings, rules: list } });
       if (this._form) this._form.rules = saved.rules;
     }, okMessage);
   }
@@ -1346,7 +1346,7 @@ class Rema1000Panel extends HTMLElement {
     this._renderModal();
     // REMA's nutrition per 100 g, as the app shows it.
     if (line.product?.id) {
-      this._ws("rema1000/nutrition", { product_id: line.product.id })
+      this._ws("middagsro/nutrition", { product_id: line.product.id })
         .then((n) => {
           m.nutrition = n;
           if (this._modal === m) this._renderModal();
@@ -1362,7 +1362,7 @@ class Rema1000Panel extends HTMLElement {
     m.error = null;
     this._renderModal();
     try {
-      const plan = await this._ws("rema1000/plan/line", { plan_id: m.planId, line_id: m.lineId, ...data });
+      const plan = await this._ws("middagsro/plan/line", { plan_id: m.planId, line_id: m.lineId, ...data });
       if (!this._viewingLatest && this._plan?.id === plan.id) this._plan = plan;
       this._modal = null;
       this._renderModal();
@@ -1382,7 +1382,7 @@ class Rema1000Panel extends HTMLElement {
     m.loading = true;
     this._renderModal();
     try {
-      m.results = await this._ws("rema1000/search", { query });
+      m.results = await this._ws("middagsro/search", { query });
       if (!m.results.length) m.error = `Ingen varer fundet for "${query}".`;
     } catch (err) {
       m.error = err?.message || String(err);
@@ -1456,7 +1456,7 @@ class Rema1000Panel extends HTMLElement {
     this._health = { planId, loading: true, data: null, error: null };
     this._render();
     try {
-      this._health.data = await this._ws("rema1000/health", { plan_id: planId });
+      this._health.data = await this._ws("middagsro/health", { plan_id: planId });
     } catch (err) {
       this._health.error = err?.message || String(err);
     }
@@ -1623,7 +1623,7 @@ class Rema1000Panel extends HTMLElement {
     if (this._chainsLoading) return;
     this._chainsLoading = true;
     try {
-      this._chains = (await this._ws("rema1000/chains")).chains;
+      this._chains = (await this._ws("middagsro/chains")).chains;
     } catch (err) {
       this._chains = [];
     }
@@ -1651,7 +1651,7 @@ class Rema1000Panel extends HTMLElement {
     this._chainOffers[id] = { ...(this._chainOffers[id] || {}), loading: true, error: null };
     this._render();
     try {
-      const data = await this._ws("rema1000/chains/offers", { dealer_id: id, force });
+      const data = await this._ws("middagsro/chains/offers", { dealer_id: id, force });
       this._chainOffers[id] = { offers: data.offers, loading: false };
     } catch (err) {
       this._chainOffers[id] = { offers: null, loading: false, error: err?.message || String(err) };
@@ -1726,7 +1726,7 @@ class Rema1000Panel extends HTMLElement {
     const key = `${plan.id}|${plan.total}|${plan.shopping.length}|${(this._state.settings.chains || []).join(",")}`;
     if (this._compare?.key === key) return this._compare;
     this._compare = { key, loading: true, lines: {}, chains: {} };
-    this._ws("rema1000/chains/compare", { plan_id: plan.id })
+    this._ws("middagsro/chains/compare", { plan_id: plan.id })
       .then((data) => {
         if (this._compare?.key === key) this._compare = { key, loading: false, ...data };
       })
@@ -1890,7 +1890,7 @@ class Rema1000Panel extends HTMLElement {
     this._rc.importing = true;
     this._render();
     try {
-      const recipe = await this._ws("rema1000/recipes/import", { url });
+      const recipe = await this._ws("middagsro/recipes/import", { url });
       this._rc.link = "";
       this._modal = { kind: "recipe", recipe: { ...recipe, id: null }, imported: true };
       this._renderModal();
@@ -1905,7 +1905,7 @@ class Rema1000Panel extends HTMLElement {
     this._modal = { kind: "recipe", loading: true, recipe: { id, name: "" } };
     this._renderModal();
     try {
-      const recipe = await this._ws("rema1000/recipes/get", { recipe_id: id });
+      const recipe = await this._ws("middagsro/recipes/get", { recipe_id: id });
       if (this._modal?.kind === "recipe" && this._modal.recipe.id === id) {
         this._modal = { kind: "recipe", recipe: clone(recipe) };
         this._renderModal();
@@ -1931,7 +1931,7 @@ class Rema1000Panel extends HTMLElement {
     m.busy = true;
     this._renderModal();
     try {
-      const saved = await this._ws("rema1000/recipes/save", { recipe });
+      const saved = await this._ws("middagsro/recipes/save", { recipe });
       this._modal = null;
       this._renderModal();
       this._recipesSub = "collection";
@@ -1965,7 +1965,7 @@ class Rema1000Panel extends HTMLElement {
     m.error = null;
     this._renderModal();
     try {
-      await this._ws("rema1000/recipes/plan", { recipe_id: m.recipe.id, plan_id: planId, date });
+      await this._ws("middagsro/recipes/plan", { recipe_id: m.recipe.id, plan_id: planId, date });
       this._modal = null;
       this._renderModal();
       await this._load();
@@ -2966,7 +2966,7 @@ class Rema1000Panel extends HTMLElement {
         `),
       app: () => card(`        <h2 class="flush">App på hjemmeskærmen</h2>
         <p class="muted">Åbn linket i Safari (eller Chrome), log ind og vælg Del › Føj til hjemmeskærm. Så åbner Middagsro i fuld skærm i dit tema.</p>
-        <p><a href="${esc(`${location.origin}/rema1000_app/app.html`)}" target="_blank" rel="noopener">${esc(`${location.origin}/rema1000_app/app.html`)}</a></p>
+        <p><a href="${esc(`${location.origin}/middagsro_app/app.html`)}" target="_blank" rel="noopener">${esc(`${location.origin}/middagsro_app/app.html`)}</a></p>
         `),
     };
     if (open) {
@@ -3342,4 +3342,4 @@ const STYLE = `
   }
 `;
 
-if (!customElements.get("rema1000-panel")) customElements.define("rema1000-panel", Rema1000Panel);
+if (!customElements.get("middagsro-panel")) customElements.define("middagsro-panel", Rema1000Panel);

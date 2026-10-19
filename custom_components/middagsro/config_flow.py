@@ -13,6 +13,7 @@ from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, Tex
 
 from .api import RemaAuthError, RemaClient, RemaConnectionError
 from .const import DOMAIN
+from .migrate import MIGRATE_FROM, old_entries
 from .schema import vol
 
 _LOGGER = logging.getLogger(__name__)
@@ -59,7 +60,9 @@ class RemaConfigFlow(ConfigFlow, domain=DOMAIN):
         return user_id, {}
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Ask for e-mail and password."""
+        """Ask for e-mail and password (or move an account of the old integration over)."""
+        if user_input is None and old_entries(self.hass):
+            return await self.async_step_migrate()
         errors: dict[str, str] = {}
         if user_input is not None:
             email = user_input[CONF_EMAIL].strip()
@@ -77,6 +80,24 @@ class RemaConfigFlow(ConfigFlow, domain=DOMAIN):
                 USER_SCHEMA, {CONF_EMAIL: (user_input or {}).get(CONF_EMAIL)}
             ),
             errors=errors,
+        )
+
+    async def async_step_migrate(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Move the account from the old REMA 1000 integration, with all its data."""
+        found = old_entries(self.hass)
+        if not found:
+            return self.async_abort(reason="already_configured")
+        old = found[0]
+        if user_input is not None:
+            await self.async_set_unique_id(old.unique_id)
+            self._abort_if_unique_id_configured()
+            return self.async_create_entry(
+                title=old.title, data={**old.data, MIGRATE_FROM: old.entry_id}
+            )
+        return self.async_show_form(
+            step_id="migrate", description_placeholders={"account": old.title}
         )
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:

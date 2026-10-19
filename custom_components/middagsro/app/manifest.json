@@ -3,13 +3,13 @@
   "short_name": "Middagsro",
   "description": "Madplan og indkøbsliste fra Home Assistant",
   "lang": "da",
-  "start_url": "/rema1000_app/app.html",
+  "start_url": "/middagsro_app/app.html",
   "scope": "/",
   "display": "standalone",
   "background_color": "#6E4AFF",
   "theme_color": "#ffffff",
   "icons": [
-    { "src": "/rema1000_app/icon-192.png?v=3", "sizes": "192x192", "type": "image/png" },
-    { "src": "/rema1000_app/icon-512.png?v=3", "sizes": "512x512", "type": "image/png" }
+    { "src": "/middagsro_app/icon-192.png?v=3", "sizes": "192x192", "type": "image/png" },
+    { "src": "/middagsro_app/icon-512.png?v=3", "sizes": "512x512", "type": "image/png" }
   ]
 }

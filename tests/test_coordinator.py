@@ -8,8 +8,8 @@ from unittest.mock import MagicMock
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.rema1000.api import Catalog
-from custom_components.rema1000.coordinator import RemaOffersCoordinator
+from custom_components.middagsro.api import Catalog
+from custom_components.middagsro.coordinator import RemaOffersCoordinator
 from homeassistant.core import HomeAssistant
 
 from .conftest import CURRENT, NOW, UPCOMING
@@ -44,7 +44,7 @@ async def test_offers_pick_current_and_next(
     assert set(data.first_seen) == {"later", "small", "cat-42", "cat-43", "undated"}
 
     await hass.async_block_till_done()
-    key = f"rema1000.{config_entry.entry_id}.catalogs"
+    key = f"middagsro.{config_entry.entry_id}.catalogs"
     assert hass_storage[key]["data"]["first_seen"]["cat-43"] == NOW.isoformat()
 
     # A restart keeps when each avis was first seen.
