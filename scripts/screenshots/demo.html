@@ -137,6 +137,12 @@
     "middagsro/chains/offers": (msg) => ({ dealer_id: msg.dealer_id, offers: D.chainOffers.filter((o) => o.dealer_id === msg.dealer_id) }),
     "middagsro/chains/compare": () => D.compare,
     "middagsro/chains/products": () => ({ products: { [D.remaFavorites[0].id]: { dealer_id: "9ba51", heading: "Kaffe", price: 39, per_package: 39, saving: 10 } } }),
+    "middagsro/chains/add": (msg) => {
+      const plan = D.state.latest_plan;
+      plan.shopping.push({ id: `c${plan.shopping.length}`, name: msg.offer.heading, chain_heading: msg.offer.heading, chain_only: true,
+        buy_at: msg.offer.dealer_id, chain_price: msg.offer.price, packages: 1, cost: msg.offer.price, bought: false, note: msg.offer.description });
+      return plan;
+    },
     "middagsro/chains/move": (msg) => {
       const plan = D.state.latest_plan;
       const line = plan.shopping.find((l) => l.id === msg.line_id);

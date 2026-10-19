@@ -49,6 +49,15 @@ async def async_migrate(hass: HomeAssistant, entry: ConfigEntry) -> None:
             await Store(hass, version, f"{DOMAIN}.{entry.entry_id}.{name}").async_save(data)
             await source.async_remove()
 
+    # Entities first: a device that leaves the old entry takes its entities with it.
+    entities = er.async_get(hass)
+    for item in er.async_entries_for_config_entry(entities, old_id):
+        # Only entities without a state can change integration; they come back at setup.
+        hass.states.async_remove(item.entity_id)
+        entities.async_update_entity_platform(
+            item.entity_id, DOMAIN, new_config_entry_id=entry.entry_id
+        )
+
     devices = dr.async_get(hass)
     for device in dr.async_entries_for_config_entry(devices, old_id):
         devices.async_update_device(
@@ -59,14 +68,6 @@ async def async_migrate(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 (DOMAIN if domain == OLD_DOMAIN else domain, value)
                 for domain, value in device.identifiers
             },
-        )
-
-    entities = er.async_get(hass)
-    for item in er.async_entries_for_config_entry(entities, old_id):
-        # Only entities without a state can change integration; they come back at setup.
-        hass.states.async_remove(item.entity_id)
-        entities.async_update_entity_platform(
-            item.entity_id, DOMAIN, new_config_entry_id=entry.entry_id
         )
 
     if old is not None:
