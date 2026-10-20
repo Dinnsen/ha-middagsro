@@ -614,6 +614,24 @@ class Rema1000Panel extends HTMLElement {
         this._renderModal();
       },
       "rc-save": () => this._recipeSave(),
+      "rc-ing-pick": () => {
+        const m = this._modal;
+        const [idx, id] = String(arg).split("|");
+        const ing = m?.kind === "recipe" ? m.recipe.ingredients[Number(idx)] : null;
+        const product = (m?.sugg?.items || []).find((p) => String(p.id) === id);
+        if (!ing || !product) return;
+        ing.product = { id: product.id, name: product.name, underline: product.underline || "" };
+        if (!String(ing.name || "").trim()) ing.name = product.name.toLowerCase();
+        m.sugg = null;
+        this._renderModal();
+      },
+      "rc-ing-unlink": () => {
+        const ing = this._modal?.kind === "recipe" ? this._modal.recipe.ingredients[Number(arg)] : null;
+        if (!ing) return;
+        delete ing.product;
+        delete ing.basic;
+        this._renderModal();
+      },
       "rc-delete": () => {
         const m = this._modal;
         if (!m?.recipe?.id || !confirm(`Slet "${m.recipe.name}" fra opskriftsamlingen?`)) return;
@@ -1002,6 +1020,8 @@ class Rema1000Panel extends HTMLElement {
       const value = number ? Number(el.value) || 0 : el.value;
       if (ds.list) m.recipe[ds.list][Number(ds.idx)][ds.field] = value;
       else m.recipe[ds.field] = value;
+      // Typing an ingredient searches REMA, so it can be linked to the very product.
+      if (ds.list === "ingredients" && ds.field === "name" && ev.type === "input") this._ingSearchSoon(Number(ds.idx), el.value);
       return;
     }
     if (ds.bind === "newrule") {
@@ -2174,7 +2194,10 @@ class Rema1000Panel extends HTMLElement {
           <input type="text" class="amount" data-bind="rcp" data-list="ingredients" data-idx="${i}" data-field="amount" value="${esc(ing.amount)}" placeholder="Mængde">
           <input type="text" class="grow" data-bind="rcp" data-list="ingredients" data-idx="${i}" data-field="name" value="${esc(ing.name)}" placeholder="Ingrediens">
           <button class="icon-btn" data-action="rc-row" data-arg="ingredients|del|${i}" aria-label="Fjern ingrediens">${CLOSE_ICON}</button>
-        </div>${ing.product ? `<p class="muted small rc-prod">REMA: ${esc(ing.product.name)}${ing.product.underline ? ` · ${esc(ing.product.underline)}` : ""}${ing.basic ? " · basisvare" : ""}</p>` : ""}`
+        </div>${ing.product
+          ? `<p class="muted small rc-prod">REMA: ${esc(ing.product.name)}${ing.product.underline ? ` · ${esc(ing.product.underline)}` : ""}${ing.basic ? " · basisvare" : ""}
+              <button class="link small" data-action="rc-ing-unlink" data-arg="${i}">Fjern</button></p>`
+          : ""}<div class="rc-sugg" data-idx="${i}"></div>`
       )
       .join("");
     const steps = r.steps
@@ -2685,6 +2708,52 @@ class Rema1000Panel extends HTMLElement {
   // day starts again on today's dish.
   _recipeKey() {
     return `${this._plan?.id}|${localToday()}`;
+  }
+
+  // A short pause after typing an ingredient, then REMA's products for it.
+  _ingSearchSoon(idx, text) {
+    clearTimeout(this._ingTimer);
+    const query = String(text || "").trim();
+    const m = this._modal;
+    if (query.length < 3) {
+      if (m) m.sugg = null;
+      this._ingSuggHtml(idx, "");
+      return;
+    }
+    this._ingTimer = setTimeout(() => this._ingSearch(idx, query), 350);
+  }
+
+  async _ingSearch(idx, query) {
+    const m = this._modal;
+    if (m?.kind !== "recipe") return;
+    const token = (this._ingToken = (this._ingToken || 0) + 1);
+    this._ingSuggHtml(idx, '<p class="muted small"><span class="spinner small"></span> Søger hos REMA …</p>');
+    let items = [];
+    try {
+      items = (await this._ws("middagsro/search", { query })).slice(0, 6);
+    } catch (err) {
+      items = [];
+    }
+    if (token !== this._ingToken || this._modal !== m) return;
+    m.sugg = { idx, items };
+    this._ingSuggHtml(
+      idx,
+      items.length
+        ? `<div class="rc-sugg-list">${items
+            .map(
+              (p) => `<button class="rc-sugg-item" data-action="rc-ing-pick" data-arg="${idx}|${esc(p.id)}">
+                ${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy">` : '<span class="noimg">?</span>'}
+                <span class="what"><b>${esc(p.name)}</b><span class="muted small">${esc(p.underline || "")}</span></span>
+                <span class="price ${onOffer(p) ? "sale" : ""}">${kr(p.price)}</span></button>`
+            )
+            .join("")}</div>`
+        : `<p class="muted small">Ingen REMA-varer fundet for "${esc(query)}".</p>`
+    );
+  }
+
+  _ingSuggHtml(idx, html) {
+    const node = this.shadowRoot.querySelector(`#modal .rc-sugg[data-idx="${idx}"]`);
+    if (node) node.innerHTML = html;
   }
 
   // REMA 1000's own recipes: categories, cards and "Vis flere".
@@ -3446,7 +3515,18 @@ const STYLE = `
   .rc-ing, .rc-step { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
   .rc-ing .amount { width: 110px; flex: none; }
   .rc-prod { margin: -4px 0 8px 116px; }
-  @media (max-width: 600px) { .rc-prod { margin-left: 0; } }
+  .rc-prod .link { margin-left: 6px; font-size: .8rem; }
+  .rc-sugg:empty { display: none; }
+  .rc-sugg { margin: -2px 0 10px 116px; }
+  .rc-sugg-list { display: grid; gap: 4px; border: 1px solid var(--divider-color); border-radius: 10px; padding: 4px; background: var(--card-background-color); }
+  .rc-sugg-item { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 8px; align-items: center; text-align: left; padding: 4px 6px;
+    border: none; border-radius: 8px; background: none; cursor: pointer; color: var(--primary-text-color); font: inherit; }
+  .rc-sugg-item:hover { background: var(--secondary-background-color); }
+  .rc-sugg-item img, .rc-sugg-item .noimg { width: 36px; height: 36px; object-fit: contain; border-radius: 6px; background: #fff; }
+  .rc-sugg-item .what { display: grid; min-width: 0; }
+  .rc-sugg-item .what b { font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rc-sugg-item .price { font-weight: 700; white-space: nowrap; } .rc-sugg-item .price.sale { color: var(--rema-sale); }
+  @media (max-width: 600px) { .rc-prod, .rc-sugg { margin-left: 0; } }
   .rc-photo { width: 100%; max-height: 260px; object-fit: cover; border-radius: 12px; margin: 4px 0 10px; }
   .rr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin: 12px 0; }
   .rr-card { display: grid; gap: 4px; align-content: start; padding: 8px; border: 1px solid var(--divider-color); border-radius: 12px; background: var(--secondary-background-color); }

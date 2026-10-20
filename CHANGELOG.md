@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.4.4] - 2026-10-20
+
+### Added
+- Writing a recipe yourself (or editing one): type an ingredient and REMA's products for it show up under the field. Tap one to link the ingredient to that product – the shopping list then gets the very item when the recipe is put on the plan. *Fjern* takes the link off again.
+
 ## [1.4.3] - 2026-10-19
 
 ### Changed
