@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.7.0] - 2026-10-20
+
+### Added
+- **Faste varer only once on the REMA list** (*Indstillinger → Indkøb og varer → Faste varer hver uge*): with *Send ikke faste varer, der allerede står på REMA-listen* on, a must-have that is on the list in the REMA app and not bought is not sent again, so its amount isn't added on top. The note after sending says how many were already there. Off by default ([#28](https://github.com/Dinnsen/ha-middagsro/issues/28)).
+
 ## [1.6.0] - 2026-10-20
 
 ### Added

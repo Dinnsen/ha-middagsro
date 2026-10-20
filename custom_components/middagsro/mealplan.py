@@ -2065,6 +2065,7 @@ class MealPlanner:
         await asyncio.gather(*(self._async_resolve_avis_item(line) for line in lines))
         plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
         for line in lines:
+            line.pop("on_list", None)
             if line.get("product"):
                 items.append({"product_id": line["product"]["id"], "amount": line["packages"]})
             elif line.get("avis_item"):
@@ -2076,6 +2077,8 @@ class MealPlanner:
                 if amount and line.get("unit") and line["unit"] != "pk":
                     label += f" ({amount:g} {line['unit']})"
                 items.append({"name": label, "amount": int(line.get("packages") or 1)})
+        if self.store.settings["must_haves_once"]:
+            items = await self._async_skip_listed(lines, items)
         if items:
             await self._add_items(items)
         # Sent: the lines leave the family's list in the panel (the basket is empty),
@@ -2095,6 +2098,33 @@ class MealPlanner:
         self._notify()
         return plan
 
+    async def _async_skip_listed(
+        self, lines: list[dict[str, Any]], items: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Leave out the must-haves that are on the REMA list already (and not bought).
+
+        They count as sent, so they leave the basket here; line["on_list"] says why.
+        """
+        if not any(line.get("must_have") for line in lines):
+            return items
+        try:
+            shopping_list = await self.client.async_get_primary_list()
+        except RemaError as err:
+            _LOGGER.debug("The REMA list was not read, every item is sent: %s", err)
+            return items
+        keep = []
+        for line, item in zip(lines, items, strict=True):
+            existing = (
+                shopping_list.find(product_id=item.get("product_id"), name=item.get("name"))
+                if line.get("must_have")
+                else None
+            )
+            if existing is not None and not existing.bought:
+                line["on_list"] = True
+            else:
+                keep.append(item)
+        return keep
+
     async def async_restore_sent(self, plan_id: str | None = None) -> dict[str, Any]:
         """Put the lines sent last back on the family's list (e.g. the REMA list was lost)."""
         plan = self.store.get_plan(plan_id) if plan_id else self.store.latest_plan
@@ -2107,6 +2137,7 @@ class MealPlanner:
         for line in plan["shopping"]:
             if line.get("id") in ids:
                 line.pop("sent", None)
+                line.pop("on_list", None)
         await self.store.async_save()
         self._notify()
         return plan
