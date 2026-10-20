@@ -127,6 +127,7 @@ async def test_generate_and_send_meal_plan(
         await hass.services.async_call(DOMAIN, "send_meal_plan", {"plan_id": "nope"}, blocking=True)
     assert err.value.translation_key == "plan_not_found"
 
+    await init_integration.runtime_data.planner.async_restore_sent("plan-1")
     mock_client.async_add_to_list.side_effect = RemaError("HTTP 500")
     with pytest.raises(HomeAssistantError) as err:
         await hass.services.async_call(DOMAIN, "send_meal_plan", {}, blocking=True)

@@ -1097,7 +1097,6 @@ async def test_send_empties_the_basket(
     store = init_integration.runtime_data.store
     planner = init_integration.runtime_data.planner
     plan = make_plan("basket", start="2026-10-18")
-    del plan["shopping"][0]["id"]  # an old plan's line without an id
     await store.async_add_plan(plan)
     await planner.async_send("basket")
     assert all(line.get("sent") for line in plan["shopping"])

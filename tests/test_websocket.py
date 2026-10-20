@@ -138,8 +138,10 @@ async def test_generate_and_send(
     msg = await _ws(client, 3, type="middagsro/send", plan_id="plan-1")
     assert msg["result"] == {"plan_id": "plan-1", "status": "sent"}
 
+    # Put the basket back, and REMA fails: nothing is marked as sent.
+    await _ws(client, 4, type="middagsro/send/restore", plan_id="plan-1")
     mock_client.async_add_to_list.side_effect = RemaError("HTTP 500")
-    msg = await _ws(client, 4, type="middagsro/send")
+    msg = await _ws(client, 5, type="middagsro/send")
     assert not msg["success"]
     assert "HTTP 500" in msg["error"]["message"]
 
