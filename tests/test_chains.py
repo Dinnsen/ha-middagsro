@@ -466,6 +466,27 @@ async def test_rema_offers_on_the_list(
     with patch.object(planner, "_add_items") as add:
         assert (await ch.async_add_rema_offer(planner, offer, None))["added_to"] == "rema_list"
     assert add.call_args.args[0] == [{"product_id": 30001, "amount": 1}]
+    # REMA's avis knows the product, but the webshop doesn't sell it (a partivare):
+    # the avis's name and price, with the product kept for later.
+    mock_client.async_get_products.return_value = []
+    await ch.async_add_rema_offer(planner, {**offer, "price": 30, "image": "https://img/x"}, "p")
+    plan = planner.store.get_plan("p")
+    assert plan is not None
+    line = plan["shopping"][-1]
+    assert (line["avis_item"]["product_ids"], line["cost"], line["price_source"]) == (
+        [30001],
+        30.0,
+        "avis",
+    )
+    with (
+        patch(
+            "custom_components.middagsro.planedit.async_add_product",
+            side_effect=ServiceValidationError(translation_domain="middagsro", translation_key="x"),
+        ),
+        pytest.raises(ServiceValidationError),
+    ):
+        await ch.async_add_rema_offer(planner, offer, "p")
+
     # Not in REMA's webshop (a partivare): the avis's text.
     mock_client.async_get_offer_products.side_effect = lambda offers: offers
     result = await ch.async_add_rema_offer(planner, {**offer, "price": 25}, "p")

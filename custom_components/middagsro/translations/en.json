@@ -197,6 +197,9 @@
     },
     "rema_recipes_failed": {
       "message": "REMA 1000's recipes could not be read: {error}"
+    },
+    "nothing_to_restore": {
+      "message": "There is no sent basket to put back."
     }
   },
   "issues": {

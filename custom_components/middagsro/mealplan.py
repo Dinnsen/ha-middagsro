@@ -2055,6 +2055,7 @@ class MealPlanner:
             for line in plan["shopping"]
             if (part == "all" or bool(line.get("buy_from")) == (part == "late"))
             and not line.get("buy_at")  # bought in another shop
+            and not line.get("sent")  # already in the REMA app
         ]
         # The offers' products and prices as REMA has them now (once they run).
         try:
@@ -2077,12 +2078,36 @@ class MealPlanner:
                 items.append({"name": label, "amount": int(line.get("packages") or 1)})
         if items:
             await self._add_items(items)
+        # Sent: the lines leave the family's list in the panel (the basket is empty),
+        # and the next send only has what was added since. They can be put back.
+        if lines:
+            stamp = dt_util.now().isoformat()
+            for line in lines:
+                line.setdefault("id", uuid.uuid4().hex[:8])
+                line["sent"] = stamp
+            plan["last_sent"] = {"at": stamp, "ids": [line["id"] for line in lines]}
         for key in {"main": ("send_at",), "late": ("late_send_at",)}.get(
             part, ("send_at", "late_send_at")
         ):
             plan.pop(key, None)  # sent: nothing left to send automatically
             self._cancel_send(plan["id"], key)
         await self.store.async_mark_sent(plan["id"], part)
+        self._notify()
+        return plan
+
+    async def async_restore_sent(self, plan_id: str | None = None) -> dict[str, Any]:
+        """Put the lines sent last back on the family's list (e.g. the REMA list was lost)."""
+        plan = self.store.get_plan(plan_id) if plan_id else self.store.latest_plan
+        if plan is None:
+            raise _invalid("no_plan" if not plan_id else "plan_not_found")
+        last = plan.pop("last_sent", None) or {}
+        ids = set(last.get("ids") or [])
+        if not ids:
+            raise _invalid("nothing_to_restore")
+        for line in plan["shopping"]:
+            if line.get("id") in ids:
+                line.pop("sent", None)
+        await self.store.async_save()
         self._notify()
         return plan
 

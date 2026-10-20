@@ -217,3 +217,19 @@ async def test_favorite_weeks(
 
     msg = await _ws(client, 4, type="middagsro/favorites", week="later")
     assert not msg["success"]
+
+
+async def test_send_and_put_back(
+    hass: HomeAssistant, init_integration: MockConfigEntry, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Send the list, then put the sent basket back."""
+    client = await hass_ws_client(hass)
+    msg = await _ws(client, 1, type="middagsro/send", plan_id="plan-1")
+    assert msg["success"]
+    msg = await _ws(client, 2, type="middagsro/send/restore", plan_id="plan-1")
+    assert msg["result"] == {"plan_id": "plan-1"}
+    plan = init_integration.runtime_data.store.get_plan("plan-1")
+    assert plan is not None
+    assert not any(line.get("sent") for line in plan["shopping"])
+    msg = await _ws(client, 3, type="middagsro/send/restore", plan_id="plan-1")
+    assert msg["error"]["code"] == "middagsro_error"

@@ -112,9 +112,27 @@
       return plan;
     },
     "middagsro/pantry": () => D.pantry,
-    "middagsro/send": () => {
-      D.state.latest_plan.status = "sent";
-      return { plan_id: D.state.latest_plan.id, status: "sent" };
+    "middagsro/send": (msg) => {
+      const plan = D.state.latest_plan;
+      const lines = plan.shopping.filter((l) => !l.sent && !l.buy_at && (msg.part === "late") === !!l.buy_from);
+      const at = new Date().toISOString();
+      lines.forEach((l) => (l.sent = at));
+      plan.last_sent = { at, ids: lines.map((l) => l.id) };
+      plan.status = "sent";
+      return { plan_id: plan.id, status: "sent" };
+    },
+    "middagsro/send/restore": () => {
+      const plan = D.state.latest_plan;
+      const ids = new Set(plan.last_sent?.ids || []);
+      plan.shopping.forEach((l) => ids.has(l.id) && delete l.sent);
+      delete plan.last_sent;
+      return { plan_id: plan.id };
+    },
+    "middagsro/chains/rema_add": (msg) => {
+      const plan = D.state.latest_plan;
+      plan.shopping.push({ id: `o${Date.now()}`, name: msg.offer.heading, category: "Tilføjet", added: true, packages: 1, cost: msg.offer.price,
+        avis_item: { name: msg.offer.heading, underline: msg.offer.description, price: msg.offer.price, is_advertised: true, image: msg.offer.image } });
+      return { added_to: "plan", name: msg.offer.heading };
     },
     "middagsro/plan/add": (msg) => {
       const plan = D.state.latest_plan;
@@ -173,7 +191,6 @@
         best: { source: "chain", id: "n2", unit_price: { unit: "l", price: 9.95 } },
       };
     },
-    "middagsro/chains/rema_add": (msg) => ({ added_to: "plan", name: msg.offer.heading }),
     "middagsro/chains/add": (msg) => {
       const plan = D.state.latest_plan;
       plan.shopping.push({ id: `c${plan.shopping.length}`, name: msg.offer.heading, chain_heading: msg.offer.heading, chain_only: true,
