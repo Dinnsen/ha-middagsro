@@ -100,6 +100,10 @@ const TABS = [
   ["settings", "Indstillinger"],
 ];
 
+const BELL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.6 1.9H4.4z"/><path d="M10 20.6a2.1 2.1 0 0 0 4 0"/></svg>';
+// "Ryd" next to a search field: clears it and its results.
+const clearBtn = (arg) => `<button class="btn small" data-action="clear-field" data-arg="${arg}" aria-label="Ryd søgefeltet">Ryd</button>`;
+
 const SETTING_ICONS = {
   plan: TAB_ICONS.plan,
   family: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8.5" cy="8" r="2.8"/><circle cx="16.5" cy="9.5" r="2.2"/><path d="M3.5 19c.4-3.3 2.4-5.3 5-5.3s4.6 2 5 5.3M13.8 15.2c.8-.9 1.7-1.3 2.7-1.3 2 0 3.5 1.6 3.9 4.6"/></svg>',
@@ -108,6 +112,7 @@ const SETTING_ICONS = {
   rules: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>',
   nutrition: TAB_ICONS.health,
   mealie: TAB_ICONS.recipes,
+  watch: BELL_ICON,
   chains: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5 5.5 4h13L20 9.5M4 9.5h16M4 9.5c0 1.7 1.3 2.5 2.7 2.5S9.3 11.2 9.3 9.5c0 1.7 1.3 2.5 2.7 2.5s2.7-.8 2.7-2.5c0 1.7 1.3 2.5 2.7 2.5S20 11.2 20 9.5M5.5 12v8h13v-8M10 20v-4.5h4V20"/></svg>',
   app: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>',
 };
@@ -134,6 +139,8 @@ const SETTINGS_SECTIONS = (panel) => {
       summary: f.nutrition_enabled ? `${f.kcal_min}–${f.kcal_max} kcal · ${f.protein_pct}/${f.carb_pct}/${f.fat_pct} %` : "Slået fra" },
     { key: "chains", title: "Andre butikker", form: true,
       summary: f.chains?.length ? f.chains.map((id) => panel._chainName(id)).join(", ") : "Kun REMA 1000" },
+    { key: "watch", title: "Overvågning og beskeder", form: true,
+      summary: `${(state.watch || []).length} overvåget${f.watch_notify ? " · besked ved tilbud" : " · ingen beskeder"}` },
     { key: "mealie", title: "Mealie", form: true,
       summary: state.mealie?.available ? (f.mealie_recipes || f.mealie_calendar ? "Slået til" : "Slået fra") : "Ikke sat op" },
     { key: "app", title: "App på hjemmeskærmen", form: false, summary: "Åbn Middagsro som en app på telefonen" },
@@ -249,6 +256,9 @@ class Rema1000Panel extends HTMLElement {
     this._favsLoading = false;
     this._favsError = null;
     this._favFilter = "";
+    // The watch list's offers, and the search for products to add to the favourites.
+    this._watch = { items: null, loading: false, error: null };
+    this._favSearch = { query: "", results: [], loading: false };
     this._wake = null;
     this._wakeWanted = false;
     this._onVisibility = () => {
@@ -406,6 +416,7 @@ class Rema1000Panel extends HTMLElement {
     this._tab = key;
     if (key !== "recipes") this._releaseWake();
     if (key === "favorites" && !this._favCache[this._favWeek] && !this._favsLoading) this._loadFavs();
+    if (key === "favorites" && !this._watch.items && !this._watch.loading) this._loadWatch();
     if (key === "health") this._loadHealth(true);
     this._render();
     const content = this.shadowRoot.querySelector("#content");
@@ -489,6 +500,61 @@ class Rema1000Panel extends HTMLElement {
       },
       "note-save": () => this._saveNote(),
       "note-generate": () => this._saveNote(true),
+      "clear-field": () => {
+        const [bind, part] = String(arg).split("|");
+        const m = this._modal;
+        if (bind === "linesearch" && m) Object.assign(m, { query: "", results: [], error: null });
+        if (bind === "chainquery") this._chainQuery = "";
+        if (bind === "rc") this._rc.query = "";
+        if (bind === "shopsearch") this._shopSearch[part] = { query: "", results: [], offers: [], loading: false };
+        if (bind === "favfilter") this._favFilter = "";
+        if (bind === "search") this._search = { query: "", results: [], loading: false };
+        if (bind === "favsearch") this._favSearch = { query: "", results: [], loading: false };
+        if (bind === "rrquery") return this._rrSearch("");
+        if (bind === "everywhere") {
+          this._everywhere = { query: "", loading: false, data: null, error: null };
+          if (m?.kind === "where") return this._renderModal();
+        }
+        if (bind === "linesearch") return this._renderModal();
+        this._render();
+      },
+      "fav-search": () => this._favSearchRun(),
+      "watch-refresh": () => this._loadWatch(),
+      "watch-toggle": () => this._watchToggle(this._productById(arg) || { product_id: Number(arg) }),
+      "watch-key": () => {
+        const item = (this._state.watch || []).find((w) => w.key === arg);
+        if (item) this._watchToggle(item);
+      },
+      "watch-text": () => {
+        const text = this._favSearch.query.trim();
+        if (!text) return this._say("Skriv først, hvad der skal overvåges.");
+        this._favSearch = { query: "", results: [], loading: false };
+        this._watchToggle({ text });
+      },
+      "watch-add": () => this._watchAdd(arg),
+      "watch-check": () =>
+        this._run(async () => {
+          const res = await this._ws("middagsro/watch/check");
+          this._toast = res.told ? `Der er sendt besked om ${res.told} ${res.told === 1 ? "vare" : "varer"}.` : "Intet nyt på tilbud – der er ikke sendt besked.";
+        }),
+      "fav-own-add": () => {
+        const p = this._favSearch.results.find((x) => String(x.id) === arg);
+        if (!p) return;
+        this._run(async () => {
+          this._state.own_favorites = await this._ws("middagsro/favorites/own", { product: p, add: true });
+          this._favCache = {};
+          await this._loadFavs();
+        }, `${p.name} er tilføjet til favoritterne.`);
+      },
+      "fav-own-remove": () => {
+        const p = this._productById(arg);
+        if (!p) return;
+        this._run(async () => {
+          this._state.own_favorites = await this._ws("middagsro/favorites/own", { product: p, add: false });
+          this._favCache = {};
+          await this._loadFavs();
+        }, `${p.name} er fjernet fra favoritterne.`);
+      },
       "fav-add": () =>
         this._run(
           () => this._ws("middagsro/list/add", { product_id: Number(arg), amount: 1 }),
@@ -766,6 +832,12 @@ class Rema1000Panel extends HTMLElement {
         const bought = this._plan.shopping.filter((l) => l.buy_at === arg && l.bought).length;
         if (!bought) return this._say("Sæt flueben ved det, I har købt – så ryddes det fra listen.");
         this._editPlan(() => this._ws("middagsro/chains/clear", { plan_id: this._plan.id, dealer_id: arg }), `Kurven er ryddet – ${bought} varer er købt.`);
+      },
+      "settings-open": () => {
+        this._goTab("settings");
+        this._settingsSection = arg || null;
+        this._render();
+        this._toTop();
       },
       "settings-section": () => {
         if (arg === "chains" && !this._chains) this._loadChains();
@@ -1058,6 +1130,11 @@ class Rema1000Panel extends HTMLElement {
     }
     if (ds.bind === "editrule") {
       if (this._editRule) this._editRule.text = el.value;
+      return;
+    }
+    if (ds.bind === "favsearch") {
+      this._favSearch.query = el.value;
+      if (ev.type === "change" && el.value.trim()) this._favSearchRun();
       return;
     }
     if (ds.bind === "linesearch") {
@@ -1628,6 +1705,7 @@ class Rema1000Panel extends HTMLElement {
         <div class="row wrap">
           <input class="grow" type="search" data-bind="linesearch" value="${esc(m.query)}" placeholder="Søg i REMA 1000">
           <button class="btn small" data-action="line-search" ${busy ? "disabled" : ""}>Søg</button>
+          ${clearBtn("linesearch")}
         </div>
         <div class="results">${results}</div>
         <div class="row wrap dialog-actions">
@@ -1891,6 +1969,7 @@ class Rema1000Panel extends HTMLElement {
       <div class="card">
         <div class="row wrap">
           <input class="grow" type="search" data-bind="chainquery" value="${esc(this._chainQuery)}" placeholder="Søg i tilbuddene, fx kaffe">
+          ${clearBtn("chainquery")}
           <button class="btn small" data-action="chain-refresh" ${data.loading ? "disabled" : ""}>${data.loading ? '<span class="spinner small"></span>' : "Opdatér"}</button>
         </div>
         <p class="muted small">${count != null ? `${count} madtilbud fra ${esc(c.name)}${c.name.endsWith("s") ? "'" : "s"} aviser. ` : ""}${id === REMA_ID ? 'Med "+ Indkøb" kommer tilbuddet på indkøbslisten og sendes til REMA-appen med resten.' : `Med "+ Indkøb" kommer et tilbud på ${esc(c.name)}-listen under Indkøb – REMA-listen er uændret.`}</p>
@@ -1911,7 +1990,7 @@ class Rema1000Panel extends HTMLElement {
       <div class="row wrap everywhere">
         <input class="grow" type="search" data-bind="everywhere" value="${esc(e.query)}" placeholder="Søg på en vare – fx kaffe, smør eller laks" enterkeyhint="search">
         <button class="btn" data-action="everywhere" ${e.loading ? "disabled" : ""}>${e.loading ? '<span class="spinner small"></span>' : "Søg"}</button>
-        ${e.data || e.error ? '<button class="btn" data-action="everywhere-clear">Ryd</button>' : ""}
+        <button class="btn" data-action="everywhere-clear">Ryd</button>
       </div>
       <div class="ev-out">${e.error ? `<div class="banner error">${esc(e.error)}</div>` : ""}${e.data ? this._everywhereHtml(e.data) : ""}</div>
     </div>`;
@@ -2129,6 +2208,7 @@ class Rema1000Panel extends HTMLElement {
       <div class="card">
         <div class="row wrap">
           <input class="grow" type="search" data-bind="rc" data-field="query" value="${esc(this._rc.query)}" placeholder="Søg i opskrifter og ingredienser">
+          ${clearBtn("rc")}
           <label class="field inline">Sortér
             <select data-bind="rc" data-field="sort">${Object.entries(RECIPE_SORTS)
               .map(([k, l]) => `<option value="${k}" ${this._rc.sort === k ? "selected" : ""}>${l}</option>`)
@@ -2427,6 +2507,7 @@ class Rema1000Panel extends HTMLElement {
           <div class="row wrap everywhere">
             <input class="grow" type="search" data-bind="everywhere" value="${esc(e.query)}" placeholder="Søg på en vare">
             <button class="btn" data-action="everywhere" ${e.loading ? "disabled" : ""}>${e.loading ? '<span class="spinner small"></span>' : "Søg"}</button>
+            ${clearBtn("everywhere")}
           </div>
           <div class="ev-out">${e.error ? `<div class="banner error">${esc(e.error)}</div>` : ""}
           ${e.loading && !e.data ? '<p class="muted"><span class="spinner small"></span> Finder priserne …</p>' : e.data ? this._everywhereHtml(e.data) : ""}</div>
@@ -2588,6 +2669,7 @@ class Rema1000Panel extends HTMLElement {
           <input class="grow" type="search" data-bind="shopsearch" data-part="${part}" value="${esc(search.query)}"
             placeholder="Tilføj en vare – søg i REMA 1000, fx kaffe">
           <button class="btn small" data-action="shop-search" data-arg="${part}">Søg</button>
+          ${clearBtn(`shopsearch|${part}`)}
         </div>
         <div class="results">${results}${offers}</div>
       </div>`;
@@ -2849,6 +2931,7 @@ class Rema1000Panel extends HTMLElement {
       <div class="row wrap">
         <input class="grow" type="search" data-bind="rrquery" value="${esc(this._rrQuery ?? rr.query)}" placeholder="Søg fx frikadeller, laks eller spinatpandekager" enterkeyhint="search">
         <button class="btn" data-action="rr-search" ${rr.loading ? "disabled" : ""}>Søg</button>
+        ${clearBtn("rrquery")}
       </div>
       <div class="chips">${chips}</div>
       ${rr.error ? `<div class="banner error">${esc(rr.error)}</div>` : ""}
@@ -3168,7 +3251,171 @@ class Rema1000Panel extends HTMLElement {
         ${p.avis ? `<span class="muted small avis">Avis: ${esc(p.avis)}${p.avis_quantity ? ` · ${esc(p.avis_quantity)}` : ""}</span>` : ""}
         ${this._favCheaper(p)}
       </div>
+      ${this._bell(p)}
       <button class="btn small primary" data-action="fav-add" data-arg="${esc(p.id)}" ${this._busy ? "disabled" : ""}>+ Tilføj</button>
+    </div>`;
+  }
+
+  // A favourite or search result by its product id (for the bell and "Fjern").
+  _productById(id) {
+    const all = [
+      ...Object.values(this._favCache).flatMap((d) => [...(d?.products || []), ...(d?.on_offer || [])]),
+      ...this._favSearch.results,
+    ];
+    return all.find((p) => String(p.id) === String(id)) || null;
+  }
+
+  _isWatched(p) {
+    return (this._state?.watch || []).some((w) => w.key === `p${p.id}`);
+  }
+
+  _bell(p) {
+    const on = this._isWatched(p);
+    return `<button class="bell ${on ? "on" : ""}" data-action="watch-toggle" data-arg="${esc(p.id)}" aria-pressed="${on}"
+      title="${on ? "Overvåges – tryk for at stoppe" : "Overvåg: få besked, når den er på tilbud"}" aria-label="Overvåg ${esc(p.name)}">${BELL_ICON}</button>`;
+  }
+
+  async _loadWatch() {
+    this._watch = { ...this._watch, loading: true, error: null };
+    if (this._tab === "favorites") this._render();
+    try {
+      const data = await this._ws("middagsro/watch");
+      this._watch = { items: data.items, loading: false, error: null };
+    } catch (err) {
+      this._watch = { items: this._watch.items, loading: false, error: err?.message || String(err) };
+    }
+    if (this._tab === "favorites") this._render();
+  }
+
+  async _watchToggle(item) {
+    const body = item.key
+      ? item
+      : { product_id: item.product_id ?? item.id, text: item.text ?? item.name, underline: item.underline, image: item.image, is_organic: item.is_organic };
+    try {
+      const res = await this._ws("middagsro/watch/toggle", { item: body });
+      this._state.watch = res.watch;
+      this._say(res.watched ? `${body.text || body.name} overvåges nu.` : `${body.text || body.name} overvåges ikke længere.`);
+      this._render();
+      this._loadWatch();
+    } catch (err) {
+      this._say(`Fejl: ${err?.message || err}`);
+    }
+  }
+
+  // An offer on the watch list in the basket: REMA's on REMA's list, another chain's on its own list.
+  _watchAdd(arg) {
+    const [key, idx] = String(arg).split("|");
+    const item = (this._watch.items || []).find((w) => w.key === key);
+    const deal = item?.deals?.[Number(idx)];
+    const plan = this._state?.latest_plan;
+    if (!deal) return;
+    if (deal.source === "rema") {
+      return this._editPlan(
+        () => (plan
+          ? this._ws("middagsro/plan/add", { plan_id: plan.id, product_id: deal.product_id, part: "main" })
+          : this._ws("middagsro/list/add", { product_id: deal.product_id, amount: 1 })),
+        `${deal.heading} er lagt i kurven.`
+      );
+    }
+    if (deal.source === "rema_avis") {
+      return this._editPlan(() => this._ws("middagsro/chains/rema_add", { offer: deal.offer, plan_id: plan?.id || null }), `${deal.heading} er lagt i kurven.`);
+    }
+    if (!plan) return this._say("Lav en madplan først – så får hver butik sin egen indkøbsliste.");
+    return this._editPlan(
+      () => this._ws("middagsro/chains/add", { plan_id: plan.id, offer: deal.offer }),
+      `${deal.heading} er sat på ${this._chainName(deal.dealer_id)}-listen under Indkøb.`
+    );
+  }
+
+  async _favSearchRun() {
+    const query = this._favSearch.query.trim();
+    if (!query) return;
+    this._favSearch = { query, results: [], loading: true };
+    this._render();
+    try {
+      this._favSearch = { query, results: await this._ws("middagsro/search", { query }), loading: false };
+    } catch (err) {
+      this._favSearch = { query, results: [], loading: false };
+      this._say(`Søgningen fejlede: ${err?.message || err}`);
+    }
+    this._render();
+  }
+
+  _watchHtml() {
+    const w = this._watch;
+    const notify = this._state?.settings?.watch_notify;
+    const items = w.items || [];
+    const onOffer = items.filter((i) => i.deals.length);
+    const quiet = items.filter((i) => !i.deals.length);
+    const when = (d) => {
+      const from = d.valid_from && localDay(d.valid_from) > localToday() ? `fra ${dayShort(d.valid_from)}` : "";
+      return from || (d.valid_to ? `til ${shortDate(localDay(d.valid_to))}` : "");
+    };
+    const deals = onOffer
+      .map(
+        (item) => `<div class="watch-item">
+          <div class="watch-head"><b>${esc(item.text)}</b>${item.product_id ? "" : ' <span class="badge">Tekst</span>'}
+            <button class="bell on" data-action="watch-key" data-arg="${esc(item.key)}" aria-pressed="true" title="Stop overvågning">${BELL_ICON}</button></div>
+          <ul class="watch-deals">${item.deals
+            .map(
+              (d, i) => `<li class="ev">
+                ${this._chainLogo(d.dealer_id, "tiny")}
+                ${d.image ? `<img src="${esc(d.image)}" alt="" loading="lazy">` : '<span class="noimg">?</span>'}
+                <div class="what"><b>${esc(d.heading || "")}</b><span class="muted small">${esc([this._chainName(d.dealer_id), d.underline, when(d)].filter(Boolean).join(" · "))}</span></div>
+                <span class="ev-price sale">${d.price != null ? kr(d.price) : ""}${d.normal_price && d.price != null && d.normal_price > d.price ? `<s class="muted small">${kr(d.normal_price)}</s>` : ""}</span>
+                <button class="btn small" data-action="watch-add" data-arg="${esc(item.key)}|${i}" ${this._busy ? "disabled" : ""}>+ ${d.dealer_id === REMA_ID ? "Kurv" : esc(this._chainName(d.dealer_id))}</button>
+              </li>`
+            )
+            .join("")}</ul>
+        </div>`
+      )
+      .join("");
+    return `<div class="card watch-card">
+      <div class="row between wrap">
+        <h1 class="flush watch-title">${BELL_ICON}Overvågning</h1>
+        <button class="btn small" data-action="watch-refresh" ${w.loading ? "disabled" : ""}>${w.loading ? '<span class="spinner small"></span>' : "Opdatér"}</button>
+      </div>
+      <p class="muted small">Tilbud på det, I overvåger – hos REMA 1000 og ${esc((this._state.settings.chains || []).map((id) => this._chainName(id)).join(", ") || "ingen andre butikker endnu")}.
+        ${notify ? "I får besked, når noget nyt kommer på tilbud." : '<button class="link" data-action="settings-open" data-arg="watch">Slå besked til</button>, når noget kommer på tilbud.'}</p>
+      ${w.error ? `<div class="banner error">${esc(w.error)}</div>` : ""}
+      ${!items.length && !w.loading
+        ? `<p class="muted">Intet overvåges endnu. Tryk på ${BELL_ICON.replace("<svg", '<svg class="inline-icon"')} ved en favorit, eller søg nedenfor – også efter ting, REMA ikke har.</p>`
+        : ""}
+      ${w.loading && !w.items ? '<p class="muted"><span class="spinner small"></span> Leder efter tilbud …</p>' : ""}
+      ${deals ? `<div class="watch-list">${deals}</div>` : items.length && !w.loading ? '<p class="muted">Intet af det, I overvåger, er på tilbud lige nu.</p>' : ""}
+      ${quiet.length
+        ? `<p class="muted small watch-quiet">Ikke på tilbud lige nu: ${quiet
+            .map((i) => `<button class="chip" data-action="watch-key" data-arg="${esc(i.key)}" title="Tryk for at stoppe overvågning">${esc(i.text)} ✕</button>`)
+            .join(" ")}</p>`
+        : ""}
+    </div>`;
+  }
+
+  _favSearchHtml() {
+    const s = this._favSearch;
+    const rows = s.loading
+      ? '<p class="muted"><span class="spinner small"></span> Søger …</p>'
+      : s.results
+          .map((p) => {
+            const fav = (this._favCache[this._favWeek]?.products || []).some((x) => x.id === p.id);
+            return `<li class="fav-row">
+              ${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy">` : '<span class="noimg">?</span>'}
+              <div class="what"><b>${esc(p.name)}</b><span class="muted small">${esc(p.underline || "")}</span></div>
+              <span class="${onOffer(p) ? "sale" : ""}">${kr(p.price)}</span>
+              ${this._bell(p)}
+              <button class="btn small" data-action="fav-own-add" data-arg="${esc(p.id)}" ${fav || this._busy ? "disabled" : ""}>${fav ? "Favorit ✓" : "+ Favorit"}</button>
+            </li>`;
+          })
+          .join("");
+    return `<div class="card">
+      <h2 class="flush">Tilføj en favorit eller noget at overvåge</h2>
+      <div class="row wrap">
+        <input class="grow" type="search" data-bind="favsearch" value="${esc(s.query)}" placeholder="Søg i REMA 1000, fx kaffe" enterkeyhint="search">
+        <button class="btn small" data-action="fav-search">Søg</button>
+        ${clearBtn("favsearch")}
+      </div>
+      ${s.query.trim() ? `<p class="muted small">Har REMA den ikke? <button class="link" data-action="watch-text">Overvåg "${esc(s.query.trim())}" som tekst</button> – så leder Middagsro efter den i alle butikkernes aviser.</p>` : ""}
+      ${rows ? `<ul class="favlist">${rows}</ul>` : ""}
     </div>`;
   }
 
@@ -3180,6 +3427,8 @@ class Rema1000Panel extends HTMLElement {
         (p) => `<li class="fav-row">
           <div class="what"><b>${esc(p.name)}</b><span class="muted small">${esc(p.underline || "")}</span>${this._favCheaper(p)}</div>
           <span class="${onOffer(p) ? "sale" : ""}">${kr(p.price)}</span>
+          ${this._bell(p)}
+          ${p.own ? `<button class="btn small" data-action="fav-own-remove" data-arg="${esc(p.id)}" title="Fjern fra favoritterne">Fjern</button>` : ""}
           <button class="btn small" data-action="fav-add" data-arg="${esc(p.id)}">+ Tilføj</button>
         </li>`
       )
@@ -3212,11 +3461,11 @@ class Rema1000Panel extends HTMLElement {
           : `<p class="muted">Ingen af dine favoritter er på tilbud ${next ? "i næste uge" : "lige nu"}.</p>`}`;
     }
     const count = data?.products?.length;
-    return `
+    return `${this._watchHtml()}
       <div class="card">
         <div class="row between wrap">
           <div><h1>Dine favoritter</h1>
-          <p class="muted">Varer du har markeret med hjerte i REMA 1000-appen${count != null ? ` – ${count} i alt` : ""}.</p></div>
+          <p class="muted">Varer med hjerte i REMA 1000-appen og dem, I har tilføjet her${count != null ? ` – ${count} i alt` : ""}. Tryk på klokken for at overvåge en vare.</p></div>
           <button class="btn small" data-action="fav-refresh" ${this._favsLoading ? "disabled" : ""}>
             ${this._favsLoading ? '<span class="spinner small"></span>' : "Opdatér"}</button>
         </div>
@@ -3226,10 +3475,11 @@ class Rema1000Panel extends HTMLElement {
       <div class="card">
         <details>
           <summary>Alle favoritter (${count ?? 0})</summary>
-          <input class="grow filter" type="search" data-bind="favfilter" value="${esc(this._favFilter)}" placeholder="Filtrér, fx mælk">
+          <div class="row wrap"><input class="grow filter" type="search" data-bind="favfilter" value="${esc(this._favFilter)}" placeholder="Filtrér, fx mælk">${clearBtn("favfilter")}</div>
           <ul class="favlist" id="fav-all">${this._favRows()}</ul>
         </details>
-      </div>`;
+      </div>
+      ${this._favSearchHtml()}`;
   }
 
   _historyView() {
@@ -3421,6 +3671,7 @@ class Rema1000Panel extends HTMLElement {
         <div class="row wrap">
           <input class="grow" type="search" data-bind="search" value="${esc(this._search.query)}" placeholder="Søg i REMA 1000, fx letmælk">
           <button class="btn small" data-action="search">Søg</button>
+          ${clearBtn("search")}
           <button class="btn small" data-action="add-row" data-arg="must_haves">+ Fritekst</button>
         </div>
         <div class="results">${results}</div>
@@ -3454,6 +3705,18 @@ class Rema1000Panel extends HTMLElement {
               .join("")}</div>`
           : '<p class="muted"><span class="spinner small"></span> Henter kæderne …</p>'}
         <p class="muted small">Tilbuddene kommer fra kædernes tilbudsaviser (Tjek/eTilbudsavis). En vare tæller kun som billigere, når det er den samme slags vare i samme størrelse.</p>`),
+      watch: () => card(`<h2 class="flush">Besked om tilbud</h2>
+        <p class="muted">Få besked, når noget fra overvågningslisten under Favoritter kommer på tilbud hos REMA 1000 eller en af jeres andre butikker – kun da, og kun én gang pr. tilbud.</p>
+        <label class="field">Send besked til
+          <select data-path="watch_notify">
+            <option value="" ${!f.watch_notify ? "selected" : ""}>Ingen beskeder</option>
+            ${(this._state.notify_targets || [])
+              .map((t) => `<option value="${esc(t.id)}" ${f.watch_notify === t.id ? "selected" : ""}>${esc(t.name)}</option>`)
+              .join("")}
+          </select></label>
+        <p class="muted small">Beskeden har en klokke i titlen, 🛒 ved REMA's tilbud og 🏷️ ved de andre butikkers, varens billede, og den åbner Middagsro, når du trykker på den. Der tjekkes hver tredje time.</p>
+        <div class="row wrap"><button class="btn small" data-action="watch-check" ${this._busy ? "disabled" : ""}>Tjek nu og send besked</button></div>
+        <p class="muted small">${(this._state.watch || []).length} ting overvåges. Tilføj flere med klokken under Favoritter.</p>`),
       mealie: () => card(`        <h2 class="flush">Mealie</h2>
         ${this._state.mealie?.available
           ? `<p class="muted">Bruger Mealie-integrationen i Home Assistant${this._state.mealie.url ? ` (${esc(this._state.mealie.url)})` : ""}.</p>
@@ -3660,6 +3923,25 @@ const STYLE = `
   }
   .day-row.past { opacity: .55; }
   .week-head { margin: 14px 0 4px; font-size: .95rem; color: var(--secondary-text-color); }
+  .bell { flex: none; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--divider-color); background: none; cursor: pointer;
+    color: var(--secondary-text-color); display: inline-grid; place-items: center; padding: 0; }
+  .bell svg { width: 17px; height: 17px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linejoin: round; }
+  .bell.on { color: var(--rema-accent); border-color: var(--rema-accent); background: color-mix(in srgb, var(--rema-accent) 12%, transparent); }
+  .bell.on svg { fill: currentColor; }
+  .prod { position: relative; }
+  /* The bell in the corner of the product's photo. */
+  .prod > .bell { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; background: var(--card-background-color); box-shadow: 0 1px 4px rgba(0, 0, 0, .15); }
+  .prod > .bell.on { background: color-mix(in srgb, var(--rema-accent) 18%, var(--card-background-color)); }
+  .watch-title { display: flex; align-items: center; gap: 8px; }
+  .watch-title svg, .inline-icon { width: 22px; height: 22px; stroke: var(--rema-accent); stroke-width: 1.8; fill: none; vertical-align: middle; }
+  .inline-icon { width: 16px; height: 16px; }
+  .watch-list { display: grid; gap: 12px; margin-top: 8px; }
+  .watch-item { border: 1px solid var(--divider-color); border-radius: 12px; padding: 8px 10px; }
+  .watch-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+  .watch-deals { list-style: none; margin: 4px 0 0; padding: 0; }
+  .watch-deals .ev-price s { display: block; font-weight: 400; }
+  .watch-quiet .chip { margin: 2px; }
+  .fav-row img, .fav-row .noimg { width: 36px; height: 36px; object-fit: contain; border-radius: 6px; background: #fff; flex: none; }
   .help-row { display: flex; align-items: flex-start; justify-content: flex-end; gap: 8px; margin: 6px 0; }
   .help-row .help-text { flex: 1; margin: 2px 0; }
   .help-q { flex: none; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--divider-color); background: none; cursor: pointer;

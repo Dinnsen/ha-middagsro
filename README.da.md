@@ -71,6 +71,10 @@ Ingredienser og trin i stor skrift. Kryds af undervejs, start en **timer** på h
 
 De varer, du har givet et hjerte i REMA 1000-appen. Vælg **Denne uge** eller **Næste uge** for at se, hvilke der er på tilbud, med før- og nu-pris, og læg dem på listen med ét tryk. Denne uge viser REMA's egne priser som i appen. Næste uge viser avisens priser og tekst, så snart den er ude, for REMA har dem først søndag kl. 02. Tilbud, der først gælder fra torsdag, vises med et blåt *fra tor*-mærke, indtil de starter. Er næste uges avis ikke udkommet endnu, vises denne uges tilbud. Alle favoritter kan filtreres.
 
+Søg i REMA's varer nederst i *Favoritter* for at tilføje jeres egne favoritter ved siden af hjerterne fra appen.
+
+**Overvågning.** Tryk på 🔔 på en favorit eller en hvilken som helst vare for at overvåge den – eller skriv noget, REMA ikke sælger, og overvåg det som tekst. Øverst i *Favoritter* ser du, hvor de overvågede varer er på tilbud: i REMA (nu eller fra næste uges avis) og i de kæder, du har valgt, med pris og en knap, der lægger varen i kurven eller på kædens indkøbsliste. Under **Indstillinger → Overvågning og beskeder** kan du få en besked på telefonen eller i Home Assistant, når noget fra overvågningslisten kommer på tilbud – og kun da. Listen tjekkes hver 3. time, og hvert tilbud nævnes én gang.
+
 ### Historik
 
 <img src="docs/images/history.png" alt="Tidligere madplaner med pris og retter" width="100%">

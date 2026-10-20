@@ -71,6 +71,10 @@ Ingredients and steps in large type. Tick them off as you go, start a **timer** 
 
 The products you have given a heart in the REMA 1000 app. Choose **Denne uge** (this week) or **Næste uge** (next week) to see which are on offer, with before and now price, and put them on the list with one tap. This week shows REMA's own prices, as in the app. Next week shows the avis's prices and text as soon as it is out, since REMA only has them from Sunday 02:00. Offers that only start on Thursday are shown with a blue *fra tor* badge until they start. Until next week's offers are out, this week's are shown. All favourites can be filtered.
 
+Search REMA's products at the bottom of *Favoritter* to add favourites of your own, next to the hearts from the app.
+
+**Watch list (Overvågning).** Tap the 🔔 on a favourite or any product to watch it – or type something REMA doesn't sell and watch it as text. At the top of *Favoritter* you see where the watched items are on offer: in REMA (now or from next week's avis) and in the chains you have chosen, with the price and a button that puts the item in the basket or on that chain's shopping list. In **Indstillinger → Overvågning og beskeder** you can get a notification on your phone or in Home Assistant when something on the watch list comes on offer – and only then. The list is checked every 3 hours, and each offer is told once.
+
 ### History
 
 <img src="docs/images/history.png" alt="Earlier meal plans with price and dishes" width="100%">

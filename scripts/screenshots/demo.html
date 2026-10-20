@@ -75,6 +75,34 @@
       };
     },
     "middagsro/note": (msg) => ({ note: (D.state.note = msg.text) }),
+    // The watch list (made up): a REMA product on offer, and a text found in Netto's avis.
+    "middagsro/watch": async () => {
+      await wait(150);
+      const fav = D.remaFavorites[0];
+      const netto = D.chainOffers.find((o) => o.dealer_id === "9ba51");
+      return {
+        notify: D.state.settings.watch_notify,
+        targets: D.state.notify_targets,
+        items: (D.state.watch || []).map((w) => ({
+          ...w,
+          deals: w.product_id
+            ? [{ source: "rema", dealer_id: "11deC", heading: fav.name, underline: fav.underline, price: fav.price, normal_price: fav.normal_price, valid_to: "2026-10-24T21:59:59+00:00", product_id: fav.id, image: fav.image },
+               { source: "chain", dealer_id: "9ba51", heading: netto.heading, underline: netto.description, price: netto.price, valid_to: netto.valid_to, image: netto.image, offer: netto }]
+            : w.text.includes("kaffe") ? [{ source: "chain", dealer_id: "9ba51", heading: "Merrild kaffe 400 g", underline: "Flere varianter", price: 39, normal_price: 55, valid_from: "2026-10-25T00:00:00+00:00", image: null, offer: netto }] : [],
+        })),
+      };
+    },
+    "middagsro/watch/toggle": (msg) => {
+      const item = msg.item;
+      const key = item.product_id ? `p${item.product_id}` : `t${String(item.text).toLowerCase()}`;
+      const before = (D.state.watch || []).length;
+      D.state.watch = (D.state.watch || []).filter((w) => w.key !== key);
+      const watched = D.state.watch.length === before;
+      if (watched) D.state.watch.unshift({ key, product_id: item.product_id || null, text: item.text, underline: item.underline || "", image: item.image || null });
+      return { watched, watch: D.state.watch };
+    },
+    "middagsro/favorites/own": (msg) => [msg.product],
+    "middagsro/watch/check": () => ({ told: 2 }),
     // REMA 1000's recipes (made up, in the shape the integration sends).
     "middagsro/rema_recipes/list": async (msg) => {
       await wait(200);

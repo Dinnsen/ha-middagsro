@@ -200,6 +200,12 @@
     },
     "nothing_to_restore": {
       "message": "There is no sent basket to put back."
+    },
+    "watch_item_required": {
+      "message": "Pick a product or write what to watch."
+    },
+    "too_many_watched": {
+      "message": "The list can hold at most {limit}."
     }
   },
   "issues": {

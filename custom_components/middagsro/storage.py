@@ -87,6 +87,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "mealie_calendar": False,
     # Other chains whose offers are shown (Tjek dealer ids, see chains.py).
     "chains": [],
+    # Tell when something on the watch list is on offer: "" (off), "persistent_notification"
+    # (in Home Assistant) or a notify service ("notify.mobile_app_telefon").
+    "watch_notify": "",
 }
 
 
@@ -119,6 +122,10 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
     for key in ("avoid_other", "allergies_other", "pantry", "wishes"):
         settings[key] = str(settings[key] or "")[:2000]
     settings["ai_task_entity"] = settings["ai_task_entity"] or None
+    notify = str(settings["watch_notify"] or "").strip()[:120]
+    settings["watch_notify"] = (
+        notify if notify == "persistent_notification" or notify.startswith("notify.") else ""
+    )
     settings["auto_generate"] = bool(settings["auto_generate"])
     settings["auto_send"] = bool(settings["auto_send"])
     settings["shop_late_week"] = bool(settings["shop_late_week"])
@@ -196,6 +203,11 @@ class RemaPlanStore:
         self.plans: list[dict[str, Any]] = []
         self.note = ""  # the family's wishes for the next plan only
         self.recipes: list[dict[str, Any]] = []  # the recipe collection (recipes.py)
+        # The watch list (watch.py), the family's own favourite products, and the offers
+        # already told about (key -> when it ends), so each is told once.
+        self.watch: list[dict[str, Any]] = []
+        self.own_favorites: list[dict[str, Any]] = []
+        self.watch_sent: dict[str, str] = {}
 
     async def async_load(self) -> None:
         """Load from disk."""
@@ -205,6 +217,14 @@ class RemaPlanStore:
         self.plans = list(data.get("plans") or [])
         self.note = str(data.get("note") or "")
         self.recipes = [r for r in data.get("recipes") or [] if isinstance(r, dict) and r.get("id")]
+        self.watch = [w for w in data.get("watch") or [] if isinstance(w, dict) and w.get("key")]
+        self.own_favorites = [
+            p for p in data.get("own_favorites") or [] if isinstance(p, dict) and p.get("id")
+        ]
+        sent = data.get("watch_sent")
+        self.watch_sent = (
+            {str(k): str(v) for k, v in sent.items()} if isinstance(sent, dict) else {}
+        )
         for plan in self.plans:
             ensure_line_ids(plan)
 
@@ -219,6 +239,9 @@ class RemaPlanStore:
                 "plans": self.plans,
                 "note": self.note,
                 "recipes": self.recipes,
+                "watch": self.watch,
+                "own_favorites": self.own_favorites,
+                "watch_sent": self.watch_sent,
             }
         )
 
