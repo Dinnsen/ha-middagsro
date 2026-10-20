@@ -175,6 +175,19 @@ const shortDate = (iso) => {
   const d = new Date(`${iso}T12:00:00`);
   return `${d.getDate()}/${d.getMonth() + 1}`;
 };
+// When the list was sent: "i dag kl. 19.15", "i går kl. 8.05" or "18/10 kl. 9.30".
+const sentWhen = (iso) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  const time = `kl. ${d.getHours()}.${pad(d.getMinutes())}`;
+  const day = localDay(iso);
+  const today = localToday();
+  const y = new Date(`${today}T12:00:00`);
+  y.setDate(y.getDate() - 1);
+  const yesterday = localDay(y.toISOString());
+  return day === today ? `i dag ${time}` : day === yesterday ? `i går ${time}` : `${shortDate(day)} ${time}`;
+};
 // A timestamp from the avis (often UTC, e.g. 22:00 the day before) as a local day.
 const localDay = (iso) => {
   if (!iso) return "";
@@ -726,7 +739,8 @@ class Rema1000Panel extends HTMLElement {
         );
       },
       "chain-move-all": () => {
-        const lines = Object.entries(this._compare?.lines || {}).filter(([, f]) => f.dealer_id === arg);
+        const unsent = new Set((this._plan?.shopping || []).filter((l) => !l.sent).map((l) => l.id));
+        const lines = Object.entries(this._compare?.lines || {}).filter(([id, f]) => f.dealer_id === arg && unsent.has(id));
         this._compare = null;
         this._editPlan(async () => {
           for (const [lineId, f] of lines) {
@@ -941,6 +955,20 @@ class Rema1000Panel extends HTMLElement {
         ),
       "pantry-add": () => this._pantryAdd(arg),
       "shop-search": () => this._shopSearchRun(arg),
+      "shop-offer-add": () => {
+        const offer = this._shopSearch.main?.offers?.[Number(arg)];
+        if (!offer || !this._plan) return;
+        this._shopSearch.main = { query: "", results: [], offers: [], loading: false };
+        this._editPlan(
+          () => this._ws("middagsro/chains/rema_add", { offer, plan_id: this._plan.id }),
+          `${offer.heading} er tilføjet til indkøbslisten.`
+        );
+      },
+      "send-restore": () =>
+        this._editPlan(
+          () => this._ws("middagsro/send/restore", { plan_id: this._plan?.id }),
+          "Den seneste kurv er lagt tilbage – send den igen, når du er klar."
+        ),
       "shop-add": () => {
         const [part, idx] = String(arg).split("|");
         const product = this._shopSearch[part]?.results[Number(idx)];
@@ -1203,18 +1231,40 @@ class Rema1000Panel extends HTMLElement {
     }, okMessage);
   }
 
+  // Offers in REMA's avis whose text has every searched word (read once, then from memory).
+  async _remaAvisMatches(query) {
+    const words = query.toLowerCase().split(/\s+/).filter((w) => w.length > 1);
+    if (!words.length) return [];
+    try {
+      if (!this._chainOffers[REMA_ID]?.offers) {
+        const data = await this._ws("middagsro/chains/offers", { dealer_id: REMA_ID });
+        this._chainOffers[REMA_ID] = { offers: data.offers, loading: false };
+      }
+    } catch (err) {
+      return [];
+    }
+    return (this._chainOffers[REMA_ID].offers || [])
+      .filter((o) => words.every((w) => `${o.heading} ${o.description || ""}`.toLowerCase().includes(w)))
+      .slice(0, 5);
+  }
+
   async _shopSearchRun(part) {
     const search = this._shopSearch[part];
     const query = search?.query.trim();
     if (!query) return;
     search.loading = true;
+    search.offers = [];
     this._render();
+    // REMA's avis too: partivarer are only sold in the shops, so the product search misses them.
+    const avis = part === "main" ? this._remaAvisMatches(query) : Promise.resolve([]);
     try {
       search.results = await this._ws("middagsro/search", { query });
-      if (!search.results.length) this._say(`Ingen varer fundet for "${query}".`);
     } catch (err) {
+      search.results = [];
       this._say(`Søgningen fejlede: ${err?.message || err}`);
     }
+    search.offers = await avis;
+    if (!search.results.length && !search.offers.length) this._say(`Ingen varer fundet for "${query}".`);
     search.loading = false;
     this._render();
   }
@@ -2523,13 +2573,23 @@ class Rema1000Panel extends HTMLElement {
               ${p.is_organic ? '<span class="badge eco">Øko</span>' : ""}<span class="add">+ Tilføj</span></button>`
           )
           .join("");
+    const offers = !search.loading && search.offers?.length
+      ? `<p class="muted small avis-head">I REMA's avis</p>${search.offers
+          .map(
+            (o, i) => `<button class="result" data-action="shop-offer-add" data-arg="${i}" ${this._busy ? "disabled" : ""}>
+              ${o.image ? `<img src="${esc(o.image)}" alt="">` : ""}
+              <span><b>${esc(o.heading)}</b><span class="muted">${esc([o.description, o.price != null ? kr(o.price) : ""].filter(Boolean).join(" · "))}</span></span>
+              <span class="badge offer">Avis</span><span class="add">+ Tilføj</span></button>`
+          )
+          .join("")}`
+      : "";
     return `<div class="shop-search">
         <div class="row wrap">
           <input class="grow" type="search" data-bind="shopsearch" data-part="${part}" value="${esc(search.query)}"
             placeholder="Tilføj en vare – søg i REMA 1000, fx kaffe">
           <button class="btn small" data-action="shop-search" data-arg="${part}">Søg</button>
         </div>
-        <div class="results">${results}</div>
+        <div class="results">${results}${offers}</div>
       </div>`;
   }
 
@@ -2680,9 +2740,11 @@ class Rema1000Panel extends HTMLElement {
           <button class="help-q" data-action="plan-help" aria-expanded="${this._planHelp ? "true" : "false"}" aria-label="Hjælp" title="Hjælp">?</button>
         </div>
         <div class="row wrap actions">
-          <button class="btn primary" data-action="send" ${this._busy ? "disabled" : ""}>
-            ${plan.status === "sent" ? "Sendt ✓ – send igen" : "Send til REMA-listen"}
-          </button>
+          ${(() => {
+            const left = plan.shopping.filter((line) => !line.buy_from && !line.buy_at && !line.sent).length;
+            return `<button class="btn primary" data-action="send" ${this._busy || !left ? "disabled" : ""}>
+              ${left ? (plan.status === "sent" ? `Send ${left} nye varer til REMA-listen` : "Send til REMA-listen") : "Sendt ✓"}</button>`;
+          })()}
           ${plan.shopping.some((line) => line.buy_from)
             ? `<span class="muted small">+ ${plan.shopping.filter((line) => line.buy_from).length} varer købes senere – se Indkøb</span>`
             : ""}
@@ -2979,10 +3041,21 @@ class Rema1000Panel extends HTMLElement {
     if (plan) {
       const groups = {};
       const compare = this._ensureCompare();
-      const lateLines = plan.shopping.filter((line) => line.buy_from && !line.buy_at);
-      plan.shopping
-        .filter((line) => !line.buy_from && !line.buy_at)
-        .forEach((line) => (groups[line.category || "Andet"] ||= []).push(line));
+      // Sent lines are in the REMA app: the basket here only has what isn't sent yet.
+      const lateLines = plan.shopping.filter((line) => line.buy_from && !line.buy_at && !line.sent);
+      const mainLines = plan.shopping.filter((line) => !line.buy_from && !line.buy_at && !line.sent);
+      mainLines.forEach((line) => (groups[line.category || "Andet"] ||= []).push(line));
+      const basketTotal = mainLines.reduce((sum, line) => sum + (line.cost || 0), 0);
+      const sentCount = plan.shopping.filter((line) => line.sent).length;
+      // Cheaper elsewhere: only for what is still in the basket.
+      const basketSavings = {};
+      for (const line of mainLines) {
+        const found = compare?.lines?.[line.id];
+        if (!found) continue;
+        const t = (basketSavings[found.dealer_id] ||= { count: 0, saving: 0 });
+        t.count += 1;
+        t.saving = Math.round((t.saving + (found.saving || 0)) * 100) / 100;
+      }
       const row = (line) => {
               // An offer only sold in the shops (partivare) has the avis's name and price.
               const p = line.product || line.avis_item;
@@ -3026,18 +3099,22 @@ class Rema1000Panel extends HTMLElement {
             ${this._shopSearchHtml("late")}
             <div class="row wrap actions">
               <button class="btn primary" data-action="send" data-arg="late" ${this._busy ? "disabled" : ""}>
-                ${plan.late_sent_at ? "Sendt ✓ – send igen" : `Send ${esc(lateDay ? dayName(lateDay) : "")}svarer til REMA-listen`}</button>
+                Send ${esc(lateDay ? dayName(lateDay) : "")}svarer til REMA-listen</button>
             </div>
           </div>`
         : "";
       planHtml = `<div class="card">
         <div class="row between wrap">
           <div><h1>${lateLines.length ? "Indkøb på indkøbsdagen" : "Indkøbsliste"}</h1><p class="muted">${esc(plan.title)}${lateLines.length ? ` · plus ${lateLines.length} varer ${esc(dayShort(lateDay))}` : ""}</p></div>
-          <div class="price ${plan.budget && plan.total > plan.budget ? "over" : ""}"><span class="big">${kr(plan.total)}</span>
-          <span class="muted">${plan.budget ? `budget ${kr(plan.budget)}` : ""}</span></div>
+          <div class="price ${plan.budget && plan.total > plan.budget ? "over" : ""}"><span class="big">${kr(sentCount ? basketTotal : plan.total)}</span>
+          <span class="muted">${sentCount ? `hele planen ${kr(plan.total)}` : plan.budget ? `budget ${kr(plan.budget)}` : ""}</span></div>
         </div>
-        <p class="muted small">Tryk på en vare for at rette antal, skifte den ud eller slette den.</p>
-        ${Object.entries(compare?.chains || {})
+        ${sentCount
+          ? `<div class="banner info sent-banner"><span>✓ ${sentCount} ${sentCount === 1 ? "vare er sendt" : "varer er sendt"} til REMA-appen${plan.last_sent?.at ? ` ${esc(sentWhen(plan.last_sent.at))}` : ""} – kurven her har kun det, der ikke er sendt endnu.</span>
+              ${plan.last_sent ? `<button class="btn small" data-action="send-restore" ${this._busy ? "disabled" : ""}>Genskab seneste kurv</button>` : ""}</div>`
+          : ""}
+        ${mainLines.length ? '<p class="muted small">Tryk på en vare for at rette antal, skifte den ud eller slette den.</p>' : '<p class="muted">Kurven er tom. Søg en vare frem nedenfor for at tilføje den.</p>'}
+        ${Object.entries(basketSavings)
           .map(
             ([id, t]) => `<div class="banner info chain-save">${this._chainLogo(id)}
               <span><b>${t.count} ${t.count === 1 ? "vare er" : "varer er"} billigere i ${esc(this._chainName(id))}</b> – spar ${kr(t.saving)} Tryk på logoet ved en vare for at købe den der.</span>
@@ -3048,8 +3125,8 @@ class Rema1000Panel extends HTMLElement {
         ${sections}
         ${this._shopSearchHtml("main")}
         <div class="row wrap actions">
-          <button class="btn primary" data-action="send" ${this._busy ? "disabled" : ""}>
-            ${plan.status === "sent" ? "Sendt ✓ – send igen" : "Send til REMA-listen"}</button>
+          <button class="btn primary" data-action="send" ${this._busy || !mainLines.length ? "disabled" : ""}>
+            ${mainLines.length ? `Send ${mainLines.length} ${mainLines.length === 1 ? "vare" : "varer"} til REMA-listen` : "Alt er sendt ✓"}</button>
           <button class="btn" data-action="pantry-open">Basisvarer i madplanen</button>
           <button class="btn" data-action="plan-refresh" ${this._busy ? "disabled" : ""}>Opdatér tilbudsvarer</button>
         </div>

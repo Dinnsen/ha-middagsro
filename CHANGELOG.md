@@ -2,6 +2,16 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.5.0] - 2026-10-20
+
+### Changed
+- **Send empties the basket.** The items sent to the REMA app leave the list under *Indkøb*, and the next send only has what was added since – nothing ends up twice in the app. A note says how many items were sent and when, and **Genskab seneste kurv** puts the last sent items back (e.g. if the REMA list was lost). The plan's total still counts everything.
+- The send buttons say how many items will be sent, and are greyed out when everything is sent.
+
+### Fixed
+- An offer from REMA's avis that the webshop doesn't sell (a *partivare*, e.g. a glue gun) can be put on the list: it gets the avis's name and price, and becomes REMA's product if REMA has it when the list is sent. Before, it failed with "REMA 1000 doesn't have that product".
+- Searching in the basket also shows matching offers from REMA's avis, so partivarer can be found there.
+
 ## [1.4.4] - 2026-10-20
 
 ### Added

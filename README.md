@@ -57,7 +57,8 @@ Ingredients and steps in large type. Tick them off as you go, start a **timer** 
 
 - For each ingredient, **the cheapest REMA product** that meets your rules is found. Products from the offers, organic products and weekly fixed items are labelled.
 - Price per product, number of packs and the total against the budget.
-- **Send til REMA-listen** puts everything on your primary list in the REMA 1000 app. Items without a safe match are added as text.
+- **Send til REMA-listen** puts everything on your primary list in the REMA 1000 app. Items without a safe match are added as text. Sent items leave Middagsro's basket, so the next send only has what was added since – nothing ends up twice in the app. **Genskab seneste kurv** puts the last sent items back if something went wrong.
+- Search the basket for any REMA product – also the offers in REMA's avis, including *partivarer* that are only sold in the shops.
 - **Search and add** other REMA products to the shopping list – also to the list for later in the week. Tap an item to change how many, swap it or delete it.
 - **Basic items in the plan** (*Basisvarer i madplanen*) shows the basic items (salt, oil, butter …) the recipes use. Out of one? Tap **Tilføj til indkøb**, and the product is found by your settings.
 - Below the list you see what is on the REMA list right now, and it can be emptied once you have shopped.

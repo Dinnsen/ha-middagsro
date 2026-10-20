@@ -761,9 +761,14 @@ async def test_send_parts(
     assert sent() == ["Spaghetti"]
     assert plan["late_sent_at"]
 
+    # Everything is sent: sending again adds nothing twice.
     mock_client.async_add_to_list.reset_mock()
     await planner.async_send("parts", "all")
-    assert len(sent()) == 3
+    assert sent() == []
+    # The last basket put back (the late one) is sent again.
+    await planner.async_restore_sent("parts")
+    await planner.async_send("parts", "all")
+    assert sent() == ["Spaghetti"]
 
     # Nothing to send: nothing is added.
     plan["shopping"] = [line for line in plan["shopping"] if not line.get("buy_from")]
@@ -1085,6 +1090,44 @@ async def test_candidates_edge_cases(
     assert planner._candidates({}, CATALOGUE[:1], "laks")[0] == []
 
 
+async def test_send_empties_the_basket(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """Sent items leave the family's list; only new ones are sent next; the last can be put back."""
+    store = init_integration.runtime_data.store
+    planner = init_integration.runtime_data.planner
+    plan = make_plan("basket", start="2026-10-18")
+    await store.async_add_plan(plan)
+    await planner.async_send("basket")
+    assert all(line.get("sent") for line in plan["shopping"])
+    first = plan["last_sent"]
+    assert len(first["ids"]) == 3
+
+    extra = {**plan["shopping"][1], "id": "extra", "name": "Basilikum"}
+    extra.pop("sent")
+    plan["shopping"].append(extra)
+    mock_client.async_add_to_list.reset_mock()
+    await planner.async_send("basket")
+    assert [c.kwargs.get("name") for c in mock_client.async_add_to_list.call_args_list] == [
+        "Basilikum (1 bundt)"
+    ]
+    assert plan["last_sent"]["ids"] == ["extra"]
+
+    await planner.async_restore_sent("basket")
+    assert [line["id"] for line in plan["shopping"] if not line.get("sent")] == ["extra"]
+    assert "last_sent" not in plan
+    with pytest.raises(ServiceValidationError) as err:
+        await planner.async_restore_sent("basket")
+    assert err.value.translation_key == "nothing_to_restore"
+    with pytest.raises(ServiceValidationError) as err:
+        await planner.async_restore_sent("findes-ikke")
+    assert err.value.translation_key == "plan_not_found"
+    store.plans.clear()
+    with pytest.raises(ServiceValidationError) as err:
+        await planner.async_restore_sent()
+    assert err.value.translation_key == "no_plan"
+
+
 async def test_send_without_plan(hass: HomeAssistant, init_integration: MockConfigEntry) -> None:
     """There must be a plan to send."""
     init_integration.runtime_data.store.plans.clear()
@@ -1246,6 +1289,7 @@ async def test_avis_item_sent_as_rema_product(
     await store.async_add_plan(plan)
 
     def sent() -> list[tuple[str | int, int]]:
+        fish.pop("sent", None)  # sent before: put back for the next try
         return [(c.kwargs.get("name") or c.kwargs.get("product_id"), c.kwargs["amount"])
                 for c in mock_client.async_add_to_list.call_args_list]  # fmt: skip
 

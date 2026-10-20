@@ -461,8 +461,14 @@ async def async_add_rema_offer(
         )
         return {"added_to": "rema_list", "name": heading}
     if ids:
-        line = await async_add_product(planner, plan["id"], ids[0])
-        return {"added_to": "plan", "name": line["name"]}
+        try:
+            line = await async_add_product(planner, plan["id"], ids[0])
+        except ServiceValidationError as err:
+            # A partivare: sold in the shops, not in the webshop REMA's search reads.
+            if err.translation_key != "product_not_found":
+                raise
+        else:
+            return {"added_to": "plan", "name": line["name"]}
     line = _new_line(heading, heading, ADDED_CATEGORY, buy_from=None)
     price = offer.get("price")
     line.update(
@@ -471,6 +477,19 @@ async def async_add_rema_offer(
         cost=round(float(price), 2) if price else 0,
         note=offer.get("description"),
     )
+    if ids:
+        # The avis's name and price; sent as text, or as REMA's product once it has it.
+        line.update(
+            avis_item={
+                "name": heading,
+                "underline": str(offer.get("description") or offer.get("quantity") or "")[:120],
+                "price": float(price) if price else None,
+                "is_advertised": True,
+                "product_ids": ids,
+                "image": offer.get("image"),
+            },
+            price_source="avis",
+        )
     plan["shopping"].append(line)
     update_total(plan)
     await planner.store.async_save()

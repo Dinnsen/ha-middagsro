@@ -197,6 +197,9 @@
     },
     "rema_recipes_failed": {
       "message": "REMA 1000's opskrifter kunne ikke hentes: {error}"
+    },
+    "nothing_to_restore": {
+      "message": "Der er ingen sendt kurv at genskabe."
     }
   },
   "issues": {

@@ -57,7 +57,8 @@ Ingredienser og trin i stor skrift. Kryds af undervejs, start en **timer** på h
 
 - Til hver ingrediens findes **den billigste REMA-vare**, der opfylder jeres regler. Varer fra tilbudsavisen, økologiske varer og faste ugevarer er mærket.
 - Pris pr. vare, antal pakker og samlet pris mod budgettet.
-- **Send til REMA-listen** lægger det hele på din primære liste i REMA 1000-appen. Varer uden et sikkert match kommer på som tekst.
+- **Send til REMA-listen** lægger det hele på din primære liste i REMA 1000-appen. Varer uden et sikkert match kommer på som tekst. Sendte varer forsvinder fra Middagsro's kurv, så næste gang sendes kun det, der er kommet til siden – intet havner to gange i appen. **Genskab seneste kurv** lægger de sidst sendte varer tilbage, hvis noget gik galt.
+- Søg en hvilken som helst REMA-vare frem i kurven – også tilbuddene i REMA's avis, med *partivarer*, der kun sælges i butikkerne.
 - **Søg og tilføj** andre REMA-varer til indkøbslisten – også til listen senere på ugen. Tryk på en vare for at rette antal, skifte den ud eller slette den.
 - **Basisvarer i madplanen** viser de basisvarer (salt, olie, smør …), opskrifterne bruger. Mangler I en, så tryk **Tilføj til indkøb**, og varen findes efter jeres indstillinger.
 - Under listen ses, hvad der står på REMA-listen lige nu, og den kan tømmes, når I har handlet.

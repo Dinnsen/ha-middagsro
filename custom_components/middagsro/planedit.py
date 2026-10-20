@@ -467,6 +467,7 @@ async def async_swap_dish(
                 if existing["name"].lower() == line["name"].lower()
                 and existing.get("unit") == line["unit"]
                 and not existing.get("must_have")
+                and not existing.get("sent")  # already in the REMA app: buy the extra apart
             ),
             None,
         )

@@ -306,6 +306,23 @@ async def ws_send(
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "middagsro/send/restore",
+        ENTRY: str,
+        vol.Optional("plan_id"): vol.Any(str, None),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_send_restore(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Put the items sent last back on the family's list."""
+    plan = await _entry(hass, msg).runtime_data.planner.async_restore_sent(msg.get("plan_id"))
+    connection.send_result(msg["id"], {"plan_id": plan["id"]})
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "middagsro/recipe",
         ENTRY: str,
         vol.Required("plan_id"): str,
@@ -1088,6 +1105,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_favorite_delete,
         ws_generate,
         ws_send,
+        ws_send_restore,
         ws_recipe,
         ws_plan_delete,
         ws_search,
