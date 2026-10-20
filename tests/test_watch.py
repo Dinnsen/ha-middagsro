@@ -206,7 +206,8 @@ async def test_notifications(
         patch.object(wt.persistent_notification, "async_create") as create,
     ):
         assert await wt.async_check(planner) == 3
-    assert create.call_args_list[0].kwargs["notification_id"].startswith("middagsro_watch_p")
+    ids = {c.kwargs["notification_id"] for c in create.call_args_list}
+    assert ids == {"middagsro_watch_p20494", "middagsro_watch_p2", "middagsro_watch_tmerrild_kaffe"}
 
     # A notify service that is gone: nothing is told, and it is tried again later.
     store.watch_sent.clear()

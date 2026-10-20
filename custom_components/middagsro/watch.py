@@ -9,7 +9,9 @@ with a notification.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timedelta
+from functools import partial
 import logging
 import re
 from typing import TYPE_CHECKING, Any
@@ -165,6 +167,19 @@ def _offer_deal(offer: dict[str, Any], dealer_id: str) -> dict[str, Any]:
     }
 
 
+def _fits_kind(kind: dict[str, Any], offer: dict[str, Any]) -> bool:
+    return _same_kind(kind, as_offer(offer))
+
+
+def _fits_words(words: list[str], offer: dict[str, Any]) -> bool:
+    return text_has(words, f"{offer.get('heading')} {offer.get('description') or ''}")
+
+
+def _offer_price(offer: dict[str, Any]) -> float:
+    price = offer.get("price")
+    return float(price) if isinstance(price, int | float) else 1e9
+
+
 def _current(offer: dict[str, Any], now: datetime) -> bool:
     end = parse_time(offer.get("valid_to"))
     return end is None or end >= now
@@ -198,29 +213,21 @@ async def async_deals(planner: MealPlanner) -> list[dict[str, Any]]:
     out = []
     for item in items:
         deals: list[dict[str, Any]] = []
+        fits: Callable[[dict[str, Any]], bool]
         product = products.get(item["product_id"]) if item.get("product_id") else None
         if item.get("product_id"):
             if product is not None and (deal := _rema_deal(product, now)):
                 deals.append(deal)
             kind = {"name": item["text"], "is_organic": item.get("is_organic")}
-
-            def fits(offer: dict[str, Any], kind: dict[str, Any] = kind) -> bool:
-                return _same_kind(kind, as_offer(offer))
-
+            fits = partial(_fits_kind, kind)
             searched = [d for d in dealers if d != REMA_ID]  # REMA: its own price above
         else:
-            words = query_words(item["text"])
-
-            def fits(offer: dict[str, Any], words: list[str] = words) -> bool:
-                return text_has(words, f"{offer.get('heading')} {offer.get('description') or ''}")
-
+            fits = partial(_fits_words, query_words(item["text"]))
             searched = dealers
         for dealer_id in searched:
             found = [o for o in offers.get(dealer_id, []) if fits(o)]
             if found:
-                best = min(
-                    found, key=lambda o: o.get("price") if o.get("price") is not None else 1e9
-                )
+                best = min(found, key=_offer_price)
                 deals.append(_offer_deal(best, dealer_id))
         out.append(
             {
