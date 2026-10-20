@@ -212,7 +212,7 @@ The settings apply every time a meal plan is made and are stored per REMA 1000 a
 | **Fixed days** (*Faste dage*) | E.g. a rye-bread day on Wednesdays. | Thursday: rye bread |
 | **Wishes for the food** (*Ønsker til maden*) | Free text for the AI. | Healthy and child-friendly |
 | **Pantry** (*Basisvarer*) | What you always have and don't buy (salt, oil, flour …). | Salt, pepper, oil etc. |
-| **Fixed weekly items** (*Faste varer hver uge*) | Search REMA's range and pick a product (or write free text) that always goes on the list. | – |
+| **Fixed weekly items** (*Faste varer hver uge*) | Search REMA's range and pick a product (or write free text) that always goes on the list. Optionally, a fixed item that is already on the REMA list (not bought) is not sent again. | – |
 | **We also shop late in the week** (*Vi handler også sidst på ugen*) | Some offers only start on Thursday. Off, the meal plan only uses offers that run on the shopping day. On, it may use them in dishes from that day; the shopping list is split into the shopping day and Thursday, each sent on its own. | Off |
 | **Automation** (*Automatik*) | Make next week's plan when the new offers come out, and optionally send it to the REMA list. It is sent at 02:00 on the shopping day (Thursday's items at 02:00 on Thursday), when REMA has the week's products and prices. | Off |
 | **The family's favourites** (*Familiens favoritter*) | Dishes with how often. | – |

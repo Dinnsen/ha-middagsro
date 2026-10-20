@@ -58,6 +58,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         {"role": "child", "age": 5, "sex": "male"},
     ],
     "must_haves": [],
+    # Don't send a must-have that is on the REMA list already (and not bought).
+    "must_haves_once": False,
     "min_vegetarian": 0,
     "max_vegetarian": 1,
     "leftover_days": 2,
@@ -128,6 +130,7 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
     )
     settings["auto_generate"] = bool(settings["auto_generate"])
     settings["auto_send"] = bool(settings["auto_send"])
+    settings["must_haves_once"] = bool(settings["must_haves_once"])
     settings["shop_late_week"] = bool(settings["shop_late_week"])
     if settings["egg_min"] not in EGG_LEVELS:
         settings["egg_min"] = "caged"

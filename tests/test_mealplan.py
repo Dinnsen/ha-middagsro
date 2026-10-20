@@ -1373,3 +1373,75 @@ async def test_automatic_sends_wait_for_rema(
     await store.async_add_plan(now)
     await planner._async_send_when_ready(now)
     assert now["status"] == "sent"
+
+
+async def test_send_must_haves_once(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """With the option, must-haves on the REMA list already (not bought) are not sent again."""
+    store = init_integration.runtime_data.store
+    planner = init_integration.runtime_data.planner
+
+    def must(name: str, product: dict[str, Any] | None) -> dict[str, Any]:
+        return {"name": name, "amount": 1.0, "unit": "pk", "search": name, "category": "Faste varer",
+                "offer": None, "must_have": True, "product_id": product and product["id"],
+                "product": product, "packages": 1, "cost": None, "note": None}  # fmt: skip
+
+    def plan_with_musts(plan_id: str) -> dict[str, Any]:
+        plan = make_plan(plan_id, start="2026-10-18")
+        plan["shopping"] += [
+            must("Letmælk", {"id": 20494, "name": "LETMÆLK 1,5% FEDT", "underline": "1 LTR."}),
+            must("Rugbrød", {"id": 70001, "name": "RUGBRØD", "underline": "1 KG."}),  # bought
+            must("Kage til Anna", None),
+        ]
+        return plan
+
+    def sent() -> list[Any]:
+        return [
+            c.kwargs.get("product_id") or c.kwargs.get("name")
+            for c in mock_client.async_add_to_list.call_args_list
+        ]
+
+    # Off (the default): everything is sent.
+    plan = plan_with_musts("off")
+    await store.async_add_plan(plan)
+    await planner.async_send("off")
+    assert sent() == [30001, "Persille (1 bundt)", "Spaghetti", 20494, 70001, "Kage til Anna"]
+
+    await store.async_set_settings({**store.settings, "must_haves_once": True})
+    assert store.settings["must_haves_once"] is True
+    mock_client.async_add_to_list.reset_mock()
+    plan = plan_with_musts("on")
+    await store.async_add_plan(plan)
+    await planner.async_send("on")
+    assert sent() == [30001, "Persille (1 bundt)", "Spaghetti", 70001]
+    assert [line["name"] for line in plan["shopping"] if line.get("on_list")] == [
+        "Letmælk",
+        "Kage til Anna",
+    ]
+    assert all(line.get("sent") for line in plan["shopping"])
+    await planner.async_restore_sent("on")
+    assert not any(line.get("on_list") for line in plan["shopping"])
+
+    # The REMA list can't be read: everything is sent.
+    mock_client.async_add_to_list.reset_mock()
+    real = mock_client.async_get_primary_list.return_value
+    calls: list[int] = []
+
+    async def first_fails() -> Any:
+        calls.append(1)
+        if len(calls) == 1:
+            raise RemaError("down")
+        return real
+
+    mock_client.async_get_primary_list.side_effect = first_fails
+    await planner.async_send("on")
+    assert len(sent()) == 6
+
+    # No must-haves to send: the list isn't read for them.
+    mock_client.async_get_primary_list.side_effect = None
+    mock_client.async_get_primary_list.reset_mock()
+    plan = make_plan("plain", start="2026-10-18")
+    await store.async_add_plan(plan)
+    await planner.async_send("plain")
+    assert mock_client.async_get_primary_list.call_count == 2  # to add the items and refresh

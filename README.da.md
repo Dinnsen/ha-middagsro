@@ -212,7 +212,7 @@ Indstillingerne gælder hver gang, en madplan laves, og gemmes pr. REMA 1000-kon
 | **Faste dage** | Fx *Rugbrødsdag* om onsdagen. | Torsdag: rugbrød |
 | **Ønsker til maden** | Fritekst til AI'en. | Sund og børnevenlig |
 | **Basisvarer** | Det, I altid har, og som ikke købes (salt, olie, mel …). | Salt, peber, olie m.m. |
-| **Faste varer hver uge** | Søg i REMA's sortiment, og vælg en vare (eller skriv fritekst), som altid kommer på listen. | – |
+| **Faste varer hver uge** | Søg i REMA's sortiment, og vælg en vare (eller skriv fritekst), som altid kommer på listen. Kan sættes til ikke at sende en fast vare, der allerede står på REMA-listen (og ikke er købt). | – |
 | **Vi handler også sidst på ugen** | Nogle tilbud gælder først fra torsdag. Slået fra bruger madplanen kun tilbud, der gælder på indkøbsdagen. Slået til må de bruges i retter fra den dag; indkøbslisten deles i indkøbsdagen og torsdag, der sendes hver for sig. | Fra |
 | **Automatik** | Lav næste uges plan automatisk, når den nye avis udkommer, og send den evt. til REMA-listen. Den sendes kl. 02 på indkøbsdagen (torsdagsvarerne kl. 02 torsdag), når REMA har ugens varer og priser. | Fra |
 | **Familiens favoritter** | Retter med hyppighed. | – |

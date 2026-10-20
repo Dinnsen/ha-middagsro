@@ -3186,6 +3186,7 @@ class Rema1000Panel extends HTMLElement {
             </div>
           </div>`
         : "";
+      const onList = plan.shopping.filter((l) => l.sent && l.on_list).length;
       planHtml = `<div class="card">
         <div class="row between wrap">
           <div><h1>${lateLines.length ? "Indkøb på indkøbsdagen" : "Indkøbsliste"}</h1><p class="muted">${esc(plan.title)}${lateLines.length ? ` · plus ${lateLines.length} varer ${esc(dayShort(lateDay))}` : ""}</p></div>
@@ -3193,7 +3194,7 @@ class Rema1000Panel extends HTMLElement {
           <span class="muted">${sentCount ? `hele planen ${kr(plan.total)}` : plan.budget ? `budget ${kr(plan.budget)}` : ""}</span></div>
         </div>
         ${sentCount
-          ? `<div class="banner info sent-banner"><span>✓ ${sentCount} ${sentCount === 1 ? "vare er sendt" : "varer er sendt"} til REMA-appen${plan.last_sent?.at ? ` ${esc(sentWhen(plan.last_sent.at))}` : ""} – kurven her har kun det, der ikke er sendt endnu.</span>
+          ? `<div class="banner info sent-banner"><span>✓ ${sentCount} ${sentCount === 1 ? "vare er sendt" : "varer er sendt"} til REMA-appen${plan.last_sent?.at ? ` ${esc(sentWhen(plan.last_sent.at))}` : ""} – kurven her har kun det, der ikke er sendt endnu.${onList ? ` ${onList} ${onList === 1 ? "fast vare stod" : "faste varer stod"} der allerede og blev ikke sendt igen.` : ""}</span>
               ${plan.last_sent ? `<button class="btn small" data-action="send-restore" ${this._busy ? "disabled" : ""}>Genskab seneste kurv</button>` : ""}</div>`
           : ""}
         ${mainLines.length ? '<p class="muted small">Tryk på en vare for at rette antal, skifte den ud eller slette den.</p>' : '<p class="muted">Kurven er tom. Søg en vare frem nedenfor for at tilføje den.</p>'}
@@ -3668,6 +3669,8 @@ class Rema1000Panel extends HTMLElement {
         <label class="check"><input type="checkbox" data-path="produce_organic" ${f.produce_organic ? "checked" : ""}> Frugt og grønt skal være økologisk</label>
         `) + card(`        <h2 class="flush">Faste varer hver uge</h2>
         ${musts}
+        <label class="check"><input type="checkbox" data-path="must_haves_once" ${f.must_haves_once ? "checked" : ""}> Send ikke faste varer, der allerede står på REMA-listen</label>
+        <p class="muted small">Når madplanen sendes, springes en fast vare over, hvis den står på listen i REMA-appen og ikke er købt – så bliver antallet ikke lagt oven i.</p>
         <div class="row wrap">
           <input class="grow" type="search" data-bind="search" value="${esc(this._search.query)}" placeholder="Søg i REMA 1000, fx letmælk">
           <button class="btn small" data-action="search">Søg</button>
