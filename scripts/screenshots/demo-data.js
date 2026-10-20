@@ -385,3 +385,13 @@ window.DEMO.remaRecipes = [
   ["italiensk-tomatpande", "Italiensk tomatpande", "aften", 20, 2, false, 88.9],
   ["shakshuka", "Shakshuka med salatost og kartoffeltern", "kodfri", 30, 1, true, 55],
 ].map(([slug, title, tag, mins, offer, veg, cost]) => ({ slug, title, tag, image: null, servings: 4, total_minutes: mins, tags: [], vegetarian: veg, ingredients: 10, on_offer: offer, cost }));
+
+// The watch list and where notifications can go (made up).
+window.DEMO.state.watch = [
+  { key: `p${window.DEMO.remaFavorites[0].id}`, product_id: window.DEMO.remaFavorites[0].id, text: window.DEMO.remaFavorites[0].name, underline: window.DEMO.remaFavorites[0].underline, image: window.DEMO.remaFavorites[0].image },
+  { key: "tmerrild kaffe", product_id: null, text: "Merrild kaffe", underline: "", image: null },
+  { key: "tbleer str. 5", product_id: null, text: "Bleer str. 5", underline: "", image: null },
+];
+window.DEMO.state.own_favorites = [];
+window.DEMO.state.notify_targets = [{ id: "persistent_notification", name: "Home Assistant (notifikation i HA)" }, { id: "notify.mobile_app_iphone", name: "📱 iphone" }];
+window.DEMO.state.settings.watch_notify = "";

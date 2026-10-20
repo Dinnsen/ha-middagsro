@@ -52,6 +52,13 @@ from .recipes import (
 from .rema_recipes import TAGS as REMA_TAGS
 from .schema import vol
 from .storage import ALLERGY_OPTIONS, AVOID_OPTIONS, FAVORITE_FREQUENCIES
+from .watch import (
+    async_check as async_watch_check,
+    async_deals as async_watch_deals,
+    async_own_favorite,
+    async_toggle as async_watch_toggle,
+    notify_targets,
+)
 
 ENTRY = vol.Optional("entry_id")
 
@@ -128,6 +135,9 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
         ],
         "note": store.note,
         "recipes": [_recipe_summary(r) for r in store.recipes],
+        "watch": store.watch,
+        "own_favorites": store.own_favorites,
+        "notify_targets": notify_targets(hass),
         "status": data.planner.status,
         "default_start": data.planner.default_start().isoformat(),
         "ai_entities": [
@@ -390,6 +400,17 @@ async def ws_favorites(
     data = _entry(hass, msg).runtime_data
     force = bool(msg.get("force"))
     products = await data.client.async_get_favorites(force=force)
+    # The family's own favourites (added in Middagsro), after the app's hearts.
+    hearts = {p.id for p in products}
+    own_ids = [p["id"] for p in data.store.own_favorites if p["id"] not in hearts]
+    own: set[int] = set()
+    if own_ids:
+        try:
+            extra = await data.client.async_get_products(own_ids)
+        except RemaError:
+            extra = []
+        products = [*products, *extra]
+        own = {p.id for p in extra}
     catalogs = data.offers.data
     current = catalogs.current if catalogs else None
     upcoming = catalogs.upcoming if catalogs else None
@@ -404,7 +425,7 @@ async def ws_favorites(
             "week": msg["week"],
             "fallback": fallback,
             "catalog": _catalog(catalog),
-            "products": [p.as_dict() for p in products],
+            "products": [{**p.as_dict(), "own": p.id in own} for p in products],
             "on_offer": offers,
         },
     )
@@ -1024,6 +1045,70 @@ async def ws_rema_offer_add(
     connection.send_result(msg["id"], result)
 
 
+# ------------------------------------------------------------------ watch list
+
+
+@websocket_api.websocket_command({vol.Required("type"): "middagsro/watch", ENTRY: str})
+@websocket_api.async_response
+@_wrap
+async def ws_watch(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The watch list with the offers in REMA and the chosen chains."""
+    data = _entry(hass, msg).runtime_data
+    connection.send_result(
+        msg["id"],
+        {
+            "items": await async_watch_deals(data.planner),
+            "notify": data.store.settings["watch_notify"],
+            "targets": notify_targets(hass),
+        },
+    )
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "middagsro/watch/toggle", ENTRY: str, vol.Required("item"): dict}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_watch_toggle(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Watch a product or a text, or stop watching it."""
+    store = _entry(hass, msg).runtime_data.store
+    watched = await async_watch_toggle(store, msg["item"])
+    connection.send_result(msg["id"], {"watched": watched, "watch": store.watch})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/favorites/own",
+        ENTRY: str,
+        vol.Required("product"): dict,
+        vol.Optional("add", default=True): bool,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_own_favorite(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Add a REMA product to the family's own favourites, or remove it."""
+    store = _entry(hass, msg).runtime_data.store
+    connection.send_result(msg["id"], await async_own_favorite(store, msg["product"], msg["add"]))
+
+
+@websocket_api.websocket_command({vol.Required("type"): "middagsro/watch/check", ENTRY: str})
+@websocket_api.async_response
+@_wrap
+async def ws_watch_check(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Look for watched items on offer now, and tell about the new ones."""
+    told = await async_watch_check(_entry(hass, msg).runtime_data.planner)
+    connection.send_result(msg["id"], {"told": told})
+
+
 # ------------------------------------------------------------------ REMA's recipes
 
 
@@ -1143,6 +1228,10 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_rema_offer_add,
         ws_rema_recipes,
         ws_rema_recipe,
+        ws_watch,
+        ws_watch_toggle,
+        ws_own_favorite,
+        ws_watch_check,
         ws_rema_recipe_plan,
     ):
         websocket_api.async_register_command(hass, command)

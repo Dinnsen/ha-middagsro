@@ -200,6 +200,12 @@
     },
     "nothing_to_restore": {
       "message": "Der er ingen sendt kurv at genskabe."
+    },
+    "watch_item_required": {
+      "message": "Vælg en vare eller skriv, hvad der skal overvåges."
+    },
+    "too_many_watched": {
+      "message": "Der kan højst være {limit} på listen."
     }
   },
   "issues": {

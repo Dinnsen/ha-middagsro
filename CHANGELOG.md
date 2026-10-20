@@ -2,6 +2,15 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.6.0] - 2026-10-20
+
+### Added
+- **Overvågning (watch list)** at the top of *Favoritter*. Tap the 🔔 on a favourite, a product card or a search result to watch it. The list shows where each watched item is on offer – in REMA (now, or from next week's avis) and in the chains chosen in the settings – with the price and a button that puts it in the basket (REMA) or on that chain's shopping list.
+- Watch something REMA doesn't sell, or any brand: type it and choose *Overvåg "…" som tekst*. A text is on offer wherever an avis offer has all its words, REMA's own avis included.
+- **Add favourites yourself**: a search field in *Favoritter* finds REMA's products; *+ Favorit* adds one next to the products with a heart in the REMA app (*Fjern* takes it off again).
+- **Notifications only for the watch list** (*Indstillinger → Overvågning og beskeder*): choose the phone (Companion app) or a notification in Home Assistant. The list is checked every 3 hours, and each new offer is told once, with 🔔 in the title, 🛒 for REMA and 🏷️ for other chains, the product photo, and a tap opens Middagsro. *Tjek nu og send besked* checks right away.
+- A **Ryd** button next to every search field.
+
 ## [1.5.0] - 2026-10-20
 
 ### Changed
