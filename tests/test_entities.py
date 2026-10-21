@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -348,3 +349,37 @@ async def test_list_becomes_unavailable(
     assert hass.states.get(GENERATE).state != "unavailable"
     assert hass.states.get(QUICK_ADD).state != "unavailable"
     assert hass.states.get(MEAL_PLAN).state == "draft"
+
+
+async def test_list_changes_one_at_a_time(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """Adding and clearing hold the list, and each item is reported as it lands."""
+    coordinator = init_integration.runtime_data.shopping_list
+    landed: list[dict[str, Any]] = []
+    order: list[str] = []
+
+    async def add(shopping_list: Any, **kwargs: Any) -> None:
+        order.append(f"add {kwargs.get('name') or kwargs.get('product_id')}")
+        await asyncio.sleep(0)
+
+    async def delete(list_id: int, ids: list[int]) -> None:
+        order.append("clear")
+
+    mock_client.async_add_to_list.side_effect = add
+    mock_client.async_delete_items.side_effect = delete
+    adding = asyncio.create_task(
+        coordinator.async_add_items([{"name": "A"}, {"name": "B"}], landed.append)
+    )
+    await asyncio.sleep(0)
+    await coordinator.async_clear()
+    await adding
+    assert order == ["add A", "add B", "clear"]
+    assert [item["name"] for item in landed] == ["A", "B"]
+
+    # A failing item: what landed before it was reported, and the list refreshed.
+    mock_client.async_add_to_list.side_effect = [None, RemaError("down")]
+    landed.clear()
+    with pytest.raises(RemaError):
+        await coordinator.async_add_items([{"name": "C"}, {"name": "D"}], landed.append)
+    assert [item["name"] for item in landed] == ["C"]

@@ -2,6 +2,23 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.9.0] - 2026-10-21
+
+### Changed
+- **Steadier against REMA's and Tjek's hiccups.** A maintenance page instead of JSON, a busy server (429, 502-504) or a refused token right after it was renewed no longer end in tracebacks or a "log in again" prompt: busy answers are tried again after a moment, REMA's trouble is told apart from a wrong password, and only one token renewal runs at a time however many requests hit the wall together.
+- **Sending can't double up.** Each item is marked sent the moment it is on the REMA list, so if REMA fails halfway the next send only sends the rest – and two sends can't run at once. The list is changed by one thing at a time (a send, a quick add, a clear).
+- **Fewer requests to REMA**: the primary list's id is remembered for a while (and read again if the list is gone), Tjek's products of an offer are remembered for six hours, and the Tjek key isn't looked for again and again when the page can't be read.
+- **Overvågning and other chains match better**: a watched text matches whole words (*ris* no longer fires on *Kg-pris*, *te* not on *tomater*), frozen is not fresh across chains, *Spar 30 %* is not a fat percentage, a 2 kg bag is not compared with a 500 g pack, *2 stk. / 175 g* is priced as two, *pr. 1/2 kg* is half a kilo, and a long description no longer spoils a match. A watched REMA product is also found in REMA's own next avis before REMA prices it. The matching runs off Home Assistant's event loop, so a long watch list no longer freezes anything.
+- Comparing a plan's items with other chains counts from today, not the plan's first day, and skips what is bought.
+- Food aviser called *Julemad* or *Haveavis* are no longer dropped as non-food.
+
+### Fixed
+- A damaged file of first-seen aviser no longer stops the offers; entries older than 90 days are forgotten.
+- The dinner sensor and the calendar are no longer polled (they are told when plans change); the calendar's end date is exclusive, as Home Assistant expects.
+- The account's stored plans and offers are deleted when the account is removed.
+- Diagnostics no longer include the family's allergies and what they avoid (counts only), and include the chains and watch list state instead.
+- A login the site itself fails (maintenance, a changed page) shows "cannot connect" instead of an unknown error with a traceback.
+
 ## [1.8.1] - 2026-10-21
 
 ### Fixed

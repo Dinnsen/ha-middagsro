@@ -55,6 +55,7 @@ class RemaMealPlanCalendar(CalendarEntity):
 
     _attr_has_entity_name = True
     _attr_translation_key = "meal_plan"
+    _attr_should_poll = False  # told when the plans change
 
     def __init__(self, entry: RemaConfigEntry) -> None:
         """Initialize the calendar."""
@@ -85,7 +86,7 @@ class RemaMealPlanCalendar(CalendarEntity):
     ) -> list[CalendarEvent]:
         """Return dinners in a range."""
         start, end = start_date.date(), end_date.date()
-        return [e for e in self._events() if e.end > start and e.start <= end]
+        return [e for e in self._events() if e.end > start and e.start < end]  # end is exclusive
 
     async def async_added_to_hass(self) -> None:
         """Update when plans change."""

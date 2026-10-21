@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 import json
 import time
 from typing import Any
+from unittest.mock import patch
 
 import aiohttp
 import pytest
@@ -51,12 +52,14 @@ class FakeResponse:
         text: str | None = None,
         url: str = "https://example.dk/",
         cookies: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.status = status
         self._data = data
         self._text = text
         self.url = URL(url)
         self.cookies = cookies or {}
+        self.headers = headers or {}
 
     async def json(self, content_type: str | None = None) -> Any:
         return self._data
@@ -272,7 +275,12 @@ async def test_login_falls_back_to_second_site() -> None:
     ("answer", "error"),
     [
         (FakeResponse(401), RemaAuthError),
+        (FakeResponse(400, data={"error": "invalid_grant"}), RemaAuthError),
+        # Bot protection or a maintenance page: REMA's trouble, not a wrong password.
+        (FakeResponse(403), RemaApiError),
+        (FakeResponse(400, text="<html>blocked</html>"), RemaApiError),
         (FakeResponse(500), RemaApiError),
+        (FakeResponse(200, text="<html>maintenance</html>"), RemaApiError),
         (aiohttp.ClientError("reset"), RemaConnectionError),
         (FakeResponse(data={"no": "redirect"}), RemaApiError),
     ],
@@ -368,13 +376,30 @@ async def test_requests_and_retries() -> None:
     assert [p.name for p in await client.async_search_products("a", 500)] == ["A"]
     assert session.calls[-1][2]["params"]["per_page"] == 100
 
+    # Still refused with a fresh token: REMA's side, so no reauth prompt.
     session.on("GET", url, FakeResponse(401))
-    with pytest.raises(RemaAuthError):
+    with pytest.raises(RemaApiError, match="after renewal"):
         await client.async_search_products("a")
 
     session.on("GET", url, FakeResponse(500, text="Server error"))
     with pytest.raises(RemaApiError, match="HTTP 500: Server error"):
         await client.async_search_products("a")
+
+    # A maintenance page instead of JSON is an API error, not a crash.
+    session.on("GET", url, FakeResponse(200, text="<html>Vi er snart tilbage</html>"))
+    with pytest.raises(RemaApiError, match="did not return JSON"):
+        await client.async_search_products("a")
+
+    # Busy: tried again after a moment (as the server asks), then given up.
+    with patch.object(api, "RETRY_DELAYS", (0, 0)):
+        session.on(
+            "GET", url, FakeResponse(503), FakeResponse(data={"data": [{"id": 7, "name": "R"}]})
+        )
+        assert [p.id for p in await client.async_search_products("a")] == [7]
+        busy = FakeResponse(429, headers={"Retry-After": "0"})
+        session.on("GET", url, busy, busy, busy, FakeResponse(data={"data": []}))
+        with pytest.raises(RemaApiError, match="HTTP 429"):
+            await client.async_search_products("a")
 
     session.on("GET", url, TimeoutError())
     with pytest.raises(RemaConnectionError):
@@ -462,11 +487,24 @@ async def test_shopping_lists() -> None:
     assert shopping.name == "Indkøb"
     assert shopping.items[0].amount == 2
 
+    # The primary list's id is remembered for a while, so the list is one request.
     session.on("GET", lists, FakeResponse(data={"data": [{"id": 5}]}))
-    assert await client.async_get_primary_list_id() == 5
+    assert await client.async_get_primary_list_id() == 2
+    assert await client.async_get_primary_list_id(force=True) == 5
     session.on("GET", lists, FakeResponse(data={"data": []}))
     with pytest.raises(RemaApiError):
-        await client.async_get_primary_list_id()
+        await client.async_get_primary_list_id(force=True)
+    session.on("GET", lists, FakeResponse(data={"data": [{"no": "id"}]}))
+    with pytest.raises(RemaApiError, match="no id"):
+        await client.async_get_primary_list_id(force=True)
+    # Gone (deleted in the app): the lists are read again.
+    session.on("GET", lists, FakeResponse(data={"data": [{"id": 2, "is_primary": True}]}))
+    session.on("GET", f"{API}/v2/shoppinglists/5", FakeResponse(404, text="gone"))
+    client._primary_list = (time.monotonic(), 5)
+    assert (await client.async_get_primary_list()).id == 2
+    session.on("GET", f"{API}/v2/shoppinglists/2", FakeResponse(data=[]))
+    with pytest.raises(RemaApiError, match="without data"):
+        await client.async_get_primary_list()
 
     items = f"{API}/v2/shoppinglists/2/items"
     session.on("POST", items, lambda **kw: FakeResponse(data={"sent": kw["json"]}))
@@ -665,8 +703,14 @@ async def test_tjek_errors() -> None:
     client = RemaClient(session, "a", "b")  # type: ignore[arg-type]
     with pytest.raises(RemaApiError, match="Tjek"):
         await client.async_get_catalogs()
-
+    # Not looked for again for a while: the front page isn't downloaded for every call.
     session.on("GET", f"{SHOP}/", FakeResponse(text='tjek:{api_key:"K2"}'))
+    calls = len(session.calls)
+    with pytest.raises(RemaApiError, match="a moment ago"):
+        await client.async_get_catalogs()
+    assert len(session.calls) == calls
+    client._tjek_failed_at = None
+
     session.on("GET", f"{api.TJEK_DEFAULT_BASE}/v2/catalogs", FakeResponse(403, text="no"))
     with pytest.raises(RemaApiError, match="HTTP 403"):
         await client.async_get_catalogs()
@@ -677,6 +721,18 @@ async def test_tjek_errors() -> None:
         await client.async_get_catalogs()
     session.on("GET", f"{api.TJEK_DEFAULT_BASE}/v2/catalogs", FakeResponse(data=None))
     assert await client.async_get_catalogs() == []
+    # Busy: tried again; HTML instead of JSON is an error.
+    with patch.object(api, "RETRY_DELAYS", (0, 0)):
+        session.on(
+            "GET",
+            f"{api.TJEK_DEFAULT_BASE}/v2/catalogs",
+            FakeResponse(503),
+            FakeResponse(data=[{"id": "c1", "label": "Uge 1", "run_from": None, "run_till": None}]),
+        )
+        assert [c.id for c in await client.async_get_catalogs()] == ["c1"]
+    session.on("GET", f"{api.TJEK_DEFAULT_BASE}/v2/catalogs", FakeResponse(text="<html>"))
+    with pytest.raises(RemaApiError, match="did not return JSON"):
+        await client.async_get_catalogs()
 
 
 def test_parse_nutrition() -> None:

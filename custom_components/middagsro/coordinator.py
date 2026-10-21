@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import logging
@@ -10,11 +12,11 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import Catalog, RemaAuthError, RemaClient, RemaError, ShoppingList, is_insert
+from .api import Catalog, RemaAuthError, RemaClient, RemaError, ShoppingList, is_insert, parse_time
 from .const import DOMAIN, LIST_SCAN_INTERVAL, OFFERS_SCAN_INTERVAL, STORAGE_VERSION
 
 if TYPE_CHECKING:
@@ -55,6 +57,9 @@ class RemaShoppingListCoordinator(DataUpdateCoordinator[ShoppingList]):
             update_interval=LIST_SCAN_INTERVAL,
         )
         self.client = client
+        # One change to the list at a time: a send and a quick add must not
+        # both read the list, then write their own idea of it.
+        self._change = asyncio.Lock()
 
     async def _async_update_data(self) -> ShoppingList:
         """Fetch the primary list. It is looked up every time so a change of
@@ -74,26 +79,40 @@ class RemaShoppingListCoordinator(DataUpdateCoordinator[ShoppingList]):
                 translation_placeholders={"error": str(err)},
             ) from err
 
-    async def async_add_items(self, items: list[dict[str, Any]]) -> None:
-        """Add items ({product_id|name, amount}) to the primary list."""
-        shopping_list = await self.client.async_get_primary_list()
-        for item in items:
-            await self.client.async_add_to_list(
-                shopping_list,
-                amount=int(item.get("amount") or 1),
-                product_id=item.get("product_id"),
-                name=item.get("name"),
-            )
-        # Refresh right away (not debounced) so HA shows the change at once.
-        await self.async_refresh()
+    async def async_add_items(
+        self,
+        items: list[dict[str, Any]],
+        on_added: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
+        """Add items ({product_id|name, amount}) to the primary list.
+
+        ``on_added`` is told about each item as soon as it is on the list, so a
+        caller knows what got there if a later item fails.
+        """
+        async with self._change:
+            shopping_list = await self.client.async_get_primary_list()
+            try:
+                for item in items:
+                    await self.client.async_add_to_list(
+                        shopping_list,
+                        amount=int(item.get("amount") or 1),
+                        product_id=item.get("product_id"),
+                        name=item.get("name"),
+                    )
+                    if on_added is not None:
+                        on_added(item)
+            finally:
+                # Refresh right away (not debounced) so HA shows the change at once.
+                await self.async_refresh()
 
     async def async_clear(self) -> int:
         """Remove every item from the primary list. Returns how many."""
-        shopping_list = await self.client.async_get_primary_list()
-        ids = [item.id for item in shopping_list.items]
-        await self.client.async_delete_items(shopping_list.id, ids)
-        await self.async_refresh()
-        return len(ids)
+        async with self._change:
+            shopping_list = await self.client.async_get_primary_list()
+            ids = [item.id for item in shopping_list.items]
+            await self.client.async_delete_items(shopping_list.id, ids)
+            await self.async_refresh()
+            return len(ids)
 
 
 @dataclass
@@ -133,7 +152,11 @@ class RemaOffersCoordinator(DataUpdateCoordinator[OffersData]):
     async def _async_update_data(self) -> OffersData:
         """Fetch catalogues from Tjek."""
         if self._first_seen is None:
-            stored = await self._store.async_load() or {}
+            try:
+                stored = await self._store.async_load() or {}
+            except HomeAssistantError as err:  # a damaged file: start over
+                _LOGGER.warning("Could not read when the aviser were first seen: %s", err)
+                stored = {}
             self._first_seen = dict(stored.get("first_seen") or {})
         try:
             catalogs = await self.client.async_get_catalogs()
@@ -156,7 +179,15 @@ class RemaOffersCoordinator(DataUpdateCoordinator[OffersData]):
                     catalog.valid_from,
                     catalog.valid_to,
                 )
-        if changed:
+        # Aviser from months ago are gone for good: forget when they were first seen.
+        old = [
+            key
+            for key, seen in self._first_seen.items()
+            if (now - (parse_time(seen) or now)).days > 90
+        ]
+        for key in old:
+            del self._first_seen[key]
+        if changed or old:
             await self._store.async_save({"first_seen": self._first_seen})
 
         # An insert (indstik) is part of its week's avis, whose offers it
