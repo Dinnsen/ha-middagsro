@@ -29,15 +29,16 @@ _HOW = {
     "sunde", "børnevenlig", "børnevenlige", "familiens", "mormors", "farmors", "dag", "eller",
     "samt", "evt", "fx",
 }  # fmt: skip
-# A compound that ends in one of these is that kind of dish (minipizza is pizza).
+# A compound that ends in one of these is that kind of dish (minipizza is pizza):
+# only kinds that define the dish, not "suppe" or "gryde" (tomatsuppe is not græskarsuppe).
 _KINDS = (
-    "pizza", "suppe", "burger", "frikadeller", "frikadelle", "lasagne", "risotto", "tærte",
-    "wok", "gryde", "pandekager", "bolognese", "carbonara", "curry", "tacos", "wraps", "wrap",
-    "gratin", "pie", "boller", "bøffer", "bøf", "kebab", "pølser", "pølse", "omelet",
-    "sandwich", "toast",
+    "pizza", "lasagne", "burger", "tacos", "wraps", "wrap", "frikadeller", "frikadelle",
+    "risotto", "bolognese", "carbonara", "kebab", "pølser", "pølse", "omelet", "sandwich",
+    "toast", "pandekager", "bøffer", "bøf",
 )  # fmt: skip
-
-
+# What a dinner is built on, not what it is: "pasta med kødsovs" is not "pasta carbonara".
+_GENERIC = {"pasta", "ris", "nudl", "kartoffel", "kartofl", "bulgur", "couscous", "brød", "salat",
+            "supp", "gryd", "wok", "tært", "grød", "pandekag", "bowl", "wrap"}  # fmt: skip
 _NO_DISH = ("ikke hjemme", "spiser ude", "fri aften", "ude at spise", "ingen aftensmad")
 
 
@@ -50,11 +51,19 @@ def dish_key(name: str, kinds: bool = True) -> frozenset[str]:
     """
     if any(phrase in (name or "").lower() for phrase in _NO_DISH):
         return frozenset()
-    head = _LEFTOVERS.sub("", name or "")
-    head = _SIDES.split(head, maxsplit=1)[0]
-    words = [w for w in _tokens(head) if len(w) > 1 and w not in _NEUTRAL_WORDS and w not in _HOW]
+    whole = _LEFTOVERS.sub("", name or "")
+    parts = _SIDES.split(whole, maxsplit=1)
+    words = [
+        w for w in _tokens(parts[0]) if len(w) > 1 and w not in _NEUTRAL_WORDS and w not in _HOW
+    ]
     if not words:
-        words = [w for w in _tokens(name or "") if len(w) > 2 and w not in _NEUTRAL_WORDS]
+        words = [w for w in _tokens(whole) if len(w) > 2 and w not in _NEUTRAL_WORDS]
+    if words and all(_generic(w) for w in words) and len(parts) > 1:
+        # "Pasta med kylling": the pasta says little, the chicken is the dish.
+        rest = [
+            w for w in _tokens(parts[1]) if len(w) > 2 and w not in _NEUTRAL_WORDS and w not in _HOW
+        ]
+        words += rest[:1]
     key: set[str] = set()
     for word in words:
         key.add(_stem(word))
@@ -62,6 +71,29 @@ def dish_key(name: str, kinds: bool = True) -> frozenset[str]:
             if word != kind and word.endswith(kind) and len(word) > len(kind) + 2:
                 key.add(_stem(kind))
     return frozenset(key)
+
+
+# A compound that starts with the main word and ends in one of these is that main
+# word ("laksefilet" is laks, "kyllingebryst" is kylling).
+_PARTS = ("filet", "fileter", "bryst", "lår", "kød", "steg", "fars", "stykker", "inderfilet")
+
+
+def _same_word(x: str, y: str, strict: bool) -> bool:
+    if x == y:
+        return True
+    if len(x) <= 3 or len(y) <= 3:
+        return False
+    if x.endswith(y) or (not strict and y.endswith(x)):
+        return True
+    for long, short in ((x, y), (y, x)) if not strict else ((x, y),):
+        if long.startswith(short) and long[len(short) :].lstrip("es") in _PARTS:
+            return True
+    return False
+
+
+def _generic(word: str) -> bool:
+    stem = _stem(word)
+    return any(stem == g or stem.startswith(g) for g in _GENERIC)
 
 
 def same_dish(a: str, b: str, strict: bool = False) -> bool:
@@ -74,11 +106,13 @@ def same_dish(a: str, b: str, strict: bool = False) -> bool:
     key_a, key_b = dish_key(a, not strict), dish_key(b, not strict)
     if not key_a or not key_b:
         return False
-    return any(
-        x == y or (len(x) > 3 and len(y) > 3 and (x.endswith(y) or (not strict and y.endswith(x))))
-        for x in key_a
-        for y in key_b
-    )
+    shared = {x for x in key_a for y in key_b if _same_word(x, y, strict)}
+    if not shared:
+        return False
+    # Only the pasta in common, and each has its own main: different dinners.
+    if all(_generic(x) for x in shared):
+        return not (key_a - shared and key_b - shared)
+    return True
 
 
 def matches_any(name: str, names: list[str], strict: bool = False) -> str | None:
@@ -178,7 +212,11 @@ def check_plan(
                         f"{day['weekday']} {day['date']}: skal være rester ({text}), ikke "
                         f'"{day["dish"]}"'
                     )
-            elif dish_key(text) and not same_dish(day["dish"], text):
+            elif (
+                dish_key(text)
+                and day.get("type") != "fast"  # the AI says it is the fixed day
+                and not (same_dish(day["dish"], text) or in_text(day["dish"], text))
+            ):
                 problems.append(
                     f'{day["weekday"]} {day["date"]}: skal være "{text}" (fast dag), ikke '
                     f'"{day["dish"]}"'

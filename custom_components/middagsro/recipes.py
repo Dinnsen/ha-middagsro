@@ -16,6 +16,7 @@ import html
 import ipaddress
 import json
 import logging
+import math
 import re
 import socket
 from typing import TYPE_CHECKING, Any
@@ -351,14 +352,44 @@ def disliked_names(store: RemaPlanStore) -> list[str]:
     return [r["name"] for r in store.recipes if r["rating"] == "dislike"][:100]
 
 
-def recipe_to_day(recipe: dict[str, Any], day: dict[str, Any]) -> None:
-    """Put a recipe from the collection on a plan's day (its ingredients and steps)."""
-    day["ingredients"] = [dict(i) for i in recipe["ingredients"]]
+def recipe_to_day(recipe: dict[str, Any], day: dict[str, Any], factor: float = 1.0) -> None:
+    """Put a recipe from the collection on a plan's day (its ingredients and steps).
+
+    Scaled to the household (``factor``): the amounts are multiplied, as the
+    shopping list's are, and the servings say who it is for now.
+    """
+    day["ingredients"] = [
+        {**i, "amount": scale_amount(i.get("amount") or "", factor)} for i in recipe["ingredients"]
+    ]
     day["steps"] = [dict(s) for s in recipe["steps"]]
     day["tip"] = recipe.get("tip") or ""
     day["nutrition"] = None
     day["active_minutes"] = recipe.get("active_minutes") or day.get("active_minutes", 0)
     day["total_minutes"] = recipe.get("total_minutes") or day.get("total_minutes", 0)
+    if abs(factor - 1) > 0.05 and recipe.get("servings"):
+        day["servings"] = max(1, round(recipe["servings"] * factor))
+
+
+_MEASURES = {"g", "gr", "kg", "ml", "cl", "dl", "l", "liter", "spsk", "tsk", "kop", "kopper"}
+
+
+def scale_amount(text: str, factor: float) -> str:
+    """'500 g' times 1.5 -> '750 g'; '1½ dl' -> '2,25 dl'; words without a number stay."""
+    from .mealplan import parse_amount  # noqa: PLC0415
+
+    if abs(factor - 1) < 0.05 or not (parsed := parse_amount(text)):
+        return text
+    number, unit = parsed
+    scaled = number * factor
+    if scaled >= 10 or unit not in _MEASURES:
+        rounded = float(math.ceil(scaled - 0.001))  # whole eggs, cloves and cans
+    else:
+        rounded = round(scaled * 4) / 4
+    if rounded == int(rounded):
+        shown = str(int(rounded))
+    else:
+        shown = f"{rounded:.2f}".rstrip("0").replace(".", ",")
+    return f"{shown} {unit}".strip()
 
 
 def ingredient_texts(recipe: dict[str, Any]) -> list[str]:
