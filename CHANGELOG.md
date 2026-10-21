@@ -2,6 +2,12 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.0.2] - 2026-10-21
+
+### Fixed
+- A favourite with a one-word name (*SMOOTHIE*, *SMØR*) is only "cheaper in Netto" when the offer names its brand or variety (Lovemade, Lurpak, quinoa & æble) – not just any smoothie or any butter.
+- The badge on a favourite shows the price you pay in the other chain; the popup opens with that very offer at the top, with what it comes to for REMA's size, and a button that puts it on that chain's list.
+
 ## [2.0.1] - 2026-10-21
 
 ### Fixed
