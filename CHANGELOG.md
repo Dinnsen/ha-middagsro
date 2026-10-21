@@ -2,6 +2,20 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.0.0] - 2026-10-21
+
+### Changed
+- **The panel stays out of your way.** The field you are typing in keeps its focus, caret and keyboard when the page is redrawn (while a plan is being made, after a toast), and the page is only redrawn when something actually changed. A toast no longer redraws the page at all.
+- **No tap is lost.** Actions run one after the other: a tap while something else is in flight waits its turn instead of being ignored.
+- **Timers ring wherever you are**: a cooking timer sounds and vibrates once, whatever tab is open, with a toast – and a chip in the toolbar counts down the next one (tap it to get to the recipe).
+- **Back to the app, up to date**: coming back after a while (or while a plan is being made) reloads the plan and the list, so the partner's ticks and an automatic plan show up without a tap.
+- The *older plan* banner now also shows on the shopping list and the week's recipes, so an old list isn't sent by mistake.
+- The plan tab starts with tonight's dinner; the other chains' offers and prices follow below.
+- Big lists (favourites, a chain's offers, the recipe collection) are redrawn a moment after the last keystroke, not on every one.
+- A swipe inside a popup no longer changes the tab underneath, and leaving a chain's offers page lands on the plan again.
+- *Sundhed* is only recalculated when the plan changed (or *Regn igen* is tapped).
+- A problem drawing one page shows "Prøv igen" instead of a blank panel; the toast sits above popups and is announced to screen readers.
+
 ## [1.9.0] - 2026-10-21
 
 ### Changed
