@@ -13,6 +13,7 @@ from homeassistant.helpers.storage import Store
 
 from .chains import CHAINS
 from .const import DOMAIN
+from .dishes import dish_key, matches_any
 
 STORE_VERSION = 1
 MAX_PLANS = 52
@@ -292,20 +293,23 @@ class RemaPlanStore:
         self.favorites = [f for f in self.favorites if f["id"] != fav_id]
         await self.async_save()
 
-    def favorites_due(self, start: date) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """Split favourites into (should be on the plan, inspiration/on offer)."""
+    def favorites_due(
+        self, start: date, recent: list[str] | None = None
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Split favourites into (should be on the plan, inspiration/on offer).
+
+        A favourite the family had in the last weeks (``recent`` dishes) is no
+        inspiration: it would be a repeat. One that is due goes on anyway.
+        """
         gaps = {"weekly": 0, "biweekly": 13, "monthly": 27}
         due: list[dict[str, Any]] = []
         optional: list[dict[str, Any]] = []
         for fav in self.favorites:
             gap = gaps.get(fav.get("frequency", ""))
-            if gap is None:
-                optional.append(fav)
-                continue
             last = fav.get("last_used")
-            if not last or (start - date.fromisoformat(last)).days > gap:
+            if gap is not None and (not last or (start - date.fromisoformat(last)).days > gap):
                 due.append(fav)
-            else:
+            elif matches_any(fav["text"], recent or []) is None:
                 optional.append(fav)
         return due, optional
 
@@ -375,15 +379,38 @@ class RemaPlanStore:
         return next((p for p in self.plans if plan_period(p)[0] <= iso <= plan_period(p)[1]), None)
 
     def recent_dishes(self, before: date, weeks: int) -> list[str]:
-        """Dish names from plans in the weeks before a date."""
+        """The dinners of the weeks before a date, newest first, each dish once.
+
+        Only what was actually on the table counts: for every date, the newest plan
+        covering it (a draft that was replaced never got cooked). Leftover days are
+        the same dish as the day before, so they are left out.
+        """
         if weeks <= 0:
             return []
         dishes: list[str] = []
-        for plan in self.plans:
-            start = date.fromisoformat(plan["start_date"])
-            if 0 < (before - start).days <= weeks * 7 + 6:
-                dishes.extend(day.get("dish", "") for day in plan.get("days", []))
-        return [d for d in dishes if d]
+        for back in range(1, weeks * 7 + 1):
+            iso = (before - timedelta(days=back)).isoformat()
+            covering = [p for p in self.plans if plan_period(p)[0] <= iso <= plan_period(p)[1]]
+            # A plan whose list was sent is the one the family shopped for.
+            plan = next((p for p in covering if p.get("sent_at")), None) or next(
+                iter(covering), None
+            )
+            day = (
+                next((d for d in plan.get("days", []) if d.get("date") == iso), None)
+                if plan
+                else None
+            )
+            if (
+                day is None
+                or day.get("uses_leftovers_from")
+                or day.get("type") in ("rester", "tom")
+            ):
+                continue
+            dish = str(day.get("dish") or "").strip()
+            if not dish or not dish_key(dish) or dish.lower() in (d.lower() for d in dishes):
+                continue
+            dishes.append(dish)
+        return dishes
 
     async def async_add_plan(self, plan: dict[str, Any]) -> None:
         """Store a new plan and mark used favourites."""

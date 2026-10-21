@@ -84,9 +84,9 @@ async def test_swap_options(
         result = await pe.async_swap_options(planner, "p", "2026-10-19")
     assert result["date"] == "2026-10-18"  # monday is sunday's leftovers
     assert result["dish"] == "Spaghetti bolognese"
-    assert [o["dish"] for o in result["options"]] == ["Kyllingewok", "Linsegryde", "Frikadeller"]
-    assert result["options"][0]["active_minutes"] == 20
-    assert result["options"][1] == {"dish": "Linsegryde", "type": "vegetar", "active_minutes": 0,
+    # The kyllingewok is already on the week (tuesday): not a suggestion.
+    assert [o["dish"] for o in result["options"]] == ["Linsegryde", "Frikadeller", "Lasagne"]
+    assert result["options"][0] == {"dish": "Linsegryde", "type": "vegetar", "active_minutes": 0,
                                     "total_minutes": 0, "why": "", "mealie": None, "recipe_id": None}  # fmt: skip
     prompt = ai.prompts["REMA 1000 andre retter"][0]
     assert "dobbelt portion" in prompt

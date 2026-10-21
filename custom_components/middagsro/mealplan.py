@@ -22,9 +22,11 @@ from homeassistant.util import dt as dt_util
 from .api import DANISH_TIME, Catalog, Offer, Product, RemaClient, RemaError, parse_time
 from .chains import ChainOffers
 from .const import DOMAIN
+from .dishes import check_plan, household_portions, is_cooked, same_dish
 from .mealie import MealieError, MealieLink
 from .recipes import (
     disliked_names,
+    favorite_recipe,
     find_recipe,
     ingredient_texts,
     mark_planned,
@@ -33,6 +35,19 @@ from .recipes import (
 )
 from .rema_recipes import RemaRecipes
 from .storage import RemaPlanStore
+from .words import (
+    _DIFFERENT_PREFIXES,
+    _DIFFERENT_WORDS,
+    _DISH_CATEGORIES,
+    _FRESH_WORDS,
+    _FROZEN_WORDS,
+    _NEUTRAL_WORDS,
+    _name_words,
+    _stem,
+    _tokens,
+    _uses_item,
+    pantry_words,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -69,7 +84,7 @@ FREE_FROM = {"gluten": "GLUTENFRI", "lactose": "LAKTOSEFRI", "milk": "LAKTOSEFRI
 ISSUE_NO_AI_TASK = "no_ai_task"
 AI_TASK_DOCS_URL = "https://www.home-assistant.io/integrations/ai_task/"
 
-MAX_AI_ROUNDS = 2  # first try + one retry if the list is over budget
+MAX_AI_ROUNDS = 3  # first try + two more when the plan breaks a rule or the budget
 RECIPE_CONCURRENCY = 3
 SEARCH_CONCURRENCY = 4
 
@@ -104,65 +119,6 @@ _UNIT_BASE = {
     "glas": ("pack", 1),
 }
 # REMA abbreviates some words in product names.
-_ABBREVIATIONS = {"hk": "hakket", "øko": "økologisk", "økologiske": "økologisk"}
-# Extra words that make a product something else than what was asked for.
-_DIFFERENT_WORDS = {
-    "løse",
-    "søde",
-    "grønt",
-    "grøntsager",
-    "blanding",
-    "mix",
-    "pålæg",
-    "marineret",
-    "krydret",
-    "kryddret",
-    "paneret",
-    "panerede",
-    "røget",
-    "gravad",
-    "gravet",
-    "gravede",
-    "citronpeber",
-    "chili",
-    "sauce",
-    "dressing",
-    "salat",
-    "suppe",
-    "juice",
-    "snack",
-    "chips",
-}
-# First parts of compound words that make it another product (hvidløg is not løg).
-_DIFFERENT_PREFIXES = {
-    "hvid", "perle", "hvidløgs", "rød", "forårs", "sukker",
-    # kakaomælk, havremælk, kærnemælk … are not mælk
-    "kakao", "chokolade", "kokos", "mandel", "havre", "soja", "kærne",
-}  # fmt: skip
-# Words in product names that say nothing about what the product is.
-_NEUTRAL_WORDS = {
-    "rema",
-    "og",
-    "med",
-    "i",
-    "af",
-    "til",
-    "en",
-    "et",
-    "dansk",
-    "danske",
-    "økologisk",
-    "kl",
-    "stk",
-    "gr",
-    "g",
-    "kg",
-    "ltr",
-    "ml",
-    "fedt",
-    "frisk",
-    "friske",
-}
 
 
 def _invalid(key: str, **placeholders: str) -> ServiceValidationError:
@@ -290,15 +246,6 @@ def avis_packages(amount: float | None, unit: str | None, offer: Offer) -> int:
     return 1
 
 
-_ACCENTS = str.maketrans("éèêëáàâíìîïóòôúùûüç", "eeeeaaaiiiiooouuuuc")
-
-
-def _tokens(text: str) -> list[str]:
-    """Lower-case words of a product name, with REMA's abbreviations expanded."""
-    words = re.findall(r"[a-zæøå]+", text.lower().translate(_ACCENTS))
-    return [_ABBREVIATIONS.get(w, w) for w in words]
-
-
 # Words in REMA's underline that say where a product is from, not its brand.
 _ORIGINS = {
     "danmark", "dansk", "danske", "land", "kl", "egypten", "spanien", "holland", "italien",
@@ -316,18 +263,6 @@ _RANGE = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*(?:-\s*(\d+(?:[.,]\d+)?))?\s*(KG|GR|G|LTR|LITER|L|ML|CL|DL|STK)\b",
     re.IGNORECASE,
 )
-
-
-def _stem(word: str) -> str:
-    """A word without its Danish plural/definite ending, to compare names."""
-    for ending in ("erne", "ene", "er", "e", "r"):
-        if word.endswith(ending) and len(word) - len(ending) >= 4:
-            return word[: -len(ending)]
-    return word
-
-
-def _name_words(text: str) -> set[str]:
-    return {_stem(w) for w in _tokens(text) if len(w) > 1 and w not in _NEUTRAL_WORDS}
 
 
 def _brand(underline: str | None) -> str | None:
@@ -546,6 +481,29 @@ def name_fit(search_words: list[str], product_name: str) -> tuple[int, float]:
     return matched, penalty
 
 
+def kind_penalty(line: dict[str, Any], product: Product, words: list[str]) -> float:
+    """Extra cost for a product that is another kind of thing than the line asks for.
+
+    A dish made of it (kebab pizza, a chicken wrap) is not the ingredient, frozen
+    is not fresh (and the other way round), and fruit and vegetables are fresh
+    unless the line says frozen.
+    """
+    asked = set(_tokens(f"{line.get('search') or ''} {line.get('name') or ''}"))
+    category = set(_tokens(product.category or ""))
+    penalty = 0.0
+    if category & _DISH_CATEGORIES and not any(
+        w in category or any(c.startswith(w) for c in category) for w in words
+    ):
+        penalty += 5.0
+    name = set(_tokens(product.name))
+    frozen = (product.department or "").lower() == "frost" or bool(name & _FROZEN_WORDS)
+    wants_frozen = bool(asked & _FROZEN_WORDS)
+    wants_fresh = bool(asked & _FRESH_WORDS) or (line_kind(line) == "produce" and not wants_frozen)
+    if (frozen and wants_fresh) or (not frozen and wants_frozen):
+        penalty += 5.0
+    return penalty
+
+
 def extract_json(data: Any) -> dict[str, Any]:
     """Get the JSON object out of an AI answer."""
     if isinstance(data, dict):
@@ -659,16 +617,20 @@ def build_prompt(
     own: list[dict[str, Any]] | None = None,
     disliked: list[str] | None = None,
     surprise: bool = False,
+    favorite_recipes: dict[str, dict[str, Any]] | None = None,
 ) -> str:
     """Build the instructions for the AI."""
     s = settings
     day_list = ", ".join(f"{WEEKDAYS_DA[d.weekday()]} {d.isoformat()}" for d in dates)
+    portions = f"{household_portions(s):g}".replace(".", ",")
     out: list[str] = [
         "Du er en erfaren dansk madplanlægger. Familien handler i REMA 1000 i Danmark.",
         f"Lav en madplan med aftensmad for {len(dates)} dage: {day_list}.",
         "",
         "HUSSTAND (beregn mængder til hele husstanden; børn spiser mindre end voksne):",
         *_household_lines(s),
+        f"- Regn med ca. {portions} voksenportioner pr. aftensmad (det dobbelte på dage, der "
+        "laver rester til dagen efter).",
         "",
         "KRAV – SKAL OVERHOLDES:",
     ]
@@ -717,7 +679,10 @@ def build_prompt(
         )
     if recent_dishes:
         out.append(
-            "- Disse retter fra de seneste uger må IKKE gentages: " + "; ".join(recent_dishes) + "."
+            "- Disse retter fra de seneste uger må IKKE gentages – heller ikke som variant med "
+            "andet tilbehør (laks er laks, frikadeller er frikadeller): "
+            + "; ".join(recent_dishes)
+            + "."
         )
     if s.get("rules"):
         out.append("- Familiens faste regler – følg dem altid:")
@@ -763,17 +728,29 @@ def build_prompt(
         "- Byg retterne op omkring ugens tilbud nedenfor, og marker tilbudsvarer på "
         "indkøbslisten med tilbuddets id."
     )
+    links = favorite_recipes or {}
+
+    def favorite_line(fav: dict[str, Any]) -> str:
+        line = f"  [{fav['id']}] {fav['text']}"
+        if fav.get("frequency") == "on_offer":
+            line += " (kun på tilbud)"
+        if recipe := links.get(fav["id"]):
+            line += (
+                f" – familiens egen opskrift {recipe['id']} (skriv den i recipe_id, og følg dens "
+                f"ingredienser præcis): {', '.join(ingredient_texts(recipe))[:300]}"
+            )
+        return line
+
     if favorites_due and not surprise:
         out.append("- Disse familiefavoritter SKAL med i perioden (angiv favorite_id på dagen):")
-        out += [f"  [{f['id']}] {f['text']}" for f in favorites_due]
+        out += [favorite_line(f) for f in favorites_due]
     if favorites_optional and not surprise:
         out.append(
             '- Familiefavoritter til inspiration (ikke krav). Dem markeret "kun på tilbud" '
-            "bruges kun, hvis hovedingrediensen er på tilbud. Angiv favorite_id, hvis du bruger én:"
+            "bruges kun, hvis hovedingrediensen er på tilbud. Bruger du én, så lav den præcis "
+            "som beskrevet (samme tilbehør) og angiv favorite_id:"
         )
-        for fav in favorites_optional:
-            note = " (kun på tilbud)" if fav.get("frequency") == "on_offer" else ""
-            out.append(f"  [{fav['id']}] {fav['text']}{note}")
+        out += [favorite_line(f) for f in favorites_optional]
     if s["pantry"].strip():
         out.append(
             f"- Basisvarer familien altid har, som IKKE skal på indkøbslisten: {s['pantry'].strip()}."
@@ -994,6 +971,149 @@ def build_recipe_prompt(
 
 
 # ------------------------------------------------------------------ planner
+
+
+def link_favorites(
+    plan: dict[str, Any],
+    favorites: list[dict[str, Any]],
+    links: dict[str, dict[str, Any]],
+    store: RemaPlanStore,
+) -> None:
+    """Tie the plan's dinners to the favourites and own recipes they are.
+
+    The AI forgets to say favorite_id for a favourite it used, and it likes to
+    make its own version of a dish the family has a recipe for. So: a dinner that
+    is one of the favourites gets its favorite_id; a favourite's own recipe is
+    used; and so is a ❤️ recipe in the collection for the same dish.
+    """
+    for day in plan["days"]:
+        if not is_cooked(day):
+            continue
+        if not day.get("favorite_id"):
+            fav = next((f for f in favorites if same_dish(day["dish"], f["text"])), None)
+            if fav is not None:
+                day["favorite_id"] = fav["id"]
+        if day.get("recipe_id"):
+            continue
+        # Only a recipe that really is this dish: its ingredients replace the AI's.
+        recipe = links.get(day.get("favorite_id") or "")
+        if recipe is None or not same_dish(recipe["name"], day["dish"], strict=True):
+            recipe = next(
+                (
+                    r
+                    for r in store.recipes
+                    if r.get("favorite")
+                    and r.get("rating") != "dislike"
+                    and (r["ingredients"] or r["steps"])
+                    and same_dish(r["name"], day["dish"], strict=True)
+                ),
+                None,
+            )
+        if recipe is not None:
+            day["recipe_id"] = recipe["id"]
+
+
+def recipe_factor(settings: dict[str, Any], recipe: dict[str, Any], day: dict[str, Any]) -> float:
+    """How much of a recipe the household needs: twice when it makes leftovers."""
+    portions = household_portions(settings) * (2 if day.get("makes_leftovers") else 1)
+    servings = recipe.get("servings") or 4
+    return max(0.25, min(4.0, portions / servings))
+
+
+def recipe_line(ingredient: dict[str, Any], factor: float = 1.0) -> dict[str, Any]:
+    """A shopping line for a recipe's ingredient ("600 g laksefilet"), scaled.
+
+    Grams and millilitres are scaled and rounded up to tens; pieces and packages
+    rounded up to whole ones. A spoonful or a clove is one package, whatever the
+    scale. Without an amount it is one package.
+    """
+    name = str(ingredient.get("name") or "").strip()
+    amount: float | None = None
+    unit: str | None = None
+    if match := _INGREDIENT_AMOUNT.match(str(ingredient.get("amount") or "").strip()):
+        number = float(match.group(1).replace(",", "."))
+        raw_unit = (match.group(2) or "").lower().rstrip(".")
+        base = to_base(number, raw_unit)
+        if base is not None and base[0] in ("g", "ml"):
+            amount, unit = base[1] * factor, base[0]
+            amount = math.ceil(amount / 10) * 10 if amount > 10 else round(amount, 1)
+        elif base is not None:
+            amount, unit = math.ceil(number * factor), ("stk" if base[0] == "stk" else "pk")
+        elif raw_unit in ("", "styk", "stks", "x"):
+            amount, unit = math.ceil(number * factor), "stk"
+        elif raw_unit in ("ps", "bundt", "bdt", "bk", "bæger", "bægre", "rulle", "ruller"):
+            amount, unit = math.ceil(number * factor), "pk"
+    if amount is None:
+        amount, unit = 1, "pk"
+    product = ingredient.get("product") or {}
+    return {
+        "id": uuid.uuid4().hex[:8],
+        "name": name[:1].upper() + name[1:],
+        "amount": amount,
+        "unit": unit,
+        "search": str(product.get("name") or name)[:80],
+        "category": line_category(name),
+        "offer": None,
+        "must_have": False,
+        "product_id": product.get("id") or None,
+        "recipe": True,
+    }
+
+
+_INGREDIENT_AMOUNT = re.compile(
+    r"^(?:ca\.?\s*)?(\d+(?:[.,]\d+)?)\s*(?:-\s*\d+(?:[.,]\d+)?\s*)?([a-zæøå.]*)"
+)
+_CATEGORY_WORDS = {
+    "Kød": ("kød", "kylling", "okse", "svin", "gris", "bacon", "pølse", "frikadell", "kebab", "lam", "kalkun"),
+    "Fisk": ("laks", "torsk", "fisk", "rejer", "tun", "sej", "rødspætte", "kulmule", "muslinger"),
+    "Mejeri": ("mælk", "fløde", "ost", "smør", "yoghurt", "skyr", "creme", "parmesan", "feta", "æg"),
+    "Brød": ("brød", "boller", "pita", "tortilla", "wrap"),
+    "Frost": ("frossen", "frosne", "frost"),
+    "Frugt & grønt": (
+        "løg", "kartof", "gulerod", "gulerødder", "broccoli", "spinat", "tomat", "agurk", "salat",
+        "peber", "squash", "champignon", "citron", "lime", "æble", "banan", "porre", "hvidløg",
+        "ingefær", "chili", "persille", "basilikum", "koriander", "avocado", "majs", "ærter",
+        "bønner", "kål", "selleri", "aubergine", "græskar", "hokkaido", "svampe", "pære", "appelsin",
+    ),
+}  # fmt: skip
+
+
+def line_category(name: str) -> str:
+    """A shopping category for an ingredient's name, as the panel groups them."""
+    words = _tokens(name)
+    for category, hints in _CATEGORY_WORDS.items():
+        if any(w == h or w.startswith(h) or w.endswith(h) for w in words for h in hints):
+            return category
+    return "Kolonial"
+
+
+def _names_match(line: dict[str, Any], ingredient: dict[str, Any]) -> bool:
+    """Is a shopping line this ingredient: every word of the ingredient in its name."""
+    wanted = _name_words(ingredient.get("name") or "")
+    if not wanted:
+        return False
+    have = _name_words(line["name"]) | _name_words(line.get("search") or "")
+    product = line.get("product") or {}
+    have |= _name_words(product.get("name") or "")
+    return all(
+        w in have or any(h.endswith(w) or w.endswith(h) for h in have if len(h) > 3) for w in wanted
+    )
+
+
+def own_shopping(plan: dict[str, Any], day: dict[str, Any]) -> list[dict[str, Any]]:
+    """The shopping lines only this dish uses (named in its uses, in no other's)."""
+    others = {
+        name.lower()
+        for other in plan["days"]
+        if other is not day and is_cooked(other)
+        for name in other.get("uses") or []
+    }
+    mine = {name.lower() for name in day.get("uses") or []} - others
+    return [
+        line
+        for line in plan["shopping"]
+        if line["name"].lower() in mine and not line.get("must_have") and not line.get("added")
+    ]
 
 
 class MealPlanner:
@@ -1294,6 +1414,64 @@ class MealPlanner:
             await self.store.async_save()
         return count
 
+    async def _async_align_recipes(
+        self,
+        plan: dict[str, Any],
+        offers: list[Offer],
+        at: datetime | None,
+        late: dict[int, date] | None,
+    ) -> None:
+        """The shopping list follows the family's own recipes the plan is built on.
+
+        For a day with one of the collection's recipes, every ingredient of the
+        recipe (not the basic items) is on the list, and the AI's own idea of the
+        dish's items leaves it, in amounts for this household, with the REMA
+        product the recipe names when it does.
+        """
+        settings = self.store.settings
+        pantry = pantry_words(settings["pantry"])
+        new_lines: list[dict[str, Any]] = []
+        drop: set[int] = set()
+        for day in plan["days"]:
+            recipe = find_recipe(self.store, day.get("recipe_id")) if is_cooked(day) else None
+            if recipe is None or not recipe["ingredients"]:
+                continue
+            factor = recipe_factor(settings, recipe, day)
+            own = {id(line) for line in own_shopping(plan, day)}
+            kept: set[int] = set()
+            uses: list[str] = []
+            for ingredient in recipe["ingredients"]:
+                if ingredient.get("basic") or any(
+                    _uses_item(item, ingredient["name"]) for item in pantry
+                ):
+                    continue
+                line = next(
+                    (
+                        existing
+                        for existing in plan["shopping"]
+                        if not existing.get("must_have") and _names_match(existing, ingredient)
+                    ),
+                    None,
+                )
+                if line is None:
+                    line = recipe_line(ingredient, factor)
+                    plan["shopping"].append(line)
+                    new_lines.append(line)
+                kept.add(id(line))
+                if line["name"] not in uses:
+                    uses.append(line["name"])
+            drop |= own - kept - {id(line) for line in new_lines}
+            day["uses"] = uses
+        if drop:
+            plan["shopping"] = [
+                line
+                for line in plan["shopping"]
+                if id(line) not in drop or line.get("must_have") or line.get("added")
+            ]
+        if new_lines:
+            await self._async_price_lines(new_lines, offers, at, late)
+        plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
+
     async def _async_add_recipes(self, plan: dict[str, Any]) -> None:
         """Write all recipes, a few at a time."""
         semaphore = asyncio.Semaphore(RECIPE_CONCURRENCY)
@@ -1359,10 +1537,17 @@ class MealPlanner:
         self._set_status("generating", "Henter ugens tilbud …")
         catalog, offers = await self._async_offers(start)
         late = late_offers(offers, dates[0])
-        due, optional = self.store.favorites_due(start)
         recent = self.store.recent_dishes(start, settings["no_repeat_weeks"])
+        due, optional = self.store.favorites_due(start, recent)
         note = self.store.note.strip()
         own = [] if surprise else prompt_recipes(self.store, recent)
+        # The family's own recipe for a favourite: the plan uses it as it is.
+        links = {
+            fav["id"]: recipe
+            for fav in [*due, *optional]
+            if (recipe := favorite_recipe(self.store, fav["text"])) is not None
+        }
+        disliked = disliked_names(self.store)
         mealie: list[dict[str, Any]] = []
         if settings["mealie_recipes"] and self.mealie.available and not surprise:
             self._set_status("generating", "Henter jeres opskrifter fra Mealie …")
@@ -1378,7 +1563,7 @@ class MealPlanner:
                 "generating",
                 "AI'en laver madplanen …"
                 if attempt == 0
-                else "Planen var over budget – prøver igen …",
+                else f"Planen brød et krav – AI'en retter den ({attempt + 1}/{MAX_AI_ROUNDS}) …",
             )
             prompt = build_prompt(
                 settings=settings,
@@ -1394,8 +1579,9 @@ class MealPlanner:
                 late=late,
                 mealie=mealie,
                 own=own,
-                disliked=disliked_names(self.store),
+                disliked=disliked,
                 surprise=surprise,
+                favorite_recipes=links,
             )
             raw = await self._async_ask_ai(prompt, "REMA 1000 madplan")
             self._set_status("generating", "Finder varer og priser i REMA 1000 …")
@@ -1403,34 +1589,67 @@ class MealPlanner:
                 raw, dates, catalog, offers, self.price_time(start), late
             )
             known = {r["slug"] for r in mealie}
-            ours = {r["id"] for r in own}
+            ours = {r["id"] for r in own} | {r["id"] for r in links.values()}
             for day in plan["days"]:
                 if day.get("mealie") not in known:
                     day["mealie"] = None  # not one of the family's recipes
                 if day.get("recipe_id") not in ours:
                     day["recipe_id"] = None
-            if best is None or plan["total"] < best["total"]:
+            if not surprise:  # a surprise is not one of the family's own dishes
+                link_favorites(plan, [*due, *optional], links, self.store)
+            # The AI is not trusted to keep the rules: the plan is checked, and the
+            # AI is told what to put right. The best of the tries is kept.
+            problems = (
+                []
+                if surprise
+                else check_plan(
+                    plan,
+                    settings,
+                    recent=recent,
+                    due_ids={f["id"] for f in due},
+                    note=note,
+                    disliked=disliked,
+                )
+            )
+            over = max(0.0, plan["total"] - settings["budget"]) if settings["budget"] else 0.0
+            plan["problems"] = problems
+            if best is None or (len(problems), over, plan["total"]) < (
+                len(best["problems"]),
+                max(0.0, best["total"] - settings["budget"]) if settings["budget"] else 0.0,
+                best["total"],
+            ):
                 best = plan
-            if not settings["budget"] or plan["total"] <= settings["budget"]:
+            if not problems and not over:
                 break
-            expensive = sorted(
-                (line for line in plan["shopping"] if line.get("cost")),
-                key=lambda line: line["cost"],
-                reverse=True,
-            )[:6]
+            lines = [f"- {p}" for p in problems]
+            if over:
+                expensive = sorted(
+                    (line for line in plan["shopping"] if line.get("cost")),
+                    key=lambda line: line["cost"],
+                    reverse=True,
+                )[:6]
+                lines.append(
+                    f"- Indkøbslisten kostede {plan['total']:.0f} kr., men budgettet er "
+                    f"{settings['budget']} kr. Dyreste varer: "
+                    + ", ".join(f"{line['name']} ({line['cost']:.0f} kr.)" for line in expensive)
+                    + ". Vælg billigere retter og flere tilbudsvarer."
+                )
             feedback = (
-                f"Indkøbslisten kostede {plan['total']:.0f} kr., men budgettet er "
-                f"{settings['budget']} kr. Dyreste varer: "
-                + ", ".join(f"{line['name']} ({line['cost']:.0f} kr.)" for line in expensive)
-                + ". Vælg billigere retter og flere tilbudsvarer."
+                "Dit forrige forslag brød disse krav – ret dem, og behold resten:\n"
+                + "\n".join(lines)
             )
 
         assert best is not None
         ir.async_delete_issue(self.hass, DOMAIN, ISSUE_NO_AI_TASK)
-        best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
+        problems = best.pop("problems")
+        best["checklist"] += [{"requirement": p, "ok": False} for p in problems]
+        if problems:
+            _LOGGER.info("The plan still breaks %d rule(s): %s", len(problems), "; ".join(problems))
         best["skipped"] = [d.isoformat() for d in skipped]
         best["note"] = note
         best["surprise"] = surprise
+        await self._async_align_recipes(best, offers, self.price_time(start), late)
+        best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
         await self._async_add_recipes(best)
         mark_planned(self.store, best)
         await self.store.async_add_plan(best)
@@ -1633,8 +1852,24 @@ class MealPlanner:
 
         if line.get("product_id"):
             chosen = next((p for p in products if p.id == line["product_id"]), None)
+            if chosen is None:
+                # A recipe's own REMA product: not always among the search results.
+                try:
+                    chosen = next(
+                        iter(await self.client.async_get_products([line["product_id"]], at)), None
+                    )
+                except RemaError:
+                    chosen = None
             if chosen:
-                self._apply(line, chosen, int(line["amount"] or 1))
+                packages = (
+                    packages_needed(line["amount"], line["unit"], chosen)
+                    if line.get("recipe")
+                    else int(line["amount"] or 1)
+                )
+                self._apply(line, chosen, packages)
+                return
+            if not line.get("must_have"):
+                await self._async_match_by_name(line, products, at, offer)  # by its name, then
                 return
         if line.get("must_have"):
             priced = [p for p in products if p.price]
@@ -1762,7 +1997,7 @@ class MealPlanner:
             # Better a free-text line than a wrong product.
             line["note"] = "Ingen sikker vare fundet – tilføjes som fritekst"
             return
-        need = to_base(line["amount"], line["unit"]) if line.get("amount") else None
+        need = to_base(line["amount"], line.get("unit")) if line.get("amount") else None
         if need and need[0] in ("g", "ml"):
             # 3 kg potatoes: only products whose size can be counted in kg,
             # not one sweet potato sold per piece.
@@ -1772,7 +2007,7 @@ class MealPlanner:
             candidates = comparable or candidates
 
         def package_cost(product: Product) -> float:
-            return packages_needed(line["amount"], line["unit"], product) * (product.price or 0)
+            return packages_needed(line["amount"], line.get("unit"), product) * (product.price or 0)
 
         cost = package_cost
 
@@ -1822,7 +2057,7 @@ class MealPlanner:
             limit = cost(cheapest) * (1 + settings["organic_max_extra_pct"] / 100)
             if cost(best_organic) <= limit + 0.001:
                 chosen = best_organic
-        self._apply(line, chosen, packages_needed(line["amount"], line["unit"], chosen))
+        self._apply(line, chosen, packages_needed(line["amount"], line.get("unit"), chosen))
         if note:
             line["note"] = note
 
@@ -1909,7 +2144,7 @@ class MealPlanner:
         if not words:
             return [], {}
         fits = {p.id: name_fit(words, p.name) for p in priced}
-        penalty = {pid: fit[1] for pid, fit in fits.items()}
+        penalty = {p.id: fits[p.id][1] + kind_penalty(line, p, words) for p in priced}
 
         if offer is not None:
             # The AI built the dish on this avis offer: only the product it is

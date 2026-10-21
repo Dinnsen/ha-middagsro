@@ -2816,6 +2816,12 @@ class Rema1000Panel extends HTMLElement {
         </div>
         ${plan.summary ? `<p>${esc(plan.summary)}</p>` : ""}
         ${over ? `<div class="banner warn">Planen er over budget. Prøv at lave en ny, eller ret budgettet i indstillingerne.</div>` : ""}
+        ${(() => {
+          const broken = (plan.checklist || []).filter((c) => !c.ok);
+          return broken.length
+            ? `<div class="banner warn">AI'en kunne ikke overholde ${broken.length === 1 ? "ét krav" : `${broken.length} krav`}, selv efter at have prøvet igen:<ul class="checklist">${broken.map((c) => `<li class="bad">✗ ${esc(c.requirement)}</li>`).join("")}</ul>Tryk på retten for at skifte den ud, eller lav en ny madplan.</div>`
+            : "";
+        })()}
         <div class="days">${days}</div>
         <div class="help-row">
           ${this._planHelp ? '<p class="muted small help-text">Tryk på en ret for at se opskriften eller skifte den ud. 👍, 👎 og ♥ gemmer retten i opskriftsamlingen – tryk igen for at fortryde.</p>' : ""}

@@ -275,18 +275,32 @@ def test_recipe_prompt() -> None:
 # ----------------------------------------------------------------- planner
 
 
-def ai_answer(dates: list[date], shopping: list[dict[str, Any]]) -> dict[str, Any]:
-    """An AI answer for a plan over some dates."""
+DISHES = ("Tacos", "Lasagne", "Risotto med svampe", "Pandekager", "Omelet", "Falafel", "Gullasch")
+
+
+def ai_answer(
+    dates: list[date], shopping: list[dict[str, Any]], dishes: tuple[str, ...] = DISHES
+) -> dict[str, Any]:
+    """An AI answer for a plan over some dates, keeping the family's rules.
+
+    Leftover days (as many as the settings allow for that many days) are the
+    third and the fifth, from the day before each.
+    """
+    leftovers = {2, 4}
+    for _ in range(2 - min(2, (len(dates) - 1) // 2)):
+        leftovers.remove(max(leftovers))
     days = []
+    names = iter(dishes)
     for idx, day in enumerate(dates):
-        leftover = idx == 2
+        leftover = idx in leftovers
+        dish = days[-1]["dish"] if leftover else next(names)
         days.append(
             {
                 "date": day.isoformat(),
-                "dish": "Rester af lasagne" if leftover else f"Ret {idx}",
+                "dish": f"Rester af {dish[:1].lower()}{dish[1:]}" if leftover else dish,
                 "type": "rester" if leftover else "normal",
-                "uses_leftovers_from": dates[1].isoformat() if leftover else None,
-                "makes_leftovers": idx == 1,
+                "uses_leftovers_from": dates[idx - 1].isoformat() if leftover else None,
+                "makes_leftovers": idx + 1 in leftovers,
                 "servings": "4",
                 "active_minutes": 20,
                 "total_minutes": "35",
@@ -332,6 +346,7 @@ SETTINGS = {
     "milk_organic": True,
     "allergies": ["gluten"],
     "must_haves": [{"name": "Rugbrød", "product_id": 70001, "amount": 2}],
+    "fixed_days": [],  # the fake answers don't know about rye-bread thursdays
     "ai_task_entity": "ai_task.assistant",
 }
 
@@ -360,7 +375,8 @@ class FakeAI:
         self.entities.append(kwargs["entity_id"])
         if kwargs["task_name"] == "REMA 1000 madplan":
             self.prompts.append(kwargs["instructions"])
-            answer = self.plans.pop(0)
+            # Asked more often than there are answers: the last one again.
+            answer = self.plans.pop(0) if len(self.plans) > 1 else self.plans[0]
             if isinstance(answer, Exception):
                 raise answer
             return SimpleNamespace(data=answer)
@@ -429,7 +445,7 @@ async def test_generate_plan(
     assert plan["checklist"] == [{"requirement": "Budget", "ok": True}]
 
     leftover = plan["days"][2]
-    assert leftover["steps"][0]["text"] == "Varm resten af Ret 1 op, og server den."
+    assert leftover["steps"][0]["text"] == "Varm resten af Lasagne op, og server den."
     assert leftover["ingredients"] == []
     cooked = plan["days"][0]
     assert cooked["ingredients"] == [{"name": "spaghetti", "amount": "500 g"}]
@@ -1073,10 +1089,11 @@ async def test_must_have_lines(
     assert calls == ["kaffe filter", "Rugbrød"]
     assert line["product"]["id"] == 70001
 
+    # A product REMA no longer has (a recipe's): the line's name finds one instead.
     line = {"name": "Rugbrød", "search": "Rugbrød", "amount": 1, "must_have": False,
             "product_id": 12345}  # fmt: skip
     await planner._async_match(line)
-    assert line["product"] is None
+    assert line["product"]["id"] == 70001
 
 
 async def test_candidates_edge_cases(

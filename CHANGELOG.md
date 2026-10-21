@@ -2,6 +2,16 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.8.0] - 2026-10-21
+
+### Changed
+- **The plan is checked, not just asked for.** The AI often broke the rules (salmon three weeks running, a favourite remade its own way, pita bread with a kebab pizza). Now every plan is checked after the AI answers: no dish from the last weeks again (by its main dish – *laks med pasta* is *laks med ris*), nothing the family dislikes, no dish twice in a week, the right number of leftover days from a double portion, the vegetarian count, fixed days (*torsdag: rester* must be leftovers), the weekday time limit and the budget. What is wrong goes back to the AI, up to twice, and the best try is kept. What it still couldn't fix is shown on the plan, under the price.
+- **The last weeks** are what the family actually had: for every date the plan that was sent (or the newest), not every draft that was ever made – and the favourites and recipes they just had are not offered as inspiration.
+- **Your own recipes are used as they are.** A dinner that is one of your favourite dishes, or a ❤️ recipe in the collection, uses that recipe – its ingredients go on the shopping list in amounts for your household (children count for less), with the REMA products it names – instead of the AI's own version of the dish. The AI is told so for every favourite that has a recipe, and the plan is tied to it even when the AI forgets.
+- **Products:** a dish made of the ingredient is not the ingredient (a kebab pizza is no kebab, a chicken wrap no chicken), fruit and vegetables are fresh unless the line says frozen (*frisk broccoli* was frozen broccoli), and frozen is not fresh the other way round.
+- The AI is told how many adult portions the household eats, so amounts fit (a one-year-old is not an adult).
+- Swapping a dish also keeps away from the last weeks' dishes, and a dish from the collection uses the family's recipe.
+
 ## [1.7.0] - 2026-10-20
 
 ### Added

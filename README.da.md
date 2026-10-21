@@ -41,7 +41,8 @@ Integrationen lægger et **Middagsro-panel** i sidebaren. Det følger dit Home A
 - **Det skal AI'en huske:** faste punkter til alle madplaner, fx “altid frisk broccoli til laksefilet” – skrevet eller dikteret.
 - **Næringsmål** pr. aftensmad (kcal og fordeling af protein, kulhydrat og fedt), og fanen **Sundhed** med næring, kostrådene og mærker som Nøglehullet.
 - Knapper, der bruger AI, er mærket med ✦.
-- Bliver indkøbslisten **over budget**, beder integrationen AI'en om en billigere plan én gang og beholder den billigste.
+- **Planen tjekkes – AI'en er ikke nok.** Hver plan kontrolleres bagefter: ingen ret fra de seneste uger igen (hovedretten tæller: laks er laks, uanset tilbehør), intet familien ikke kan lide, det rigtige antal restedage fra en dobbelt portion, antal vegetarretter, faste dage, tidsgrænsen på hverdage og budgettet. Det, der er galt, sendes tilbage til AI'en op til to gange, og det bedste forsøg beholdes. Det, den stadig ikke kunne, står på planen.
+- **Jeres egne opskrifter bruges, som de er.** Når en aftensmad er en af jeres favoritretter, og opskriftsamlingen har jeres opskrift til den (et ❤️ eller favorittens egen), bruger planen den opskrift – dens ingredienser kommer på indkøbslisten i mængder til jeres husstand, med de REMA-varer den nævner – i stedet for AI'ens egen udgave.
 - En **krav-tjekliste** viser, om planen overholder jeres regler.
 - Slå **automatik** til, så laves næste uges plan, når den nye tilbudsavis udkommer – og sendes evt. direkte til REMA-listen.
 

@@ -158,12 +158,25 @@ async def test_recent_dishes(hass: HomeAssistant, hass_storage: dict[str, Any]) 
     await store.async_add_plan(make_plan("old", start="2026-09-01"))
     await store.async_add_plan(make_plan("last", start="2026-10-11"))
     recent = store.recent_dishes(date(2026, 10, 18), 3)
-    assert recent == [
-        "Spaghetti bolognese",
-        "Rester af spaghetti bolognese",
-        "Kyllingewok med broccoli",
-    ]
+    # Newest first, no leftover days, each dish once; "old" is too long ago.
+    assert recent == ["Kyllingewok med broccoli", "Spaghetti bolognese"]
     assert store.recent_dishes(date(2026, 10, 18), 0) == []
+    # A plan whose list was sent is the one the family cooked, not a newer draft.
+    draft = make_plan("draft", start="2026-10-11")
+    draft["days"][0]["dish"] = "Pizza"
+    await store.async_add_plan(draft)
+    assert store.recent_dishes(date(2026, 10, 18), 3)[1] == "Pizza"
+    await store.async_mark_sent("last")
+    assert store.recent_dishes(date(2026, 10, 18), 3)[1] == "Spaghetti bolognese"
+    # A favourite the family had lately is no inspiration; a due one is.
+    store.favorites = [
+        {"id": "a", "text": "Spaghetti bolognese", "frequency": "inspiration", "last_used": None},
+        {"id": "b", "text": "Tacos", "frequency": "inspiration", "last_used": None},
+        {"id": "c", "text": "Kyllingewok", "frequency": "weekly", "last_used": None},
+    ]
+    due, optional = store.favorites_due(date(2026, 10, 18), ["Spaghetti bolognese", "Wok"])
+    assert [f["id"] for f in due] == ["c"]
+    assert [f["id"] for f in optional] == ["b"]
 
 
 async def test_note_and_plan_covering(hass: HomeAssistant, hass_storage: dict[str, Any]) -> None:

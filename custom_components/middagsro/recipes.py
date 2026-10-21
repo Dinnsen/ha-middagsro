@@ -29,6 +29,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DOMAIN
+from .dishes import matches_any, same_dish
 
 if TYPE_CHECKING:
     from .mealplan import MealPlanner
@@ -313,17 +314,36 @@ def mark_planned(store: RemaPlanStore, plan: dict[str, Any]) -> None:
 
 
 def prompt_recipes(store: RemaPlanStore, avoid: list[str] | None = None) -> list[dict[str, Any]]:
-    """Favourites first, then the dishes the family likes, for the AI (with ingredients)."""
-    recent = {" ".join(n.lower().split()) for n in avoid or []}
+    """Favourites first, then the dishes the family likes, for the AI (with ingredients).
+
+    Not the ones the family had in the last weeks (``avoid``): they would be repeats.
+    """
     chosen = [
         r
         for r in sorted(
             (r for r in store.recipes if r["rating"] == "like"),
             key=lambda r: (not r["favorite"], r.get("last_planned") or ""),
         )
-        if " ".join(r["name"].lower().split()) not in recent
+        if matches_any(r["name"], avoid or []) is None
     ]
     return chosen[:PROMPT_RECIPES]
+
+
+def favorite_recipe(store: RemaPlanStore, text: str) -> dict[str, Any] | None:
+    """The collection's recipe for a favourite dish, if the family has one.
+
+    The one they gave a ❤️ first, then one they like; never one they dislike.
+    """
+    found = [
+        r
+        for r in store.recipes
+        if r.get("rating") != "dislike"
+        and (r["ingredients"] or r["steps"])
+        and same_dish(r["name"], text, strict=True)
+    ]
+    if not found:
+        return None
+    return min(found, key=lambda r: (not r.get("favorite"), r.get("rating") != "like"))
 
 
 def disliked_names(store: RemaPlanStore) -> list[str]:
