@@ -67,14 +67,15 @@ def dish_key(name: str, kinds: bool = True) -> frozenset[str]:
 def same_dish(a: str, b: str, strict: bool = False) -> bool:
     """Are two dinners the same dish ("Laks med pasta" and "Ovnbagt laks med ris")?
 
-    Strict: kyllingefrikadeller are not fiskefrikadeller (no kinds of dish), for
-    the dishes the family dislikes and for putting their own recipe on a day.
+    Strict: no kinds of dish, and ``a`` must be ``b`` or a kind of it: frikadeller
+    are not the fiskefrikadeller the family dislikes, but fiskefrikadeller are
+    frikadeller. For the dishes they dislike and for putting their recipe on a day.
     """
     key_a, key_b = dish_key(a, not strict), dish_key(b, not strict)
     if not key_a or not key_b:
         return False
     return any(
-        x == y or (len(x) > 3 and len(y) > 3 and (x.endswith(y) or y.endswith(x)))
+        x == y or (len(x) > 3 and len(y) > 3 and (x.endswith(y) or (not strict and y.endswith(x))))
         for x in key_a
         for y in key_b
     )

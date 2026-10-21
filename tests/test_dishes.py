@@ -28,7 +28,11 @@ def test_dish_key_and_same_dish() -> None:
     assert ds.dish_key("Hokkaido-suppe med brød") == {"hokkaido", "supp"}
     assert ds.dish_key("Ikke hjemme") == frozenset()
     assert ds.dish_key("Med") == frozenset()
-    assert ds.dish_key("Nem og hurtig") == {"hurtig"}  # only the whole name is left
+    assert ds.dish_key("Nem og hurtig") == {"nem", "hurtig"}  # only the whole name is left
+    assert ds.same_dish("Fiskefrikadeller", "Frikadeller", strict=True)
+    assert not ds.same_dish("Frikadeller", "Fiskefrikadeller", strict=True)
+    assert not ds.same_dish("Kyllingefrikadeller", "Fiskefrikadeller", strict=True)
+    assert ds.same_dish("Kyllingefrikadeller", "Fiskefrikadeller")
     assert ds.same_dish("Ovnbagt laks med pasta og broccoli", LAKS)
     assert ds.same_dish("Kyllingefrikadeller med ovnbagte kartofler og gnavegrønt",
                         "Kyllinge- eller okse/svinefrikadeller med ovnbagte kartofler")  # fmt: skip

@@ -1595,7 +1595,8 @@ class MealPlanner:
                     day["mealie"] = None  # not one of the family's recipes
                 if day.get("recipe_id") not in ours:
                     day["recipe_id"] = None
-            link_favorites(plan, [*due, *optional], links, self.store)
+            if not surprise:  # a surprise is not one of the family's own dishes
+                link_favorites(plan, [*due, *optional], links, self.store)
             # The AI is not trusted to keep the rules: the plan is checked, and the
             # AI is told what to put right. The best of the tries is kept.
             problems = (
@@ -1996,7 +1997,7 @@ class MealPlanner:
             # Better a free-text line than a wrong product.
             line["note"] = "Ingen sikker vare fundet – tilføjes som fritekst"
             return
-        need = to_base(line["amount"], line["unit"]) if line.get("amount") else None
+        need = to_base(line["amount"], line.get("unit")) if line.get("amount") else None
         if need and need[0] in ("g", "ml"):
             # 3 kg potatoes: only products whose size can be counted in kg,
             # not one sweet potato sold per piece.

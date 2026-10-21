@@ -1089,10 +1089,11 @@ async def test_must_have_lines(
     assert calls == ["kaffe filter", "Rugbrød"]
     assert line["product"]["id"] == 70001
 
+    # A product REMA no longer has (a recipe's): the line's name finds one instead.
     line = {"name": "Rugbrød", "search": "Rugbrød", "amount": 1, "must_have": False,
             "product_id": 12345}  # fmt: skip
     await planner._async_match(line)
-    assert line["product"] is None
+    assert line["product"]["id"] == 70001
 
 
 async def test_candidates_edge_cases(
