@@ -434,6 +434,9 @@ def offer_query(offer: Offer, name: str = "") -> str:
     return best or heading or offer.heading
 
 
+_SPLIT_TAILS = ("dressing", "sauce", "sovs", "pasta", "creme", "pålæg", "pulver")
+
+
 def search_queries(line: dict[str, Any]) -> list[str]:
     """What to search REMA for, best guess first.
 
@@ -445,6 +448,10 @@ def search_queries(line: dict[str, Any]) -> list[str]:
         if word.endswith("fars") and len(word) > 4:
             meat = word[:-4].rstrip("e")
             queries.append(f"hakket {meat}")
+        # "Cæsardressing" is "CÆSAR DRESSING" on REMA's shelf: split a compound in two.
+        for tail in _SPLIT_TAILS:
+            if word.endswith(tail) and len(word) > len(tail) + 2:
+                queries.append(f"{word[: -len(tail)]} {tail}")
     queries.append(line["name"])
     unique: list[str] = []
     for query in queries:
@@ -479,6 +486,10 @@ def name_fit(search_words: list[str], product_name: str) -> tuple[int, float]:
             None,
         )
         if compound is None:
+            # "cæsardressing" written as one word, "CÆSAR DRESSING" as two.
+            if any(name[i] + name[i + 1] == word for i in range(len(name) - 1)):
+                matched += 1
+                penalty += 0.15
             continue
         matched += 1
         rest = compound[len(word) :] if compound.startswith(word) else compound[: -len(word)]
@@ -928,10 +939,15 @@ def build_recipe_prompt(
         )
 
     def describe(line: dict[str, Any]) -> str:
-        bought = (line.get("product") or line.get("avis_item") or {}).get("name")
+        product = line.get("product") or {}
+        bought = (product or line.get("avis_item") or {}).get("name")
         text = str(line["name"])
+        size = package_size(product.get("underline")) if product else None
         if line.get("amount") and line.get("unit") and line["unit"] != "pk":
             text += f" ({line['amount']:g} {line['unit']})"
+        elif size and size[0] in ("g", "ml") and line.get("packages"):
+            # "2 x 400 g": what is actually bought, so the recipe fits it.
+            text += f" ({line['packages']} × {size[1]:g} {size[0]})"
         if bought and bought.lower() != line["name"].lower():
             text += f" [købes som {bought}]"
         return text
@@ -1169,6 +1185,60 @@ def _names_match(line: dict[str, Any], ingredient: dict[str, Any]) -> bool:
         return False
 
     return all(found(w) for w in wanted)
+
+
+def fit_amounts(plan: dict[str, Any]) -> list[str]:
+    """Buy as much as the recipes use: a line's packages grow when the dishes need more.
+
+    The overview's amounts are the AI's first guess; the recipes are written
+    afterwards, for the household, and two dishes may share a line. Only lines
+    with a REMA product of a known size (or in grams/millilitres) are raised,
+    never more than fourfold, and never lowered. Returns the lines changed.
+    """
+    changed: list[str] = []
+    for line in plan.get("shopping") or []:
+        if line.get("must_have") or line.get("added") or line.get("sent"):
+            continue
+        needs: dict[str, float] = {}
+        for day in plan.get("days") or []:
+            if not is_cooked(day):
+                continue
+            for ingredient in day.get("ingredients") or []:
+                if not _names_match(line, ingredient):
+                    continue
+                parsed = parse_amount(str(ingredient.get("amount") or ""))
+                base = to_base(parsed[0], parsed[1]) if parsed else None
+                if base is None and parsed and not parsed[1]:
+                    base = ("stk", parsed[0])
+                if base is not None:
+                    needs[base[0]] = needs.get(base[0], 0) + base[1]
+        if not needs:
+            continue
+        product = line.get("product") or {}
+        size = package_size(product.get("underline")) if product else None
+        packages = int(line.get("packages") or 1)
+        if size and size[0] in needs and size[1] > 0:
+            wanted = math.ceil(needs[size[0]] / size[1] - 0.05)
+        elif product and "stk" in needs and (size is None or size[1] >= 300):
+            # "2 stk" of something sold by weight (a whole chicken): two of them.
+            wanted = math.ceil(needs["stk"])
+        elif not product and line.get("unit") in ("g", "ml", "kg", "l") and line.get("amount"):
+            base = to_base(float(line["amount"]), line["unit"])
+            if base and base[0] in needs and needs[base[0]] > base[1] * 1.05:
+                line["amount"] = round(needs[base[0]] / (base[1] / float(line["amount"])), 1)
+                changed.append(line["name"])
+            continue
+        else:
+            continue
+        wanted = min(wanted, packages * 4)
+        if wanted > packages:
+            line["packages"] = wanted
+            if product.get("price"):
+                line["cost"] = round(wanted * float(product["price"]), 2)
+            changed.append(line["name"])
+    if changed:
+        plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
+    return changed
 
 
 def own_shopping(plan: dict[str, Any], day: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1591,6 +1661,7 @@ class MealPlanner:
         if plan is None or day is None:
             raise _invalid("day_not_found")
         await self._async_recipe(day, plan)
+        fit_amounts(plan)
         await self.store.async_save()
         self._notify()
         if day.get("recipe_error"):
@@ -1747,6 +1818,8 @@ class MealPlanner:
         await self._async_align_recipes(best, offers, self.price_time(start), late)
         best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
         await self._async_add_recipes(best)
+        fit_amounts(best)
+        best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
         mark_planned(self.store, best)
         await self.store.async_add_plan(best)
         self._schedule_refreshes(best)

@@ -30,6 +30,7 @@ from .mealplan import (
     _household_lines,
     _invalid,
     _tokens,
+    fit_amounts,
     late_offers,
     noon,
     nutrition_target,
@@ -520,6 +521,8 @@ async def async_swap_dish(
         if leftover.get("uses_leftovers_from") == day["date"]:
             leftover["dish"] = f"Rester af {choice['dish'][:1].lower()}{choice['dish'][1:]}"
             await planner._async_recipe(leftover, plan)
+    fit_amounts(plan)
+    update_total(plan)
     await planner.store.async_save()
     await planner.async_mealie_sync(plan)
     planner._notify()
