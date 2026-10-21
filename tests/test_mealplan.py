@@ -430,7 +430,8 @@ async def test_generate_plan(
     assert chosen["Æg"]["product"]["id"] == 40003  # organic within 20 %
     assert chosen["Letmælk"]["product"]["id"] == 20496  # organic milk required
     assert chosen["Spaghetti"]["product"]["id"] == 60003  # gluten-free
-    assert chosen["Spaghetti"]["packages"] == 2
+    # The fake recipe uses 500 g of spaghetti in each of the four dishes: 2 kg, 5 packs.
+    assert chosen["Spaghetti"]["packages"] == 5
     assert chosen["Løg"]["product"]["id"] == 50003  # not hvidløg
     assert chosen["Persille"]["product"] is None
     assert "fritekst" in chosen["Persille"]["note"]
@@ -440,7 +441,7 @@ async def test_generate_plan(
     assert chosen["Rugbrød"]["product"]["id"] == 70001
     assert chosen["Rugbrød"]["packages"] == 2
     assert len(plan["shopping"]) == 8
-    assert plan["total"] == pytest.approx(80 + 38 + 13.95 + 44 + 8 + 20 + 36)
+    assert plan["total"] == pytest.approx(80 + 38 + 13.95 + 110 + 8 + 20 + 36)
     assert plan["over_budget"] is False
     assert plan["checklist"] == [{"requirement": "Budget", "ok": True}]
 
