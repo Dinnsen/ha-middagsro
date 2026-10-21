@@ -16,6 +16,7 @@ from .words import _NEUTRAL_WORDS, _stem, _tokens
 # "Ovnbagt laks med ...": what comes before these is the dish, after them the sides.
 _SIDES = re.compile(r"\s(?:med|m\.|og|i|på|til|a la|à la|–|-)\s|,|\(", re.IGNORECASE)
 _LEFTOVERS = re.compile(r"^\s*rest(?:er|erne)?\s+(?:af|fra)\s+", re.IGNORECASE)
+_IS_LEFTOVERS = re.compile(r"^\s*rest(?:er|erne|edag)?\b", re.IGNORECASE)
 # How it is made says nothing about what it is.
 _HOW = {
     "ovnbagt", "ovnbagte", "bagt", "bagte", "stegt", "stegte", "kogt", "kogte", "grillet",
@@ -171,7 +172,7 @@ def check_plan(
                 continue
             if "rest" in text.lower():
                 rest_days.add(day["date"])
-                if not (day.get("uses_leftovers_from") or _LEFTOVERS.match(day["dish"])):
+                if not (day.get("uses_leftovers_from") or _IS_LEFTOVERS.match(day["dish"])):
                     problems.append(
                         f"{day['weekday']} {day['date']}: skal være rester ({text}), ikke "
                         f'"{day["dish"]}"'

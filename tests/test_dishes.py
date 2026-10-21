@@ -148,6 +148,8 @@ def test_check_plan() -> None:
         in problems
     )
     plan["days"][4]["uses_leftovers_from"] = None
+    problems = ds.check_plan(plan, fixed, recent=[], due_ids=set())
+    assert not any("torsdag" in p for p in problems)  # still called "Rester"
     plan["days"][4]["dish"] = "Pandekager"
     plan["days"][6]["dish"] = "Minipizza"
     problems = ds.check_plan(plan, fixed, recent=[], due_ids=set())
