@@ -9,7 +9,9 @@ dealer id); it is then not sent to the REMA list.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from functools import lru_cache
 import logging
+import re
 import time
 from typing import TYPE_CHECKING, Any
 import uuid
@@ -19,6 +21,7 @@ import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.util import dt as dt_util
 
 from .api import Offer, parse_time
 from .const import DOMAIN
@@ -53,10 +56,14 @@ CHAINS: dict[str, str] = {
     "70d42L": "ABC Lavpris",
 }
 # Aviser that are not about food.
+# Parts of a label that make it a catalogue of other things than food ...
 _NONFOOD = (
-    "nonfood", "non-food", "legetøj", "elektronik", "bolig", "have", "tekstil", "jul",
-    "skønhed", "velvære", "ud af huset", "katalog", "magasin", "prosonic", "halloween",
+    "nonfood", "non-food", "legetøj", "elektronik", "tekstil", "skønhed", "velvære",
+    "ud af huset", "katalog", "magasin", "prosonic", "halloween", "julegave", "julepynt",
 )  # fmt: skip
+# ... and whole words that do ("Have" is garden, but "Haveavis" has food too; "Jul" alone
+# is decoration, "Julemad" is food).
+_NONFOOD_WORDS = frozenset({"have", "jul", "bolig", "hvidevarer", "isenkram"})
 
 
 class ChainError(HomeAssistantError):
@@ -69,8 +76,13 @@ def _invalid(key: str) -> ServiceValidationError:
 
 def is_food_catalog(label: str | None) -> bool:
     """A weekly food avis, not a toy or electronics catalogue."""
+    from .mealplan import _tokens  # noqa: PLC0415
+
     text = str(label or "").lower()
-    return not any(word in text for word in _NONFOOD)
+    if any(part in text for part in _NONFOOD):
+        return False
+    words = set(_tokens(text))
+    return not (words & _NONFOOD_WORDS) or bool(words & {"mad", "madavis", "tilbudsavis", "uge"})
 
 
 def offer_dict(data: dict[str, Any], dealer_id: str) -> dict[str, Any]:
@@ -220,26 +232,80 @@ def _equivalent_price(product: dict[str, Any], offer: Offer) -> float | None:
     sizes = avis_size(offer, size[0])
     if not sizes or sizes[0] <= 0:
         return None
-    return offer.price * size[1] / sizes[0]
+    content = sizes[0] * (offer_pieces(offer) if size[0] != "stk" else 1)
+    # A 2 kg bag is no match for a 500 g pack: the shopper would buy four times as much.
+    if not 0.5 <= content / size[1] <= 2.5:
+        return None
+    return offer.price * size[1] / content
+
+
+def offer_pieces(offer: Offer) -> int:
+    """How many pieces an offer's price buys ("2 stk. / 175 g" is two bags)."""
+    match = re.match(r"^\s*(\d+)\s*stk\.?\s*/", offer.quantity or "")
+    return max(1, int(match.group(1))) if match else 1
 
 
 def _same_kind(product: dict[str, Any], offer: Offer) -> bool:
     """Every word of REMA's name is in the offer (also inside a compound word, "mælk" in
     "letmælk"), nothing in it makes it another product, and fat % and organic are the same."""
-    from .mealplan import _NEUTRAL_WORDS, _percents, _tokens, name_fit  # noqa: PLC0415
+    from .mealplan import _FROZEN_WORDS, _NEUTRAL_WORDS, _percents, _tokens, name_fit  # noqa: PLC0415
 
     name = str(product.get("name") or "")
     words = [w for w in _tokens(name) if len(w) > 1 and w not in _NEUTRAL_WORDS]
     if not words:
         return False
-    matched, penalty = name_fit(words, f"{offer.heading} {offer.description or ''}")
+    # Cheap first: every word of the name must be in the heading at all.
+    heading = _heading_words(offer.heading)
+    if not all(_word_in(w, heading) for w in words):
+        return False
+    # The heading says what it is; the description only sizes, percentages and such.
+    matched, penalty = name_fit(words, offer.heading)
     if matched < len(words) or penalty >= 5:
         return False
     text = f"{offer.heading}\n{offer.description or ''}"
     theirs, ours = _percents(text), _percents(name)
     if theirs and ours and not theirs & ours:
         return False
-    return ("økologisk" in _tokens(text)) == bool(product.get("is_organic"))
+    text_words = set(_text_words(text))
+    frozen_offer = bool(text_words & _FROZEN_WORDS)
+    frozen_product = bool(set(_tokens(name)) & _FROZEN_WORDS) or (
+        str(product.get("department") or "").lower() == "frost"
+    )
+    if frozen_offer != frozen_product:
+        return False
+    return ("økologisk" in text_words) == bool(product.get("is_organic"))
+
+
+@lru_cache(maxsize=4096)
+def _heading_words(heading: str) -> tuple[str, ...]:
+    from .mealplan import _tokens  # noqa: PLC0415
+
+    return tuple(_tokens(heading))
+
+
+@lru_cache(maxsize=4096)
+def _text_words(text: str) -> tuple[str, ...]:
+    from .mealplan import _tokens  # noqa: PLC0415
+
+    return tuple(_tokens(text))
+
+
+# Short words that still count at the end of a compound ("frilandsæg" is æg) ...
+_SHORT_TAILS = frozenset({"æg", "ris", "ost", "øl"})
+# ... but not in these, which are other words altogether.
+_NOT_TAILS = frozenset({"pris", "kgpris", "literpris", "post", "most", "kost"})
+
+
+def _word_in(word: str, tokens: tuple[str, ...]) -> bool:
+    """A word, or a compound of it ("mælk" in "letmælk"); not any string inside a token."""
+    for t in tokens:
+        if t == word:
+            return True
+        if len(word) > 3 and (t.endswith(word) or t.startswith(word)):
+            return True
+        if word in _SHORT_TAILS and t.endswith(word) and t not in _NOT_TAILS:
+            return True
+    return False
 
 
 def cheaper_offer(
@@ -287,11 +353,14 @@ async def async_compare(planner: MealPlanner, plan_id: str) -> dict[str, Any]:
             offers += await planner.chains.async_offers(dealer_id)
         except ChainError as err:
             _LOGGER.debug("Offers of %s not read: %s", dealer_id, err)
-    first = date.fromisoformat(plan["start_date"])
+    # Not before today: an offer that ended yesterday is no saving this week.
+    first = max(date.fromisoformat(plan["start_date"]), dt_util.now().date())
     lines: dict[str, dict[str, Any]] = {}
     totals: dict[str, dict[str, Any]] = {}
     for line in plan["shopping"]:
-        day = date.fromisoformat(line["buy_from"]) if line.get("buy_from") else first
+        if line.get("bought"):
+            continue
+        day = max(date.fromisoformat(line["buy_from"]), first) if line.get("buy_from") else first
         if found := cheaper_offer(line, offers, day):
             lines[line["id"]] = found
             total = totals.setdefault(found["dealer_id"], {"count": 0, "saving": 0.0})
@@ -310,6 +379,13 @@ async def async_compare_products(
             offers += await planner.chains.async_offers(dealer_id)
         except ChainError as err:
             _LOGGER.debug("Offers of %s not read: %s", dealer_id, err)
+    # Hundreds of products against thousands of offers: CPU work, off the event loop.
+    return await planner.hass.async_add_executor_job(_compare_products, products, offers, day)
+
+
+def _compare_products(
+    products: list[dict[str, Any]], offers: list[dict[str, Any]], day: date
+) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for product in products[:500]:
         if isinstance(product, dict) and product.get("id") is not None:
@@ -365,8 +441,8 @@ def text_has(words: list[str], text: str) -> bool:
     """Every word is in the text, also inside a longer word ("mælk" in "letmælk")."""
     from .mealplan import _tokens  # noqa: PLC0415
 
-    tokens = _tokens(text)
-    return bool(words) and all(any(w in t for t in tokens) for w in words)
+    tokens = tuple(_tokens(text))
+    return bool(words) and all(_word_in(w, tokens) for w in words)
 
 
 def query_fit(query: str, name: str) -> tuple[bool, bool]:
@@ -429,7 +505,9 @@ async def async_search_everywhere(planner: MealPlanner, query: str) -> dict[str,
     candidates = [("rema", p) for p in products if p.get("unit_price") and fits[id(p)][1]] + [
         ("chain", o)
         for o in offers
-        if o.get("unit_price") and query_fit(query, str(o.get("heading") or ""))[1]
+        if o.get("unit_price")
+        and (parse_time(o.get("valid_from")) or now) <= now  # on offer now, not from sunday
+        and query_fit(query, str(o.get("heading") or ""))[1]
     ]
     best: dict[str, Any] | None = None
     if candidates:

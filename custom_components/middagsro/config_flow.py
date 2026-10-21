@@ -11,7 +11,7 @@ from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
 
-from .api import RemaAuthError, RemaClient, RemaConnectionError
+from .api import RemaAuthError, RemaClient, RemaConnectionError, RemaError
 from .const import DOMAIN
 from .migrate import MIGRATE_FROM, old_entries
 from .schema import vol
@@ -50,6 +50,10 @@ class RemaConfigFlow(ConfigFlow, domain=DOMAIN):
         except RemaAuthError:
             return None, {"base": "invalid_auth"}
         except RemaConnectionError:
+            return None, {"base": "cannot_connect"}
+        except RemaError as err:
+            # REMA's site is unhappy (maintenance, a changed login page): not a wrong password.
+            _LOGGER.warning("REMA 1000 login failed: %s", err)
             return None, {"base": "cannot_connect"}
         except Exception:
             _LOGGER.exception("Unexpected error while logging in to REMA 1000")

@@ -43,6 +43,7 @@ class RemaDinnerTodaySensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_translation_key = "dinner_today"
+    _attr_should_poll = False  # told when the plans change
 
     def __init__(self, entry: RemaConfigEntry) -> None:
         """Initialize the sensor."""

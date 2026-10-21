@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 from datetime import timedelta
 from typing import Any
@@ -278,3 +279,48 @@ async def test_commands(
         {"id": 8, "type": "middagsro/favorites/own", "product": product, "add": False}
     )
     assert (await client.receive_json())["result"] == []
+
+
+async def test_check_runs_once_at_a_time(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """The timer and "check now" overlapping don't tell about the same offer twice."""
+    planner = init_integration.runtime_data.planner
+    store = planner.store
+    await _watch_all(store)
+    await store.async_set_settings({**store.settings, "watch_notify": "persistent_notification"})
+    mock_client.async_get_products = AsyncMock(return_value=[MILK, BUTTER, FLOUR])
+    with (
+        patch.object(planner.chains, "async_offers", side_effect=fake_offers),
+        patch.object(wt.persistent_notification, "async_create") as create,
+    ):
+        first, second = await asyncio.gather(wt.async_check(planner), wt.async_check(planner))
+    assert sorted([first, second]) == [0, 3]
+    assert create.call_count == 3
+    # Nothing new: nothing is written either.
+    with (
+        patch.object(planner.chains, "async_offers", side_effect=fake_offers),
+        patch.object(store, "async_save") as save,
+    ):
+        assert await wt.async_check(planner) == 0
+    save.assert_not_called()
+
+
+async def test_watched_product_in_remas_avis(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """A watched REMA product that REMA doesn't price as an offer yet, but the avis has."""
+    planner = init_integration.runtime_data.planner
+    store = planner.store
+    assert await wt.async_toggle(
+        store, {"product_id": 5, "name": "MERRILD KAFFE", "underline": "400 GR."}
+    )
+    mock_client.async_get_products = AsyncMock(
+        return_value=[make_product(5, "MERRILD KAFFE", 49.0, underline="400 GR.")]
+    )
+    with patch.object(planner.chains, "async_offers", side_effect=fake_offers):
+        [item] = await wt.async_deals(planner)
+    assert [(d["source"], d["dealer_id"], d["price"]) for d in item["deals"]] == [
+        ("rema_avis", REMA_ID, 39),
+        ("chain", NETTO, 45),
+    ]

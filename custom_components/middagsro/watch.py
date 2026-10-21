@@ -210,17 +210,33 @@ async def async_deals(planner: MealPlanner) -> list[dict[str, Any]]:
             _LOGGER.debug("Offers of %s not read: %s", dealer_id, err)
             offers[dealer_id] = []
 
+    # Matching every item against every offer is plain CPU work: not on the event loop.
+    return await planner.hass.async_add_executor_job(_match, items, products, offers, dealers, now)
+
+
+def _match(
+    items: list[dict[str, Any]],
+    products: dict[int, Product],
+    offers: dict[str, list[dict[str, Any]]],
+    dealers: list[str],
+    now: datetime,
+) -> list[dict[str, Any]]:
     out = []
     for item in items:
         deals: list[dict[str, Any]] = []
         fits: Callable[[dict[str, Any]], bool]
         product = products.get(item["product_id"]) if item.get("product_id") else None
         if item.get("product_id"):
+            kind = {"name": item["text"], "is_organic": item.get("is_organic")}
+            if product is not None:
+                kind["department"] = product.department
+            fits = partial(_fits_kind, kind)
             if product is not None and (deal := _rema_deal(product, now)):
                 deals.append(deal)
-            kind = {"name": item["text"], "is_organic": item.get("is_organic")}
-            fits = partial(_fits_kind, kind)
-            searched = [d for d in dealers if d != REMA_ID]  # REMA: its own price above
+                searched = [d for d in dealers if d != REMA_ID]  # REMA: its own price
+            else:
+                # REMA shows an offer's price only once it runs: until then, its avis.
+                searched = dealers
         else:
             fits = partial(_fits_words, query_words(item["text"]))
             searched = dealers
@@ -315,19 +331,37 @@ async def _async_notify(
     )
 
 
+_checking: set[str] = set()
+
+
 async def async_check(planner: MealPlanner) -> int:
-    """Tell about watched items that came on offer since last time. Returns how many."""
+    """Tell about watched items that came on offer since last time. Returns how many.
+
+    One check at a time per account (the timer and "check now" can overlap), so
+    nothing is told twice.
+    """
     store = planner.store
     target = store.settings.get("watch_notify")
-    if not target or not store.watch:
+    if not target or not store.watch or planner.entry_id in _checking:
         return 0
+    _checking.add(planner.entry_id)
+    try:
+        return await _async_check(planner, target)
+    finally:
+        _checking.discard(planner.entry_id)
+
+
+async def _async_check(planner: MealPlanner, target: str) -> int:
+    store = planner.store
     now = dt_util.utcnow()
     # Offers that have ended can be told about again when they come back.
+    before = len(store.watch_sent)
     store.watch_sent = {
         key: until
         for key, until in store.watch_sent.items()
         if (end := parse_time(until)) is None or end >= now
     }
+    changed = len(store.watch_sent) != before
     told = 0
     for item in await async_deals(planner):
         new = [d for d in item["deals"] if _deal_key(item, d) not in store.watch_sent]
@@ -342,7 +376,9 @@ async def async_check(planner: MealPlanner) -> int:
             until = deal.get("valid_to") or (now + timedelta(days=8)).isoformat()
             store.watch_sent[_deal_key(item, deal)] = str(until)
         told += 1
-    await store.async_save()
+        changed = True
+    if changed:
+        await store.async_save()
     return told
 
 

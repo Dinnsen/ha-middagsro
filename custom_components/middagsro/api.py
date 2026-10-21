@@ -47,8 +47,14 @@ TJEK_DEFAULT_BASE = "https://squid-api.tjek.com"
 TJEK_DEALER_ID = "11deC"  # REMA 1000 Danmark on Tjek / eTilbudsavis
 
 STORE_ID = 1
-REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=30)
+REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=30, sock_connect=10)
 TOKEN_REFRESH_MARGIN = 120  # seconds before expiry we renew the token
+# A busy or briefly broken server: try again after a moment, twice.
+RETRY_STATUSES = frozenset({429, 502, 503, 504})
+RETRY_DELAYS = (1.0, 3.0)
+PRIMARY_LIST_TTL = 15 * 60  # seconds the primary list's id is remembered
+OFFER_PRODUCTS_TTL = 6 * 3600  # seconds Tjek's products of an offer are remembered
+TJEK_CONFIG_RETRY = 5 * 60  # seconds before the Tjek key is looked for again after a failure
 
 BASE_HEADERS = {
     "Accept": "application/json",
@@ -503,6 +509,32 @@ def _jwt_claims(token: str) -> dict[str, Any]:
     return claims
 
 
+def _is_json(text: str) -> bool:
+    try:
+        json.loads(text)
+    except ValueError:
+        return False
+    return True
+
+
+def _json_or_error(text: str, what: str) -> Any:
+    """The body as JSON; a page of HTML (maintenance, bot check) is an API error."""
+    if not text.strip():
+        return None
+    try:
+        return json.loads(text)
+    except ValueError as err:
+        raise RemaApiError(f"{what} did not return JSON: {text[:80]!r}") from err
+
+
+def _retry_after(header: str | None, default: float) -> float:
+    """Seconds to wait as the server asks (at most a minute), else the default."""
+    try:
+        return min(60.0, max(0.5, float(header or "")))
+    except ValueError:
+        return default
+
+
 class RemaClient:
     """Talk to REMA 1000 on behalf of one account."""
 
@@ -517,11 +549,14 @@ class RemaClient:
         self._user_id: int | None = None
         self._lock = asyncio.Lock()
         self._tjek: tuple[str, str] | None = None
+        self._tjek_lock = asyncio.Lock()
+        self._tjek_failed_at: float = 0
         self._favorites: tuple[float, list[Product]] | None = None
         self._nutrition: dict[int, dict[str, float]] = {}
         self._offer_products: dict[
-            str, tuple[tuple[int, ...], tuple[str, ...], tuple[str, ...]]
+            str, tuple[float, tuple[tuple[int, ...], tuple[str, ...], tuple[str, ...]]]
         ] = {}
+        self._primary_list: tuple[float, int] | None = None
 
     @property
     def user_id(self) -> int | None:
@@ -572,11 +607,15 @@ class RemaClient:
                 },
                 timeout=REQUEST_TIMEOUT,
             ) as resp:
-                if resp.status in (400, 401, 403, 422):
+                text = await resp.text()
+                if resp.status in (401, 422) or (resp.status == 400 and _is_json(text)):
+                    # The login service itself says no: wrong e-mail or password.
                     raise RemaAuthError("E-mail or password was rejected")
                 if resp.status >= 400:
+                    # Bot protection, maintenance, a 403 or a 5xx: REMA is unhappy
+                    # right now, which is no reason to ask for the password again.
                     raise RemaApiError(f"Login returned HTTP {resp.status}", resp.status)
-                data = await resp.json(content_type=None)
+                data = _json_or_error(text, "login")
         except (aiohttp.ClientError, TimeoutError) as err:
             raise RemaConnectionError(f"Could not reach REMA 1000: {err}") from err
 
@@ -642,9 +681,12 @@ class RemaClient:
                 headers={**BASE_HEADERS, "Origin": self._site},
                 timeout=REQUEST_TIMEOUT,
             ) as resp:
+                if resp.status in RETRY_STATUSES or resp.status >= 500:
+                    # REMA is busy: not a reason to log in again with the password.
+                    raise RemaConnectionError(f"Token refresh returned HTTP {resp.status}")
                 if resp.status >= 400:
                     raise RemaAuthError(f"Token refresh returned HTTP {resp.status}")
-                data = await resp.json(content_type=None)
+                data = _json_or_error(await resp.text(), "token refresh")
         except (aiohttp.ClientError, TimeoutError) as err:
             raise RemaConnectionError(f"Could not reach REMA 1000: {err}") from err
         token = None
@@ -655,11 +697,17 @@ class RemaClient:
             raise RemaAuthError("Token refresh gave no access token")
         self._set_token(token)
 
-    async def _async_ensure_token(self, force: bool = False) -> None:
-        """Make sure we hold a valid access token."""
+    async def _async_ensure_token(self, stale: str | None = None) -> None:
+        """Make sure we hold a valid access token.
+
+        ``stale``: a token REMA just rejected. If another request already renewed
+        it meanwhile, the new one is used; otherwise it is renewed once.
+        """
         async with self._lock:
+            if stale is not None and self._access_token != stale:
+                return  # renewed by another request already
             if (
-                not force
+                stale is None
                 and self._access_token
                 and self._expires_at - time.time() > TOKEN_REFRESH_MARGIN
             ):
@@ -686,40 +734,60 @@ class RemaClient:
         payload: Any = None,
         retry: bool = True,
     ) -> Any:
-        """Call api.digital.rema1000.dk with the access token."""
+        """Call api.digital.rema1000.dk with the access token.
+
+        A rejected token is renewed once. A busy server (429, 502-504) is tried
+        again after a moment, twice, when the request can safely be repeated.
+        """
         await self._async_ensure_token()
+        token = self._access_token
         headers = {
             **BASE_HEADERS,
-            "Authorization": f"Bearer {self._access_token}",
+            "Authorization": f"Bearer {token}",
             "Origin": self._site or SITES[0],
         }
-        try:
-            async with self._session.request(
-                method,
-                f"{API_BASE}{path}",
-                params=params,
-                json=payload,
-                headers=headers,
-                timeout=REQUEST_TIMEOUT,
-            ) as resp:
-                if resp.status == 401 and retry:
-                    await self._async_ensure_token(force=True)
-                    return await self._async_request(
-                        method, path, params=params, payload=payload, retry=False
-                    )
-                if resp.status == 401:
-                    raise RemaAuthError("Access token rejected")
-                if resp.status >= 400:
-                    body = (await resp.text())[:300]
-                    raise RemaApiError(
-                        f"{method} {path} returned HTTP {resp.status}: {body}", resp.status
-                    )
-                if resp.status == 204:
-                    return None
-                text = await resp.text()
-                return json.loads(text) if text else None
-        except (aiohttp.ClientError, TimeoutError) as err:
-            raise RemaConnectionError(f"Could not reach REMA 1000: {err}") from err
+        attempt = 0
+        while True:
+            delay = 0.0
+            try:
+                async with self._session.request(
+                    method,
+                    f"{API_BASE}{path}",
+                    params=params,
+                    json=payload,
+                    headers=headers,
+                    timeout=REQUEST_TIMEOUT,
+                ) as resp:
+                    if resp.status == 401 and retry:
+                        await self._async_ensure_token(stale=token)
+                        return await self._async_request(
+                            method, path, params=params, payload=payload, retry=False
+                        )
+                    if resp.status == 401:
+                        # Just renewed and still refused: REMA's side, try later.
+                        raise RemaApiError("Access token rejected after renewal", 401)
+                    if (
+                        resp.status in RETRY_STATUSES
+                        and attempt < len(RETRY_DELAYS)
+                        and (method == "GET" or path == "/v3/batch")  # both only read
+                    ):
+                        delay = _retry_after(resp.headers.get("Retry-After"), RETRY_DELAYS[attempt])
+                        attempt += 1
+                        _LOGGER.debug(
+                            "%s %s: HTTP %s, trying again in %ss", method, path, resp.status, delay
+                        )
+                    elif resp.status >= 400:
+                        body = (await resp.text())[:300]
+                        raise RemaApiError(
+                            f"{method} {path} returned HTTP {resp.status}: {body}", resp.status
+                        )
+                    else:
+                        if resp.status == 204:
+                            return None
+                        return _json_or_error(await resp.text(), f"{method} {path}")
+            except (aiohttp.ClientError, TimeoutError) as err:
+                raise RemaConnectionError(f"Could not reach REMA 1000: {err}") from err
+            await asyncio.sleep(delay)
 
     # ------------------------------------------------------------ shopping lists
 
@@ -737,30 +805,54 @@ class RemaClient:
         )
         return list((data or {}).get("data") or [])
 
-    async def async_get_primary_list_id(self) -> int:
-        """Return the id of the primary shopping list (the one in the app)."""
-        lists = await self.async_get_lists()
+    async def async_get_primary_list_id(self, force: bool = False) -> int:
+        """The id of the primary shopping list (the one in the app), remembered a while."""
+        if (
+            not force
+            and self._primary_list
+            and time.monotonic() - self._primary_list[0] < PRIMARY_LIST_TTL
+        ):
+            return self._primary_list[1]
+        lists = [entry for entry in await self.async_get_lists() if isinstance(entry, dict)]
         if not lists:
             raise RemaApiError("The account has no shopping lists")
-        for entry in lists:
-            if entry.get("is_primary"):
-                return int(entry["id"])
-        return int(lists[0]["id"])
+        chosen = next((entry for entry in lists if entry.get("is_primary")), lists[0])
+        try:
+            list_id = int(chosen["id"])
+        except (KeyError, TypeError, ValueError) as err:
+            raise RemaApiError("The shopping lists have no id") from err
+        self._primary_list = (time.monotonic(), list_id)
+        return list_id
 
     async def async_get_list(self, list_id: int) -> ShoppingList:
         """Return a shopping list with items."""
         data = await self._async_request(
             "GET", f"/v2/shoppinglists/{list_id}", params={"with": "users,items"}
         )
+        if not isinstance(data, dict) or "id" not in data:
+            raise RemaApiError(f"Shopping list {list_id} came back without data")
         return ShoppingList(
             id=int(data["id"]),
             name=str(data.get("name") or ""),
-            items=[ShoppingListItem.from_api(item) for item in data.get("items") or []],
+            items=[
+                ShoppingListItem.from_api(item)
+                for item in data.get("items") or []
+                if isinstance(item, dict)
+            ],
         )
 
     async def async_get_primary_list(self) -> ShoppingList:
-        """Return the primary shopping list with items."""
-        return await self.async_get_list(await self.async_get_primary_list_id())
+        """Return the primary shopping list with items.
+
+        If the remembered list is gone (deleted, or another made primary in the
+        app), the lists are read again.
+        """
+        try:
+            return await self.async_get_list(await self.async_get_primary_list_id())
+        except RemaApiError as err:
+            if err.status not in (403, 404) or self._primary_list is None:
+                raise
+            return await self.async_get_list(await self.async_get_primary_list_id(force=True))
 
     async def async_create_item(
         self,
@@ -938,9 +1030,26 @@ class RemaClient:
     # ------------------------------------------------------------ offers (Tjek)
 
     async def _async_tjek_config(self) -> tuple[str, str]:
-        """Read the public Tjek API key from the webshop's runtime config."""
+        """Read the public Tjek API key from the webshop's runtime config.
+
+        One request at a time, and after a failure not again for a few minutes
+        (so a burst of offer lookups doesn't download the front page eight times).
+        """
         if self._tjek:
             return self._tjek
+        async with self._tjek_lock:
+            if self._tjek:
+                return self._tjek
+            if time.monotonic() - self._tjek_failed_at < TJEK_CONFIG_RETRY:
+                raise RemaApiError("The offer (Tjek) API key could not be read a moment ago")
+            try:
+                self._tjek = await self._async_read_tjek_config()
+            except RemaError:
+                self._tjek_failed_at = time.monotonic()
+                raise
+            return self._tjek
+
+    async def _async_read_tjek_config(self) -> tuple[str, str]:
         html = ""
         for site in SITES:
             try:
@@ -959,33 +1068,40 @@ class RemaClient:
         if not key:
             raise RemaApiError("Could not find the offer (Tjek) API key on rema1000.dk")
         base = re.search(r'api_base_url:"([^"]+)"', block.group(1)) if block else None
-        self._tjek = (base.group(1) if base else TJEK_DEFAULT_BASE, key.group(1))
-        return self._tjek
+        return (base.group(1) if base else TJEK_DEFAULT_BASE, key.group(1))
 
     async def _async_tjek(
         self, path: str, params: dict[str, Any], payload: dict[str, Any] | None = None
     ) -> Any:
         """Call the Tjek API (GET, or POST with a payload)."""
         base, key = await self._async_tjek_config()
-        try:
-            async with self._session.request(
-                "GET" if payload is None else "POST",
-                f"{base}{path}",
-                params={**params, "api_key": key},
-                json=payload,
-                headers={"Accept": "application/json", "X-Api-Key": key},
-                timeout=REQUEST_TIMEOUT,
-            ) as resp:
-                if resp.status in (401, 403):
-                    self._tjek = None  # key may have rotated, read it again next time
-                if resp.status >= 400:
-                    body = (await resp.text())[:300]
-                    raise RemaApiError(
-                        f"Tjek {path} returned HTTP {resp.status}: {body}", resp.status
-                    )
-                return await resp.json(content_type=None)
-        except (aiohttp.ClientError, TimeoutError) as err:
-            raise RemaConnectionError(f"Could not reach Tjek: {err}") from err
+        attempt = 0
+        while True:
+            delay = 0.0
+            try:
+                async with self._session.request(
+                    "GET" if payload is None else "POST",
+                    f"{base}{path}",
+                    params={**params, "api_key": key},
+                    json=payload,
+                    headers={"Accept": "application/json", "X-Api-Key": key},
+                    timeout=REQUEST_TIMEOUT,
+                ) as resp:
+                    if resp.status in (401, 403):
+                        self._tjek = None  # key may have rotated, read it again next time
+                    if resp.status in RETRY_STATUSES and attempt < len(RETRY_DELAYS):
+                        delay = _retry_after(resp.headers.get("Retry-After"), RETRY_DELAYS[attempt])
+                        attempt += 1
+                    elif resp.status >= 400:
+                        body = (await resp.text())[:300]
+                        raise RemaApiError(
+                            f"Tjek {path} returned HTTP {resp.status}: {body}", resp.status
+                        )
+                    else:
+                        return _json_or_error(await resp.text(), f"Tjek {path}")
+            except (aiohttp.ClientError, TimeoutError) as err:
+                raise RemaConnectionError(f"Could not reach Tjek: {err}") from err
+            await asyncio.sleep(delay)
 
     async def async_get_catalogs(self) -> list[Catalog]:
         """Return REMA 1000's current and upcoming tilbudsaviser."""
@@ -1011,10 +1127,16 @@ class RemaClient:
         Tjek's names for the products, also those REMA's webshop doesn't sell
         (a *partivare*, only in the shops).
         """
-        semaphore = asyncio.Semaphore(8)
+        semaphore = asyncio.Semaphore(6)
+        now = time.monotonic()
+        failed: list[str] = []
+
+        def cached(offer_id: str) -> bool:
+            entry = self._offer_products.get(offer_id)
+            return entry is not None and now - entry[0] < OFFER_PRODUCTS_TTL
 
         async def lookup(offer: Offer) -> None:
-            if offer.id in self._offer_products:
+            if cached(offer.id):
                 return
             async with semaphore:
                 try:
@@ -1022,8 +1144,11 @@ class RemaClient:
                         "/v4/rpc/get_offer_products", {}, {"id": offer.id}
                     )
                 except RemaError as err:
-                    _LOGGER.debug("Products of offer %s not found: %s", offer.id, err)
+                    failed.append(str(err))
                     return
+            if not isinstance(data, dict):
+                failed.append(f"offer {offer.id}: no data")
+                return
             entries = [
                 entry
                 for entry in (data or {}).get("offer_products") or []
@@ -1041,19 +1166,35 @@ class RemaClient:
                 if not str(entry.get("external_id") or "").isdigit()
             ]
             self._offer_products[offer.id] = (
-                tuple(dict.fromkeys(ids)),
-                tuple(dict.fromkeys(n for n in names if n)),
-                # None listed at all: unlinked too, with no names to go by.
-                tuple(unlinked) if entries else ("",),
+                now,
+                (
+                    tuple(dict.fromkeys(ids)),
+                    tuple(dict.fromkeys(n for n in names if n)),
+                    # None listed at all: unlinked too, with no names to go by.
+                    tuple(unlinked) if entries else ("",),
+                ),
             )
 
         await asyncio.gather(*(lookup(offer) for offer in offers))
+        if failed:
+            _LOGGER.warning(
+                "%d of %d offer lookups at Tjek failed (last: %s); some offers won't be "
+                "matched to REMA's products",
+                len(failed),
+                len(offers),
+                failed[-1],
+            )
+        if len(self._offer_products) > 5000:  # a year of aviser: forget the oldest
+            for key in sorted(self._offer_products, key=lambda k: self._offer_products[k][0])[
+                :2500
+            ]:
+                del self._offer_products[key]
         found: list[Offer] = []
         for offer in offers:
             if offer.id not in self._offer_products:
                 found.append(offer)
                 continue
-            ids, names, unlinked = self._offer_products[offer.id]
+            ids, names, unlinked = self._offer_products[offer.id][1]
             found.append(
                 replace(
                     offer,
@@ -1116,6 +1257,9 @@ class RemaClient:
         await asyncio.gather(
             *(lookup(pid) for pid in dict.fromkeys(product_ids) if pid not in cache)
         )
+        if len(cache) > 3000:
+            for pid in list(cache)[:1500]:  # the oldest looked up
+                del cache[pid]
         return {pid: cache[pid] for pid in product_ids if cache.get(pid)}
 
     async def async_get_offers(self, catalog_id: str, max_offers: int = 1000) -> list[Offer]:
@@ -1129,7 +1273,11 @@ class RemaClient:
                 {"catalog_ids": catalog_id, "limit": page_size, "offset": offset},
             )
             page = list(data or [])
-            offers.extend(Offer.from_api(entry) for entry in page)
+            for entry in page:
+                try:
+                    offers.append(Offer.from_api(entry))
+                except (KeyError, TypeError, ValueError, AttributeError) as err:
+                    _LOGGER.debug("Skipping offer that could not be read: %s", err)
             if len(page) < page_size:
                 break
             offset += page_size

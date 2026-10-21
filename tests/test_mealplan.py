@@ -1462,3 +1462,55 @@ async def test_send_must_haves_once(
     await store.async_add_plan(plan)
     await planner.async_send("plain")
     assert mock_client.async_get_primary_list.call_count == 2  # to add the items and refresh
+
+
+async def test_send_keeps_what_got_there(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """REMA fails halfway: the items that got on the list stay sent, the rest is sent next time."""
+    store = init_integration.runtime_data.store
+    planner = init_integration.runtime_data.planner
+    plan = make_plan("half", start="2026-10-18")
+    await store.async_add_plan(plan)
+    calls = 0
+
+    async def add(shopping_list: Any, **kwargs: Any) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RemaError("REMA faldt ud")
+
+    mock_client.async_add_to_list.side_effect = add
+    with pytest.raises(RemaError):
+        await planner.async_send("half")
+    sent = [line["name"] for line in plan["shopping"] if line.get("sent")]
+    assert sent == ["Hakket oksekød"]
+    assert plan["last_sent"]["ids"] == [plan["shopping"][0]["id"]]
+    assert plan["status"] == "draft"
+
+    mock_client.async_add_to_list.side_effect = None
+    mock_client.async_add_to_list.reset_mock()
+    await planner.async_send("half")
+    assert [c.kwargs.get("name") for c in mock_client.async_add_to_list.call_args_list] == [
+        "Persille (1 bundt)",
+        "Spaghetti",
+    ]
+    assert all(line.get("sent") for line in plan["shopping"])
+    assert plan["status"] == "sent"
+
+    # One send at a time: a second send while one runs waits, then has nothing to do.
+    plan2 = make_plan("two", start="2026-10-18")
+    await store.async_add_plan(plan2)
+    started = asyncio.Event()
+
+    async def slow(shopping_list: Any, **kwargs: Any) -> None:
+        started.set()
+        await asyncio.sleep(0)
+
+    mock_client.async_add_to_list.side_effect = slow
+    mock_client.async_add_to_list.reset_mock()
+    first = asyncio.create_task(planner.async_send("two"))
+    await started.wait()
+    await planner.async_send("two")
+    await first
+    assert mock_client.async_add_to_list.call_count == 3

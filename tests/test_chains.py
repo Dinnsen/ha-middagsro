@@ -527,3 +527,49 @@ async def test_search_commands(
         {"id": 3, "type": "middagsro/chains/rema_add", "offer": offer, "plan_id": "p"}
     )
     assert (await client.receive_json())["result"] == {"added_to": "plan", "name": "Spaghetti"}
+
+
+def test_matching_details() -> None:
+    """Whole words, fresh vs frozen, savings percentages, pieces and sizes."""
+    # A word inside another is no match: "ris" is not in "Kg-pris", "te" not in "tomater".
+    assert not ch.text_has(["ris"], "Hakket oksekød. Kg-pris 50,00")
+    assert not ch.text_has(["te"], "Tomater 500 g")
+    assert ch.text_has(["ris"], "Basmatiris 1 kg")
+    assert ch.text_has(["frikadeller"], "Kyllingefrikadeller")
+    day = date(2026, 10, 20)
+    chicken = {"product": {"name": "KYLLINGEBRYSTFILET", "underline": "700 GR.", "price": 60.0}}
+    frozen = [ch.offer_dict(tjek_offer("f1", "Kyllingebrystfilet", 45, "Frost. 1 kg"), NETTO)]
+    assert ch.cheaper_offer(chicken, frozen, day) is None  # frozen is not fresh
+    fresh = [ch.offer_dict(tjek_offer("f2", "Kyllingebrystfilet", 45, "Fersk. 700 g"), NETTO)]
+    assert ch.cheaper_offer(chicken, fresh, day)["saving"] == 15.0  # type: ignore[index]
+    frozen_product = {**chicken, "product": {**chicken["product"], "department": "Frost"}}
+    assert ch.cheaper_offer(frozen_product, frozen, day) is not None
+    # "Spar 30 %" is a saving, not a fat percentage.
+    beef = {"product": {"name": "HK. OKSEKØD 8-12%", "underline": "500 GR.", "price": 40.0}}
+    saving = [ch.offer_dict(tjek_offer("s1", "Hakket oksekød 8-12%", 25, "500 g. Spar 30%"), NETTO)]
+    assert ch.cheaper_offer(beef, saving, day) is not None
+    other_fat = [ch.offer_dict(tjek_offer("s2", "Hakket oksekød 4-7%", 25, "500 g"), NETTO)]
+    assert ch.cheaper_offer(beef, other_fat, day) is None
+    # A long description does not spoil the match: only the heading says what it is.
+    legal = [ch.offer_dict(tjek_offer("l1", "Hakket oksekød 8-12%", 25,
+        "500 g. Frit valg. Max 6 pk. pr. kunde pr. dag. Så længe lager haves. Perfekt til salat"), NETTO)]  # fmt: skip
+    assert ch.cheaper_offer(beef, legal, day) is not None
+    # 2 bags of 175 g for 50 kr.: the price is for both, so 350 g.
+    two = ch.as_offer(ch.offer_dict(tjek_offer("p1", "Chips", 50, "175 g",
+        quantity={"unit": {"symbol": "g"}, "size": {"from": 175}, "pieces": {"from": 2}}), NETTO))  # fmt: skip
+    assert ch.offer_pieces(two) == 2
+    assert ch._equivalent_price({"underline": "175 GR."}, two) == 25.0
+    # A 2 kg bag is no match for a 500 g pack; "pr. 1/2 kg" is half a kilo.
+    big = ch.as_offer(ch.offer_dict(tjek_offer("b1", "Hakket oksekød", 80, "2 kg"), NETTO))
+    assert ch._equivalent_price({"underline": "500 GR."}, big) is None
+    half = ch.as_offer(ch.offer_dict(tjek_offer("h1", "Hakket oksekød", 30, "Pr. 1/2 kg"), NETTO))
+    assert ch._equivalent_price({"underline": "500 GR."}, half) == 30.0
+    bought = ch.as_offer(
+        ch.offer_dict(tjek_offer("v1", "Æg", 20, "10 stk. Ved køb af 3 stk."), NETTO)
+    )
+    assert ch._equivalent_price({"underline": "10 STK."}, bought) == 20.0
+    # Food aviser in December are still food.
+    assert ch.is_food_catalog("Netto Julemad uge 51")
+    assert ch.is_food_catalog("Haveavis uge 20")
+    assert not ch.is_food_catalog("Jul hos Bilka")
+    assert not ch.is_food_catalog("Have og bolig")

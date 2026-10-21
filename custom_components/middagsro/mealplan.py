@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from datetime import UTC, date, datetime, time as clock_time, timedelta
 import json
 import logging
 import math
 import re
-from typing import Any
+from typing import Any, Protocol
 import uuid
 
 from homeassistant.core import HomeAssistant, callback
@@ -276,7 +276,11 @@ def _brand(underline: str | None) -> str | None:
     return words[0]
 
 
-_LIMIT = re.compile(r"(?:max\.?|flere end)\s*\d+\s*(?:stk|pk|ks)\.?", re.IGNORECASE)
+_LIMIT = re.compile(
+    r"(?:max\.?|flere end|ved køb af(?: mindst)?)\s*\d+\s*(?:stk|pk|ks|pakker|poser)\.?",
+    re.IGNORECASE,
+)
+_FRACTION_SIZE = re.compile(r"(\d+)\s*/\s*(\d+)\s*(kg|l|liter)\b", re.IGNORECASE)
 
 
 def avis_size(offer: Offer, kind: str) -> tuple[float, float] | None:
@@ -285,6 +289,8 @@ def avis_size(offer: Offer, kind: str) -> tuple[float, float] | None:
     "Max 6 stk." and "ved køb af flere end 6 stk." are limits, not sizes.
     """
     text = _LIMIT.sub(" ", f"{offer.description or ''} {offer.quantity or ''}")
+    # "Pr. 1/2 kg" is half a kilo, not 2 kg.
+    text = _FRACTION_SIZE.sub(lambda m: f"{int(m[1]) / int(m[2]):g} {m[3]}", text)
     found: list[tuple[float, float]] = []
     for low, high, unit in _RANGE.findall(text):
         a = to_base(float(low.replace(",", ".")), unit)
@@ -296,7 +302,15 @@ def avis_size(offer: Offer, kind: str) -> tuple[float, float] | None:
     return min(f[0] for f in found), max(f[1] for f in found)
 
 
+# "Spar 30 %" and "op til 40 % rabat" are savings, not fat percentages.
+_SAVINGS = re.compile(
+    r"(?:spar|op til|ca\.?|cirka)\s*\d+(?:[.,]\d+)?\s*%|\d+(?:[.,]\d+)?\s*%\s*(?:rabat|billigere)",
+    re.IGNORECASE,
+)
+
+
 def _percents(text: str) -> set[str]:
+    text = _SAVINGS.sub(" ", text)
     return {re.sub(r"\s+", "", p).replace(",", ".") for p in _PERCENT.findall(text)}
 
 
@@ -1173,6 +1187,16 @@ def own_shopping(plan: dict[str, Any], day: dict[str, Any]) -> list[dict[str, An
     ]
 
 
+class AddItems(Protocol):
+    """Puts items ({product_id|name, amount}) on the REMA list, telling about each."""
+
+    async def __call__(
+        self,
+        items: list[dict[str, Any]],
+        on_added: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None: ...
+
+
 class MealPlanner:
     """Create meal plans with AI and send them to the REMA shopping list."""
 
@@ -1183,7 +1207,7 @@ class MealPlanner:
         client: RemaClient,
         store: RemaPlanStore,
         get_catalogs: Callable[[], tuple[Catalog | None, Catalog | None]],
-        add_items: Callable[[list[dict[str, Any]]], Awaitable[None]],
+        add_items: AddItems,
     ) -> None:
         """Initialize the planner."""
         self.hass = hass
@@ -1192,6 +1216,7 @@ class MealPlanner:
         self.store = store
         self._get_catalogs = get_catalogs
         self._add_items = add_items
+        self._send_lock = asyncio.Lock()
         self.status: dict[str, Any] = {"state": "idle", "message": None, "started": None}
         self._task: asyncio.Task[None] | None = None
         self._auto_attempted: set[str] = set()
@@ -2351,11 +2376,17 @@ class MealPlanner:
 
         part: "main" (bought on the shopping day), "late" (the items for later
         in the week, e.g. thursday offers) or "all".
+
+        One send at a time. Each line is marked sent the moment its item is on
+        the REMA list, so if REMA fails halfway, the next send only sends the rest.
         """
+        async with self._send_lock:
+            return await self._async_send(plan_id, part)
+
+    async def _async_send(self, plan_id: str | None, part: str) -> dict[str, Any]:
         plan = self.store.get_plan(plan_id) if plan_id else self.store.latest_plan
         if plan is None:
             raise _invalid("no_plan" if not plan_id else "plan_not_found")
-        items: list[dict[str, Any]] = []
         lines = [
             line
             for line in plan["shopping"]
@@ -2370,29 +2401,46 @@ class MealPlanner:
             _LOGGER.debug("Could not look at the offers again before sending: %s", err)
         await asyncio.gather(*(self._async_resolve_avis_item(line) for line in lines))
         plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
+        pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
         for line in lines:
             line.pop("on_list", None)
+            line.setdefault("id", uuid.uuid4().hex[:8])
             if line.get("product"):
-                items.append({"product_id": line["product"]["id"], "amount": line["packages"]})
+                item = {"product_id": line["product"]["id"], "amount": line["packages"]}
             elif line.get("avis_item"):
                 # Only in the shops: the avis's name, as the webshop puts it on.
-                items.append({"name": line["avis_item"]["name"], "amount": line["packages"]})
+                item = {"name": line["avis_item"]["name"], "amount": line["packages"]}
             else:
                 amount = line.get("amount")
                 label = line["name"]
                 if amount and line.get("unit") and line["unit"] != "pk":
                     label += f" ({amount:g} {line['unit']})"
-                items.append({"name": label, "amount": int(line.get("packages") or 1)})
+                item = {"name": label, "amount": int(line.get("packages") or 1)}
+            pairs.append((line, item))
         if self.store.settings["must_haves_once"]:
-            items = await self._async_skip_listed(lines, items)
-        if items:
-            await self._add_items(items)
+            pairs = await self._async_skip_listed(pairs)
+        stamp = dt_util.now().isoformat()
+        by_item = {id(item): line for line, item in pairs}
+        sent: list[str] = []
+
+        def on_added(item: dict[str, Any]) -> None:
+            line = by_item[id(item)]
+            line["sent"] = stamp
+            sent.append(line["id"])
+
+        try:
+            if pairs:
+                await self._add_items([item for _, item in pairs], on_added)
+        except RemaError:
+            if sent:  # what got there stays sent; the rest is sent next time
+                plan["last_sent"] = {"at": stamp, "ids": sent}
+                await self.store.async_save()
+                self._notify()
+            raise
         # Sent: the lines leave the family's list in the panel (the basket is empty),
         # and the next send only has what was added since. They can be put back.
         if lines:
-            stamp = dt_util.now().isoformat()
             for line in lines:
-                line.setdefault("id", uuid.uuid4().hex[:8])
                 line["sent"] = stamp
             plan["last_sent"] = {"at": stamp, "ids": [line["id"] for line in lines]}
         for key in {"main": ("send_at",), "late": ("late_send_at",)}.get(
@@ -2405,21 +2453,21 @@ class MealPlanner:
         return plan
 
     async def _async_skip_listed(
-        self, lines: list[dict[str, Any]], items: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+        self, pairs: list[tuple[dict[str, Any], dict[str, Any]]]
+    ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
         """Leave out the must-haves that are on the REMA list already (and not bought).
 
         They count as sent, so they leave the basket here; line["on_list"] says why.
         """
-        if not any(line.get("must_have") for line in lines):
-            return items
+        if not any(line.get("must_have") for line, _ in pairs):
+            return pairs
         try:
             shopping_list = await self.client.async_get_primary_list()
         except RemaError as err:
             _LOGGER.debug("The REMA list was not read, every item is sent: %s", err)
-            return items
+            return pairs
         keep = []
-        for line, item in zip(lines, items, strict=True):
+        for line, item in pairs:
             existing = (
                 shopping_list.find(product_id=item.get("product_id"), name=item.get("name"))
                 if line.get("must_have")
@@ -2428,7 +2476,7 @@ class MealPlanner:
             if existing is not None and not existing.bought:
                 line["on_list"] = True
             else:
-                keep.append(item)
+                keep.append((line, item))
         return keep
 
     async def async_restore_sent(self, plan_id: str | None = None) -> dict[str, Any]:

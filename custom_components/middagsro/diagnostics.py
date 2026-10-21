@@ -65,8 +65,6 @@ async def async_get_config_entry_diagnostics(
                 "budget",
                 "organic",
                 "organic_max_extra_pct",
-                "avoid",
-                "allergies",
                 "min_vegetarian",
                 "max_vegetarian",
                 "leftover_days",
@@ -80,11 +78,23 @@ async def async_get_config_entry_diagnostics(
             )
         }
         | {
+            # Counts only: what the family avoids and is allergic to is theirs.
             "household_members": len(settings["household"]),
+            "avoid": len(settings["avoid"]) + bool(settings["avoid_other"].strip()),
+            "allergies": len(settings["allergies"]) + bool(settings["allergies_other"].strip()),
             "fixed_days": len(settings["fixed_days"]),
             "must_haves": len(settings["must_haves"]),
             "disliked_dishes": len(settings["disliked_dishes"]),
+            "rules": len(settings["rules"]),
+            "chains": settings["chains"],
+            "watch_notify": "service"
+            if settings["watch_notify"].startswith("notify.")
+            else settings["watch_notify"],
         },
+        "watched": len(data.store.watch),
+        "watch_sent": len(data.store.watch_sent),
+        "own_favorites": len(data.store.own_favorites),
+        "recipes": len(data.store.recipes),
         "favorite_dishes": len(data.store.favorites),
         "plans": len(data.store.plans),
         "latest_plan": {

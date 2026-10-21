@@ -11,10 +11,11 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady,
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from .api import Catalog, RemaAuthError, RemaClient, RemaError
-from .const import DOMAIN
+from .const import DOMAIN, STORAGE_VERSION
 from .coordinator import (
     RemaConfigEntry,
     RemaOffersCoordinator,
@@ -26,7 +27,7 @@ from .mealplan import MealPlanner
 from .migrate import async_migrate
 from .panel import async_register_panel, async_unregister_panel
 from .services import async_setup_services
-from .storage import RemaPlanStore
+from .storage import STORE_VERSION, RemaPlanStore
 from .watch import CHECK_EVERY as WATCH_CHECK_EVERY, async_check as async_watch_check
 from .websocket import async_register_websocket
 
@@ -108,17 +109,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
     async def _check_watch(_now: datetime) -> None:
         try:
             await async_watch_check(planner)
-        except (HomeAssistantError, RemaError) as err:
+        except (HomeAssistantError, RemaError, ValueError, TypeError, KeyError) as err:
             _LOGGER.debug("The watch list was not checked: %s", err)
 
     entry.async_on_unload(async_track_time_interval(hass, _check_watch, WATCH_CHECK_EVERY))
     entry.async_on_unload(async_call_later(hass, 120, _check_watch))
     planner.async_restore_sends()
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # The panel first: forwarding the platforms is the last thing that may fail.
     await async_register_panel(hass)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _offers_updated()
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> None:
+    """Remove the account's stored plans and offers when the account is removed."""
+    for name, version in (("mealplans", STORE_VERSION), ("catalogs", STORAGE_VERSION)):
+        await Store(hass, version, f"{DOMAIN}.{entry.entry_id}.{name}").async_remove()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool:
