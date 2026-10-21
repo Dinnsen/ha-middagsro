@@ -800,9 +800,19 @@ class Rema1000Panel extends HTMLElement {
         const p = (this._favCache[this._favWeek]?.products || []).find((x) => String(x.id) === arg)
           || (this._favCache[this._favWeek]?.on_offer || []).find((x) => String(x.id) === arg);
         if (!p) return;
-        this._modal = { kind: "where", title: p.name };
+        const match = this._favCompare[this._favWeek]?.[String(p.id)] || null;
+        this._modal = { kind: "where", title: p.name, product: p, match };
         this._renderModal();
         this._everywhereRun(p.name);
+      },
+      "match-chain": () => {
+        const offer = this._modal?.match;
+        const plan = this._state?.latest_plan;
+        if (!offer || !plan) return;
+        this._editPlan(
+          () => this._ws("middagsro/chains/add", { plan_id: plan.id, offer }),
+          `${offer.heading} er sat på ${this._chainName(offer.dealer_id)}-listen under Indkøb.`
+        );
       },
       "plan-help": () => {
         this._planHelp = !this._planHelp;
@@ -1266,8 +1276,9 @@ class Rema1000Panel extends HTMLElement {
 
   _favCheaper(p) {
     const found = this._favCompare[this._favWeek]?.[String(p.id)];
+    // The price you pay there; what that is for REMA's size is in the popup.
     return found
-      ? `<button class="cheaper" data-action="fav-where" data-arg="${esc(p.id)}" title="Se priserne i butikkerne">${this._chainLogo(found.dealer_id, "tiny")}<span>${kr(found.per_package)} i ${esc(this._chainName(found.dealer_id))}</span></button>`
+      ? `<button class="cheaper" data-action="fav-where" data-arg="${esc(p.id)}" title="Se priserne i butikkerne">${this._chainLogo(found.dealer_id, "tiny")}<span>${kr(found.price)} i ${esc(this._chainName(found.dealer_id))}</span></button>`
       : `<button class="cheaper plain" data-action="fav-where" data-arg="${esc(p.id)}">Sammenlign priser</button>`;
   }
 
@@ -2082,6 +2093,28 @@ class Rema1000Panel extends HTMLElement {
   }
 
   // REMA's products and the other shops' offers for a search, cheapest marked.
+  // The offer the favourite's "cheaper in Netto" badge is about: the same kind of item,
+  // with what it costs there and what that is for REMA's size.
+  _matchHtml(m) {
+    const o = m?.match;
+    const p = m?.product;
+    if (!o || !p) return "";
+    const plan = this._state?.latest_plan;
+    const chain = this._chainName(o.dealer_id);
+    const size = (p.underline || "").split("/")[0].trim();
+    return `<div class="match">
+      <h3>Samme slags hos ${esc(chain)}</h3>
+      <ul class="evs"><li class="ev best">
+        ${this._chainLogo(o.dealer_id, "tiny")}
+        ${o.image ? `<img src="${esc(o.image)}" alt="" loading="lazy">` : '<span class="noimg">?</span>'}
+        <div class="what"><b>${esc(o.heading)}</b><span class="muted small">${esc([chain, o.description].filter(Boolean).join(" · "))}</span>
+          <span class="small">≈ <b>${kr(o.per_package)}</b> for REMA's ${esc(size || "pakke")} (REMA: ${kr(p.price)})</span></div>
+        <span class="ev-price sale">${o.price != null ? kr(o.price) : ""}</span>
+        <button class="btn small" data-action="match-chain" ${this._busy || !plan ? "disabled" : ""} title="${plan ? "" : "Lav en madplan først"}">+ ${esc(chain)}</button>
+      </li></ul>
+    </div>`;
+  }
+
   _everywhereHtml(data) {
     const unit = (u) => (u ? `${kr(u.price)}/${u.unit}` : "");
     const best = data.best;
@@ -2620,6 +2653,7 @@ class Rema1000Panel extends HTMLElement {
             <button class="btn" data-action="everywhere" ${e.loading ? "disabled" : ""}>${e.loading ? '<span class="spinner small"></span>' : "Søg"}</button>
             ${clearBtn("everywhere")}
           </div>
+          ${this._matchHtml(this._modal)}
           <div class="ev-out">${e.error ? `<div class="banner error">${esc(e.error)}</div>` : ""}
           ${e.loading && !e.data ? '<p class="muted"><span class="spinner small"></span> Finder priserne …</p>' : e.data ? this._everywhereHtml(e.data) : ""}</div>
           <div class="dialog-bottom"><button class="btn" data-action="modal-close">Luk</button></div>

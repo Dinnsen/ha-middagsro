@@ -258,6 +258,12 @@ def _same_kind(product: dict[str, Any], offer: Offer) -> bool:
     heading = _heading_words(offer.heading)
     if not all(_word_in(w, heading) for w in words):
         return False
+    if len(words) == 1 and (specific := _specifics(product.get("underline"))):
+        # "SMOOTHIE" says little: it is Lovemade's quinoa & æble, so the offer must
+        # name the brand or the variety, or it is just some smoothie.
+        text_words = _text_words(f"{offer.heading}\n{offer.description or ''}")
+        if not any(_word_in(w, text_words) for w in specific):
+            return False
     # The heading says what it is; the description only sizes, percentages and such.
     matched, penalty = name_fit(words, offer.heading)
     if matched < len(words) or penalty >= 5:
@@ -271,9 +277,22 @@ def _same_kind(product: dict[str, Any], offer: Offer) -> bool:
     frozen_product = bool(set(_tokens(name)) & _FROZEN_WORDS) or (
         str(product.get("department") or "").lower() == "frost"
     )
-    if frozen_offer != frozen_product:
-        return False
-    return ("økologisk" in text_words) == bool(product.get("is_organic"))
+    return frozen_offer == frozen_product and ("økologisk" in text_words) == bool(
+        product.get("is_organic")
+    )
+
+
+def _specifics(underline: str | None) -> list[str]:
+    """The brand and variety in REMA's underline ("100 GR. / LOVEMADE, QUINOA & ÆBLE")."""
+    from .mealplan import _NEUTRAL_WORDS, _ORIGINS, _tokens  # noqa: PLC0415
+
+    if not underline or "/" not in underline:
+        return []
+    return [
+        w
+        for w in _tokens(underline.split("/", 1)[1])
+        if len(w) > 2 and w not in _ORIGINS and w not in _NEUTRAL_WORDS and w != "rema"
+    ]
 
 
 @lru_cache(maxsize=4096)
@@ -330,12 +349,17 @@ def cheaper_offer(
         if best is None or saving > best["saving"]:
             best = {
                 "dealer_id": entry["dealer_id"],
+                "id": entry["id"],
                 "offer_id": entry["id"],
                 "heading": entry["heading"],
                 "description": entry.get("description"),
+                "quantity": entry.get("quantity"),
                 "price": entry["price"],
+                "pre_price": entry.get("pre_price"),
+                "image": entry.get("image"),
                 "per_package": round(equivalent, 2),
                 "saving": saving,
+                "valid_from": entry.get("valid_from"),
                 "valid_to": entry.get("valid_to"),
             }
     return best

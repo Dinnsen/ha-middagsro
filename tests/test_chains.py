@@ -573,3 +573,32 @@ def test_matching_details() -> None:
     assert ch.is_food_catalog("Haveavis uge 20")
     assert not ch.is_food_catalog("Jul hos Bilka")
     assert not ch.is_food_catalog("Have og bolig")
+
+
+def test_one_word_names_need_the_brand_or_variety() -> None:
+    """ "SMOOTHIE" is Lovemade's quinoa & æble: not just any smoothie on offer."""
+    day = date(2026, 10, 20)
+    smoothie = {"product": {"name": "SMOOTHIE", "underline": "100 GR. / LOVEMADE, QUINOA & ÆBLE",
+                            "price": 10.0, "is_organic": True}}  # fmt: skip
+    other = [ch.offer_dict(tjek_offer("s1", "ØGO økologisk grød smoothie", 10, "120 g"), NETTO)]
+    assert ch.cheaper_offer(smoothie, other, day) is None
+    same = [ch.offer_dict(tjek_offer("s2", "Lovemade økologisk smoothie", 8, "100 g"), NETTO)]
+    found = ch.cheaper_offer(smoothie, same, day)
+    assert found is not None
+    assert (found["id"], found["price"], found["per_package"]) == ("s2", 8.0, 8.0)
+    butter = {"product": {"name": "SMØR", "underline": "200 GR. / LURPAK", "price": 25.0}}
+    assert (
+        ch.cheaper_offer(
+            butter, [ch.offer_dict(tjek_offer("b", "Kærgården smør", 18, "200 g"), NETTO)], day
+        )
+        is None
+    )
+    assert ch.cheaper_offer(
+        butter, [ch.offer_dict(tjek_offer("b2", "Lurpak smør", 18, "200 g"), NETTO)], day
+    )
+    # REMA's own brand and the origin say nothing: any letmælk, any agurk.
+    assert ch._specifics("1 LTR. / REMA 1000") == []
+    assert ch._specifics("1 STK. / SPANIEN KL. 1") == []
+    assert ch._specifics("10 STK. / M/L") == []
+    assert ch._specifics("100 GR. / LOVEMADE, QUINOA & ÆBLE") == ["lovemade", "quinoa", "æble"]
+    assert ch._specifics(None) == []
