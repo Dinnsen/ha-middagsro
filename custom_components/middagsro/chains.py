@@ -261,8 +261,8 @@ def _same_kind(product: dict[str, Any], offer: Offer) -> bool:
     if len(words) == 1 and (specific := _specifics(product.get("underline"))):
         # "SMOOTHIE" says little: it is Lovemade's quinoa & æble, so the offer must
         # name the brand or the variety, or it is just some smoothie.
-        text_words = _text_words(f"{offer.heading}\n{offer.description or ''}")
-        if not any(_word_in(w, text_words) for w in specific):
+        in_offer = _text_words(f"{offer.heading}\n{offer.description or ''}")
+        if not any(_word_in(w, in_offer) for w in specific):
             return False
     # The heading says what it is; the description only sizes, percentages and such.
     matched, penalty = name_fit(words, offer.heading)
