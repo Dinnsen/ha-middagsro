@@ -2007,7 +2007,7 @@ class MealPlanner:
             candidates = comparable or candidates
 
         def package_cost(product: Product) -> float:
-            return packages_needed(line["amount"], line["unit"], product) * (product.price or 0)
+            return packages_needed(line["amount"], line.get("unit"), product) * (product.price or 0)
 
         cost = package_cost
 
@@ -2057,7 +2057,7 @@ class MealPlanner:
             limit = cost(cheapest) * (1 + settings["organic_max_extra_pct"] / 100)
             if cost(best_organic) <= limit + 0.001:
                 chosen = best_organic
-        self._apply(line, chosen, packages_needed(line["amount"], line["unit"], chosen))
+        self._apply(line, chosen, packages_needed(line["amount"], line.get("unit"), chosen))
         if note:
             line["note"] = note
 
