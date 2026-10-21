@@ -505,9 +505,7 @@ async def async_search_everywhere(planner: MealPlanner, query: str) -> dict[str,
     candidates = [("rema", p) for p in products if p.get("unit_price") and fits[id(p)][1]] + [
         ("chain", o)
         for o in offers
-        if o.get("unit_price")
-        and (parse_time(o.get("valid_from")) or now) <= now  # on offer now, not from sunday
-        and query_fit(query, str(o.get("heading") or ""))[1]
+        if o.get("unit_price") and query_fit(query, str(o.get("heading") or ""))[1]
     ]
     best: dict[str, Any] | None = None
     if candidates:

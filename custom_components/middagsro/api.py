@@ -550,7 +550,7 @@ class RemaClient:
         self._lock = asyncio.Lock()
         self._tjek: tuple[str, str] | None = None
         self._tjek_lock = asyncio.Lock()
-        self._tjek_failed_at: float = 0
+        self._tjek_failed_at: float | None = None
         self._favorites: tuple[float, list[Product]] | None = None
         self._nutrition: dict[int, dict[str, float]] = {}
         self._offer_products: dict[
@@ -1035,18 +1035,18 @@ class RemaClient:
         One request at a time, and after a failure not again for a few minutes
         (so a burst of offer lookups doesn't download the front page eight times).
         """
-        if self._tjek:
-            return self._tjek
         async with self._tjek_lock:
             if self._tjek:
                 return self._tjek
-            if time.monotonic() - self._tjek_failed_at < TJEK_CONFIG_RETRY:
+            failed = self._tjek_failed_at
+            if failed is not None and time.monotonic() - failed < TJEK_CONFIG_RETRY:
                 raise RemaApiError("The offer (Tjek) API key could not be read a moment ago")
             try:
                 self._tjek = await self._async_read_tjek_config()
             except RemaError:
                 self._tjek_failed_at = time.monotonic()
                 raise
+            self._tjek_failed_at = None
             return self._tjek
 
     async def _async_read_tjek_config(self) -> tuple[str, str]:

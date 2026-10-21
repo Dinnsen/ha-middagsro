@@ -709,7 +709,7 @@ async def test_tjek_errors() -> None:
     with pytest.raises(RemaApiError, match="a moment ago"):
         await client.async_get_catalogs()
     assert len(session.calls) == calls
-    client._tjek_failed_at = 0
+    client._tjek_failed_at = None
 
     session.on("GET", f"{api.TJEK_DEFAULT_BASE}/v2/catalogs", FakeResponse(403, text="no"))
     with pytest.raises(RemaApiError, match="HTTP 403"):
