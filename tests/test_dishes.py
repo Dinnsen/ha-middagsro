@@ -360,3 +360,102 @@ async def test_recipe_product_looked_up(
     await planner._async_match(line)
     assert line["product"] is None
     assert "fritekst" in line["note"]
+
+
+def test_dish_identity_is_about_the_main_dish() -> None:
+    """Pasta is not the dish, what is on it is; kinds of dish only when they define it."""
+    assert not ds.same_dish("Pasta med kødsovs", "Pasta carbonara")
+    assert not ds.same_dish("Ris med kylling", "Ris med rejer")
+    assert ds.same_dish("Kylling i karry", "Ris med kylling")
+    assert ds.same_dish("Pasta", "Pasta carbonara")
+    assert not ds.same_dish("Tomatsuppe", "Græskarsuppe")
+    assert not ds.same_dish("Kyllingegryde", "Oksegryde")
+    assert ds.same_dish("Kartoffelsuppe", "Suppe med kartofler")
+    assert ds.same_dish("Laksefilet med pasta", "Ovnbagt laks med ris")
+    assert ds.same_dish("Kyllingebryst med ris", "Kylling i karry")
+    assert ds.same_dish("Tacos med kylling", "Kyllingetacos")
+    assert not ds.same_dish("Pasta med kylling og pesto", "Kyllingewok")
+
+
+def test_fixed_day_texts() -> None:
+    """The default rye-bread thursday passes for rye bread, and for a day the AI calls fixed."""
+    settings = {
+        "leftover_days": 0,
+        "fixed_days": [{"weekday": 3, "text": "Rugbrødsdag (kun denne ene dag med rugbrød)"}],
+    }
+    thursday = _day("2026-10-29", "Rugbrød med æg og leverpostej")
+    assert ds.check_plan({"days": [thursday]}, settings, recent=[], due_ids=set()) == []
+    thursday["dish"] = "Smørrebrød"
+    assert len(ds.check_plan({"days": [thursday]}, settings, recent=[], due_ids=set())) == 1
+    thursday["type"] = "fast"
+    assert ds.check_plan({"days": [thursday]}, settings, recent=[], due_ids=set()) == []
+
+
+def test_amounts_are_parsed_and_scaled() -> None:
+    """Fractions, ranges and multiples; a recipe's amounts scaled for the household."""
+    assert mp.parse_amount("1½ dl") == (1.5, "dl")
+    assert mp.parse_amount("1 1/2 dl") == (1.5, "dl")
+    assert mp.parse_amount("1/2 l") == (0.5, "l")
+    assert mp.parse_amount("2 x 400 g") == (800, "g")
+    assert mp.parse_amount("2-3 stk") == (2, "stk")
+    assert mp.parse_amount("ca. 3 pk.") == (3, "pk")
+    assert mp.parse_amount("lidt") is None
+    assert mp.recipe_line({"name": "fløde", "amount": "1½ dl"}, 2.0)["amount"] == 300
+    assert mp.recipe_line({"name": "tomater", "amount": "2 x 400 g"}, 1.0)["amount"] == 800
+    assert mp.to_base(3, "pk.") == ("pack", 3)
+    assert rc.scale_amount("500 g", 1.5) == "750 g"
+    assert rc.scale_amount("1½ dl", 1.5) == "2,25 dl"
+    assert rc.scale_amount("2 stk", 1.45) == "3 stk"
+    assert rc.scale_amount("lidt", 2.0) == "lidt"
+    assert rc.scale_amount("500 g", 1.0) == "500 g"
+    day: dict[str, Any] = {"active_minutes": 5, "total_minutes": 10}
+    rc.recipe_to_day(
+        {"ingredients": [{"name": "fløde", "amount": "2 dl"}], "steps": [], "servings": 4}, day, 1.5
+    )
+    assert day["ingredients"] == [{"name": "fløde", "amount": "3 dl"}]
+    assert day["servings"] == 6
+
+
+def test_ingredient_matches_a_line() -> None:
+    """A compound counts, unless its first part makes it another thing."""
+    assert mp._names_match({"name": "Laksefilet"}, {"name": "laks"})
+    assert mp._names_match(
+        {"name": "Hakket oksekød", "search": "oksekød"}, {"name": "hakket oksekød"}
+    )
+    assert not mp._names_match({"name": "Hvidløg"}, {"name": "løg"})
+    assert not mp._names_match({"name": "Havremælk"}, {"name": "mælk"})
+    assert not mp._names_match({"name": "Løg"}, {"name": "hvidløg"})
+    assert mp._names_match(
+        {"name": "Pasta", "product": {"name": "FETTUCCINE"}}, {"name": "fettuccine"}
+    )
+    assert not mp._names_match({"name": "Løg"}, {"name": ""})
+
+
+async def test_recipes_share_lines(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock, ai_task: str
+) -> None:
+    """Two recipe days: a shared item is bought for both, and a line one of them keeps isn't dropped."""
+    planner = init_integration.runtime_data.planner
+    store = init_integration.runtime_data.store
+    store.recipes.insert(
+        0,
+        rc.clean_recipe(
+            {"name": "Omelet med løg", "rating": "like", "favorite": True, "servings": 4,
+             "ingredients": ["2 løg", "6 æg"], "steps": ["Pisk."]}
+        )
+        | {"id": "r-omelet"},
+    )  # fmt: skip
+    dates = mp.plan_dates(START, 7)
+    answer = ai_answer(dates, [{"name": "Løg", "amount": 2, "unit": "stk", "search": "løg"}])
+    answer["days"][6]["uses"] = ["Løg"]  # the omelet's own line, by the AI
+    answer["days"][1]["uses"] = ["Løg"]  # ... shared with the lasagne
+    await _generate(planner, FakeAI(answer))
+    plan = store.latest_plan
+    assert plan is not None
+    omelet, lasagne = plan["days"][6], plan["days"][1]
+    assert (omelet["recipe_id"], lasagne["recipe_id"]) == ("r-omelet", "r-lasagne")
+    lines = {line["name"]: line for line in plan["shopping"]}
+    assert lines["Løg"]["amount"] == 2  # the AI's line is kept as it is
+    assert "Æg" in lines
+    assert omelet["uses"] == ["Løg", "Æg"]
+    assert lasagne["uses"][:2] == ["Hakket oksekød", "Løg"]

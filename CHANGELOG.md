@@ -2,6 +2,17 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [1.8.1] - 2026-10-21
+
+### Fixed
+- The plan check no longer calls these repeats: *pasta med kødsovs* and *pasta carbonara*, *tomatsuppe* and *græskarsuppe*, *kyllingegryde* and *oksegryde* – what is on the pasta is the dish, and only kinds that define a dish (pizza, lasagne, burger, frikadeller …) count as the same. *Laksefilet* is still *laks*.
+- A fixed day passes its check when the dinner is what the day says (*rugbrød med æg* on *Rugbrødsdag*) or the AI marks it as the fixed day; before, the default rye-bread thursday failed every time and cost two needless AI rounds.
+- When the AI is asked to put a plan right, it is shown its own previous plan and told to change only the days named, so the rest stays.
+- The shopping list from the family's own recipes: an item two recipe days share is bought for both, a line one of them keeps is no longer dropped, and *løg* no longer takes the *hvidløg* line (nor *mælk* the *havremælk*).
+- Recipe amounts like *1½ dl*, *1/2 l* and *2 x 400 g* are read right, and the recipe on the day is scaled to the household like the shopping list (with the servings it is for now).
+- *Overrask os* is checked like any other plan (leftover days, time, dislikes).
+- A milk allergy no longer prefers lactose-free dairy, which still has milk protein.
+
 ## [1.8.0] - 2026-10-21
 
 ### Changed

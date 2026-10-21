@@ -79,7 +79,8 @@ ALLERGY_DA = {
     "sulphites": "sulfitter",
 }
 # Products REMA sells as "free from" an allergen.
-FREE_FROM = {"gluten": "GLUTENFRI", "lactose": "LAKTOSEFRI", "milk": "LAKTOSEFRI"}
+# A milk allergy is to the protein: lactose-free dairy is no help, so only lactose maps.
+FREE_FROM = {"gluten": "GLUTENFRI", "lactose": "LAKTOSEFRI"}
 
 ISSUE_NO_AI_TASK = "no_ai_task"
 AI_TASK_DOCS_URL = "https://www.home-assistant.io/integrations/ai_task/"
@@ -192,7 +193,7 @@ def to_base(amount: float, unit: str | None) -> tuple[str, float] | None:
     """Convert an amount to grams, millilitres or pieces."""
     if not unit:
         return None
-    base = _UNIT_BASE.get(unit.strip().lower())
+    base = _UNIT_BASE.get(unit.strip().lower().rstrip("."))
     if not base:
         return None
     return base[0], amount * base[1]
@@ -1030,9 +1031,8 @@ def recipe_line(ingredient: dict[str, Any], factor: float = 1.0) -> dict[str, An
     name = str(ingredient.get("name") or "").strip()
     amount: float | None = None
     unit: str | None = None
-    if match := _INGREDIENT_AMOUNT.match(str(ingredient.get("amount") or "").strip()):
-        number = float(match.group(1).replace(",", "."))
-        raw_unit = (match.group(2) or "").lower().rstrip(".")
+    if parsed := parse_amount(str(ingredient.get("amount") or "")):
+        number, raw_unit = parsed
         base = to_base(number, raw_unit)
         if base is not None and base[0] in ("g", "ml"):
             amount, unit = base[1] * factor, base[0]
@@ -1060,9 +1060,43 @@ def recipe_line(ingredient: dict[str, Any], factor: float = 1.0) -> dict[str, An
     }
 
 
-_INGREDIENT_AMOUNT = re.compile(
-    r"^(?:ca\.?\s*)?(\d+(?:[.,]\d+)?)\s*(?:-\s*\d+(?:[.,]\d+)?\s*)?([a-zæøå.]*)"
+_FRACTIONS = {"½": 0.5, "¼": 0.25, "¾": 0.75, "⅓": 1 / 3, "⅔": 2 / 3}
+_AMOUNT_FORMS = (
+    re.compile(r"^(\d+)?\s*([½¼¾⅓⅔])\s*"),  # 1½
+    re.compile(r"^(\d+)\s+(\d+)\s*/\s*(\d+)\s*"),  # 1 1/2
+    re.compile(r"^(\d+)\s*/\s*(\d+)\s*"),  # 1/2
+    re.compile(r"^(\d+(?:[.,]\d+)?)\s*"),  # 2,5
 )
+
+
+def parse_amount(text: str) -> tuple[float, str] | None:
+    """'1½ dl' -> (1.5, 'dl'), '2 x 400 g' -> (800, 'g'), '2-3 stk' -> (2, 'stk'); None without a number."""
+    rest = re.sub(r"^(?:ca\.?|cirka)\s*", "", text.strip().lower())
+    number: float | None = None
+    for form in _AMOUNT_FORMS:
+        if not (match := form.match(rest)):
+            continue
+        groups = match.groups()
+        if form is _AMOUNT_FORMS[0]:
+            number = float(groups[0] or 0) + _FRACTIONS[groups[1]]
+        elif form is _AMOUNT_FORMS[1]:
+            number = float(groups[0]) + float(groups[1]) / float(groups[2])
+        elif form is _AMOUNT_FORMS[2]:
+            number = float(groups[0]) / float(groups[1])
+        else:
+            number = float(groups[0].replace(",", "."))
+        rest = rest[match.end() :]
+        break
+    if number is None:
+        return None
+    rest = re.sub(r"^-\s*\d+(?:[.,]\d+)?\s*", "", rest)  # "2-3": the smaller
+    if times := re.match(r"^x\s*(\d+(?:[.,]\d+)?)\s*", rest):  # "2 x 400 g"
+        number *= float(times.group(1).replace(",", "."))
+        rest = rest[times.end() :]
+    unit = re.match(r"^([a-zæøå.]*)", rest)
+    return number, (unit.group(1) if unit else "").rstrip(".")
+
+
 _CATEGORY_WORDS = {
     "Kød": ("kød", "kylling", "okse", "svin", "gris", "bacon", "pølse", "frikadell", "kebab", "lam", "kalkun"),
     "Fisk": ("laks", "torsk", "fisk", "rejer", "tun", "sej", "rødspætte", "kulmule", "muslinger"),
@@ -1088,16 +1122,39 @@ def line_category(name: str) -> str:
 
 
 def _names_match(line: dict[str, Any], ingredient: dict[str, Any]) -> bool:
-    """Is a shopping line this ingredient: every word of the ingredient in its name."""
+    """Is a shopping line this ingredient: every word of the ingredient in its name.
+
+    A compound counts ("laksefilet" is laks), unless its first part makes it
+    another thing: hvidløg is not løg, havremælk is not mælk.
+    """
     wanted = _name_words(ingredient.get("name") or "")
     if not wanted:
         return False
-    have = _name_words(line["name"]) | _name_words(line.get("search") or "")
     product = line.get("product") or {}
-    have |= _name_words(product.get("name") or "")
-    return all(
-        w in have or any(h.endswith(w) or w.endswith(h) for h in have if len(h) > 3) for w in wanted
+    have = (
+        _name_words(line["name"])
+        | _name_words(line.get("search") or "")
+        | _name_words(product.get("name") or "")
     )
+
+    def found(word: str) -> bool:
+        if word in have:
+            return True
+        for h in have:
+            if len(h) <= 3 or len(h) <= len(word):
+                continue
+            if h.endswith(word):
+                rest = h[: -len(word)]
+            elif h.startswith(word) and len(word) > 3:
+                rest = h[len(word) :]
+            else:
+                continue
+            if {rest, rest.strip("es")} & (_DIFFERENT_PREFIXES | _DIFFERENT_WORDS):
+                continue
+            return True
+        return False
+
+    return all(found(w) for w in wanted)
 
 
 def own_shopping(plan: dict[str, Any], day: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1361,7 +1418,7 @@ class MealPlanner:
             return
         own = find_recipe(self.store, day.get("recipe_id"))
         if own and (own["ingredients"] or own["steps"]):
-            recipe_to_day(own, day)
+            recipe_to_day(own, day, recipe_factor(self.store.settings, own, day))
             return
         prompt = build_recipe_prompt(settings=self.store.settings, day=day, plan=plan)
         try:
@@ -1426,29 +1483,32 @@ class MealPlanner:
         For a day with one of the collection's recipes, every ingredient of the
         recipe (not the basic items) is on the list, and the AI's own idea of the
         dish's items leaves it, in amounts for this household, with the REMA
-        product the recipe names when it does.
+        product the recipe names when it does. An item two recipes share is
+        bought for both.
         """
         settings = self.store.settings
         pantry = pantry_words(settings["pantry"])
         new_lines: list[dict[str, Any]] = []
-        drop: set[int] = set()
+        own_all: set[int] = set()  # the AI's lines of the recipe days
+        kept_all: set[int] = set()  # ... that a recipe uses after all
         for day in plan["days"]:
             recipe = find_recipe(self.store, day.get("recipe_id")) if is_cooked(day) else None
             if recipe is None or not recipe["ingredients"]:
                 continue
             factor = recipe_factor(settings, recipe, day)
-            own = {id(line) for line in own_shopping(plan, day)}
-            kept: set[int] = set()
+            own = own_shopping(plan, day)
+            own_all |= {id(line) for line in own}
             uses: list[str] = []
             for ingredient in recipe["ingredients"]:
                 if ingredient.get("basic") or any(
                     _uses_item(item, ingredient["name"]) for item in pantry
                 ):
                     continue
+                # The dish's own line first, then any line on the list.
                 line = next(
                     (
                         existing
-                        for existing in plan["shopping"]
+                        for existing in [*own, *plan["shopping"]]
                         if not existing.get("must_have") and _names_match(existing, ingredient)
                     ),
                     None,
@@ -1457,11 +1517,20 @@ class MealPlanner:
                     line = recipe_line(ingredient, factor)
                     plan["shopping"].append(line)
                     new_lines.append(line)
-                kept.add(id(line))
+                elif line.get("recipe") and line["name"] not in uses:
+                    # Another recipe day made this line: this day needs its share too.
+                    more = recipe_line(ingredient, factor)
+                    if more["unit"] == line["unit"]:
+                        line["amount"] = (line.get("amount") or 0) + more["amount"]
+                    else:
+                        line = more
+                        plan["shopping"].append(line)
+                        new_lines.append(line)
+                kept_all.add(id(line))
                 if line["name"] not in uses:
                     uses.append(line["name"])
-            drop |= own - kept - {id(line) for line in new_lines}
             day["uses"] = uses
+        drop = own_all - kept_all
         if drop:
             plan["shopping"] = [
                 line
@@ -1599,17 +1668,13 @@ class MealPlanner:
                 link_favorites(plan, [*due, *optional], links, self.store)
             # The AI is not trusted to keep the rules: the plan is checked, and the
             # AI is told what to put right. The best of the tries is kept.
-            problems = (
-                []
-                if surprise
-                else check_plan(
-                    plan,
-                    settings,
-                    recent=recent,
-                    due_ids={f["id"] for f in due},
-                    note=note,
-                    disliked=disliked,
-                )
+            problems = check_plan(
+                plan,
+                settings,
+                recent=recent,
+                due_ids=set() if surprise else {f["id"] for f in due},
+                note=note,
+                disliked=disliked,
             )
             over = max(0.0, plan["total"] - settings["budget"]) if settings["budget"] else 0.0
             plan["problems"] = problems
@@ -1634,8 +1699,14 @@ class MealPlanner:
                     + ", ".join(f"{line['name']} ({line['cost']:.0f} kr.)" for line in expensive)
                     + ". Vælg billigere retter og flere tilbudsvarer."
                 )
+            previous = "; ".join(
+                f"{d['weekday']} {d['date']}: {d['dish']}"
+                + (" (rester)" if d.get("uses_leftovers_from") else "")
+                for d in plan["days"]
+            )
             feedback = (
-                "Dit forrige forslag brød disse krav – ret dem, og behold resten:\n"
+                f"Dit forrige forslag var: {previous}. Det brød disse krav – lav KUN de dage om, "
+                "der nævnes her, og behold de øvrige dage og deres varer uændret:\n"
                 + "\n".join(lines)
             )
 
