@@ -262,7 +262,12 @@ class Rema1000Panel extends HTMLElement {
     this._wake = null;
     this._wakeWanted = false;
     this._onVisibility = () => {
-      if (document.visibilityState === "visible" && this._wakeWanted && !this._wake) this._requestWake();
+      if (document.visibilityState !== "visible") return;
+      if (this._wakeWanted && !this._wake) this._requestWake();
+      // Back from the background: the list and the plan may have moved on (the partner's phone,
+      // an automatic plan), and a plan being made keeps being watched.
+      const generating = this._state?.status?.state === "generating";
+      if (this._state && this._hass && (generating || Date.now() - (this._loadedAt || 0) > 60000)) this._load(true);
     };
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
     this.shadowRoot.addEventListener("keydown", (ev) => {
@@ -317,6 +322,7 @@ class Rema1000Panel extends HTMLElement {
     document.addEventListener("touchmove", this._noPinch, { passive: false });
     this._tick = setInterval(() => this._tickTimers(), 1000);
     if (this._hass && !this._state) this._load();
+    else if (this._hass && this._state?.status?.state === "generating") this._load(true);
   }
 
   disconnectedCallback() {
@@ -337,11 +343,13 @@ class Rema1000Panel extends HTMLElement {
   }
 
   async _load(silent = false, refresh = false) {
+    const before = this._signature();
     try {
       const state = await this._ws("middagsro/state", refresh ? { refresh: true } : {});
       this._state = state;
       this._error = null;
-      if (!this._startDate) this._startDate = state.default_start;
+      this._loadedAt = Date.now();
+      if (!this._startDate || !this._startDateTouched) this._startDate = state.default_start;
       if (this._viewingLatest) this._plan = state.latest_plan;
       if (!this._form || !this._dirty) this._form = clone(state.settings);
       if (!this._chains) this._loadChains();
@@ -352,28 +360,58 @@ class Rema1000Panel extends HTMLElement {
     if (this._state?.status?.state === "generating") {
       this._poll = setTimeout(() => this._load(true), 3000);
     }
-    // Don't redraw the settings form under the user's fingers while polling.
-    if (silent && this._tab === "settings") {
+    // Polling: don't redraw the page under the user's fingers unless something changed
+    // (the settings form never, while polling).
+    if (silent && (this._tab === "settings" || before === this._signature())) {
       this._renderStatus();
       return;
     }
     this._render();
   }
 
+  // What the page is built from: when it is the same, there is nothing to redraw.
+  _signature() {
+    const s = this._state;
+    if (!s) return "";
+    return JSON.stringify([
+      s.status, s.latest_plan?.id, s.latest_plan?.total, s.plans?.length, s.note,
+      s.timeline?.length, s.recipes?.length, s.favorites?.length, s.rema_list?.items?.length,
+      s.watch?.length, s.own_favorites?.length,
+    ]);
+  }
+
+  // A toast is its own little render: it never redraws the page under the user's fingers.
   _say(message) {
     this._toast = message;
-    this._render();
+    this._renderToast();
     clearTimeout(this._toastTimer);
     this._toastTimer = setTimeout(() => {
       this._toast = null;
-      this._render();
+      this._renderToast();
     }, 3500);
   }
 
-  async _run(fn, okMessage) {
-    if (this._busy) return;
+  _renderToast() {
+    const node = this.shadowRoot.querySelector("#toast");
+    if (node) node.innerHTML = this._toast ? `<div class="toast">${esc(this._toast)}</div>` : "";
+  }
+
+  _renderBusy() {
+    const node = this.shadowRoot.querySelector("#busy");
+    if (node) node.innerHTML = this._busy ? '<span class="spinner small"></span>' : "";
+  }
+
+  // Actions run one after the other: a tap while something else is in flight is
+  // not dropped, it waits its turn.
+  _run(fn, okMessage) {
+    const job = () => this._runNow(fn, okMessage);
+    this._queue = (this._queue || Promise.resolve()).then(job, job);
+    return this._queue;
+  }
+
+  async _runNow(fn, okMessage) {
     this._busy = true;
-    this._render();
+    this._renderBusy();
     try {
       await fn();
       if (okMessage) this._toast = okMessage;
@@ -385,7 +423,7 @@ class Rema1000Panel extends HTMLElement {
       clearTimeout(this._toastTimer);
       this._toastTimer = setTimeout(() => {
         this._toast = null;
-        this._render();
+        this._renderToast();
       }, 3500);
     }
   }
@@ -412,12 +450,13 @@ class Rema1000Panel extends HTMLElement {
   _goTab(key, direction = 0) {
     if (!key || key === this._tab) return;
     this._moreOpen = false;
+    this._chain = null; // a chain's offers belong to the plan tab
     this._everywhere = { query: "", loading: false, data: null, error: null };
     this._tab = key;
     if (key !== "recipes") this._releaseWake();
     if (key === "favorites" && !this._favCache[this._favWeek] && !this._favsLoading) this._loadFavs();
     if (key === "favorites" && !this._watch.items && !this._watch.loading) this._loadWatch();
-    if (key === "health") this._loadHealth(true);
+    if (key === "health") this._loadHealth();
     this._render();
     const content = this.shadowRoot.querySelector("#content");
     if (content && direction) {
@@ -430,7 +469,7 @@ class Rema1000Panel extends HTMLElement {
   // Swipe left/right on the page to go to the next/previous tab.
   _onTouchStart(ev) {
     this._swipe = null;
-    if (ev.touches.length !== 1) return;
+    if (ev.touches.length !== 1 || this._modal || this._noteOpen || this._moreOpen) return;
     const t = ev.touches[0];
     // Leave the screen edges to the system (back gesture, HA's menu).
     if (t.clientX < 24 || t.clientX > innerWidth - 24) return;
@@ -594,6 +633,8 @@ class Rema1000Panel extends HTMLElement {
         const minutes = arg.slice(sep + 1);
         if (this._timers[key]) delete this._timers[key];
         else this._timers[key] = Date.now() + Number(minutes) * 60000;
+        this._fired?.delete(key);
+        this._audio ||= (() => { try { return new (window.AudioContext || window.webkitAudioContext)(); } catch (err) { return null; } })(); // from a tap, so iOS allows sound later
         this._render();
       },
       wake: () => (this._wakeWanted ? this._releaseWake(true) : this._requestWake()),
@@ -1062,6 +1103,7 @@ class Rema1000Panel extends HTMLElement {
     const ds = el.dataset;
     if (ds.bind === "start") {
       this._startDate = el.value;
+      this._startDateTouched = true;
       if (ev.type === "change") this._render(); // the skip boxes follow the dates
       return;
     }
@@ -1076,8 +1118,10 @@ class Rema1000Panel extends HTMLElement {
     }
     if (ds.bind === "favfilter") {
       this._favFilter = el.value;
-      const list = this.shadowRoot.querySelector("#fav-all");
-      if (list) list.innerHTML = this._favRows();
+      this._soon("favfilter", () => {
+        const list = this.shadowRoot.querySelector("#fav-all");
+        if (list) list.innerHTML = this._favRows();
+      });
       return;
     }
     if (ds.bind === "rrquery") {
@@ -1099,17 +1143,22 @@ class Rema1000Panel extends HTMLElement {
     }
     if (ds.bind === "chainquery") {
       this._chainQuery = el.value;
-      const list = this.shadowRoot.querySelector("#chain-offers");
-      if (list) list.innerHTML = this._chainOfferRows();
+      this._soon("chainquery", () => {
+        const list = this.shadowRoot.querySelector("#chain-offers");
+        if (list) list.innerHTML = this._chainOfferRows();
+      });
       return;
     }
     if (ds.bind === "rc") {
       this._rc[ds.field] = el.value;
       if (ds.field === "link") return;
+      if (ds.field === "sort" && ev.type === "input") return; // change follows
       if (ds.field === "sort" || ev.type === "input") {
-        const list = this.shadowRoot.querySelector("#rc-list");
-        if (list && ds.field === "query") list.innerHTML = this._collectionRows();
-        else this._render();
+        this._soon("rc", () => {
+          const list = this.shadowRoot.querySelector("#rc-list");
+          if (list && ds.field === "query") list.innerHTML = this._collectionRows();
+          else this._render();
+        });
       }
       return;
     }
@@ -1718,11 +1767,17 @@ class Rema1000Panel extends HTMLElement {
 
   // ------------------------------------------------------------------ health
 
+  _healthKey() {
+    const plan = this._plan;
+    return plan ? `${plan.id}|${plan.total}|${plan.shopping?.length || 0}|${plan.days?.map((d) => d.dish).join("|")}` : "";
+  }
+
   async _loadHealth(force = false) {
     const planId = this._plan?.id;
     if (!planId) return;
-    if (!force && this._health?.planId === planId && (this._health.data || this._health.loading)) return;
-    this._health = { planId, loading: true, data: null, error: null };
+    const key = this._healthKey();
+    if (!force && this._health?.key === key && (this._health.data || this._health.loading)) return;
+    this._health = { planId, key, loading: true, data: null, error: null };
     this._render();
     try {
       this._health.data = await this._ws("middagsro/health", { plan_id: planId });
@@ -1736,7 +1791,7 @@ class Rema1000Panel extends HTMLElement {
   _healthView() {
     if (!this._plan) return `<div class="card">Der er ingen madplan endnu.</div>`;
     const h = this._health;
-    if (!h || h.planId !== this._plan.id) {
+    if (!h || h.key !== this._healthKey()) {
       setTimeout(() => this._loadHealth(), 0);
       return `<div class="card center"><span class="spinner"></span> Regner på madplanen …</div>`;
     }
@@ -1855,25 +1910,41 @@ class Rema1000Panel extends HTMLElement {
 
   // ------------------------------------------------------------------ timers
 
+  // The timers live in state, not on the page: they ring whatever tab is open, once.
   _tickTimers() {
-    const nodes = this.shadowRoot.querySelectorAll("[data-timer]");
-    nodes.forEach((node) => {
+    this._fired ||= new Set();
+    const clock = (left) => `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+    let soonest = null;
+    for (const [key, end] of Object.entries(this._timers)) {
+      const left = Math.max(0, Math.round((end - Date.now()) / 1000));
+      if (left === 0 && !this._fired.has(key)) {
+        this._fired.add(key);
+        if (navigator.vibrate) navigator.vibrate([300, 150, 300]);
+        this._beep();
+        if (this._tab !== "recipes") this._say("Timeren er færdig!");
+      }
+      if (left > 0 && (soonest === null || left < soonest)) soonest = left;
+    }
+    this.shadowRoot.querySelectorAll("[data-timer]").forEach((node) => {
       const end = this._timers[node.dataset.timer];
       if (!end) return;
       const left = Math.max(0, Math.round((end - Date.now()) / 1000));
-      node.textContent = left > 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "Færdig!";
-      if (left === 0 && !node.dataset.done) {
-        node.dataset.done = "1";
-        node.closest(".step")?.classList.add("alarm");
-        if (navigator.vibrate) navigator.vibrate([300, 150, 300]);
-        this._beep();
-      }
+      node.textContent = left > 0 ? clock(left) : "Færdig!";
+      if (left === 0) node.closest(".step")?.classList.add("alarm");
     });
+    const chip = this.shadowRoot.querySelector("#timerchip");
+    if (chip) {
+      const text = soonest === null ? "" : `⏱ ${clock(soonest)}`;
+      if (chip.textContent !== text) chip.textContent = text;
+    }
   }
 
   _beep() {
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      this._audio ||= new Ctx();
+      const ctx = this._audio;
+      if (ctx.state === "suspended") ctx.resume();
       const osc = ctx.createOscillator();
       osc.frequency.value = 880;
       osc.connect(ctx.destination);
@@ -2419,17 +2490,25 @@ class Rema1000Panel extends HTMLElement {
     } else if (!state) {
       body = `<div class="card center"><span class="spinner"></span> Indlæser …</div>`;
     } else {
-      body = {
-        plan: () => this._planView(),
-        recipes: () => this._recipesView(),
-        shopping: () => this._shoppingView(),
-        favorites: () => this._favoritesView(),
-        health: () => this._healthView(),
-        history: () => this._historyView(),
-        settings: () => this._settingsView(),
-      }[this._tab]();
-      if (this._tab === "plan" && this._chain) body = this._chainView();
-      if (this._tab === "plan") body += CREDIT;
+      try {
+        body = {
+          plan: () => this._planView(),
+          recipes: () => this._recipesView(),
+          shopping: () => this._shoppingView(),
+          favorites: () => this._favoritesView(),
+          health: () => this._healthView(),
+          history: () => this._historyView(),
+          settings: () => this._settingsView(),
+        }[this._tab]();
+        if (this._tab === "plan" && this._chain) body = this._chainView();
+        if (this._tab === "plan") body += CREDIT;
+      } catch (err) {
+        // One odd field must not blank the whole panel.
+        console.error("Middagsro: the page could not be drawn", err);
+        body = `<div class="card"><h2>Siden kunne ikke vises</h2><p class="muted">${esc(err?.message || String(err))}</p>
+          <div class="row wrap"><button class="btn" data-action="refresh">Prøv igen</button>
+          <button class="btn" data-action="tab" data-arg="plan">Til madplanen</button></div></div>`;
+      }
     }
     const root = this.shadowRoot;
     // The toolbar and tabs are built once, so their horizontal scroll survives.
@@ -2448,6 +2527,7 @@ class Rema1000Panel extends HTMLElement {
           <ha-menu-button></ha-menu-button>
           <span class="brand"><img class="logo" src="${this._img("icon.svg")}" alt=""><span class="wordmark">Middagsro</span></span>
           <span class="spacer"></span>
+          <span id="timerchip" class="timer-chip" data-action="tab" data-arg="recipes"></span>
           <span id="busy"></span>
         </div>
         <nav class="tabs">${tabs}<button class="tab more" data-action="more" aria-expanded="false"></button></nav>
@@ -2455,7 +2535,7 @@ class Rema1000Panel extends HTMLElement {
         <div class="more-sheet" hidden>${extra}</div>
         <main id="content"></main>
         <div id="modal"></div>
-        <div id="toast"></div>`;
+        <div id="toast" role="status" aria-live="polite"></div>`;
     }
     const menu = root.querySelector("ha-menu-button");
     if (menu) {
@@ -2473,16 +2553,47 @@ class Rema1000Panel extends HTMLElement {
       const el = root.querySelector(sel);
       if (el) el.hidden = !this._moreOpen;
     }
-    root.querySelector("#busy").innerHTML = this._busy ? '<span class="spinner small"></span>' : "";
+    this._renderBusy();
     const oldChips = root.querySelector(".chips");
     const chipsLeft = oldChips ? oldChips.scrollLeft : 0;
+    // The field being typed in keeps focus, caret and the phone's keyboard across the redraw.
+    const focused = root.activeElement;
+    const keep =
+      focused && root.querySelector("#content")?.contains(focused) && focused.matches("input, textarea, select")
+        ? { key: this._fieldKey(focused), start: focused.selectionStart, end: focused.selectionEnd, scroll: focused.scrollTop }
+        : null;
     root.querySelector("#content").innerHTML = `<div id="status">${this._statusHtml()}</div>${body}`;
-    root.querySelector("#toast").innerHTML = this._toast ? `<div class="toast">${esc(this._toast)}</div>` : "";
+    this._renderToast();
+    if (keep?.key) {
+      const again = [...root.querySelectorAll("#content input, #content textarea, #content select")].find((el) => this._fieldKey(el) === keep.key);
+      if (again) {
+        again.focus({ preventScroll: true });
+        try {
+          if (keep.start !== null && keep.start !== undefined && again.setSelectionRange) again.setSelectionRange(keep.start, keep.end);
+          again.scrollTop = keep.scroll;
+        } catch (err) {
+          /* a field without a caret */
+        }
+      }
+    }
     const chips = root.querySelector(".chips");
     if (chips) chips.scrollLeft = chipsLeft;
     this._keepVisible(root.querySelector(".tabs"), root.querySelector(".tab.active"));
     this._keepVisible(chips, chips?.querySelector(".chip.active"));
     this._tickTimers();
+  }
+
+  // A list is redrawn a moment after the last keystroke, not on every one.
+  _soon(key, fn, ms = 120) {
+    this._soonTimers ||= {};
+    clearTimeout(this._soonTimers[key]);
+    this._soonTimers[key] = setTimeout(fn, ms);
+  }
+
+  // What makes a field the same field after a redraw.
+  _fieldKey(el) {
+    const ds = el.dataset;
+    return [ds.bind, ds.path, ds.list, ds.field, ds.idx, ds.part, el.name, el.id].map((v) => v ?? "").join("|") || null;
   }
 
   // The popup lives outside #content, so polling while a plan is made doesn't
@@ -2801,8 +2912,7 @@ class Rema1000Panel extends HTMLElement {
       .map((c) => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.requirement)}</li>`)
       .join("");
     return `
-      ${this._viewingLatest ? "" : `<div class="banner info">Du ser en ældre madplan. <button class="link" data-action="view-latest">Vis nyeste</button></div>`}
-      ${this._chainsCard()}
+      ${this._olderBanner()}
       <div class="card">
         <div class="row between wrap">
           <div>
@@ -2842,6 +2952,7 @@ class Rema1000Panel extends HTMLElement {
         </div>
         ${checklist || plan.deviations ? `<details><summary>Krav-tjekliste</summary><ul class="checklist">${checklist}</ul>${plan.deviations ? `<p class="muted">${esc(plan.deviations)}</p>` : ""}</details>` : ""}
       </div>
+      ${this._chainsCard()}
       <div class="card">
         <h2>Det skal AI'en huske</h2>
         <p class="muted small">Faste ønsker til alle madplaner – skriv eller diktér. De kan også rettes under Indstillinger.</p>
@@ -3029,6 +3140,11 @@ class Rema1000Panel extends HTMLElement {
     }
   }
 
+  _olderBanner() {
+    if (this._viewingLatest || !this._plan) return "";
+    return `<div class="banner info">Du ser en ældre madplan (${esc(this._plan.title || "")}). <button class="link" data-action="view-latest">Vis nyeste</button></div>`;
+  }
+
   _recipesView() {
     const seg = `<div class="seg subnav">
         <button class="${this._recipesSub === "week" ? "active" : ""}" data-action="recipes-sub" data-arg="week">Ugens opskrifter</button>
@@ -3036,7 +3152,7 @@ class Rema1000Panel extends HTMLElement {
         <button class="${this._recipesSub === "rema" ? "active" : ""}" data-action="recipes-sub" data-arg="rema">REMA-opskrifter</button>
       </div>`;
     const view = { collection: () => this._collectionView(), rema: () => this._remaView() }[this._recipesSub];
-    return seg + (view ? view() : this._weekRecipesView());
+    return (view ? "" : this._olderBanner()) + seg + (view ? view() : this._weekRecipesView());
   }
 
   _weekRecipesView() {
@@ -3227,7 +3343,7 @@ class Rema1000Panel extends HTMLElement {
           .map((i) => `<li class="${i.bought ? "bought" : ""}">${i.amount > 1 ? `${i.amount} × ` : ""}${esc(i.name)}</li>`)
           .join("")
       : "<li class='muted'>Listen er tom.</li>";
-    return `${planHtml}
+    return `${this._olderBanner()}${planHtml}
       <div class="card">
         <div class="row between wrap">
           <h2>På REMA-listen lige nu${rema ? ` (${esc(rema.name)})` : ""}</h2>
@@ -4158,7 +4274,9 @@ const STYLE = `
     margin-top: 16px; padding: 12px 16px; background: var(--rema-solid-card); border: 1px solid var(--divider-color);
     border-radius: var(--ha-card-border-radius, 12px); box-shadow: 0 -2px 12px rgba(0, 0, 0, .12); }
   .toast { position: fixed; left: 50%; bottom: calc(24px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); transform: translateX(-50%); background: var(--primary-text-color); color: var(--primary-background-color);
-    padding: 12px 20px; border-radius: 10px; z-index: 10; max-width: 90vw; box-shadow: 0 4px 12px rgba(0,0,0,.3); }
+    padding: 12px 20px; border-radius: 10px; z-index: 40; max-width: 90vw; box-shadow: 0 4px 12px rgba(0,0,0,.3); }
+  .timer-chip { font-variant-numeric: tabular-nums; font-size: 14px; padding: 2px 8px; border-radius: 12px; cursor: pointer; }
+  .timer-chip:not(:empty) { background: var(--rema-sale, #d33); color: #fff; margin-right: 6px; }
   @media (max-width: 700px) {
     .recipe-grid { grid-template-columns: 1fr; }
     .day { grid-template-columns: 1fr; gap: 4px; }
