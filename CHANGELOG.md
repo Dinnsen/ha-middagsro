@@ -2,6 +2,12 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.0.1] - 2026-10-21
+
+### Fixed
+- **The list buys what the recipes use.** The overview's amounts are the AI's first guess; the recipes come after, for the household, and two dishes may share a line (the lasagne's and the hakkebøffer's minced meat). Now a line's packages grow to what the dishes need – never more than fourfold, never fewer – also after a dish is swapped or a recipe rewritten. The recipe writer is also told what is actually bought ("2 × 400 g").
+- *Cæsardressing* finds REMA's *CÆSAR DRESSING*: a compound search word is also tried as two words, and matches a two-word name.
+
 ## [2.0.0] - 2026-10-21
 
 ### Changed

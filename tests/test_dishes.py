@@ -459,3 +459,72 @@ async def test_recipes_share_lines(
     assert "Æg" in lines
     assert omelet["uses"] == ["Løg", "Æg"]
     assert lasagne["uses"][:2] == ["Hakket oksekød", "Løg"]
+
+
+def test_amounts_follow_the_recipes() -> None:
+    """A line's packages grow to what the dishes use; two dishes share a line."""
+    beef = {
+        "id": 1,
+        "name": "HK. GRIS & KALV 4-7%",
+        "underline": "400 GR. / REMA 1000",
+        "price": 29.0,
+    }
+    cheese = {"id": 2, "name": "REVET HÅRD OST", "underline": "100 GR. / AMBROSI", "price": 15.95}
+    chicken = {"id": 3, "name": "ØKO KYLLING", "underline": "1100 GR. / ROKKEDAHL", "price": 115.0}
+    plan = {
+        "days": [
+            _day("2026-10-25", "Lasagne", ingredients=[
+                {"name": "Hakket gris & kalv", "amount": "1200 g"},
+                {"name": "Revet hård ost", "amount": "300 g"},
+                {"name": "Letmælk", "amount": "1 liter"},
+                {"name": "Hakkede tomater", "amount": "3 dåser"},
+            ]),
+            _day("2026-10-26", "Rester", type="rester", uses_leftovers_from="2026-10-25",
+                 ingredients=[{"name": "Hakket gris & kalv", "amount": "9 kg"}]),
+            _day("2026-10-27", "Hakkebøffer", ingredients=[
+                {"name": "Hakket gris og kalv", "amount": "1600 g"},
+                {"name": "Øko kylling", "amount": "2 stk"},
+                {"name": "Fløde", "amount": "5 dl"},
+            ]),
+        ],
+        "shopping": [
+            {"name": "Hakket dansk oksekød", "amount": 2, "unit": "pk", "packages": 2, "cost": 58.0, "product": beef},
+            {"name": "Revet ost", "amount": 1, "unit": "pk", "packages": 1, "cost": 15.95, "product": cheese},
+            {"name": "Dansk kylling", "amount": 1, "unit": "stk", "packages": 1, "cost": 115.0, "product": chicken},
+            {"name": "Mælk", "amount": 2, "unit": "l", "packages": 2, "cost": 27.9,
+             "product": {"id": 4, "name": "LETMÆLK 1,5%", "underline": "1 LTR. / ARLA", "price": 13.95}},
+            {"name": "Hakkede tomater", "amount": 3, "unit": "dåser", "packages": 3, "cost": 20.73,
+             "product": {"id": 5, "name": "HAKKEDE TOMATER", "underline": "400 GR.", "price": 6.91}},
+            {"name": "Fløde", "amount": 250, "unit": "ml", "packages": 1, "cost": None, "product": None},
+            {"name": "Smør", "amount": 1, "unit": "pk", "packages": 1, "cost": 20.0, "must_have": True,
+             "product": {"id": 6, "name": "SMØR", "underline": "250 GR.", "price": 20.0}},
+        ],
+    }  # fmt: skip
+    changed = mp.fit_amounts(plan)
+    assert changed == ["Hakket dansk oksekød", "Revet ost", "Dansk kylling", "Fløde"]
+    lines = {line["name"]: line for line in plan["shopping"]}
+    assert (lines["Hakket dansk oksekød"]["packages"], lines["Hakket dansk oksekød"]["cost"]) == (
+        7,
+        203.0,
+    )
+    assert lines["Revet ost"]["packages"] == 3
+    assert lines["Dansk kylling"]["packages"] == 2
+    assert lines["Fløde"]["amount"] == 500
+    assert lines["Mælk"]["packages"] == 2  # enough already
+    assert lines["Hakkede tomater"]["packages"] == 3
+    assert plan["total"] == 203.0 + 47.85 + 230.0 + 27.9 + 20.73 + 20.0
+    assert mp.fit_amounts(plan) == []  # nothing more to do
+    # Never more than fourfold: a recipe gone wild doesn't empty the shop.
+    plan["days"][2]["ingredients"][0]["amount"] = "40 kg"
+    mp.fit_amounts(plan)
+    assert lines["Hakket dansk oksekød"]["packages"] == 28
+
+
+def test_compound_search_words() -> None:
+    """ "Cæsardressing" finds REMA's "CÆSAR DRESSING"."""
+    assert mp.name_fit(["cæsardressing"], "CÆSAR DRESSING") == (1, 1.15)
+    assert mp.name_fit(["cæsardressing"], "ITALIANO DRESSING")[0] == 0
+    assert "cæsar dressing" in mp.search_queries(
+        {"search": "Cæsardressing", "name": "Cæsardressing"}
+    )
+    assert mp.search_queries({"search": "pesto", "name": "Grøn pesto"}) == ["pesto", "Grøn pesto"]
