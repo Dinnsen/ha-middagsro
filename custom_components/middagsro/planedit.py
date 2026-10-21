@@ -19,6 +19,7 @@ import uuid
 from homeassistant.exceptions import HomeAssistantError
 
 from .api import Offer, RemaError
+from .dishes import matches_any
 from .mealie import MealieError
 from .mealplan import (
     ALLERGY_DA,
@@ -36,7 +37,8 @@ from .mealplan import (
     rule_lines,
     to_base,
 )
-from .recipes import disliked_names, find_recipe, ingredient_texts, prompt_recipes
+from .recipes import disliked_names, favorite_recipe, find_recipe, ingredient_texts, prompt_recipes
+from .words import _uses_item, pantry_words
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -155,6 +157,7 @@ def build_swap_prompt(
     offer_lines: list[str],
     mealie: list[dict[str, Any]] | None = None,
     own: list[dict[str, Any]] | None = None,
+    earlier: list[str] | None = None,
 ) -> str:
     """Ask the AI for three other dishes for a day."""
     when = date.fromisoformat(day["date"])
@@ -182,6 +185,12 @@ def build_swap_prompt(
         *_rules(settings, when.weekday() < 5),
         "- Ikke de andre retter i ugen: " + "; ".join(others) + ".",
     ]
+    if earlier:
+        out.append(
+            "- Heller ikke retter fra de seneste uger, eller varianter af dem: "
+            + "; ".join(earlier)
+            + "."
+        )
     if day.get("makes_leftovers"):
         out.append("- Retten laves i dobbelt portion; resten spises dagen efter.")
     if day.get("type") == "vegetar":
@@ -357,7 +366,10 @@ async def async_swap_options(planner: MealPlanner, plan_id: str, day_date: str) 
     when = date.fromisoformat(day["date"])
     late = late_offers(offers, date.fromisoformat(plan["start_date"]))
     mealie = await _async_mealie_list(planner)
-    recent = [d["dish"] for d in plan["days"]]
+    earlier = planner.store.recent_dishes(
+        date.fromisoformat(plan["start_date"]), planner.store.settings["no_repeat_weeks"]
+    )
+    recent = [d["dish"] for d in plan["days"]] + earlier
     own = prompt_recipes(planner.store, recent)
     prompt = build_swap_prompt(
         settings=_with_dislikes(planner),
@@ -366,9 +378,10 @@ async def async_swap_options(planner: MealPlanner, plan_id: str, day_date: str) 
         offer_lines=_offer_lines(offers, when, late),
         mealie=mealie,
         own=own,
+        earlier=earlier,
     )
     raw = await planner._async_ask_ai(prompt, "REMA 1000 andre retter")
-    options = [o for o in (_clean_option(item) for item in raw.get("options") or []) if o][:3]
+    options = [o for o in (_clean_option(item) for item in raw.get("options") or []) if o]
     known = {r["slug"] for r in mealie}
     ours = {r["id"] for r in own}
     for option in options:
@@ -376,6 +389,10 @@ async def async_swap_options(planner: MealPlanner, plan_id: str, day_date: str) 
             option["mealie"] = None
         if option["recipe_id"] not in ours:
             option["recipe_id"] = None
+    # A suggestion the family had in the last weeks is no suggestion.
+    avoid = [d["dish"] for d in plan["days"] if d is not day and d is not picked] + earlier
+    fresh = [o for o in options if matches_any(o["dish"], avoid) is None]
+    options = (fresh or options)[:3]
     if not options:
         raise _failed("swap_failed", error="AI'en kom ikke med nogen forslag")
     return {"plan_id": plan["id"], "date": day["date"], "dish": day["dish"], "options": options}
@@ -424,11 +441,16 @@ async def async_swap_dish(
             recipe = await planner.mealie.async_recipe(choice["mealie"])
         except MealieError as err:
             _LOGGER.debug("Could not read %s from Mealie: %s", choice["mealie"], err)
-    own = find_recipe(planner.store, choice["recipe_id"])
+    # The family's own recipe for the dish, when they have one they like.
+    own = find_recipe(planner.store, choice["recipe_id"]) or favorite_recipe(
+        planner.store, choice["dish"]
+    )
     if own is None:
         choice["recipe_id"] = None
-    elif own["ingredients"]:
-        recipe = {"ingredients": ingredient_texts(own)}
+    else:
+        choice["recipe_id"] = own["id"]
+        if own["ingredients"]:
+            recipe = {"ingredients": ingredient_texts(own)}
     prompt = build_swap_items_prompt(
         settings=settings,
         plan=plan,
@@ -509,32 +531,6 @@ async def async_swap_dish(
 
 
 # ------------------------------------------------------------------ pantry
-
-
-def pantry_words(text: str) -> list[str]:
-    """The family's basic items: 'salt, peber, olie og smør' -> salt, peber, olie, smør."""
-    parts = re.split(r",|;|\n|\bog\b", text, flags=re.IGNORECASE)
-    seen: list[str] = []
-    for part in parts:
-        word = part.strip().lower()
-        if word and word not in seen:
-            seen.append(word)
-    return seen
-
-
-def _uses_item(item: str, ingredient: str) -> bool:
-    """Is a recipe ingredient this basic item? 'rapsolie' is olie; 'mælk' isn't mel."""
-    wanted = _tokens(item)
-    if not wanted:
-        return False
-    words = _tokens(ingredient)
-    return all(
-        any(
-            w == want or (len(want) > 2 and w.endswith(want) and len(w) > len(want) + 2)
-            for w in words
-        )
-        for want in wanted
-    )
 
 
 def _sum_amounts(amounts: list[str]) -> tuple[float, str] | None:
