@@ -1644,11 +1644,11 @@ class MealPlanner:
         best["checklist"] += [{"requirement": p, "ok": False} for p in problems]
         if problems:
             _LOGGER.info("The plan still breaks %d rule(s): %s", len(problems), "; ".join(problems))
-        best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
         best["skipped"] = [d.isoformat() for d in skipped]
         best["note"] = note
         best["surprise"] = surprise
         await self._async_align_recipes(best, offers, self.price_time(start), late)
+        best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
         await self._async_add_recipes(best)
         mark_planned(self.store, best)
         await self.store.async_add_plan(best)
