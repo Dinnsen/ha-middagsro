@@ -95,7 +95,8 @@ SEND_SCHEMA = vol.Schema(
 PURCHASE_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
-        vol.Required(ATTR_AMOUNT): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=100000)),
+        # A number, or text as a card payment shows it ("600,00 kr."): checked when booked.
+        vol.Required(ATTR_AMOUNT): vol.Any(vol.Coerce(float), cv.string),
         vol.Optional("store"): cv.string,
         vol.Optional("date"): cv.string,
         vol.Optional("note"): cv.string,

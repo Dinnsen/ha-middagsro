@@ -106,6 +106,27 @@ def test_store_of() -> None:
     assert bg.store_of(None) == bg.OTHER
 
 
+def test_parse_amount() -> None:
+    """The amount as a phone's shortcut sends it, in Danish or English."""
+    for text, value in (
+        (600, 600),
+        (12.5, 12.5),
+        ("450,5", 450.5),
+        ("600,00 kr.", 600),
+        ("kr. 1.234,50", 1234.5),
+        ("DKK 1,234.50", 1234.5),
+        ("DKK 600.00", 600),
+        ("1.234", 1234),
+        ("12.345.678", 12345678),
+        ("1,234,567", 1234567),
+        ("-25,00", -25),
+    ):
+        assert bg.parse_amount(text) == value, text
+    for bad in ("kr.", None, True):
+        with pytest.raises(ValueError):
+            bg.parse_amount(bad)
+
+
 def test_clean_purchase(freezer: Any) -> None:
     """Amounts with a comma, dates, shops and their names."""
     freezer.move_to("2026-10-14T10:00:00+00:00")
@@ -127,6 +148,7 @@ def test_clean_purchase(freezer: Any) -> None:
         ({"amount": 0}, "purchase_amount"),
         ({"amount": "mange"}, "purchase_amount"),
         ({"amount": 200_000}, "purchase_amount"),
+        ({"amount": "-25,00 kr."}, "purchase_amount"),
         ({"amount": 5, "date": "i går"}, "purchase_date"),
         ({"amount": 5, "date": "2026-10-20"}, "purchase_date"),
     ):
@@ -432,6 +454,15 @@ async def test_action_sensors_and_notification(
     with patch.object(bg.persistent_notification, "async_create") as create:
         await hass.services.async_call(DOMAIN, "register_purchase", {"amount": 10}, blocking=True)
     assert create.call_args.kwargs["notification_id"] == "middagsro_budget"
+    # The amount as the card payment shows it.
+    await hass.services.async_call(
+        DOMAIN, "register_purchase", {"amount": "12,50 kr."}, blocking=True
+    )
+    assert 12.5 in [p["amount"] for p in store.purchases]
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN, "register_purchase", {"amount": "kr."}, blocking=True
+        )
     store.budget_told = ""
     await store.async_set_settings({**store.settings, "watch_notify": "notify.findes_ikke"})
     await hass.services.async_call(
