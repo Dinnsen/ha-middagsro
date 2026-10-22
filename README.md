@@ -76,6 +76,12 @@ Search REMA's products at the bottom of *Favoritter* to add favourites of your o
 
 **Watch list (Overvågning).** Tap the 🔔 on a favourite or any product to watch it – or type something REMA doesn't sell and watch it as text. At the top of *Favoritter* you see where the watched items are on offer: in REMA (now or from next week's avis) and in the chains you have chosen, with the price and a button that puts the item in the basket or on that chain's shopping list. In **Indstillinger → Overvågning og beskeder** you can get a notification on your phone or in Home Assistant when something on the watch list comes on offer – and only then. The list is checked every 3 hours, and each offer is told once.
 
+### Food budget (*Økonomi*)
+
+Enter the household's monthly amount for food, and book what you shop for on the front page – the amount on the receipt and the shop. The front page shows what is left of the week and per day for the rest of it; the *Økonomi* page shows the month as a chart with a forecast, the last 12 weeks, the year, and averages per shopping day, per adult per day and per shop. The amount is spread over the month's days, what a week doesn't use carries on to the next weeks of the month, and a new month starts afresh on the 1st. With a budget, a new meal plan may cost what is left of its week, and you can be told when 80 % of the week is used.
+
+**Booking by itself with Apple Pay (iPhone).** REMA's *Scan & Betal* has no receipts you can reach, but a card payment can book itself: in the *Shortcuts* app, make a personal automation *Transaction* (*Transaktion*) for your Wallet card, choose the shops (REMA 1000, Netto …) and *Run immediately*. Add Home Assistant's action *Perform action* (*Udfør handling*) with `middagsro.register_purchase` and the fields `amount` = the shortcut's *Amount* and `store` = *Merchant*. A Siri shortcut that asks for the amount works the same way.
+
 ### History
 
 <img src="docs/images/history.png" alt="Earlier meal plans with price and dishes" width="100%">
@@ -216,6 +222,7 @@ The settings apply every time a meal plan is made and are stored per REMA 1000 a
 | **Fixed weekly items** (*Faste varer hver uge*) | Search REMA's range and pick a product (or write free text) that always goes on the list. Optionally, a fixed item that is already on the REMA list (not bought) is not sent again. | – |
 | **We also shop late in the week** (*Vi handler også sidst på ugen*) | Some offers only start on Thursday. Off, the meal plan only uses offers that run on the shopping day. On, it may use them in dishes from that day; the shopping list is split into the shopping day and Thursday, each sent on its own. | Off |
 | **Automation** (*Automatik*) | Make next week's plan when the new offers come out, and optionally send it to the REMA list. It is sent at 02:00 on the shopping day (Thursday's items at 02:00 on Thursday), when REMA has the week's products and prices. | Off |
+| **Food budget** (*Madbudget*) | The monthly amount for food (0 = off). With it, a plan's budget is what is left of its week, and *Budget* above isn't used. Optionally a notification at 80 % of the week. | Off |
 | **The family's favourites** (*Familiens favoritter*) | Dishes with how often. | – |
 | **Dishes the family doesn't like** | Never go on the plan. | – |
 
@@ -231,6 +238,7 @@ Each REMA 1000 account becomes a service with these entities:
 | **Dinner today** | `sensor` | Today's dinner. Attributes: type, leftovers, servings, time, ingredients, number of steps, tip and tomorrow's dish. |
 | **Shopping list total** | `sensor` (DKK) | Estimated price of what is still to be bought. Attributes: number of items and items without a price. |
 | **Current offer catalogue** / **Next offer catalogue** | `sensor` (timestamp) | When the offers run until / from. Attributes: the catalogue's name, number of offers and when the integration first saw next week's catalogue. |
+| **Food budget left this week** / **spent this month** / **forecast for the month** | `sensor` (DKK) | The food budget's numbers (unavailable without a monthly budget). The week's sensor has the week's start, end, available, spent, carry, planned and per day as attributes. |
 | **Meal plan** | `calendar` | Each day's dinner as an event with time and ingredients. |
 | **Make meal plan** | `button` | Makes a new plan with the settings from the panel. |
 | **Send meal plan to shopping list** | `button` | Sends the newest plan to the REMA list. |
@@ -244,6 +252,7 @@ Each REMA 1000 account becomes a service with these entities:
 | `middagsro.add_items` | Add products (REMA product number or free text) to the REMA list. | `items` (required, list with `product_id` or `name` and optionally `amount`), `config_entry_id` |
 | `middagsro.generate_meal_plan` | Make a meal plan in the background. | `start_date`, `send` (send the list when the plan is ready), `config_entry_id` |
 | `middagsro.send_meal_plan` | Send a meal plan's shopping list to the REMA list. | `plan_id` (empty = newest), `part` (`main` = the shopping day, `late` = the Thursday items, `all`; default `main`), `config_entry_id` |
+| `middagsro.register_purchase` | Book a purchase against the food budget. Returns what is left of the week and the month's forecast. | `amount` (required), `store` (a name like *REMA 1000 Valby* or *Netto*; default REMA 1000), `date` (default today), `note`, `config_entry_id` |
 
 `config_entry_id` is only needed if you have several REMA 1000 accounts.
 

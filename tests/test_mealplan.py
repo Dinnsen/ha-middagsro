@@ -393,6 +393,24 @@ async def _generate(planner: mp.MealPlanner, ai: FakeAI, **kwargs: Any) -> None:
         await planner._task
 
 
+async def test_plan_follows_food_budget(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    ai_task: str,
+) -> None:
+    """With a monthly food budget, a plan may cost what is left of its week."""
+    store = init_integration.runtime_data.store
+    await store.async_set_settings({**store.settings, "monthly_budget": 3100})  # 100 kr. a day
+    dates = mp.plan_dates(START, 7, set())
+    ai = FakeAI(json.dumps(ai_answer(dates, SHOPPING)))  # type: ignore[arg-type]
+    await _generate(init_integration.runtime_data.planner, ai)
+    plan = store.latest_plan
+    assert plan is not None
+    # The week's 700 kr., and 400 kr. from wednesday to saturday that nothing was spent of.
+    assert plan["budget"] == 1100
+    assert "tilbage af ugens madbudget" in ai.prompts[0]
+
+
 async def test_generate_plan(
     hass: HomeAssistant,
     init_integration: MockConfigEntry,

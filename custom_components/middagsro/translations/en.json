@@ -75,6 +75,15 @@
       },
       "dinner_today": {
         "name": "Dinner today"
+      },
+      "budget_week_left": {
+        "name": "Food budget left this week"
+      },
+      "budget_month_spent": {
+        "name": "Food budget spent this month"
+      },
+      "budget_month_forecast": {
+        "name": "Food budget forecast for the month"
       }
     },
     "todo": {
@@ -206,6 +215,18 @@
     },
     "too_many_watched": {
       "message": "The list can hold at most {limit}."
+    },
+    "purchase_amount": {
+      "message": "Enter an amount above 0 kr."
+    },
+    "purchase_date": {
+      "message": "The date can't be read, or it is in the future."
+    },
+    "purchase_not_found": {
+      "message": "That purchase doesn't exist (any more)."
+    },
+    "no_monthly_budget": {
+      "message": "Set a monthly food budget under Settings › Madbudget first."
     }
   },
   "issues": {
@@ -309,6 +330,32 @@
         "part": {
           "name": "Which items",
           "description": "Main: what is bought on the shopping day. Late in the week: the items for offers that start later (e.g. Thursday), when 'We also shop late in the week' is on. All: everything."
+        }
+      }
+    },
+    "register_purchase": {
+      "name": "Register a purchase",
+      "description": "Books a purchase of food (or other household items) against the food budget. Answers with what is left of the week.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Which account, if there are several."
+        },
+        "amount": {
+          "name": "Amount",
+          "description": "What the purchase cost, in kroner."
+        },
+        "store": {
+          "name": "Shop",
+          "description": "The shop, e.g. REMA 1000 or Netto – or the merchant name from a card payment."
+        },
+        "date": {
+          "name": "Date",
+          "description": "When the shopping was done (today if left out)."
+        },
+        "note": {
+          "name": "Note",
+          "description": "A short note."
         }
       }
     }

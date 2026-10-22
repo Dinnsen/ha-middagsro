@@ -54,9 +54,10 @@ const TAB_ICONS = {
   health: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>',
   history: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
   settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>',
+  budget: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h14.5a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18V6.5A1.5 1.5 0 0 1 5.5 5H17"/><path d="M16 12.5h4v3h-4a1.5 1.5 0 0 1 0-3z"/></svg>',
 };
 // On a phone the bottom bar shows the first tabs; the rest sit behind "Mere".
-const EXTRA_TABS = new Set(["health", "history", "settings"]);
+const EXTRA_TABS = new Set(["budget", "health", "history", "settings"]);
 const MORE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>';
 const CLOSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 // Shown on every button that asks the AI for something.
@@ -95,6 +96,7 @@ const TABS = [
   ["recipes", "Opskrifter"],
   ["shopping", "Indkøb"],
   ["favorites", "Favoritter"],
+  ["budget", "Økonomi"],
   ["health", "Sundhed"],
   ["history", "Historik"],
   ["settings", "Indstillinger"],
@@ -113,6 +115,7 @@ const SETTING_ICONS = {
   nutrition: TAB_ICONS.health,
   mealie: TAB_ICONS.recipes,
   watch: BELL_ICON,
+  budget: TAB_ICONS.budget,
   chains: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5 5.5 4h13L20 9.5M4 9.5h16M4 9.5c0 1.7 1.3 2.5 2.7 2.5S9.3 11.2 9.3 9.5c0 1.7 1.3 2.5 2.7 2.5s2.7-.8 2.7-2.5c0 1.7 1.3 2.5 2.7 2.5S20 11.2 20 9.5M5.5 12v8h13v-8M10 20v-4.5h4V20"/></svg>',
   app: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>',
 };
@@ -126,7 +129,9 @@ const SETTINGS_SECTIONS = (panel) => {
   const dislikes = (state.settings.disliked_dishes || []).length;
   return [
     { key: "plan", title: "Madplan og uge", form: true,
-      summary: `${f.days} dage fra ${WEEKDAYS[f.start_weekday].toLowerCase()} · budget ${f.budget} kr.${f.auto_generate ? " · laves automatisk" : ""}` },
+      summary: `${f.days} dage fra ${WEEKDAYS[f.start_weekday].toLowerCase()} · ${f.monthly_budget ? "budget efter madbudgettet" : `budget ${f.budget} kr.`}${f.auto_generate ? " · laves automatisk" : ""}` },
+    { key: "budget", title: "Madbudget", form: true,
+      summary: f.monthly_budget ? `${kr0(f.monthly_budget)} om måneden${f.budget_notify ? " · besked ved 80 %" : ""}` : "Ikke sat op" },
     { key: "family", title: "Familien, allergier og undgå", form: true,
       summary: `${f.household.length} personer${allergies ? ` · ${allergies} allergi${allergies === 1 ? "" : "er"}` : ""}${f.avoid.length ? ` · undgår ${f.avoid.length}` : ""}` },
     { key: "dishes", title: "Retter, favoritter og ønsker", form: true,
@@ -156,6 +161,10 @@ function localToday() {
 
 const esc = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+// Whole kroner, for budgets: "1.127 kr."
+const kr0 = (value) =>
+  value == null || Number.isNaN(Number(value)) ? "–" : `${Math.round(Number(value)).toLocaleString("da-DK")} kr.`;
+const MONTHS_SHORT = ["jan", "feb", "mar", "apr", "maj", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
 const kr = (value) =>
   value == null || Number.isNaN(Number(value))
     ? "–"
@@ -259,6 +268,9 @@ class Rema1000Panel extends HTMLElement {
     // The watch list's offers, and the search for products to add to the favourites.
     this._watch = { items: null, loading: false, error: null };
     this._favSearch = { query: "", results: [], loading: false };
+    // The food budget: the purchase being booked, and the economy page's month/year view.
+    this._book = { amount: "", store: REMA_ID, date: "", monthly: "" };
+    this._budgetSpan = "month";
     this._wake = null;
     this._wakeWanted = false;
     this._onVisibility = () => {
@@ -606,11 +618,53 @@ class Rema1000Panel extends HTMLElement {
         this._run(() => this._ws("middagsro/list/clear"), "REMA-listen er tømt.");
       },
       generate: () => this._run(() => this._generate(), GENERATING_MESSAGE),
-      send: () =>
+      send: () => {
+        // With a food budget: say so before a list that takes the week over.
+        const week = this._state?.budget?.week;
+        const part = arg === "late" ? "late" : "main";
+        const cost = (this._plan?.shopping || [])
+          .filter((l) => !l.sent && !l.buy_at && Boolean(l.buy_from) === (part === "late"))
+          .reduce((sum, l) => sum + (Number(l.cost) || 0), 0);
+        if (week && cost > week.remaining && !confirm(`Listen er anslået til ${kr0(cost)}, men der er kun ${kr0(week.remaining)} tilbage af ugens madbudget. Send den alligevel?`)) return;
         this._run(
-          () => this._ws("middagsro/send", { plan_id: this._plan?.id, part: arg === "late" ? "late" : "main" }),
-          arg === "late" ? "Torsdagsvarerne er sendt til REMA 1000-appen." : "Indkøbslisten er sendt til REMA 1000-appen."
-        ),
+          () => this._ws("middagsro/send", { plan_id: this._plan?.id, part }),
+          part === "late" ? `Varerne til ${this._lateDayName()} er sendt til REMA 1000-appen.` : "Indkøbslisten er sendt til REMA 1000-appen."
+        );
+      },
+      "budget-store": () => {
+        this._book.store = arg;
+        this._renderBudgetForms();
+      },
+      "budget-book": () => {
+        const amount = Number(String(this._book.amount || "").replace(",", "."));
+        if (!(amount > 0)) return this._say("Skriv beløbet fra kvitteringen.");
+        const data = { amount, store: this._book.store, date: this._book.date || localToday() };
+        this._run(async () => {
+          await this._ws("middagsro/purchases/add", data);
+          this._book = { amount: "", store: this._book.store, date: "" };
+        }, `${kr0(amount)} er konteret.`);
+      },
+      "budget-suggest": () => {
+        this._book.amount = String(Math.round(Number(arg) || 0));
+        this._renderBudgetForms();
+      },
+      "purchase-delete": () => {
+        const p = (this._state?.budget?.purchases || []).find((x) => x.id === arg);
+        if (!p || !confirm(`Slet købet på ${kr0(p.amount)} fra ${dateLabel(p.date).toLowerCase()}?`)) return;
+        this._run(() => this._ws("middagsro/purchases/delete", { purchase_id: arg }), "Købet er slettet.");
+      },
+      "budget-setup": () => {
+        const value = Math.round(Number(String(this._book.monthly || "").replace(",", ".")));
+        if (!(value > 0)) return this._say("Skriv jeres madbudget pr. måned.");
+        this._run(async () => {
+          const saved = await this._ws("middagsro/settings", { settings: { ...this._state.settings, monthly_budget: value } });
+          if (this._form && !this._dirty) this._form = clone(saved);
+        }, `Madbudgettet er sat til ${kr0(value)} om måneden.`);
+      },
+      "budget-view": () => {
+        this._budgetSpan = arg;
+        this._render();
+      },
       "open-day": () => {
         this._day = this._recipeIndex(arg);
         this._dayKey = this._recipeKey();
@@ -1124,6 +1178,10 @@ class Rema1000Panel extends HTMLElement {
     }
     if (ds.bind === "note") {
       this._noteDraft = el.value;
+      return;
+    }
+    if (ds.bind === "book") {
+      this._book[ds.field] = el.value;
       return;
     }
     if (ds.bind === "favfilter") {
@@ -2529,6 +2587,7 @@ class Rema1000Panel extends HTMLElement {
           recipes: () => this._recipesView(),
           shopping: () => this._shoppingView(),
           favorites: () => this._favoritesView(),
+          budget: () => this._budgetView(),
           health: () => this._healthView(),
           history: () => this._historyView(),
           settings: () => this._settingsView(),
@@ -2947,6 +3006,7 @@ class Rema1000Panel extends HTMLElement {
       .join("");
     return `
       ${this._olderBanner()}
+      ${this._budgetCard(true)}
       <div class="card">
         <div class="row between wrap">
           <div>
@@ -3593,6 +3653,186 @@ class Rema1000Panel extends HTMLElement {
     return rows || "<li class='muted'>Ingen favoritter matcher.</li>";
   }
 
+  // ------------------------------------------------------------------ the food budget
+
+  _lateDayName() {
+    const late = (this._plan?.shopping || []).find((l) => l.buy_from)?.buy_from;
+    return late ? dayName(late) : "senere på ugen";
+  }
+
+  // The week's budget: what is left, the pace, and booking a purchase (also on the plan tab).
+  _budgetCard(compact = false) {
+    const b = this._state?.budget;
+    if (!b) return "";
+    const w = b.week;
+    const used = w.available > 0 ? Math.min(100, Math.max(0, (w.spent / w.available) * 100)) : 100;
+    const pace = w.available > 0 ? Math.min(100, Math.max(0, (w.pace / w.available) * 100)) : 0;
+    const over = w.remaining < 0;
+    const ahead = !over && w.spent > w.pace * 1.1;
+    const next = (b.purchases || []).length ? "" : '<p class="muted small">Kontér det, I handler for, så holder Middagsro øje med ugen og måneden.</p>';
+    const plannedNote = w.planned > 0
+      ? `<div class="banner ${w.after_planned < 0 ? "warn" : "info"} small">Resten af ugens lister er anslået til ${kr0(w.planned)}. ${w.after_planned < 0 ? `Det er ${kr0(-w.after_planned)} mere, end der er tilbage.` : `Så er der ${kr0(w.after_planned)} til resten.`}</div>`
+      : "";
+    return `<div class="card budget-card">
+      <div class="muted small">Ugens madbudget · uge ${w.week} · ${esc(shortDate(w.start))}–${esc(shortDate(w.end))}</div>
+      <div class="budget-left"><span class="big ${over ? "over" : ""}">${kr0(Math.abs(w.remaining))}</span>
+        <span class="muted">${over ? "over budgettet" : `tilbage · ${kr0(Math.max(0, w.per_day))} om dagen`}</span></div>
+      <div class="budget-bar ${over ? "over" : ahead ? "ahead" : ""}" role="img" aria-label="Brugt ${kr0(w.spent)} af ${kr0(w.available)}">
+        <span style="width:${used.toFixed(1)}%"></span><i style="left:${pace.toFixed(1)}%" title="Jævnt forbrug til og med i dag"></i></div>
+      <div class="row between muted small"><span>Brugt ${kr0(w.spent)} af ${kr0(w.available)}</span><span>${over ? "" : ahead ? "Foran tempoet" : "I tempo"}</span></div>
+      ${Math.abs(w.carry) >= 1 ? `<div class="muted small">${w.carry > 0 ? `Heraf ${kr0(w.carry)} sparet i tidligere uger` : `${kr0(-w.carry)} trukket fra – brugt for meget tidligere`} i ${MONTHS_SHORT[Number(w.start.slice(5, 7)) - 1]}.</div>` : ""}
+      ${plannedNote}
+      <div id="budget-book">${this._bookForm()}</div>
+      ${next}
+      ${compact ? '<div class="row"><button class="link" data-action="tab" data-arg="budget">Se økonomien</button></div>' : ""}
+    </div>`;
+  }
+
+  _bookForm() {
+    const chains = [REMA_ID, ...(this._state.settings.chains || []), "other"];
+    const chip = (id) => `<button class="chip ${this._book.store === id ? "active" : ""}" data-action="budget-store" data-arg="${esc(id)}">${id === "other" ? "Andet" : esc(this._chainName(id))}</button>`;
+    // The list just sent is what was bought: offer its price.
+    const sent = (this._plan?.shopping || []).filter((l) => l.sent && String(l.sent).slice(0, 10) === localToday());
+    const suggestion = sent.reduce((sum, l) => sum + (Number(l.cost) || 0), 0);
+    return `<div class="book">
+        <input type="text" inputmode="decimal" data-bind="book" data-field="amount" value="${esc(this._book.amount)}" placeholder="Beløb" aria-label="Beløb">
+        <input type="date" data-bind="book" data-field="date" value="${esc(this._book.date || localToday())}" max="${localToday()}" aria-label="Dato">
+        <button class="btn primary" data-action="budget-book">Kontér</button>
+      </div>
+      <div class="book-stores">${chains.map(chip).join("")}</div>
+      ${suggestion > 0 && !this._book.amount ? `<button class="link small" data-action="budget-suggest" data-arg="${suggestion}">Brug dagens sendte liste: ${kr0(suggestion)}</button>` : ""}`;
+  }
+
+  _renderBudgetForms() {
+    this.shadowRoot.querySelectorAll("#budget-book").forEach((n) => (n.innerHTML = this._bookForm()));
+  }
+
+  _budgetView() {
+    const b = this._state.budget;
+    if (!b) {
+      return `<div class="card"><h2 class="flush">Madbudget</h2>
+        <p>Skriv jeres faste beløb til indkøb pr. måned. Så kan I kontere hvert køb, se hvad der er tilbage af ugen, og madplanen holder sig inden for det.</p>
+        <div class="row wrap"><input class="grow" type="text" inputmode="numeric" data-bind="book" data-field="monthly" value="${esc(this._book.monthly)}" placeholder="Fx 5000">
+          <button class="btn primary" data-action="budget-setup">Start madbudget</button></div></div>`;
+    }
+    const m = b.month;
+    const span = this._budgetSpan;
+    const seg = `<div class="seg subnav">
+      <button class="${span === "month" ? "active" : ""}" data-action="budget-view" data-arg="month">Måned</button>
+      <button class="${span === "weeks" ? "active" : ""}" data-action="budget-view" data-arg="weeks">Uger</button>
+      <button class="${span === "year" ? "active" : ""}" data-action="budget-view" data-arg="year">År</button>
+      <button class="${span === "purchases" ? "active" : ""}" data-action="budget-view" data-arg="purchases">Køb</button></div>`;
+    const body = { month: () => this._budgetMonth(b), weeks: () => this._budgetWeeks(b), year: () => this._budgetYear(b), purchases: () => this._budgetPurchases(b) }[span]?.() || "";
+    const forecastDiff = m.forecast - m.budget;
+    return `${this._budgetCard()}
+      <div class="stats">
+        <div class="stat"><span class="muted small">Brugt i ${MONTHS_SHORT[Number(m.first.slice(5, 7)) - 1]}.</span><b>${kr0(m.spent)}</b><span class="muted small">af ${kr0(m.budget)}</span></div>
+        <div class="stat"><span class="muted small">Prognose</span><b class="${forecastDiff > 0 ? "over" : "ok"}">${kr0(m.forecast)}</b><span class="muted small">${forecastDiff > 0 ? `${kr0(forecastDiff)} over` : `${kr0(-forecastDiff)} under`}</span></div>
+      </div>
+      ${seg}${body}`;
+  }
+
+  _budgetMonth(b) {
+    const m = b.month;
+    const W = 320, H = 150, L = 8, R = 312, T = 10, B = 128;
+    const max = Math.max(m.budget, m.forecast, m.series.at(-1) || 0) * 1.05 || 1;
+    const x = (day) => L + ((R - L) * (day - 1)) / Math.max(1, m.days - 1);
+    const y = (v) => B - ((B - T) * v) / max;
+    const points = m.series.map((v, i) => `${x(i + 1).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    const today = m.series.length;
+    const last = m.series.at(-1) || 0;
+    const s = b.stats;
+    const stat = (label, value, note = "") => `<div class="stat"><span class="muted small">${label}</span><b>${value}</b>${note ? `<span class="muted small">${note}</span>` : ""}</div>`;
+    const trips = (s.trips || []).map((t) => stat(`Snit ${t.weekday}`, kr0(t.average), `${t.count} ture`)).join("");
+    const stores = (s.stores || []).map((st) => `<li><span>${st.store === "other" ? "Andet" : esc(this._chainName(st.store))}</span><b>${kr0(st.amount)}</b></li>`).join("");
+    return `<div class="card">
+      <svg class="budget-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Månedens forbrug mod budgettet">
+        <line x1="${L}" y1="${y(m.budget)}" x2="${R}" y2="${y(m.budget)}" class="budget-top"/>
+        <text x="${L}" y="${y(m.budget) - 4}" class="axis">${kr0(m.budget)}</text>
+        <line x1="${L}" y1="${y(0)}" x2="${R}" y2="${y(m.budget)}" class="budget-line"/>
+        <polyline points="${points}" class="spent-line"/>
+        <line x1="${x(today)}" y1="${y(last)}" x2="${R}" y2="${y(m.forecast)}" class="forecast-line"/>
+        <circle cx="${x(today)}" cy="${y(last)}" r="4" class="spent-dot"/>
+        <text x="${L}" y="${H - 4}" class="axis">1.</text><text x="${R}" y="${H - 4}" class="axis" text-anchor="end">${m.days}.</text>
+        <text x="${x(today)}" y="${H - 4}" class="axis" text-anchor="middle">i dag</text>
+      </svg>
+      <p class="muted small legend"><span class="key spent"></span>Brugt <span class="key budget"></span>Jævnt forbrug <span class="key forecast"></span>Prognose${m.planned ? ` – heraf ${kr0(m.planned)} på madplanernes lister` : ""}</p></div>
+      <div class="stats">
+        ${trips}
+        ${s.extra_trips != null ? stat("Ekstra ture (90 dage)", String(s.extra_trips), s.extra_average ? `snit ${kr0(s.extra_average)}` : "") : ""}
+        ${s.per_portion_day != null ? stat("Pr. voksen pr. dag", kr0(s.per_portion_day), "børn tæller mindre") : ""}
+        ${s.saved_on_offers > 0 ? stat("Sparet på tilbud", kr0(s.saved_on_offers), "på månedens sendte lister") : ""}
+        ${s.outside_lists != null ? stat("Ud over madplanen", kr0(s.outside_lists), "konteret minus sendte lister") : ""}
+      </div>
+      ${stores ? `<div class="card"><h3 class="flush">Butikker (90 dage)</h3><ul class="kv">${stores}</ul></div>` : ""}`;
+  }
+
+  _budgetWeeks(b) {
+    const weeks = b.weeks || [];
+    if (!weeks.length) return '<div class="card muted">Ingen uger endnu.</div>';
+    const max = Math.max(...weeks.map((w) => Math.max(w.spent, w.budget))) * 1.1 || 1;
+    const W = 320, H = 150, B = 128, gap = 6;
+    const bw = (W - gap * (weeks.length + 1)) / weeks.length;
+    const bars = weeks.map((w, i) => {
+      const h = (B - 10) * (w.spent / max);
+      const x = gap + i * (bw + gap);
+      const cls = w.spent > w.budget ? "over" : w.current ? "current" : "ok";
+      return `<rect x="${x.toFixed(1)}" y="${(B - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, h).toFixed(1)}" rx="3" class="bar ${cls}"><title>Uge ${w.week}: ${kr0(w.spent)} af ${kr0(w.budget)}</title></rect>
+        <text x="${(x + bw / 2).toFixed(1)}" y="${H - 6}" class="axis" text-anchor="middle">${w.week}</text>`;
+    }).join("");
+    const budgetY = B - (B - 10) * ((weeks.at(-1)?.budget || 0) / max);
+    const done = weeks.filter((w) => !w.current);
+    const avg = done.length ? done.reduce((s, w) => s + w.spent, 0) / done.length : null;
+    const overCount = done.filter((w) => w.spent > w.budget).length;
+    return `<div class="card">
+      <svg class="budget-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Forbrug pr. uge mod ugebudgettet">
+        <line x1="0" y1="${budgetY.toFixed(1)}" x2="${W}" y2="${budgetY.toFixed(1)}" class="budget-line"/>${bars}
+      </svg>
+      <p class="muted small legend"><span class="key spent"></span>Under budget <span class="key over"></span>Over <span class="key budget"></span>Ugebudget</p></div>
+      <div class="stats">
+        ${avg != null ? `<div class="stat"><span class="muted small">Snit pr. uge</span><b>${kr0(avg)}</b></div>` : ""}
+        <div class="stat"><span class="muted small">Uger over budget</span><b>${overCount} af ${done.length}</b></div>
+      </div>`;
+  }
+
+  _budgetYear(b) {
+    const y = b.year;
+    const months = y.months;
+    const current = Number(b.month.first.slice(5, 7));
+    const max = Math.max(...months.map((m) => Math.max(m.spent || 0, m.budget || 0))) * 1.1 || 1;
+    const W = 320, H = 150, B = 128, gap = 4;
+    const bw = (W - gap * 13) / 12;
+    const bars = months.map((m, i) => {
+      const x = gap + i * (bw + gap);
+      const h = m.spent != null ? (B - 10) * (m.spent / max) : 0;
+      const bh = m.budget != null ? (B - 10) * (m.budget / max) : 0;
+      const cls = m.spent != null && m.budget != null && m.spent > m.budget ? "over" : m.month === current ? "current" : "ok";
+      return `${m.budget != null ? `<rect x="${x.toFixed(1)}" y="${(B - bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="3" class="bar ghost"/>` : ""}
+        ${m.spent != null ? `<rect x="${x.toFixed(1)}" y="${(B - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="3" class="bar ${cls}"><title>${MONTHS_SHORT[i]}: ${kr0(m.spent)}</title></rect>` : ""}
+        <text x="${(x + bw / 2).toFixed(1)}" y="${H - 6}" class="axis" text-anchor="middle">${MONTHS_SHORT[i][0].toUpperCase()}</text>`;
+    }).join("");
+    const done = months.filter((m) => m.spent != null && m.month < current);
+    const best = done.length > 1 ? done.reduce((a, c) => (c.spent < a.spent ? c : a)) : null;
+    return `<div class="card">
+      <svg class="budget-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Forbrug pr. måned i ${y.year}">${bars}</svg>
+      <p class="muted small legend"><span class="key spent"></span>Brugt <span class="key ghost"></span>Budget</p></div>
+      <div class="stats">
+        <div class="stat"><span class="muted small">${y.year} indtil nu</span><b>${kr0(y.spent)}</b><span class="muted small">af ${kr0(y.budget)} for året</span></div>
+        ${y.average != null ? `<div class="stat"><span class="muted small">Snit pr. måned</span><b>${kr0(y.average)}</b></div>` : ""}
+        ${best ? `<div class="stat"><span class="muted small">Billigste måned</span><b>${MONTHS_SHORT[best.month - 1]}.</b><span class="muted small">${kr0(best.spent)}</span></div>` : ""}
+      </div>`;
+  }
+
+  _budgetPurchases(b) {
+    const rows = (b.purchases || []).map(
+      (p) => `<li class="purchase">
+        ${this._chainLogo(p.store === "other" ? "?" : p.store, "tiny")}
+        <div class="what"><b>${kr0(p.amount)}</b><span class="muted small">${esc(dateLabel(p.date))} · ${esc(p.store === "other" ? p.note || "Andet" : this._chainName(p.store))}${p.note && p.store !== "other" ? ` · ${esc(p.note)}` : ""}${p.source === "action" ? " · automatisk" : ""}</span></div>
+        <button class="icon-btn" data-action="purchase-delete" data-arg="${esc(p.id)}" aria-label="Slet købet">${CLOSE_ICON}</button></li>`
+    ).join("");
+    return `<div class="card"><h3 class="flush">De seneste to måneder</h3>${rows ? `<ul class="purchases">${rows}</ul>` : '<p class="muted">Ingen køb konteret endnu.</p>'}</div>`;
+  }
+
   _favoritesView() {
     const week = this._favWeek;
     const data = this._favCache[week];
@@ -3759,6 +3999,7 @@ class Rema1000Panel extends HTMLElement {
           <label class="field">Madplanen starter / der handles ind ${weekdaySelect("start_weekday", f.start_weekday)}</label>
           <label class="field">Antal dage ${num("days", f.days, 1, 14)}</label>
           <label class="field">Budget for hele listen (kr.) ${num("budget", f.budget, 0, 100000)}</label>
+          ${f.monthly_budget ? '<p class="muted small">I har et madbudget: en ny plan må koste det, der er tilbage af ugen, og dette tal bruges ikke.</p>' : ""}
         </div>
         <label class="check"><input type="checkbox" data-path="shop_late_week" ${f.shop_late_week ? "checked" : ""}> Vi handler også sidst på ugen</label>
         <p class="muted small">Så må madplanen bruge tilbud, der først gælder fra torsdag, i retterne fra den dag. Varerne mærkes med, hvornår de skal købes. Ellers bruges kun tilbud, der gælder på indkøbsdagen.</p>
@@ -3864,6 +4105,14 @@ class Rema1000Panel extends HTMLElement {
               .join("")}</div>`
           : '<p class="muted"><span class="spinner small"></span> Henter kæderne …</p>'}
         <p class="muted small">Tilbuddene kommer fra kædernes tilbudsaviser (Tjek/eTilbudsavis). En vare tæller kun som billigere, når det er den samme slags vare i samme størrelse.</p>`),
+      budget: () => card(`<h2 class="flush">Madbudget</h2>
+        <p class="muted">Jeres faste beløb til indkøb pr. måned. Det fordeles på månedens dage (5.000 kr. i oktober er 161 kr. om dagen, 1.129 kr. om ugen). Det, en uge ikke bruger, går videre til de næste uger i samme måned; en ny måned starter forfra den 1.</p>
+        <label class="field">Madbudget pr. måned (kr., 0 = slået fra) ${num("monthly_budget", f.monthly_budget, 0, 1000000)}</label>
+        <p class="muted small">Med et madbudget må en ny madplan koste det, der er tilbage af ugen – i stedet for det faste budget under Madplan og uge. Alt, der konteres, tæller med (også bleer og opvask).</p>
+        <label class="check"><input type="checkbox" data-path="budget_notify" ${f.budget_notify ? "checked" : ""}> Giv besked, når 80 % af ugens budget er brugt</label>
+        <p class="muted small">Beskeden går samme sted hen som overvågningens (Overvågning og beskeder${f.watch_notify ? "" : " – vælg en modtager dér"}).</p>
+        <h3>Kontér automatisk</h3>
+        <p class="muted small">Handlingen <b>middagsro.register_purchase</b> konterer et køb (beløb og butik) og svarer med, hvad der er tilbage af ugen. Betaler I med Apple Pay, kan en automatisering i Genveje-appen (Personlig › Transaktion › Wallet, butikker: REMA 1000, Netto …) kalde den med <i>Beløb</i> og <i>Forhandler</i> via Home Assistant-appens "Udfør handling" – så konteres købet af sig selv, når I betaler. Med Siri kan en genvej spørge om beløbet og kalde den samme handling.</p>`),
       watch: () => card(`<h2 class="flush">Besked om tilbud</h2>
         <p class="muted">Få besked, når noget fra overvågningslisten under Favoritter kommer på tilbud hos REMA 1000 eller en af jeres andre butikker – kun da, og kun én gang pr. tilbud.</p>
         <label class="field">Send besked til
@@ -4049,6 +4298,7 @@ const STYLE = `
     background: none; object-fit: contain; display: block; }
   .chain-logo span { font-weight: 700; color: var(--c); text-transform: uppercase; }
   .chain-logo.big { width: 44px; height: 44px; }
+  .chain-logo.tiny { width: 34px; height: 34px; font-size: 12px; }
   .chain-logo.tiny { width: 28px; height: 28px; box-shadow: 0 0 0 2px var(--c); }
   .chain-list .chain-logo, .chain-save .chain-logo { width: 36px; height: 36px; box-shadow: 0 0 0 2px var(--c); }
   .chain-row { display: flex; gap: 14px; overflow-x: auto; padding: 8px 4px 4px; }
@@ -4309,6 +4559,45 @@ const STYLE = `
     border-radius: var(--ha-card-border-radius, 12px); box-shadow: 0 -2px 12px rgba(0, 0, 0, .12); }
   .toast { position: fixed; left: 50%; bottom: calc(24px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); transform: translateX(-50%); background: var(--primary-text-color); color: var(--primary-background-color);
     padding: 12px 20px; border-radius: 10px; z-index: 40; max-width: 90vw; box-shadow: 0 4px 12px rgba(0,0,0,.3); }
+  .budget-card .budget-left { display: flex; align-items: baseline; gap: 8px; margin: 4px 0 8px; flex-wrap: wrap; }
+  .budget-card .big { font-size: 28px; font-weight: 600; }
+  .budget-card .big.over, .stat b.over { color: var(--rema-sale, #d33); }
+  .stat b.ok { color: var(--success-color, #2e7d32); }
+  .budget-bar { position: relative; height: 10px; border-radius: 5px; background: var(--divider-color, rgba(127,127,127,.2)); margin: 6px 0; }
+  .budget-bar > span { position: absolute; inset: 0 auto 0 0; border-radius: 5px; background: var(--success-color, #2e7d32); }
+  .budget-bar.ahead > span { background: var(--warning-color, #f0a500); }
+  .budget-bar.over > span { background: var(--rema-sale, #d33); }
+  .budget-bar > i { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--primary-text-color); }
+  .budget-card .banner.small { font-size: 13px; margin: 8px 0; }
+  .book { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; gap: 8px; align-items: center; }
+  .book input { min-width: 0; width: 100%; box-sizing: border-box; }
+  .book-stores { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .book-stores .chip { padding: 4px 10px; font-size: 13px; }
+  .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0 0 12px; }
+  .stat { background: var(--card-background-color, #fff); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; box-shadow: var(--ha-card-box-shadow, none); border: 1px solid var(--divider-color, rgba(127,127,127,.15)); }
+  .stat b { font-size: 20px; }
+  .budget-chart { width: 100%; height: auto; display: block; }
+  .budget-chart .axis { font-size: 11px; fill: var(--secondary-text-color); }
+  .budget-chart .budget-line { stroke: var(--secondary-text-color); stroke-width: 1; stroke-dasharray: 4 4; }
+  .budget-chart .spent-line { fill: none; stroke: var(--success-color, #2e7d32); stroke-width: 2.5; }
+  .budget-chart .budget-top { stroke: var(--divider-color, rgba(127,127,127,.35)); stroke-width: 1; }
+  .budget-chart .forecast-line { stroke: var(--rema-accent); stroke-width: 2.5; stroke-dasharray: 1 5; stroke-linecap: round; }
+  .budget-chart .spent-dot { fill: var(--success-color, #2e7d32); }
+  .budget-chart .bar.ok { fill: var(--success-color, #2e7d32); }
+  .budget-chart .bar.current { fill: var(--success-color, #2e7d32); opacity: .55; }
+  .budget-chart .bar.over { fill: var(--rema-sale, #d33); }
+  .budget-chart .bar.ghost { fill: var(--divider-color, rgba(127,127,127,.25)); }
+  .legend .key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: -1px; }
+  .legend .key:first-child { margin-left: 0; }
+  .legend .key.spent { background: var(--success-color, #2e7d32); }
+  .legend .key.over { background: var(--rema-sale, #d33); }
+  .legend .key.budget { background: transparent; border-top: 2px dashed var(--secondary-text-color); height: 0; }
+  .legend .key.forecast { background: transparent; border-top: 3px dotted var(--rema-accent); height: 0; }
+  .legend .key.ghost { background: var(--divider-color, rgba(127,127,127,.25)); }
+  ul.kv, ul.purchases { list-style: none; padding: 0; margin: 0; }
+  ul.kv li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--divider-color, rgba(127,127,127,.15)); }
+  ul.purchases li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--divider-color, rgba(127,127,127,.15)); }
+  ul.purchases .what { flex: 1; display: flex; flex-direction: column; }
   .timer-chip { font-variant-numeric: tabular-nums; font-size: 14px; padding: 2px 8px; border-radius: 12px; cursor: pointer; }
   .timer-chip:not(:empty) { background: var(--rema-sale, #d33); color: #fff; margin-right: 6px; }
   @media (max-width: 700px) {

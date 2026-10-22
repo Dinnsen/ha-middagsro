@@ -15,6 +15,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 
 from .api import RemaError
+from .budget import async_book
 from .const import (
     ATTR_AMOUNT,
     ATTR_CATALOG,
@@ -28,6 +29,7 @@ from .const import (
     SERVICE_ADD_ITEMS,
     SERVICE_GENERATE_MEAL_PLAN,
     SERVICE_GET_OFFERS,
+    SERVICE_REGISTER_PURCHASE,
     SERVICE_SEARCH_PRODUCTS,
     SERVICE_SEND_MEAL_PLAN,
 )
@@ -88,6 +90,15 @@ SEND_SCHEMA = vol.Schema(
         vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
         vol.Optional("plan_id"): cv.string,
         vol.Optional("part", default="main"): vol.In(["main", "late", "all"]),
+    }
+)
+PURCHASE_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
+        vol.Required(ATTR_AMOUNT): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=100000)),
+        vol.Optional("store"): cv.string,
+        vol.Optional("date"): cv.string,
+        vol.Optional("note"): cv.string,
     }
 )
 OFFERS_SCHEMA = vol.Schema(
@@ -198,4 +209,30 @@ def async_setup_services(hass: HomeAssistant) -> None:
         get_offers,
         schema=OFFERS_SCHEMA,
         supports_response=SupportsResponse.ONLY,
+    )
+
+    async def register_purchase(call: ServiceCall) -> ServiceResponse:
+        """Book a purchase (from a phone's shortcut, a card payment or a voice command)."""
+        entry = _get_entry(hass, call)
+        raw = {key: call.data[key] for key in ("store", "date", "note") if call.data.get(key)}
+        data = await async_book(
+            entry.runtime_data.planner,
+            {**raw, "amount": call.data[ATTR_AMOUNT], "source": "action"},
+        )
+        week, month = data["week"], data["month"]
+        return {
+            "week_left": week["remaining"],
+            "week_spent": week["spent"],
+            "week_available": week["available"],
+            "week_planned": week["planned"],
+            "month_spent": month["spent"],
+            "month_forecast": month["forecast"],
+        }
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_REGISTER_PURCHASE,
+        register_purchase,
+        schema=PURCHASE_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
     )

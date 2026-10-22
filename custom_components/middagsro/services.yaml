@@ -77,3 +77,31 @@ send_meal_plan:
             - main
             - late
             - all
+
+register_purchase:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: middagsro
+    amount:
+      required: true
+      example: 600
+      selector:
+        number:
+          min: 0.01
+          max: 100000
+          step: 0.01
+          mode: box
+          unit_of_measurement: kr.
+    store:
+      example: "REMA 1000"
+      selector:
+        text:
+    date:
+      example: "2026-10-25"
+      selector:
+        date:
+    note:
+      selector:
+        text:

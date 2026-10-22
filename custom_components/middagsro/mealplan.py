@@ -20,6 +20,7 @@ from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util import dt as dt_util
 
 from .api import DANISH_TIME, Catalog, Offer, Product, RemaClient, RemaError, parse_time
+from .budget import plan_budget
 from .chains import ChainOffers
 from .const import DOMAIN
 from .dishes import check_plan, household_portions, is_cooked, same_dish
@@ -716,7 +717,14 @@ def build_prompt(
     if target := nutrition_target(s):
         out.append(f"- Næring: {target}.")
     if s["budget"]:
-        out.append(f"- Hele indkøbslisten skal koste under {s['budget']} kr. med REMA 1000-priser.")
+        out.append(
+            f"- Hele indkøbslisten skal koste under {s['budget']} kr. med REMA 1000-priser"
+            + (
+                " (det, der er tilbage af ugens madbudget – hold dig gerne et stykke under)."
+                if s.get("monthly_budget")
+                else "."
+            )
+        )
     organic = {
         "only": "Brug udelukkende økologiske varer, hvor REMA 1000 har dem.",
         "prefer": f"Foretræk økologiske varer, når de højst er {s['organic_max_extra_pct']} % dyrere.",
@@ -1699,6 +1707,9 @@ class MealPlanner:
             "min_vegetarian": min(settings["min_vegetarian"], len(dates)),
             "max_vegetarian": min(settings["max_vegetarian"], len(dates)),
         }
+        # With a monthly food budget, the plan may cost what is left of its week.
+        if (left := plan_budget(self.store, dates[0])) is not None:
+            settings["budget"] = left
         self._set_status("generating", "Henter ugens tilbud …")
         catalog, offers = await self._async_offers(start)
         late = late_offers(offers, dates[0])
@@ -1812,6 +1823,7 @@ class MealPlanner:
         best["checklist"] += [{"requirement": p, "ok": False} for p in problems]
         if problems:
             _LOGGER.info("The plan still breaks %d rule(s): %s", len(problems), "; ".join(problems))
+        best["budget"] = settings["budget"]
         best["skipped"] = [d.isoformat() for d in skipped]
         best["note"] = note
         best["surprise"] = surprise

@@ -75,6 +75,15 @@
       },
       "dinner_today": {
         "name": "Dagens ret"
+      },
+      "budget_week_left": {
+        "name": "Madbudget tilbage denne uge"
+      },
+      "budget_month_spent": {
+        "name": "Madbudget brugt denne måned"
+      },
+      "budget_month_forecast": {
+        "name": "Madbudget prognose for måneden"
       }
     },
     "todo": {
@@ -206,6 +215,18 @@
     },
     "too_many_watched": {
       "message": "Der kan højst være {limit} på listen."
+    },
+    "purchase_amount": {
+      "message": "Skriv et beløb over 0 kr."
+    },
+    "purchase_date": {
+      "message": "Datoen kan ikke læses, eller den ligger i fremtiden."
+    },
+    "purchase_not_found": {
+      "message": "Købet findes ikke (længere)."
+    },
+    "no_monthly_budget": {
+      "message": "Sæt et madbudget pr. måned under Indstillinger › Madbudget først."
     }
   },
   "issues": {
@@ -309,6 +330,32 @@
         "part": {
           "name": "Hvilke varer",
           "description": "Indkøbsdag: det, der købes på indkøbsdagen. Sidst på ugen: varerne til tilbud, der starter senere (fx torsdag), når 'Vi handler også sidst på ugen' er slået til. Alle: det hele."
+        }
+      }
+    },
+    "register_purchase": {
+      "name": "Kontér et køb",
+      "description": "Registrerer et køb af mad (eller andet til husholdningen) mod madbudgettet. Svarer med, hvad der er tilbage af ugen.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Konto",
+          "description": "Hvilken konto, hvis der er flere."
+        },
+        "amount": {
+          "name": "Beløb",
+          "description": "Hvad købet kostede i kroner."
+        },
+        "store": {
+          "name": "Butik",
+          "description": "Butikken, fx REMA 1000 eller Netto – eller navnet fra en kortbetaling."
+        },
+        "date": {
+          "name": "Dato",
+          "description": "Hvornår der blev handlet (i dag, hvis den udelades)."
+        },
+        "note": {
+          "name": "Note",
+          "description": "En kort note."
         }
       }
     }
