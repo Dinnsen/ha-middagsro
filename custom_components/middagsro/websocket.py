@@ -1201,7 +1201,7 @@ async def ws_budget(
     connection.send_result(msg["id"], budget_summary(_entry(hass, msg).runtime_data.store))
 
 
-_PURCHASE = {
+_PURCHASE: dict[Any, Any] = {
     vol.Optional("amount"): vol.Any(int, float, str),
     vol.Optional("date"): vol.Any(str, None),
     vol.Optional("store"): vol.Any(str, None),

@@ -344,7 +344,7 @@ def _weeks(
 
 
 def _year(store: RemaPlanStore, ledger: Ledger, today: date) -> dict[str, Any]:
-    months = []
+    months: list[dict[str, Any]] = []
     began = since(store)
     for number in range(1, 13):
         first = date(today.year, number, 1)
@@ -379,12 +379,12 @@ def _stats(store: RemaPlanStore, ledger: Ledger, today: date) -> dict[str, Any]:
         by_store[p["store"]] += p["amount"]
     for day, amount in per_day.items():
         by_weekday[date.fromisoformat(day).weekday()].append(amount)
-    trips = sorted(
+    trips: list[dict[str, Any]] = sorted(
         (
             {"weekday": WEEKDAYS_DA[wd], "average": round(sum(v) / len(v), 2), "count": len(v)}
             for wd, v in by_weekday.items()
         ),
-        key=lambda t: -t["count"],
+        key=lambda t: -int(t["count"]),
     )
     # Two shopping days are the plan; the rest are extra trips.
     main = {t["weekday"] for t in trips[:2] if t["count"] >= 2}
@@ -444,7 +444,8 @@ def crossed(store: RemaPlanStore, today: date | None = None) -> dict[str, Any] |
     if store.budget_told == week["start"]:
         return None
     store.budget_told = week["start"]
-    return week
+    told: dict[str, Any] = week
+    return told
 
 
 def format_kr(value: float) -> str:
