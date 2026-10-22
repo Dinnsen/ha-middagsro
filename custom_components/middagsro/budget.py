@@ -419,7 +419,8 @@ def _stats(store: RemaPlanStore, ledger: Ledger, today: date) -> dict[str, Any]:
     spent_month = ledger.spent(first, today)
     portions = household_portions(store.settings)
     days = (today - max(first, since(store))).days + 1
-    saved, sent = _month_lists(store, first, today)
+    # Only the lists sent since the budget was kept: before then nothing was booked.
+    saved, sent = _month_lists(store, max(first, since(store)), today)
     return {
         "trips": trips[:3],
         # Only once the usual shopping days show (at least twice each in 90 days).
@@ -431,7 +432,8 @@ def _stats(store: RemaPlanStore, ledger: Ledger, today: date) -> dict[str, Any]:
             key=lambda s: -s["amount"],
         ),
         "saved_on_offers": round(saved, 2),
-        "outside_lists": round(spent_month - sent, 2) if sent else None,
+        # Booked beyond the lists sent; not until the lists are booked themselves.
+        "outside_lists": round(spent_month - sent, 2) if sent and spent_month >= sent else None,
     }
 
 

@@ -273,6 +273,15 @@ def test_month_year_and_stats() -> None:
     fresh = bg.summary(FakeStore([buy("2026-10-12", 300)]), TODAY)
     assert fresh is not None
     assert fresh["month"]["forecast"] == 300 + 17 * 100
+    # Lists sent before the budget was kept don't count; nor while less is booked than sent.
+    late = the_store()
+    late.settings["budget_since"] = "2026-10-12"
+    stats = bg.summary(late, TODAY)["stats"]  # type: ignore[index]
+    assert (stats["saved_on_offers"], stats["outside_lists"]) == (0, None)
+    late.settings["budget_since"] = "2026-10-01"
+    late.purchases = [buy("2026-10-11", 30)]
+    assert bg.summary(late, TODAY)["stats"]["outside_lists"] is None  # type: ignore[index]
+
     empty = bg.summary(FakeStore(), TODAY)
     assert empty is not None
     assert empty["stats"]["extra_trips"] is None
