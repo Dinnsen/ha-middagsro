@@ -2,6 +2,17 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.1.0] - 2026-10-22
+
+### Added
+- **Food budget (*Økonomi*).** Enter the household's monthly amount for food (*Indstillinger › Madbudget*). It is spread over the month's days (5.000 kr. in October is 161 kr. a day, 1.129 kr. a week). What a week doesn't use carries on to the next weeks of the same month (and what it overspends is taken from them); a new month starts afresh on the 1st. Everything you book counts, also the nappies.
+- **Book a purchase on the front page:** the amount from the receipt, the shop (REMA 1000, your other chains or *Andet*) and the day. The card shows what is left of the week, the amount per day for the rest of it, a bar with a mark for an even pace, and what the week's lists still to be bought are estimated at. The list you sent today can be booked with one tap.
+- **The *Økonomi* page** (under *Mere*): the month as a chart (spent, an even pace and a forecast from your own pace over the last eight weeks or the week's lists), the last 12 weeks against their budget, the year month by month, and the averages that matter: per shopping day, extra trips, per adult per day, per shop, saved on offers and what was bought outside the meal plan. The purchases of the last two months can be deleted.
+- **The meal plan keeps to the budget:** with a monthly budget, a new plan may cost what is left of its week (lists still to be bought before it are taken off; never below 40 % of the week's budget), and the AI is told to stay a bit below. Sending a list that costs more than the week has left asks first.
+- **Told at 80 %:** optionally a notification (to the same place as the offer watch) when 80 % of the week's budget is used, once a week.
+- **The action `middagsro.register_purchase`** books a purchase (amount, shop, day, note) and answers with what is left of the week and the month's forecast – for an iPhone *Transaction* automation with Apple Pay, a Siri shortcut or anything else.
+- Sensors *Food budget left this week*, *Food budget spent this month* and *Food budget forecast for the month* (DKK; unavailable without a budget).
+
 ## [2.0.2] - 2026-10-21
 
 ### Fixed

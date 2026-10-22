@@ -10,6 +10,7 @@ import uuid
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 from .chains import CHAINS
 from .const import DOMAIN
@@ -46,6 +47,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "start_weekday": 6,  # 0 = monday ... 6 = sunday (the avis starts on sunday)
     "days": 7,
     "budget": 500,
+    # The family's food budget a month (budget.py); 0 = not kept. With it, a plan's
+    # budget is what is left of its week, and the economy page follows the spending.
+    "monthly_budget": 0,
+    "budget_notify": False,  # tell when 80 % of the week is used (to watch_notify's target)
+    "budget_since": None,  # the day the monthly budget was first set (kept by the store)
     "organic": "prefer",
     "organic_max_extra_pct": 20,
     "avoid": [],
@@ -112,6 +118,16 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
     settings["start_weekday"] = _clamp(settings["start_weekday"], 0, 6, 6)
     settings["days"] = _clamp(settings["days"], 1, 14, 7)
     settings["budget"] = _clamp(settings["budget"], 0, 100000, 500)
+    settings["monthly_budget"] = _clamp(settings["monthly_budget"], 0, 1000000, 0)
+    settings["budget_notify"] = bool(settings["budget_notify"])
+    try:
+        settings["budget_since"] = (
+            date.fromisoformat(str(settings["budget_since"])[:10]).isoformat()
+            if settings["budget_since"]
+            else None
+        )
+    except ValueError:
+        settings["budget_since"] = None
     settings["organic_max_extra_pct"] = _clamp(settings["organic_max_extra_pct"], 0, 500, 20)
     settings["min_vegetarian"] = _clamp(settings["min_vegetarian"], 0, 14, 0)
     settings["max_vegetarian"] = _clamp(settings["max_vegetarian"], 0, 14, 1)
@@ -212,6 +228,9 @@ class RemaPlanStore:
         self.watch: list[dict[str, Any]] = []
         self.own_favorites: list[dict[str, Any]] = []
         self.watch_sent: dict[str, str] = {}
+        # The food budget's purchases (budget.py), and the week last told it was nearly used.
+        self.purchases: list[dict[str, Any]] = []
+        self.budget_told = ""
 
     async def async_load(self) -> None:
         """Load from disk."""
@@ -229,6 +248,12 @@ class RemaPlanStore:
         self.watch_sent = (
             {str(k): str(v) for k, v in sent.items()} if isinstance(sent, dict) else {}
         )
+        self.purchases = [
+            p
+            for p in data.get("purchases") or []
+            if isinstance(p, dict) and p.get("id") and p.get("date") and p.get("amount")
+        ]
+        self.budget_told = str(data.get("budget_told") or "")
         for plan in self.plans:
             ensure_line_ids(plan)
 
@@ -246,14 +271,25 @@ class RemaPlanStore:
                 "watch": self.watch,
                 "own_favorites": self.own_favorites,
                 "watch_sent": self.watch_sent,
+                "purchases": self.purchases,
+                "budget_told": self.budget_told,
             }
         )
 
     # ------------------------------------------------------------- settings
 
     async def async_set_settings(self, raw: dict[str, Any]) -> dict[str, Any]:
-        """Replace the settings."""
+        """Replace the settings.
+
+        The day a monthly food budget is first set is remembered: the budget
+        counts from then, so a month begun halfway isn't all left over.
+        """
+        before = self.settings.get("monthly_budget")
+        since = self.settings.get("budget_since")
         self.settings = clean_settings(raw)
+        if self.settings["monthly_budget"] and not before:
+            since = dt_util.now().date().isoformat()
+        self.settings["budget_since"] = since if self.settings["monthly_budget"] else None
         await self.async_save()
         return self.settings
 

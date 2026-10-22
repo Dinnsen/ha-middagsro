@@ -20,6 +20,15 @@
       },
       "dinner_today": {
         "default": "mdi:silverware-fork-knife"
+      },
+      "budget_week_left": {
+        "default": "mdi:wallet-outline"
+      },
+      "budget_month_spent": {
+        "default": "mdi:cash-register"
+      },
+      "budget_month_forecast": {
+        "default": "mdi:chart-timeline-variant"
       }
     },
     "todo": {
@@ -61,6 +70,9 @@
     },
     "send_meal_plan": {
       "service": "mdi:cart-arrow-right"
+    },
+    "register_purchase": {
+      "service": "mdi:receipt-text-plus-outline"
     }
   }
 }

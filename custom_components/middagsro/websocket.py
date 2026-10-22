@@ -12,6 +12,12 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.util import dt as dt_util
 
 from .api import Catalog, RemaError
+from .budget import (
+    async_book as async_budget_book,
+    async_delete as async_purchase_delete,
+    async_edit as async_purchase_edit,
+    summary as budget_summary,
+)
 from .chains import (
     CHAINS,
     REMA_ID,
@@ -137,6 +143,8 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
         "recipes": [_recipe_summary(r) for r in store.recipes],
         "watch": store.watch,
         "own_favorites": store.own_favorites,
+        # The food budget (budget.py): None when the family keeps none.
+        "budget": budget_summary(store),
         "notify_targets": notify_targets(hass),
         "status": data.planner.status,
         "default_start": data.planner.default_start().isoformat(),
@@ -227,6 +235,7 @@ async def ws_settings(
     """Save settings."""
     entry = _entry(hass, msg)
     settings = await entry.runtime_data.store.async_set_settings(msg["settings"])
+    entry.runtime_data.planner._notify()  # the budget's sensors follow
     connection.send_result(msg["id"], settings)
 
 
@@ -1179,6 +1188,81 @@ async def ws_rema_recipe_plan(
 
 
 @callback
+# ------------------------------------------------------------------ the food budget
+
+
+@websocket_api.websocket_command({vol.Required("type"): "middagsro/budget", ENTRY: str})
+@websocket_api.async_response
+@_wrap
+async def ws_budget(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The food budget: the week, the month, the weeks and the year, and the purchases."""
+    connection.send_result(msg["id"], budget_summary(_entry(hass, msg).runtime_data.store))
+
+
+_PURCHASE = {
+    vol.Optional("amount"): vol.Any(int, float, str),
+    vol.Optional("date"): vol.Any(str, None),
+    vol.Optional("store"): vol.Any(str, None),
+    vol.Optional("note"): vol.Any(str, None),
+}
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "middagsro/purchases/add", ENTRY: str, **_PURCHASE}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_purchase_add(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Book a purchase against the food budget."""
+    planner = _entry(hass, msg).runtime_data.planner
+    raw = {key: msg[key] for key in ("amount", "date", "store", "note") if msg.get(key) is not None}
+    connection.send_result(msg["id"], await async_budget_book(planner, raw))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/purchases/edit",
+        ENTRY: str,
+        vol.Required("purchase_id"): str,
+        **_PURCHASE,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_purchase_edit(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Change a purchase."""
+    data = _entry(hass, msg).runtime_data
+    raw = {key: msg[key] for key in ("amount", "date", "store", "note") if msg.get(key) is not None}
+    await async_purchase_edit(data.store, msg["purchase_id"], raw)
+    data.planner._notify()
+    connection.send_result(msg["id"], budget_summary(data.store))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/purchases/delete",
+        ENTRY: str,
+        vol.Required("purchase_id"): str,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_purchase_delete(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Remove a purchase."""
+    data = _entry(hass, msg).runtime_data
+    await async_purchase_delete(data.store, msg["purchase_id"])
+    data.planner._notify()
+    connection.send_result(msg["id"], budget_summary(data.store))
+
+
 def async_register_websocket(hass: HomeAssistant) -> None:
     """Register the panel's commands."""
     for command in (
@@ -1233,5 +1317,9 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_own_favorite,
         ws_watch_check,
         ws_rema_recipe_plan,
+        ws_budget,
+        ws_purchase_add,
+        ws_purchase_edit,
+        ws_purchase_delete,
     ):
         websocket_api.async_register_command(hass, command)

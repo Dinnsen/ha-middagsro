@@ -13,6 +13,7 @@ from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
 from .api import Catalog
+from .budget import summary as budget_summary
 from .coordinator import RemaConfigEntry, RemaOffersCoordinator, RemaShoppingListCoordinator
 from .entity import RemaEntity, device_info
 from .mealplan import signal_plans_updated
@@ -34,6 +35,7 @@ async def async_setup_entry(
             RemaCatalogSensor(data.offers, entry, "upcoming_catalog"),
             RemaMealPlanSensor(data.shopping_list, entry),
             RemaDinnerTodaySensor(entry),
+            *(RemaBudgetSensor(entry, key) for key in BUDGET_SENSORS),
         ]
     )
 
@@ -99,6 +101,86 @@ class RemaDinnerTodaySensor(SensorEntity):
         )
         self.async_on_remove(
             async_track_time_change(self.hass, self._refresh, hour=0, minute=0, second=5)
+        )
+
+    @callback
+    def _refresh(self, *_: Any) -> None:
+        self.async_write_ha_state()
+
+
+# The food budget: (where in the summary, the value) per sensor.
+BUDGET_SENSORS = {
+    "budget_week_left": ("week", "remaining"),
+    "budget_month_spent": ("month", "spent"),
+    "budget_month_forecast": ("month", "forecast"),
+}
+
+
+class RemaBudgetSensor(SensorEntity):
+    """A number from the food budget (unavailable when the family keeps none)."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False  # told when purchases, plans or settings change
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_native_unit_of_measurement = "DKK"
+    _attr_suggested_display_precision = 0
+
+    def __init__(self, entry: RemaConfigEntry, key: str) -> None:
+        """Initialize the sensor."""
+        self._entry = entry
+        self._key = key
+        self._attr_translation_key = key
+        self._attr_unique_id = f"{entry.unique_id}_{key}"
+        self._attr_device_info = device_info(entry)
+        if key == "budget_month_spent":
+            self._attr_state_class = SensorStateClass.TOTAL
+
+    def _summary(self) -> dict[str, Any] | None:
+        return budget_summary(self._entry.runtime_data.store)
+
+    @property
+    def available(self) -> bool:
+        """Only when a monthly budget is set."""
+        return bool(self._entry.runtime_data.store.settings.get("monthly_budget"))
+
+    @property
+    def native_value(self) -> float | None:
+        """The number."""
+        data = self._summary()
+        if data is None:
+            return None
+        part, field = BUDGET_SENSORS[self._key]
+        return float(data[part][field])
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """The week's details on the week's sensor; the month's on the others."""
+        data = self._summary()
+        if data is None:
+            return None
+        if self._key == "budget_week_left":
+            week = data["week"]
+            return {
+                key: week[key]
+                for key in ("start", "end", "available", "spent", "carry", "planned", "per_day")
+            }
+        month = data["month"]
+        return {
+            "budget": month["budget"],
+            "remaining": month["remaining"],
+            "planned": month["planned"],
+        }
+
+    async def async_added_to_hass(self) -> None:
+        """Update when anything changes, and at midnight (a new day, maybe a new week)."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, signal_plans_updated(self._entry.entry_id), self._refresh
+            )
+        )
+        self.async_on_remove(
+            async_track_time_change(self.hass, self._refresh, hour=0, minute=0, second=10)
         )
 
     @callback

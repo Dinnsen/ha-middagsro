@@ -59,6 +59,24 @@
   const handlers = {
     "middagsro/state": () => D.state,
     "middagsro/plan": () => D.state.latest_plan,
+    "middagsro/budget": () => D.state.budget,
+    "middagsro/purchases/add": (msg) => {
+      const b = D.state.budget;
+      b.purchases.unshift({ id: `p${Date.now()}`, date: msg.date, amount: msg.amount, store: msg.store || "other", note: msg.note || "", source: "panel" });
+      if (msg.date >= b.week.start) {
+        b.week.spent += msg.amount;
+        b.week.remaining -= msg.amount;
+        b.week.after_planned -= msg.amount;
+        b.week.per_day = b.week.remaining / Math.max(1, b.week.days_left);
+      }
+      b.month.spent += msg.amount;
+      return b;
+    },
+    "middagsro/purchases/delete": (msg) => {
+      const b = D.state.budget;
+      b.purchases = b.purchases.filter((p) => p.id !== msg.purchase_id);
+      return b;
+    },
     "middagsro/favorites": (msg) => {
       const next = msg.week === "next";
       const sale = (p) => p.is_advertised || p.is_campaign || p.price < p.normal_price - 0.01;

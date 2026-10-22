@@ -76,6 +76,12 @@ Søg i REMA's varer nederst i *Favoritter* for at tilføje jeres egne favoritter
 
 **Overvågning.** Tryk på 🔔 på en favorit eller en hvilken som helst vare for at overvåge den – eller skriv noget, REMA ikke sælger, og overvåg det som tekst. Øverst i *Favoritter* ser du, hvor de overvågede varer er på tilbud: i REMA (nu eller fra næste uges avis) og i de kæder, du har valgt, med pris og en knap, der lægger varen i kurven eller på kædens indkøbsliste. Under **Indstillinger → Overvågning og beskeder** kan du få en besked på telefonen eller i Home Assistant, når noget fra overvågningslisten kommer på tilbud – og kun da. Listen tjekkes hver 3. time, og hvert tilbud nævnes én gang.
 
+### Madbudget (*Økonomi*)
+
+Skriv husstandens faste beløb til mad pr. måned, og kontér det, I handler for, på forsiden – beløbet på kvitteringen og butikken. Forsiden viser, hvad der er tilbage af ugen og pr. dag resten af den; siden *Økonomi* viser måneden som en graf med prognose, de seneste 12 uger, året og gennemsnit pr. indkøbsdag, pr. voksen pr. dag og pr. butik. Beløbet fordeles på månedens dage, det en uge ikke bruger, går videre til månedens næste uger, og en ny måned starter forfra den 1. Med et madbudget må en ny madplan koste det, der er tilbage af dens uge, og I kan få besked, når 80 % af ugen er brugt.
+
+**Kontér af sig selv med Apple Pay (iPhone).** REMA's *Scan & Betal* har ingen kvitteringer, man kan komme til, men en kortbetaling kan kontere sig selv: lav i *Genveje*-appen en personlig automatisering *Transaktion* for jeres Wallet-kort, vælg butikkerne (REMA 1000, Netto …) og *Kør med det samme*. Tilføj Home Assistant-appens handling *Udfør handling* med `middagsro.register_purchase` og felterne `amount` = genvejens *Beløb* og `store` = *Forhandler*. En Siri-genvej, der spørger om beløbet, virker på samme måde.
+
 ### Historik
 
 <img src="docs/images/history.png" alt="Tidligere madplaner med pris og retter" width="100%">
@@ -216,6 +222,7 @@ Indstillingerne gælder hver gang, en madplan laves, og gemmes pr. REMA 1000-kon
 | **Faste varer hver uge** | Søg i REMA's sortiment, og vælg en vare (eller skriv fritekst), som altid kommer på listen. Kan sættes til ikke at sende en fast vare, der allerede står på REMA-listen (og ikke er købt). | – |
 | **Vi handler også sidst på ugen** | Nogle tilbud gælder først fra torsdag. Slået fra bruger madplanen kun tilbud, der gælder på indkøbsdagen. Slået til må de bruges i retter fra den dag; indkøbslisten deles i indkøbsdagen og torsdag, der sendes hver for sig. | Fra |
 | **Automatik** | Lav næste uges plan automatisk, når den nye avis udkommer, og send den evt. til REMA-listen. Den sendes kl. 02 på indkøbsdagen (torsdagsvarerne kl. 02 torsdag), når REMA har ugens varer og priser. | Fra |
+| **Madbudget** | Det faste beløb til mad pr. måned (0 = slået fra). Med det er en plans budget det, der er tilbage af dens uge, og *Budget* ovenfor bruges ikke. Eventuelt besked ved 80 % af ugen. | Fra |
 | **Familiens favoritter** | Retter med hyppighed. | – |
 | **Retter familien ikke kan lide** | Kommer aldrig på planen. | – |
 
@@ -231,6 +238,7 @@ Hver REMA 1000-konto bliver en tjeneste med disse entiteter:
 | **Dagens ret** | `sensor` | Dagens aftensmad. Attributter: type, rester, portioner, tid, ingredienser, antal trin, tip og morgendagens ret. |
 | **Indkøbsliste i alt** | `sensor` (kr.) | Anslået pris for det, der mangler at blive købt. Attributter: antal varer og varer uden pris. |
 | **Aktuel tilbudsavis** / **Næste tilbudsavis** | `sensor` (tidspunkt) | Hvornår avisen gælder til / fra. Attributter: avisens navn, antal tilbud og hvornår integrationen første gang så næste uges avis. |
+| **Madbudget tilbage denne uge** / **brugt denne måned** / **prognose for måneden** | `sensor` (DKK) | Madbudgettets tal (utilgængelige uden et månedligt budget). Ugens sensor har ugens start, slut, til rådighed, brugt, overført, planlagt og pr. dag som attributter. |
 | **Madplan** | `calendar` | Hver dags aftensmad som en begivenhed med tid og ingredienser. |
 | **Lav madplan** | `button` | Laver en ny plan med indstillingerne fra panelet. |
 | **Send madplan til indkøbsliste** | `button` | Sender den nyeste plan til REMA-listen. |
@@ -244,6 +252,7 @@ Hver REMA 1000-konto bliver en tjeneste med disse entiteter:
 | `middagsro.add_items` | Tilføj varer (REMA-varenummer eller fritekst) til REMA-listen. | `items` (påkrævet, liste med `product_id` eller `name` og evt. `amount`), `config_entry_id` |
 | `middagsro.generate_meal_plan` | Lav en madplan i baggrunden. | `start_date`, `send` (send listen, når planen er klar), `config_entry_id` |
 | `middagsro.send_meal_plan` | Send en madplans indkøbsliste til REMA-listen. | `plan_id` (tom = nyeste), `part` (`main` = indkøbsdagen, `late` = torsdagsvarerne, `all`; standard `main`), `config_entry_id` |
+| `middagsro.register_purchase` | Kontér et køb på madbudgettet. Svarer med, hvad der er tilbage af ugen, og månedens prognose. | `amount` (påkrævet), `store` (et navn som *REMA 1000 Valby* eller *Netto*; standard REMA 1000), `date` (standard i dag), `note`, `config_entry_id` |
 
 `config_entry_id` skal kun udfyldes, hvis du har flere REMA 1000-konti.
 
