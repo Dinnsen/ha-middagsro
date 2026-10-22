@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.1.1] - 2026-10-22
+
+### Fixed
+- `middagsro.register_purchase` takes the amount as a card payment shows it, as text from an iPhone shortcut: *600,00 kr.*, *kr. 1.234,50* or *DKK 1,234.50*.
+
 ## [2.1.0] - 2026-10-22
 
 ### Added

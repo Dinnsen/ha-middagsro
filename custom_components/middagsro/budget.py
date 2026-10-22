@@ -63,13 +63,35 @@ def store_of(text: Any) -> str:
     return OTHER
 
 
+def parse_amount(value: Any) -> float:
+    """An amount as a number: 600, "450,5", "600,00 kr.", "kr 1.234,50" or "DKK 1,234.50".
+
+    A phone's shortcut sends the amount as the card payment shows it, with the
+    currency and the separators of its language. ValueError if there is no number.
+    """
+    if isinstance(value, bool):
+        raise ValueError(value)
+    if isinstance(value, int | float):
+        return float(value)
+    text = re.sub(r"[^\d,.\-]", "", str(value or "")).strip(".,")
+    if "," in text and "." in text:
+        # The last of the two is the decimal mark; the other groups thousands.
+        decimal = "," if text.rfind(",") > text.rfind(".") else "."
+        text = text.replace("." if decimal == "," else ",", "").replace(",", ".")
+    elif "," in text:
+        text = text.replace(",", ".") if text.count(",") == 1 else text.replace(",", "")
+    elif text.count(".") > 1 or re.fullmatch(r"\d{1,3}\.\d{3}", text):
+        text = text.replace(".", "")  # 1.234 is a thousand and more in Danish
+    return float(text)
+
+
 def clean_purchase(raw: Any, old: dict[str, Any] | None = None) -> dict[str, Any]:
     """A purchase as it is stored: {id, date, amount, store, note, source}."""
     if not isinstance(raw, dict):
         raise _invalid("purchase_amount")
     old = old or {}
     try:
-        amount = round(float(str(raw.get("amount", old.get("amount"))).replace(",", ".")), 2)
+        amount = round(parse_amount(raw.get("amount", old.get("amount"))), 2)
     except (TypeError, ValueError) as err:
         raise _invalid("purchase_amount") from err
     if not 0 < amount <= MAX_AMOUNT:
