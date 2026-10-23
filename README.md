@@ -22,7 +22,7 @@
 > [!NOTE]
 > Unofficial integration, not made by or affiliated with REMA 1000 or the other chains it shows offers from. REMA 1000 has no public API, so the integration uses the same calls as rema1000.dk and the web shop. It may stop working if REMA changes its site. For personal use with your own REMA 1000 account in Denmark. The panel and the meal plans are in Danish.
 
-**Contents:** [Features](#features) · [Requirements](#requirements) · [Installation](#installation) · [Setup](#setup) · [Settings](#settings-in-the-panel) · [Entities](#entities) · [Actions](#actions) · [Examples](#examples) · [How it works](#how-it-works) · [Limitations](#known-limitations) · [Troubleshooting](#troubleshooting) · [Removal](#removing-the-integration) · [Privacy](#privacy)
+**Contents:** [Features](#features) · [Food budget](#food-budget-økonomi) · [Requirements](#requirements) · [Installation](#installation) · [Setup](#setup) · [Settings](#settings-in-the-panel) · [Entities](#entities) · [Actions](#actions) · [Examples](#examples) · [How it works](#how-it-works) · [Limitations](#known-limitations) · [Troubleshooting](#troubleshooting) · [Removal](#removing-the-integration) · [Privacy](#privacy)
 
 ## Features
 
@@ -46,18 +46,22 @@ The integration adds a **Middagsro panel** to the sidebar. It follows your Home 
 - **Nutrition targets** per dinner (kcal and the split of protein, carbs and fat), and the **Sundhed** (health) tab with nutrition, the dietary advice and labels like the Keyhole.
 - Buttons that use AI are marked with ✦.
 
+<img src="docs/images/plan-tools.png" alt="A dish's menu, three other dishes to swap to, and the points the AI must remember" width="100%">
+
+*Tap a dish: see the recipe, swap it for one of three new suggestions or a REMA recipe, delete it or skip the day. Right: the standing points for every plan.*
+
 ### Recipes for the kitchen
 
 <img src="docs/images/recipe.png" alt="A recipe with ticked ingredients and a timer counting down" width="100%">
 
-Ingredients and steps in large type. Tick them off as you go, start a **timer** on each step (it beeps and vibrates when time is up), and tap **Hold skærmen tændt** (keep the screen on) while you cook. Leftover days point to the day the food was made. Not happy with a recipe? Make it again.
+Ingredients and steps in large type. Tick them off as you go, start a **timer** on each step (it beeps and vibrates when time is up, whatever tab is open, and a chip at the top counts down – tap it to get back to the recipe), and tap **Hold skærmen tændt** (keep the screen on) while you cook. Leftover days point to the day the food was made. Not happy with a recipe? Make it again.
 
 ### The cheapest shopping list – straight into the REMA app
 
 <img src="docs/images/shopping.png" alt="Shopping list with REMA products, offers, organic labels and prices" width="100%">
 
 - For each ingredient, **the cheapest REMA product** that meets your rules is found. Products from the offers, organic products and weekly fixed items are labelled.
-- Price per product, number of packs and the total against the budget.
+- Price per product, number of packs and the total against the budget. With a [food budget](#food-budget-økonomi), sending a list that costs more than the week has left asks first.
 - **Send til REMA-listen** puts everything on your primary list in the REMA 1000 app. Items without a safe match are added as text. Sent items leave Middagsro's basket, so the next send only has what was added since – nothing ends up twice in the app. **Genskab seneste kurv** puts the last sent items back if something went wrong.
 - Search the basket for any REMA product – also the offers in REMA's avis, including *partivarer* that are only sold in the shops.
 - **Search and add** other REMA products to the shopping list – also to the list for later in the week. Tap an item to change how many, swap it or delete it.
@@ -74,13 +78,33 @@ The products you have given a heart in the REMA 1000 app. Choose **Denne uge** (
 
 Search REMA's products at the bottom of *Favoritter* to add favourites of your own, next to the hearts from the app.
 
+<img src="docs/images/watch.png" alt="The watch list: where watched items are on offer, in REMA and other chains" width="100%">
+
 **Watch list (Overvågning).** Tap the 🔔 on a favourite or any product to watch it – or type something REMA doesn't sell and watch it as text. At the top of *Favoritter* you see where the watched items are on offer: in REMA (now or from next week's avis) and in the chains you have chosen, with the price and a button that puts the item in the basket or on that chain's shopping list. In **Indstillinger → Overvågning og beskeder** you can get a notification on your phone or in Home Assistant when something on the watch list comes on offer – and only then. The list is checked every 3 hours, and each offer is told once.
 
 ### Food budget (*Økonomi*)
 
-Enter the household's monthly amount for food, and book what you shop for on the front page – the amount on the receipt and the shop. The front page shows what is left of the week and per day for the rest of it; the *Økonomi* page shows the month as a chart with a forecast, the last 12 weeks, the year, and averages per shopping day, per adult per day and per shop. The amount is spread over the month's days, what a week doesn't use carries on to the next weeks of the month, and a new month starts afresh on the 1st. With a budget, a new meal plan may cost what is left of its week, and you can be told when 80 % of the week is used.
+<img src="docs/images/budget.png" alt="The week's food budget on the front page, the month as a chart with a forecast, and the last 12 weeks" width="100%">
 
-**Booking by itself with Apple Pay (iPhone).** REMA's *Scan & Betal* has no receipts you can reach, but a card payment can book itself: in the *Shortcuts* app, make a personal automation *Transaction* (*Transaktion*) for your Wallet card, choose the shops (REMA 1000, Netto …) and *Run immediately*. Add Home Assistant's action *Perform action* (*Udfør handling*) with `middagsro.register_purchase` and the fields `amount` = the shortcut's *Amount* and `store` = *Merchant*. A Siri shortcut that asks for the amount works the same way.
+The household's fixed amount for food a month, with every purchase booked against it – so you see what is left of the week while you shop, and the meal plan stays within it.
+
+- **The front page** shows what is left of the week and per day for the rest of it, a bar with a mark for an even pace, and what the week's lists still to be bought are estimated at. **Book a purchase** below it: the amount on the receipt, the shop (REMA 1000, your other chains or *Andet*) and the day. The list you sent today can be booked with one tap.
+- **The amount is spread over the month's days** (5.000 kr. in October is 161 kr. a day, 1.129 kr. a week). What a week doesn't use carries on to the next weeks of the same month, and what it overspends is taken from them; a new month starts afresh on the 1st. Everything you book counts, nappies too.
+- **The *Økonomi* page** (under *Mere*): the month as a chart – spent, an even pace and a **forecast** from your own pace over the last eight weeks – the **last 12 weeks** against their budget, the **year** month by month, and the purchases of the last two months (delete one with ✕).
+- **The averages that matter:** per shopping day (*Snit søndag*, *Snit torsdag*), extra trips, per adult per day (children count for less), per shop, saved on offers and what was bought outside the meal plan.
+- **The meal plan keeps to it:** a new plan may cost what is left of its week (lists still to be bought before it are taken off, and never below 40 % of the week's budget), and the AI is told to stay a bit below.
+- **Told at 80 %:** optionally a notification when 80 % of the week is used – once a week, to the same place as the watch list's.
+- Three sensors – *left this week*, *spent this month*, *forecast for the month* – for dashboards and automations.
+
+<img src="docs/images/budget-year.png" alt="Averages per shopping day, the year month by month and the latest purchases" width="100%">
+
+**Booking by itself with Apple Pay (iPhone).** REMA's *Scan & Betal* has no receipts you can reach, but a card payment can book itself. In the *Shortcuts* app, make a personal automation **Transaction** (*Transaktion*) for your Wallet card – choose the shops (REMA 1000, Netto …), or leave them open if the card is only for food – and *Run immediately*. Add Home Assistant's action **Perform action** (*Udfør handling*), choose *Register a purchase*, and write in its data field:
+
+```json
+{"amount": "Amount", "store": "Merchant"}
+```
+
+where *Amount* and *Merchant* are not typed but inserted as the shortcut's variables (*Shortcut Input → Amount* and *→ Merchant*), so they show as blue bubbles. The amount may come as the payment shows it (*600,00 kr.*). A Siri shortcut that asks for the amount works the same way, and the action answers with what is left of the week.
 
 ### History
 
@@ -107,9 +131,17 @@ The **Opskrifter** (recipes) tab has three pages: **Ugens opskrifter** (the week
 - New plans and swap suggestions use the family's favourites and liked dishes when they fit the week's offers, and never the disliked ones.
 - **REMA 1000's recipes:** search or browse REMA's own recipes – popular, newest, *Avisopskrifter* (built on this week's offers), *Aftensmad*, *Mad for børn*, *Kødfri* and more. Each card shows the time, a rough price and how many of its items are on offer. Every ingredient is linked to one of REMA's products, so the shopping list gets the very item. Save a recipe in the collection (with its photo), or put it straight on a day of the plan. In the plan, tap a dish and **Vælg en REMA-opskrift** to swap it for one of REMA's.
 
+<img src="docs/images/rema-recipes.png" alt="REMA 1000's own recipes with time, price and how many items are on offer" width="100%">
+
 ### Overrask os (surprise us)
 
+<img src="docs/images/new-plan.png" alt="A new meal plan: first day, wishes, days to skip, Lav ny madplan and Overrask os" width="40%" align="right">
+
 Next to **Lav ny madplan** on the front page: a plan with dishes the family has never had – from other cuisines, with exciting flavours and surprising combinations, but still within your budget, allergies, rules and weekday time.
+
+Above the buttons you choose the first day, write **wishes for this plan** and tick the days you are not eating at home. The plan is made for the week of the newest avis – never for a week whose prices aren't out yet.
+
+<br clear="right">
 
 ### Offers from other shops
 
@@ -118,15 +150,35 @@ Next to **Lav ny madplan** on the front page: a plan with dishes the family has 
 Middagsro is still about REMA 1000, but under **Indstillinger → Andre butikker** you can choose other chains you also shop in (Netto, Lidl, føtex, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, Brugsen, SPAR, Løvbjerg, Min Købmand, ABC Lavpris).
 
 - REMA 1000's logo comes first: its page shows all the offers in REMA's avis.
+
+<img src="docs/images/search.png" alt="Searching every shop for milk: REMA's prices and the other chains' offers, the cheapest per litre marked" width="100%">
+
 - **Search every shop** under the logos: a product's price at REMA and in the other shops' offers, per kilo, litre or piece, with the cheapest marked – and put it on the REMA list or the cheaper shop's list.
 - Their **logos are shown in circles on the front page**; tap one to see that chain's food offers, search them and put one on that shop's list.
 - In the **shopping list**, a small logo shows when an item is cheaper in one of them this week, and how much you save. **Tap the logo** to buy it there: the item moves to a separate list for that shop under the REMA list, and is not sent to the REMA app. Each shop's list can be ticked off, amounts changed, items deleted or moved back to REMA, and **Ryd kurven** (empty the basket) removes what has been bought – the list disappears when it is empty.
 - In **Favoritter**, the same logo shows which of your favourite products are cheaper elsewhere that week.
 - The offers come from the chains' own weekly aviser on Tjek (eTilbudsavis), the same source as REMA's avis. An item only counts as cheaper when it is the same kind of item (same words, fat percentage and organic or not), compared per kilo, litre or piece.
 
+### Health (*Sundhed*)
+
+<img src="docs/images/health.png" alt="Nutrition per dinner: kcal, protein, carbs, fat and fibre, per day" width="100%">
+
+How the week's dinners add up for an adult portion: kcal, protein, carbohydrate, fat and fibre on average and per day, against the targets you set under **Indstillinger → Næring** (the AI is asked to hit them when it plans).
+
+<img src="docs/images/health-advice.png" alt="The official Danish dietary advice: fruit and vegetables, fish, red meat and pulses from the shopping list" width="100%">
+
+From the shopping list: fruit and vegetables, fish (and oily fish), red meat and pulses per person against the official Danish dietary advice – children count for less – and the share of the basket with the Keyhole, organic and ASC/MSC labels.
+
 ### Settings in sub-pages
 
-The settings are split into pages – meal plan and week, the family, dishes, shopping, what the AI must remember, nutrition, other shops, Mealie and the app – each with a short summary of what is chosen.
+The settings are split into pages – meal plan and week, food budget, the family, dishes, shopping, what the AI must remember, nutrition, other shops, watch list and notifications, Mealie and the app – each with a short summary of what is chosen.
+
+### Made for the kitchen and the sofa
+
+- **Your typing is safe:** the field you are typing in keeps its focus and keyboard when the page updates – while a plan is being made, or the partner ticks something off.
+- **Up to date when you come back:** returning to the app after a while reloads the plan and the list, so an automatic plan and the other phone's ticks show up without a tap.
+- **No tap is lost:** taps while something is in flight wait their turn.
+- Swipe between tabs on a phone; the *older plan* banner warns before an old list is sent.
 
 ### Mealie
 
@@ -196,7 +248,7 @@ The integration logs in again by itself when the session expires. If you change 
 
 ## Settings in the panel
 
-<img src="docs/images/settings.png" alt="Settings for AI, budget, organic, product requirements, things to avoid and allergies" width="100%">
+<img src="docs/images/settings.png" alt="The settings, split into pages each with a short summary" width="100%">
 
 The settings apply every time a meal plan is made and are stored per REMA 1000 account. The panel is in Danish; the Danish name of each setting is in brackets.
 
@@ -222,6 +274,11 @@ The settings apply every time a meal plan is made and are stored per REMA 1000 a
 | **Fixed weekly items** (*Faste varer hver uge*) | Search REMA's range and pick a product (or write free text) that always goes on the list. Optionally, a fixed item that is already on the REMA list (not bought) is not sent again. | – |
 | **We also shop late in the week** (*Vi handler også sidst på ugen*) | Some offers only start on Thursday. Off, the meal plan only uses offers that run on the shopping day. On, it may use them in dishes from that day; the shopping list is split into the shopping day and Thursday, each sent on its own. | Off |
 | **Automation** (*Automatik*) | Make next week's plan when the new offers come out, and optionally send it to the REMA list. It is sent at 02:00 on the shopping day (Thursday's items at 02:00 on Thursday), when REMA has the week's products and prices. | Off |
+| **What the AI must remember** (*Det skal AI'en huske*) | Standing points for every plan, e.g. "always fresh broccoli with salmon". Also on the front page, typed or dictated. | – |
+| **Nutrition** (*Næring*) | Targets per dinner for an adult: kcal and the split of protein, carbs and fat. | Off |
+| **Other shops** (*Andre butikker*) | The chains you also shop in, for their offers, prices and shopping lists. | – |
+| **Watch list and notifications** (*Overvågning og beskeder*) | Where to tell when something watched comes on offer: a phone (Companion app) or Home Assistant. The food budget's 80 % notice goes there too. | Off |
+| **Mealie** | Use the family's Mealie recipes, save recipes there and fill Mealie's meal planner. | Off |
 | **Food budget** (*Madbudget*) | The monthly amount for food (0 = off). With it, a plan's budget is what is left of its week, and *Budget* above isn't used. Optionally a notification at 80 % of the week. | Off |
 | **The family's favourites** (*Familiens favoritter*) | Dishes with how often. | – |
 | **Dishes the family doesn't like** | Never go on the plan. | – |
