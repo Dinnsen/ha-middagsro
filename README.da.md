@@ -22,7 +22,7 @@
 > [!NOTE]
 > Uofficiel integration, ikke lavet af eller tilknyttet REMA 1000 eller de andre kæder, den viser tilbud fra. REMA 1000 har ikke et offentligt API, så integrationen bruger de samme kald som rema1000.dk og webshoppen. Den kan holde op med at virke, hvis REMA ændrer deres side. Kun til personlig brug med din egen REMA 1000-konto i Danmark.
 
-**Indhold:** [Funktioner](#funktioner) · [Krav](#krav) · [Installation](#installation) · [Opsætning](#opsætning) · [Indstillinger](#indstillinger-i-panelet) · [Entiteter](#entiteter) · [Handlinger](#handlinger) · [Eksempler](#eksempler) · [Sådan virker det](#sådan-virker-det) · [Begrænsninger](#kendte-begrænsninger) · [Fejlfinding](#fejlfinding) · [Fjern integrationen](#fjern-integrationen)
+**Indhold:** [Funktioner](#funktioner) · [Madbudget](#madbudget-økonomi) · [Krav](#krav) · [Installation](#installation) · [Opsætning](#opsætning) · [Indstillinger](#indstillinger-i-panelet) · [Entiteter](#entiteter) · [Handlinger](#handlinger) · [Eksempler](#eksempler) · [Sådan virker det](#sådan-virker-det) · [Begrænsninger](#kendte-begrænsninger) · [Fejlfinding](#fejlfinding) · [Fjern integrationen](#fjern-integrationen)
 
 ## Funktioner
 
@@ -46,18 +46,22 @@ Integrationen lægger et **Middagsro-panel** i sidebaren. Det følger dit Home A
 - En **krav-tjekliste** viser, om planen overholder jeres regler.
 - Slå **automatik** til, så laves næste uges plan, når den nye tilbudsavis udkommer – og sendes evt. direkte til REMA-listen.
 
+<img src="docs/images/plan-tools.png" alt="En rets menu, tre andre retter at skifte til og det, AI'en skal huske" width="100%">
+
+*Tryk på en ret: se opskriften, skift den til et af tre nye forslag eller en REMA-opskrift, slet den eller spring dagen over. Til højre: de faste punkter til alle madplaner.*
+
 ### Opskrifter til køkkenet
 
 <img src="docs/images/recipe.png" alt="Opskrift med afkrydsede ingredienser og en timer, der tæller ned" width="100%">
 
-Ingredienser og trin i stor skrift. Kryds af undervejs, start en **timer** på hvert trin (den bipper og vibrerer, når tiden er gået), og tryk **Hold skærmen tændt**, mens du laver mad. Restedage henviser til den dag, maden blev lavet. Er du ikke tilfreds med en opskrift, så lav den igen.
+Ingredienser og trin i stor skrift. Kryds af undervejs, start en **timer** på hvert trin (den bipper og vibrerer, når tiden er gået, uanset hvilken fane der er åben, og en lille tæller øverst viser tiden – tryk på den for at komme tilbage til opskriften), og tryk **Hold skærmen tændt**, mens du laver mad. Restedage henviser til den dag, maden blev lavet. Er du ikke tilfreds med en opskrift, så lav den igen.
 
 ### Den billigste indkøbsliste – direkte i REMA-appen
 
 <img src="docs/images/shopping.png" alt="Indkøbsliste med REMA-varer, tilbud, økologi-mærker og priser" width="100%">
 
 - Til hver ingrediens findes **den billigste REMA-vare**, der opfylder jeres regler. Varer fra tilbudsavisen, økologiske varer og faste ugevarer er mærket.
-- Pris pr. vare, antal pakker og samlet pris mod budgettet.
+- Pris pr. vare, antal pakker og samlet pris mod budgettet. Med et [madbudget](#madbudget-økonomi) spørger panelet først, hvis en liste koster mere, end der er tilbage af ugen.
 - **Send til REMA-listen** lægger det hele på din primære liste i REMA 1000-appen. Varer uden et sikkert match kommer på som tekst. Sendte varer forsvinder fra Middagsro's kurv, så næste gang sendes kun det, der er kommet til siden – intet havner to gange i appen. **Genskab seneste kurv** lægger de sidst sendte varer tilbage, hvis noget gik galt.
 - Søg en hvilken som helst REMA-vare frem i kurven – også tilbuddene i REMA's avis, med *partivarer*, der kun sælges i butikkerne.
 - **Søg og tilføj** andre REMA-varer til indkøbslisten – også til listen senere på ugen. Tryk på en vare for at rette antal, skifte den ud eller slette den.
@@ -74,13 +78,33 @@ De varer, du har givet et hjerte i REMA 1000-appen. Vælg **Denne uge** eller **
 
 Søg i REMA's varer nederst i *Favoritter* for at tilføje jeres egne favoritter ved siden af hjerterne fra appen.
 
+<img src="docs/images/watch.png" alt="Overvågning: hvor de overvågede varer er på tilbud, i REMA og andre kæder" width="100%">
+
 **Overvågning.** Tryk på 🔔 på en favorit eller en hvilken som helst vare for at overvåge den – eller skriv noget, REMA ikke sælger, og overvåg det som tekst. Øverst i *Favoritter* ser du, hvor de overvågede varer er på tilbud: i REMA (nu eller fra næste uges avis) og i de kæder, du har valgt, med pris og en knap, der lægger varen i kurven eller på kædens indkøbsliste. Under **Indstillinger → Overvågning og beskeder** kan du få en besked på telefonen eller i Home Assistant, når noget fra overvågningslisten kommer på tilbud – og kun da. Listen tjekkes hver 3. time, og hvert tilbud nævnes én gang.
 
 ### Madbudget (*Økonomi*)
 
-Skriv husstandens faste beløb til mad pr. måned, og kontér det, I handler for, på forsiden – beløbet på kvitteringen og butikken. Forsiden viser, hvad der er tilbage af ugen og pr. dag resten af den; siden *Økonomi* viser måneden som en graf med prognose, de seneste 12 uger, året og gennemsnit pr. indkøbsdag, pr. voksen pr. dag og pr. butik. Beløbet fordeles på månedens dage, det en uge ikke bruger, går videre til månedens næste uger, og en ny måned starter forfra den 1. Med et madbudget må en ny madplan koste det, der er tilbage af dens uge, og I kan få besked, når 80 % af ugen er brugt.
+<img src="docs/images/budget.png" alt="Ugens madbudget på forsiden, måneden som graf med prognose og de seneste 12 uger" width="100%">
 
-**Kontér af sig selv med Apple Pay (iPhone).** REMA's *Scan & Betal* har ingen kvitteringer, man kan komme til, men en kortbetaling kan kontere sig selv: lav i *Genveje*-appen en personlig automatisering *Transaktion* for jeres Wallet-kort, vælg butikkerne (REMA 1000, Netto …) og *Kør med det samme*. Tilføj Home Assistant-appens handling *Udfør handling* med `middagsro.register_purchase` og felterne `amount` = genvejens *Beløb* og `store` = *Forhandler*. En Siri-genvej, der spørger om beløbet, virker på samme måde.
+Husstandens faste beløb til mad pr. måned, med hvert køb konteret – så I kan se, hvad der er tilbage af ugen, mens I handler, og madplanen holder sig inden for det.
+
+- **Forsiden** viser, hvad der er tilbage af ugen og pr. dag resten af den, en bjælke med en streg for jævnt forbrug, og hvad ugens lister, der ikke er købt endnu, er anslået til. **Kontér et køb** lige under: beløbet på kvitteringen, butikken (REMA 1000, jeres andre kæder eller *Andet*) og dagen. Listen, I sendte i dag, kan konteres med ét tryk.
+- **Beløbet fordeles på månedens dage** (5.000 kr. i oktober er 161 kr. om dagen, 1.129 kr. om ugen). Det, en uge ikke bruger, går videre til månedens næste uger, og det, den bruger for meget, trækkes fra dem; en ny måned starter forfra den 1. Alt, der konteres, tæller med – også bleerne.
+- **Siden *Økonomi*** (under *Mere*): måneden som graf – brugt, jævnt forbrug og en **prognose** ud fra jeres eget tempo de seneste otte uger – de **seneste 12 uger** mod deres budget, **året** måned for måned og de seneste to måneders køb (slet et med ✕).
+- **De gennemsnit, der giver mening:** pr. indkøbsdag (*Snit søndag*, *Snit torsdag*), ekstra ture, pr. voksen pr. dag (børn tæller mindre), pr. butik, sparet på tilbud og det, der er købt ud over madplanen.
+- **Madplanen holder sig inden for det:** en ny plan må koste det, der er tilbage af dens uge (lister, der skal købes inden, trækkes fra, og aldrig under 40 % af ugens budget), og AI'en bliver bedt om at holde sig et stykke under.
+- **Besked ved 80 %:** eventuelt en besked, når 80 % af ugen er brugt – én gang om ugen, samme sted hen som overvågningens.
+- Tre sensorer – *tilbage denne uge*, *brugt denne måned*, *prognose for måneden* – til dashboards og automatiseringer.
+
+<img src="docs/images/budget-year.png" alt="Gennemsnit pr. indkøbsdag, året måned for måned og de seneste køb" width="100%">
+
+**Kontér af sig selv med Apple Pay (iPhone).** REMA's *Scan & Betal* har ingen kvitteringer, man kan komme til, men en kortbetaling kan kontere sig selv. Lav i *Genveje*-appen en personlig automatisering **Transaktion** for jeres Wallet-kort – vælg butikkerne (REMA 1000, Netto …), eller lad dem stå åbne, hvis kortet kun bruges til mad – og *Kør med det samme*. Tilføj Home Assistant-appens handling **Udfør handling**, vælg *Register a purchase*, og skriv i dens datafelt:
+
+```json
+{"amount": "Beløb", "store": "Forhandler"}
+```
+
+hvor *Beløb* og *Forhandler* ikke skrives, men indsættes som genvejens variabler (*Genvejsinput → Beløb* og *→ Forhandler*), så de står som blå bobler. Beløbet må gerne komme, som betalingen viser det (*600,00 kr.*). En Siri-genvej, der spørger om beløbet, virker på samme måde, og handlingen svarer med, hvad der er tilbage af ugen.
 
 ### Historik
 
@@ -107,9 +131,17 @@ Fanen **Opskrifter** har tre sider: **Ugens opskrifter** som hidtil, **Opskrifts
 - Nye madplaner og forslag til at skifte en ret bruger familiens favoritter og retter, I synes om, når de passer til ugens tilbud – og aldrig dem, I ikke synes om.
 - **REMA 1000's opskrifter:** søg eller bladr i REMA's egne opskrifter – populære, nyeste, *Avisopskrifter* (bygget på ugens tilbud), *Aftensmad*, *Mad for børn*, *Kødfri* og flere. Hvert kort viser tid, en cirkapris og hvor mange af varerne, der er på tilbud. Hver ingrediens er koblet til en af REMA's varer, så indkøbslisten får præcis den vare. Gem en opskrift i samlingen (med billede), eller sæt den direkte på en dag i madplanen. I madplanen kan du trykke på en ret og vælge **Vælg en REMA-opskrift** for at skifte den ud med en af REMA's.
 
+<img src="docs/images/rema-recipes.png" alt="REMA 1000's egne opskrifter med tid, pris og hvor mange varer der er på tilbud" width="100%">
+
 ### Overrask os
 
+<img src="docs/images/new-plan.png" alt="Ny madplan: første dag, ønsker, dage at springe over, Lav ny madplan og Overrask os" width="40%" align="right">
+
 Ved siden af **Lav ny madplan** på forsiden: en madplan med retter, familien aldrig har fået – fra andre køkkener, med spændende smage og overraskende kombinationer, men stadig inden for jeres budget, allergier, regler og tid på hverdage.
+
+Over knapperne vælger I første dag, skriver **ønsker til netop denne plan** og krydser de dage af, hvor I ikke spiser hjemme. Planen laves til ugen for den nyeste avis – aldrig til en uge, hvis priser ikke er ude endnu.
+
+<br clear="right">
 
 ### Tilbud fra andre butikker
 
@@ -118,15 +150,35 @@ Ved siden af **Lav ny madplan** på forsiden: en madplan med retter, familien al
 Middagsro handler stadig om REMA 1000, men under **Indstillinger → Andre butikker** kan I vælge andre kæder, I også handler i (Netto, Lidl, føtex, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, Brugsen, SPAR, Løvbjerg, Min Købmand og ABC Lavpris).
 
 - REMA 1000's logo står først: siden viser alle tilbud i REMA's avis.
+
+<img src="docs/images/search.png" alt="Søgning efter mælk i alle butikker: REMA's priser og de andre kæders tilbud, med den billigste pr. liter markeret" width="100%">
+
 - **Søg i alle butikker** under logoerne: en vares pris hos REMA og i de andre butikkers tilbud, pr. kilo, liter eller stk., med den billigste markeret – og sæt den på REMA-listen eller den billigere butiks liste.
 - Deres **logoer vises i runde cirkler på forsiden**. Tryk på et for at se kædens madtilbud, søge i dem og lægge et på butikkens liste.
 - I **indkøbslisten** viser et lille logo, når en vare er billigere i en af dem denne uge, og hvor meget I sparer. **Tryk på logoet** for at købe den der: varen flytter til en særskilt liste for butikken under REMA-listen og sendes ikke til REMA-appen. Hver butiksliste kan krydses af, mængder rettes, og varer slettes eller flyttes tilbage til REMA. **Ryd kurven** fjerner det, der er købt, og listen forsvinder, når den er tom.
 - Under **Favoritter** viser det samme logo, hvilke af dine favoritvarer der er billigere andre steder den uge.
 - Tilbuddene kommer fra kædernes egne tilbudsaviser på Tjek (eTilbudsavis), samme kilde som REMA's avis. En vare tæller kun som billigere, når det er samme slags vare (samme ord, fedtprocent og økologi eller ej), sammenlignet pr. kilo, liter eller stk.
 
+### Sundhed
+
+<img src="docs/images/health.png" alt="Næring pr. aftensmad: kcal, protein, kulhydrat, fedt og kostfibre pr. dag" width="100%">
+
+Hvordan ugens aftensmad ser ud for en voksenportion: kcal, protein, kulhydrat, fedt og kostfibre i snit og pr. dag, mod de mål, I har sat under **Indstillinger → Næring** (AI'en bliver bedt om at ramme dem, når den laver planen).
+
+<img src="docs/images/health-advice.png" alt="Kostrådene: frugt og grønt, fisk, rødt kød og bælgfrugter ud fra indkøbslisten" width="100%">
+
+Ud fra indkøbslisten: frugt og grønt, fisk (og fed fisk), rødt kød og bælgfrugter pr. person mod de officielle kostråd – børn tæller mindre – og hvor stor en del af kurven der har Nøglehullet, økologi- og ASC/MSC-mærker.
+
 ### Indstillinger i undermenuer
 
-Indstillingerne er delt op i sider – madplan og uge, familien, retter, indkøb, det AI'en skal huske, næring, andre butikker, Mealie og appen – hver med et kort overblik over, hvad der er valgt.
+Indstillingerne er delt op i sider – madplan og uge, madbudget, familien, retter, indkøb, det AI'en skal huske, næring, andre butikker, overvågning og beskeder, Mealie og appen – hver med et kort overblik over, hvad der er valgt.
+
+### Lavet til køkkenet og sofaen
+
+- **Det, du skriver, er i sikkerhed:** feltet, du skriver i, beholder fokus og tastatur, når siden opdateres – mens en plan laves, eller den anden krydser noget af.
+- **Opdateret, når du kommer tilbage:** vender du tilbage til appen efter et stykke tid, hentes planen og listen igen, så en automatisk plan og den andens krydser dukker op uden et tryk.
+- **Intet tryk går tabt:** tryk, mens noget er i gang, venter på tur.
+- Stryg mellem fanerne på telefonen; banneret *ældre madplan* advarer, før en gammel liste sendes.
 
 ### Mealie
 
@@ -196,7 +248,7 @@ Integrationen logger selv ind igen, når sessionen udløber. Skifter du adgangsk
 
 ## Indstillinger i panelet
 
-<img src="docs/images/settings.png" alt="Indstillinger for AI, budget, økologi, krav til varer, ting at undgå og allergier" width="100%">
+<img src="docs/images/settings.png" alt="Indstillingerne, delt op i sider med et kort overblik hver" width="100%">
 
 Indstillingerne gælder hver gang, en madplan laves, og gemmes pr. REMA 1000-konto.
 
@@ -222,6 +274,11 @@ Indstillingerne gælder hver gang, en madplan laves, og gemmes pr. REMA 1000-kon
 | **Faste varer hver uge** | Søg i REMA's sortiment, og vælg en vare (eller skriv fritekst), som altid kommer på listen. Kan sættes til ikke at sende en fast vare, der allerede står på REMA-listen (og ikke er købt). | – |
 | **Vi handler også sidst på ugen** | Nogle tilbud gælder først fra torsdag. Slået fra bruger madplanen kun tilbud, der gælder på indkøbsdagen. Slået til må de bruges i retter fra den dag; indkøbslisten deles i indkøbsdagen og torsdag, der sendes hver for sig. | Fra |
 | **Automatik** | Lav næste uges plan automatisk, når den nye avis udkommer, og send den evt. til REMA-listen. Den sendes kl. 02 på indkøbsdagen (torsdagsvarerne kl. 02 torsdag), når REMA har ugens varer og priser. | Fra |
+| **Det skal AI'en huske** | Faste punkter til alle madplaner, fx "altid frisk broccoli til laks". Også på forsiden, skrevet eller dikteret. | – |
+| **Næring** | Mål pr. aftensmad for en voksen: kcal og fordeling af protein, kulhydrat og fedt. | Fra |
+| **Andre butikker** | De kæder, I også handler i – deres tilbud, priser og indkøbslister. | – |
+| **Overvågning og beskeder** | Hvor der gives besked, når noget overvåget kommer på tilbud: telefonen (Companion-appen) eller Home Assistant. Madbudgettets besked ved 80 % kommer samme sted. | Fra |
+| **Mealie** | Brug familiens opskrifter i Mealie, gem opskrifter dér og fyld Mealies madplan. | Fra |
 | **Madbudget** | Det faste beløb til mad pr. måned (0 = slået fra). Med det er en plans budget det, der er tilbage af dens uge, og *Budget* ovenfor bruges ikke. Eventuelt besked ved 80 % af ugen. | Fra |
 | **Familiens favoritter** | Retter med hyppighed. | – |
 | **Retter familien ikke kan lide** | Kommer aldrig på planen. | – |
