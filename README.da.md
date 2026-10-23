@@ -22,7 +22,7 @@
 > [!NOTE]
 > Uofficiel integration, ikke lavet af eller tilknyttet REMA 1000 eller de andre kæder, den viser tilbud fra. REMA 1000 har ikke et offentligt API, så integrationen bruger de samme kald som rema1000.dk og webshoppen. Den kan holde op med at virke, hvis REMA ændrer deres side. Kun til personlig brug med din egen REMA 1000-konto i Danmark.
 
-**Indhold:** [Funktioner](#funktioner) · [Madbudget](#madbudget-økonomi) · [Krav](#krav) · [Installation](#installation) · [Opsætning](#opsætning) · [Indstillinger](#indstillinger-i-panelet) · [Entiteter](#entiteter) · [Handlinger](#handlinger) · [Eksempler](#eksempler) · [Sådan virker det](#sådan-virker-det) · [Begrænsninger](#kendte-begrænsninger) · [Fejlfinding](#fejlfinding) · [Fjern integrationen](#fjern-integrationen)
+**Indhold:** [Funktioner](#funktioner) · [Madbudget](#madbudget-økonomi) · [Kort til dashboards](#kort-til-dashboards) · [Krav](#krav) · [Installation](#installation) · [Opsætning](#opsætning) · [Indstillinger](#indstillinger-i-panelet) · [Entiteter](#entiteter) · [Handlinger](#handlinger) · [Eksempler](#eksempler) · [Sådan virker det](#sådan-virker-det) · [Begrænsninger](#kendte-begrænsninger) · [Fejlfinding](#fejlfinding) · [Fjern integrationen](#fjern-integrationen)
 
 ## Funktioner
 
@@ -64,7 +64,7 @@ Ingredienser og trin i stor skrift. Kryds af undervejs, start en **timer** på h
 - Pris pr. vare, antal pakker og samlet pris mod budgettet. Med et [madbudget](#madbudget-økonomi) spørger panelet først, hvis en liste koster mere, end der er tilbage af ugen.
 - **Send til REMA-listen** lægger det hele på din primære liste i REMA 1000-appen. Varer uden et sikkert match kommer på som tekst. Sendte varer forsvinder fra Middagsro's kurv, så næste gang sendes kun det, der er kommet til siden – intet havner to gange i appen. **Genskab seneste kurv** lægger de sidst sendte varer tilbage, hvis noget gik galt.
 - Søg en hvilken som helst REMA-vare frem i kurven – også tilbuddene i REMA's avis, med *partivarer*, der kun sælges i butikkerne.
-- **Søg og tilføj** andre REMA-varer til indkøbslisten – også til listen senere på ugen. Tryk på en vare for at rette antal, skifte den ud eller slette den.
+- **Søg og tilføj** andre REMA-varer til indkøbslisten – også til listen senere på ugen – eller læg en **direkte på REMA-listen** i appen med *+ REMA-listen*, uden om madplanen. Tryk på en vare for at rette antal, skifte den ud eller slette den.
 - **Basisvarer i madplanen** viser de basisvarer (salt, olie, smør …), opskrifterne bruger. Mangler I en, så tryk **Tilføj til indkøb**, og varen findes efter jeres indstillinger.
 - Under listen ses, hvad der står på REMA-listen lige nu, og den kan tømmes, når I har handlet.
 
@@ -153,7 +153,7 @@ Middagsro handler stadig om REMA 1000, men under **Indstillinger → Andre butik
 
 <img src="docs/images/search.png" alt="Søgning efter mælk i alle butikker: REMA's priser og de andre kæders tilbud, med den billigste pr. liter markeret" width="100%">
 
-- **Søg i alle butikker** under logoerne: en vares pris hos REMA og i de andre butikkers tilbud, pr. kilo, liter eller stk., med den billigste markeret – og sæt den på REMA-listen eller den billigere butiks liste.
+- **Søg i alle butikker** under logoerne: en vares pris hos REMA og i de andre butikkers tilbud, pr. kilo, liter eller stk., med den billigste markeret – og sæt den på madplanens indkøbsliste (*+ Indkøb*), **direkte på REMA-listen i appen** (*+ REMA-listen*) eller på den billigere butiks liste.
 - Deres **logoer vises i runde cirkler på forsiden**. Tryk på et for at se kædens madtilbud, søge i dem og lægge et på butikkens liste.
 - I **indkøbslisten** viser et lille logo, når en vare er billigere i en af dem denne uge, og hvor meget I sparer. **Tryk på logoet** for at købe den der: varen flytter til en særskilt liste for butikken under REMA-listen og sendes ikke til REMA-appen. Hver butiksliste kan krydses af, mængder rettes, og varer slettes eller flyttes tilbage til REMA. **Ryd kurven** fjerner det, der er købt, og listen forsvinder, når den er tom.
 - Under **Favoritter** viser det samme logo, hvilke af dine favoritvarer der er billigere andre steder den uge.
@@ -189,6 +189,36 @@ Er [Mealie](https://mealie.io) sat op i Home Assistant (den officielle Mealie-in
 - **Mealies kalender:** madplanens aftensmåltider kommer i Mealies madplan (som opskriften, når den findes i Mealie, ellers som en note) og opdateres, når en ret udskiftes eller slettes, eller en dag springes over.
 
 Integrationen bruger Mealie-integrationens adresse og API-token, så intet skal skrives to gange.
+
+### Kort til dashboards
+
+<img src="docs/images/cards.png" alt="Middagsros kort på et dashboard på telefonen, lyst og mørkt: Bubble-knapper for i aften, indkøb og budget, ugen, i aften, kurven og madbudgettet" width="100%">
+
+Middagsro har seks kort til jeres egne dashboards. De følger med integrationen – der skal ikke tilføjes en ressource eller installeres noget i HACS – og findes under **Tilføj kort** (søg på *Middagsro*), med en visuel editor. De følger Middagsro direkte: en ny plan, en sendt liste eller et konteret køb ses med det samme.
+
+| Kort | | Bredde |
+| --- | --- | --- |
+| **Ugen** `custom:middagsro-week-card` | Ugens aftensmåltider på én linje, med i aften fremhævet og i syne. | Hel |
+| **I aften** `custom:middagsro-tonight-card` | Aftenens ret med tid, antal personer og type, og hvad der er i morgen. | Halv |
+| **I aften, stor** `custom:middagsro-tonight-large-card` | Aftenens opskrift som på siden *Opskrifter*: ingredienser og trin at krydse af, og æggeurene. | Hel |
+| **Indkøb** `custom:middagsro-shopping-card` | Kurven (varer og pris), hvad der er sendt, hvad der står på REMA-listen nu, og **Send til REMA**. | Halv |
+| **Økonomi** `custom:middagsro-budget-card` | Ugens madbudget: hvad der er tilbage, pr. dag, bjælken med det jævne tempo, og måneden. | Halv |
+| **Bubble** `custom:middagsro-bubble-card` | I aften, indkøb eller økonomi som én [Bubble Card](https://github.com/Clooos/Bubble-Card)-knap (`show: tonight`, `shopping` eller `budget`): budgettet fylder den som en slider med tempoet markeret, indkøb har en *Send*-knap. | Én række |
+
+**Tryk på et kort** åbner en pop-up med den side af panelet – dagens opskrift, kurven eller *Økonomi* – og **Åbn i Middagsro** går til panelet. Pop-up'en er Home Assistants egen dialog, så den ligger over alt andet (også fra en Bubble Card pop-up) og lukkes med tilbage-knappen eller ved at trække den ned på telefonen. `tap_action: panel` åbner panelet i stedet, `none` gør ingenting.
+
+```yaml
+type: custom:middagsro-bubble-card
+show: shopping          # tonight (standard), shopping eller budget
+name: Indkøb            # valgfrit
+tap_action: popup       # popup (standard), panel eller none
+```
+
+Panelets sider har hver sin adresse: `/middagsro/plan`, `/middagsro/recipes/<dato>`, `/middagsro/shopping`, `/middagsro/budget` osv.
+
+**Temaer.** Kortene og pop-up'en følger jeres tema uden card-mod: Home Assistants egne variabler for kort og dialoger; Bubble Cards `--bubble-*`-variabler for Bubble-kortet og pop-up'en (så den ligner jeres Bubble pop-ups); og [Theme Studio](https://github.com/Dinnsen/theme-studio)s glas-slør (`--theme-studio-card-backdrop-filter`, også på panelets egne kort), hævede flade (`--theme-studio-soft-background-color`), chip-hjørner (`--theme-studio-chip-radius`) og pop-up'ens kant og skygge.
+
+<img src="docs/images/cards-theme-studio.png" alt="Bubble-kortene og ugen i et Theme Studio-tema, lyst og mørkt" width="100%">
 
 ### Lys og mørk tilstand
 

@@ -2,6 +2,24 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.2.0] - 2026-10-23
+
+### Added
+- **Cards for your own dashboards**, included in the integration – no resource to add, nothing to install in HACS. Under *Add card* (search *Middagsro*), with a visual editor:
+  - **Week:** the week's dinners on one line, tonight marked and in view.
+  - **Tonight:** tonight's dish with time, servings and type, and tomorrow's.
+  - **Tonight, large:** tonight's recipe as on the *Opskrifter* page, with ingredients and steps to tick off and the timers.
+  - **Shopping:** the basket, what is sent, what is on the REMA list now, and *Send til REMA* (it asks first when the list costs more than the week's budget has left, as in the panel).
+  - **Budget:** what is left of the week's food budget, per day, the bar with the even pace, and the month.
+  - **Bubble:** tonight, the shopping or the budget as one Bubble Card button, with Bubble Card's measures and `--bubble-*` variables.
+  The cards follow Middagsro live through the new `middagsro/subscribe` (the plans, the budget, the REMA list and midnight), and all cards on a page share one connection.
+- **A pop-up from every card** with that page of the panel (the day's recipe, the basket, *Økonomi*). It is Home Assistant's own dialog, so it opens above everything, also inside a Bubble Card pop-up, and closes with the back button or by pulling it down. `tap_action: panel` opens the panel instead.
+- **Addresses for the panel's pages:** `/middagsro/plan`, `/middagsro/recipes/<date>`, `/middagsro/shopping`, `/middagsro/budget` and so on. The address follows what is shown, so a reload or a link opens the same page.
+- **+ REMA-listen in the searches:** a product found under *Søg i alle butikker* or in the basket's search can go **straight onto the REMA list in the app**, past the meal plan's list, also when there is a plan. *+ Indkøb* still puts it in the meal plan's basket.
+
+### Changed
+- **The theme reaches further:** the panel's cards take Theme Studio's glass blur (`--theme-studio-card-backdrop-filter`), and its dialogs Home Assistant's dialog scrim (and its blur) and corners. The cards and the pop-up use Theme Studio's raised surface, chip radius and pop-up border and shadow, and Bubble Card's pop-up background.
+
 ## [2.1.2] - 2026-10-22
 
 ### Fixed

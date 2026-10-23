@@ -300,7 +300,15 @@ class Rema1000Panel extends HTMLElement {
     this._hass = hass;
     const menu = this.shadowRoot.querySelector("ha-menu-button");
     if (menu) menu.hass = hass;
-    if (first) this._load();
+    if (first) {
+      this._load();
+      // A page asked for before Home Assistant was there (its data loads with hass).
+      if (this._pendingPath !== undefined) {
+        const path = this._pendingPath;
+        this._pendingPath = undefined;
+        this._applyPath(path);
+      }
+    }
   }
 
   set narrow(narrow) {
@@ -311,6 +319,57 @@ class Rema1000Panel extends HTMLElement {
 
   set panel(panel) {
     this._panel = panel;
+  }
+
+  /* Home Assistant's address below /middagsro: /plan, /recipes, /recipes/<date>, /shopping, ... */
+  set route(route) {
+    const path = route?.path || "";
+    if (this._embed || path === this._routePath) return;
+    this._routePath = path;
+    this._applyPath(path);
+  }
+
+  /* Shown inside a dashboard card's pop-up or card: one page, no toolbar or tabs. */
+  set embed(embed) {
+    this._embed = embed || null;
+    this.toggleAttribute("embed", !!embed);
+    if (embed?.view) this._applyPath(embed.view);
+  }
+
+  get embed() {
+    return this._embed;
+  }
+
+  // "recipes/2026-10-23" -> the recipes tab on that day; an unknown page is the meal plan.
+  _applyPath(path) {
+    if (!this._hass) {
+      this._pendingPath = path;
+      return;
+    }
+    const [tab, date] = String(path || "").replace(/^\/+/, "").split("/");
+    const key = TABS.some(([k]) => k === tab) ? tab : "plan";
+    if (key === "recipes") {
+      this._recipesSub = "week";
+      this._wantDate = /^\d{4}-\d{2}-\d{2}$/.test(date || "") ? date : localToday();
+    }
+    if (key !== this._tab) this._goTab(key);
+    else if (this._state) this._render();
+  }
+
+  // The page's own address, so a reload or a link opens the same page (not inside a card).
+  get _path() {
+    if (this._tab !== "recipes") return this._tab;
+    const day = this._recipeDays()[this._day]?.day;
+    return day ? `recipes/${day.date}` : "recipes";
+  }
+
+  _syncPath() {
+    if (this._embed) return;
+    const base = "/middagsro";
+    if (!location.pathname.startsWith(base)) return;
+    const next = `${base}/${this._path}`;
+    if (location.pathname !== next) history.replaceState(history.state, "", next + location.search);
+    this._routePath = `/${this._path}`;
   }
 
   get _static() {
@@ -330,8 +389,11 @@ class Rema1000Panel extends HTMLElement {
     this._noPinch = (ev) => {
       if (ev.touches?.length > 1) ev.preventDefault();
     };
-    document.addEventListener("gesturestart", this._noZoom, { passive: false });
-    document.addEventListener("touchmove", this._noPinch, { passive: false });
+    // Not inside a dashboard card: the dashboard decides about zooming there.
+    if (!this._embed) {
+      document.addEventListener("gesturestart", this._noZoom, { passive: false });
+      document.addEventListener("touchmove", this._noPinch, { passive: false });
+    }
     this._tick = setInterval(() => this._tickTimers(), 1000);
     if (this._hass && !this._state) this._load();
     else if (this._hass && this._state?.status?.state === "generating") this._load(true);
@@ -390,6 +452,11 @@ class Rema1000Panel extends HTMLElement {
       s.timeline?.length, s.recipes?.length, s.favorites?.length, s.rema_list?.items?.length,
       s.watch?.length, s.own_favorites?.length,
     ]);
+  }
+
+  // One product on the REMA list in the app; the meal plan's list is left as it is.
+  _addToRemaList(productId, name) {
+    this._run(() => this._ws("middagsro/list/add", { product_id: Number(productId), amount: 1 }), `${name} er sat på REMA-listen.`);
   }
 
   // A toast is its own little render: it never redraws the page under the user's fingers.
@@ -470,6 +537,7 @@ class Rema1000Panel extends HTMLElement {
     if (key === "favorites" && !this._watch.items && !this._watch.loading) this._loadWatch();
     if (key === "health") this._loadHealth();
     this._render();
+    this._syncPath();
     const content = this.shadowRoot.querySelector("#content");
     if (content && direction) {
       content.classList.remove("from-left", "from-right");
@@ -481,7 +549,7 @@ class Rema1000Panel extends HTMLElement {
   // Swipe left/right on the page to go to the next/previous tab.
   _onTouchStart(ev) {
     this._swipe = null;
-    if (ev.touches.length !== 1 || this._modal || this._noteOpen || this._moreOpen) return;
+    if (this._embed || ev.touches.length !== 1 || this._modal || this._noteOpen || this._moreOpen) return;
     const t = ev.touches[0];
     // Leave the screen edges to the system (back gesture, HA's menu).
     if (t.clientX < 24 || t.clientX > innerWidth - 24) return;
@@ -671,11 +739,13 @@ class Rema1000Panel extends HTMLElement {
         this._tab = "recipes";
         this._recipesSub = "week";
         this._render();
+        this._syncPath();
       },
       day: () => {
         this._day = Number(arg);
         this._dayKey = this._recipeKey();
         this._render();
+        this._syncPath();
       },
       tick: () => {
         this._checked[arg] = !this._checked[arg];
@@ -832,14 +902,17 @@ class Rema1000Panel extends HTMLElement {
       },
       "ev-rema": () => {
         const product = this._everywhere.data?.products.find((p) => String(p.id) === arg);
-        if (!product) return;
         const plan = this._state?.latest_plan;
+        if (!product || !plan) return;
         this._editPlan(
-          () => (plan
-            ? this._ws("middagsro/plan/add", { plan_id: plan.id, product_id: product.id, part: "main" })
-            : this._ws("middagsro/list/add", { product_id: product.id, amount: 1 })),
-          plan ? `${product.name} er sat på indkøbslisten.` : `${product.name} er sat på REMA-listen.`
+          () => this._ws("middagsro/plan/add", { plan_id: plan.id, product_id: product.id, part: "main" }),
+          `${product.name} er sat på indkøbslisten.`
         );
+      },
+      // Straight onto the REMA list in the app, past the meal plan's list.
+      "ev-rema-list": () => {
+        const product = this._everywhere.data?.products.find((p) => String(p.id) === arg);
+        if (product) this._addToRemaList(product.id, product.name);
       },
       "ev-chain": () => {
         const offer = this._everywhere.data?.offers.find((o) => o.id === arg);
@@ -1140,6 +1213,19 @@ class Rema1000Panel extends HTMLElement {
           () => this._ws("middagsro/chains/rema_add", { offer, plan_id: this._plan.id }),
           `${offer.heading} er tilføjet til indkøbslisten.`
         );
+      },
+      "shop-offer-add-list": () => {
+        const offer = this._shopSearch.main?.offers?.[Number(arg)];
+        if (!offer) return;
+        this._shopSearch.main = { query: "", results: [], offers: [], loading: false };
+        this._run(() => this._ws("middagsro/chains/rema_add", { offer, plan_id: null }), `${offer.heading} er sat på REMA-listen.`);
+      },
+      "shop-add-list": () => {
+        const [part, idx] = String(arg).split("|");
+        const product = this._shopSearch[part]?.results[Number(idx)];
+        if (!product) return;
+        this._shopSearch[part] = { query: "", results: [], loading: false };
+        this._addToRemaList(product.id, product.name);
       },
       "send-restore": () =>
         this._editPlan(
@@ -2186,7 +2272,12 @@ class Rema1000Panel extends HTMLElement {
           <div class="what"><b>${esc(p.name)}</b><span class="muted small">${esc(p.underline || "")}${p.unit_price ? ` · ${unit(p.unit_price)}` : ""}</span>
             ${isBest("rema", p.id) ? '<span class="badge eco">Billigst</span>' : ""}</div>
           <span class="ev-price ${onOffer(p) ? "sale" : ""}">${kr(p.price)}</span>
-          <button class="btn small" data-action="ev-rema" data-arg="${esc(p.id)}" ${this._busy ? "disabled" : ""}>+ ${plan ? "Indkøb" : "REMA-listen"}</button>
+          ${plan
+            ? `<span class="ev-btns">
+                <button class="btn small" data-action="ev-rema" data-arg="${esc(p.id)}" ${this._busy ? "disabled" : ""} title="På madplanens indkøbsliste">+ Indkøb</button>
+                <button class="btn small" data-action="ev-rema-list" data-arg="${esc(p.id)}" ${this._busy ? "disabled" : ""} title="Direkte på REMA-listen i appen">+ REMA-listen</button>
+              </span>`
+            : `<button class="btn small" data-action="ev-rema-list" data-arg="${esc(p.id)}" ${this._busy ? "disabled" : ""}>+ REMA-listen</button>`}
         </li>`
       )
       .join("");
@@ -2852,19 +2943,21 @@ class Rema1000Panel extends HTMLElement {
       ? '<p class="muted"><span class="spinner small"></span> Søger …</p>'
       : search.results
           .map(
-            (p, i) => `<button class="result" data-action="shop-add" data-arg="${part}|${i}" ${this._busy ? "disabled" : ""}>
+            (p, i) => `<div class="result-pair"><button class="result" data-action="shop-add" data-arg="${part}|${i}" ${this._busy ? "disabled" : ""}>
               ${p.image ? `<img src="${esc(p.image)}" alt="">` : ""}
               <span><b>${esc(p.name)}</b><span class="muted">${esc(p.underline || "")} · ${kr(p.price)}</span></span>
-              ${p.is_organic ? '<span class="badge eco">Øko</span>' : ""}<span class="add">+ Tilføj</span></button>`
+              ${p.is_organic ? '<span class="badge eco">Øko</span>' : ""}<span class="add">+ Tilføj</span></button>
+              <button class="btn small to-rema" data-action="shop-add-list" data-arg="${part}|${i}" ${this._busy ? "disabled" : ""} title="Direkte på REMA-listen i appen, ikke på madplanens liste">+ REMA-listen</button></div>`
           )
           .join("");
     const offers = !search.loading && search.offers?.length
       ? `<p class="muted small avis-head">I REMA's avis</p>${search.offers
           .map(
-            (o, i) => `<button class="result" data-action="shop-offer-add" data-arg="${i}" ${this._busy ? "disabled" : ""}>
+            (o, i) => `<div class="result-pair"><button class="result" data-action="shop-offer-add" data-arg="${i}" ${this._busy ? "disabled" : ""}>
               ${o.image ? `<img src="${esc(o.image)}" alt="">` : ""}
               <span><b>${esc(o.heading)}</b><span class="muted">${esc([o.description, o.price != null ? kr(o.price) : ""].filter(Boolean).join(" · "))}</span></span>
-              <span class="badge offer">Avis</span><span class="add">+ Tilføj</span></button>`
+              <span class="badge offer">Avis</span><span class="add">+ Tilføj</span></button>
+              <button class="btn small to-rema" data-action="shop-offer-add-list" data-arg="${i}" ${this._busy ? "disabled" : ""} title="Direkte på REMA-listen i appen, ikke på madplanens liste">+ REMA-listen</button></div>`
           )
           .join("")}`
       : "";
@@ -3252,7 +3345,13 @@ class Rema1000Panel extends HTMLElement {
   _weekRecipesView() {
     const list = this._recipeDays();
     if (!list.length) return `<div class="card">Der er ingen madplan endnu.</div>`;
-    if (this._dayKey !== this._recipeKey()) {
+    if (this._wantDate) {
+      // A day asked for by the address or a dashboard card.
+      const at = list.findIndex((x) => x.day.date === this._wantDate);
+      this._day = at >= 0 ? at : this._recipeIndex("");
+      this._dayKey = this._recipeKey();
+      this._wantDate = null;
+    } else if (this._dayKey !== this._recipeKey()) {
       // Today, or the first day if no plan has a dinner today.
       this._day = this._recipeIndex("");
       this._dayKey = this._recipeKey();
@@ -4169,6 +4268,11 @@ class Rema1000Panel extends HTMLElement {
 const STYLE = `
   /* No double-tap zoom; 16 px inputs so a phone doesn't zoom in on them. */
   :host, button, input, select, textarea, .day, .line { touch-action: manipulation; }
+  /* Inside a dashboard card or its pop-up: the page only, on the card's own surface. */
+  :host([embed]) { min-height: 0; background: none; }
+  :host([embed]) .toolbar, :host([embed]) .tabs, :host([embed]) .more-scrim, :host([embed]) .more-sheet, :host([embed]) .credit { display: none !important; }
+  :host([embed]) .subnav { display: none; }
+  :host([embed]) main { padding: 4px 12px calc(24px + var(--rema-safe-bottom, 0px)); }
   :host { display: block; min-height: 100vh; overflow-x: clip; background: var(--primary-background-color); color: var(--primary-text-color);
     font-family: var(--ha-font-family-body, Roboto, sans-serif);
     /* Everything follows the Home Assistant theme; only the logo keeps REMA's colours. */
@@ -4217,7 +4321,9 @@ const STYLE = `
   .tab svg { display: none; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8;
     stroke-linecap: round; stroke-linejoin: round; }
   main { max-width: 1100px; margin: 0 auto; padding: 16px 12px calc(96px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); }
+  /* Theme Studio's glass blur is opt-in per card: the panel's cards take it. */
   .card { background: var(--rema-card); border-radius: var(--ha-card-border-radius, 12px);
+    -webkit-backdrop-filter: var(--theme-studio-card-backdrop-filter, none); backdrop-filter: var(--theme-studio-card-backdrop-filter, none);
     box-shadow: var(--ha-card-box-shadow, 0 1px 3px rgba(0,0,0,.12)); border: 1px solid var(--divider-color);
     padding: 16px 18px; margin-bottom: 16px; }
   .center { text-align: center; }
@@ -4328,6 +4434,8 @@ const STYLE = `
     .ev > .chain-logo, .ev > img, .ev > .noimg, .ev > .what { grid-row: 1 / 3; }
     .ev > .ev-price { grid-column: 4; grid-row: 1; justify-self: end; align-self: end; }
     .ev > .btn { grid-column: 4; grid-row: 2; justify-self: end; align-self: start; padding: 4px 10px; min-height: 0; font-size: .85rem; }
+    .ev > .ev-btns { grid-column: 3 / 5; grid-row: 3; justify-self: end; }
+    .ev > .ev-btns .btn { padding: 4px 10px; min-height: 0; font-size: .85rem; }
     .ev img, .ev .noimg { width: 40px; height: 40px; }
   }
   .day-row.past { opacity: .55; }
@@ -4419,9 +4527,11 @@ const STYLE = `
   .seg button { border: none; background: none; color: var(--secondary-text-color); padding: 7px 16px; border-radius: 999px;
     font-size: 14px; font-weight: 500; cursor: pointer; }
   .seg button.active { background: var(--rema-accent); color: var(--rema-on-accent); }
-  .scrim { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .45); }
+  /* Like Home Assistant's dialogs, so a theme's scrim (Theme Studio's blur) reaches these too. */
+  .scrim { position: fixed; inset: 0; z-index: 20; background: var(--mdc-dialog-scrim-color, rgba(0, 0, 0, .45));
+    -webkit-backdrop-filter: var(--ha-dialog-scrim-backdrop-filter, none); backdrop-filter: var(--ha-dialog-scrim-backdrop-filter, none); }
   .dialog { position: fixed; z-index: 21; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100vw - 32px));
-    max-height: calc(100vh - 32px); overflow: auto; padding: 18px; border-radius: var(--ha-card-border-radius, 16px);
+    max-height: calc(100vh - 32px); overflow: auto; padding: 18px; border-radius: var(--ha-dialog-border-radius, var(--ha-card-border-radius, 16px));
     background: var(--rema-solid-card); border: 1px solid var(--divider-color); box-shadow: 0 12px 40px rgba(0, 0, 0, .3); }
   .dialog h2 { margin-top: 0; } .dialog-actions { margin-top: 12px; }
   .link { background: none; border: none; color: var(--primary-color); cursor: pointer; text-decoration: underline; font-size: inherit; }
@@ -4500,7 +4610,7 @@ const STYLE = `
   .checks { display: flex; flex-wrap: wrap; gap: 6px 18px; }
   .check { display: flex; align-items: center; gap: 6px; font-size: 15px; padding: 4px 0; }
   .rowitem { padding: 6px 0; border-bottom: 1px dashed var(--divider-color); }
-  .results { display: grid; gap: 6px; margin-top: 8px; }
+  .results { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-top: 8px; }
   .shop-search { margin-top: 14px; }
   .line.tappable { cursor: pointer; } .line.tappable:hover { background: var(--rema-subtle); }
   .line-head { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
@@ -4523,6 +4633,16 @@ const STYLE = `
   .meter span { display: block; height: 100%; border-radius: 999px; background: var(--rema-accent); }
   .meter.low span { background: var(--rema-warn); } .meter.over span { background: var(--rema-sale); }
   .result .add { color: var(--rema-accent); font-weight: 600; white-space: nowrap; }
+  .result-pair { display: flex; gap: 6px; align-items: stretch; min-width: 0; }
+  .result-pair > .result { flex: 1; min-width: 0; }
+  .result-pair > .to-rema { flex: 0 0 auto; white-space: nowrap; align-self: center; }
+  /* A phone: the REMA button under the row, at its right end. */
+  @media (max-width: 600px) {
+    .result-pair { flex-wrap: wrap; gap: 4px; }
+    .result-pair > .result { flex-basis: 100%; }
+    .result-pair > .to-rema { margin-left: auto; padding: 4px 10px; min-height: 0; font-size: .85rem; }
+  }
+  .ev-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .result .badge, .result .add { display: inline-block; flex: 0 0 auto; }
   .options { display: grid; gap: 8px; }
   .option { display: flex; flex-direction: column; gap: 3px; text-align: left; width: 100%; background: var(--rema-subtle);
@@ -4644,3 +4764,6 @@ const STYLE = `
 `;
 
 if (!customElements.get("middagsro-panel")) customElements.define("middagsro-panel", Rema1000Panel);
+
+// For the dashboard cards (middagsro-cards.js), which use the panel's own drawing.
+export { Rema1000Panel, STYLE, TAB_ICONS, TYPE_LABELS, WEEKDAYS, esc, kr, kr0, dateLabel, shortDate, sentWhen, localToday };
