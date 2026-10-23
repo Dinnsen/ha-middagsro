@@ -22,7 +22,7 @@
 > [!NOTE]
 > Unofficial integration, not made by or affiliated with REMA 1000 or the other chains it shows offers from. REMA 1000 has no public API, so the integration uses the same calls as rema1000.dk and the web shop. It may stop working if REMA changes its site. For personal use with your own REMA 1000 account in Denmark. The panel and the meal plans are in Danish.
 
-**Contents:** [Features](#features) · [Food budget](#food-budget-økonomi) · [Requirements](#requirements) · [Installation](#installation) · [Setup](#setup) · [Settings](#settings-in-the-panel) · [Entities](#entities) · [Actions](#actions) · [Examples](#examples) · [How it works](#how-it-works) · [Limitations](#known-limitations) · [Troubleshooting](#troubleshooting) · [Removal](#removing-the-integration) · [Privacy](#privacy)
+**Contents:** [Features](#features) · [Food budget](#food-budget-økonomi) · [Dashboard cards](#cards-for-your-own-dashboards) · [Requirements](#requirements) · [Installation](#installation) · [Setup](#setup) · [Settings](#settings-in-the-panel) · [Entities](#entities) · [Actions](#actions) · [Examples](#examples) · [How it works](#how-it-works) · [Limitations](#known-limitations) · [Troubleshooting](#troubleshooting) · [Removal](#removing-the-integration) · [Privacy](#privacy)
 
 ## Features
 
@@ -64,7 +64,7 @@ Ingredients and steps in large type. Tick them off as you go, start a **timer** 
 - Price per product, number of packs and the total against the budget. With a [food budget](#food-budget-økonomi), sending a list that costs more than the week has left asks first.
 - **Send til REMA-listen** puts everything on your primary list in the REMA 1000 app. Items without a safe match are added as text. Sent items leave Middagsro's basket, so the next send only has what was added since – nothing ends up twice in the app. **Genskab seneste kurv** puts the last sent items back if something went wrong.
 - Search the basket for any REMA product – also the offers in REMA's avis, including *partivarer* that are only sold in the shops.
-- **Search and add** other REMA products to the shopping list – also to the list for later in the week. Tap an item to change how many, swap it or delete it.
+- **Search and add** other REMA products to the shopping list – also to the list for later in the week – or put one **straight on the REMA list** in the app with *+ REMA-listen*, past the meal plan. Tap an item to change how many, swap it or delete it.
 - **Basic items in the plan** (*Basisvarer i madplanen*) shows the basic items (salt, oil, butter …) the recipes use. Out of one? Tap **Tilføj til indkøb**, and the product is found by your settings.
 - Below the list you see what is on the REMA list right now, and it can be emptied once you have shopped.
 
@@ -153,7 +153,7 @@ Middagsro is still about REMA 1000, but under **Indstillinger → Andre butikker
 
 <img src="docs/images/search.png" alt="Searching every shop for milk: REMA's prices and the other chains' offers, the cheapest per litre marked" width="100%">
 
-- **Search every shop** under the logos: a product's price at REMA and in the other shops' offers, per kilo, litre or piece, with the cheapest marked – and put it on the REMA list or the cheaper shop's list.
+- **Search every shop** under the logos: a product's price at REMA and in the other shops' offers, per kilo, litre or piece, with the cheapest marked – and put it on the meal plan's shopping list (*+ Indkøb*), **straight on the REMA list in the app** (*+ REMA-listen*) or on the cheaper shop's list.
 - Their **logos are shown in circles on the front page**; tap one to see that chain's food offers, search them and put one on that shop's list.
 - In the **shopping list**, a small logo shows when an item is cheaper in one of them this week, and how much you save. **Tap the logo** to buy it there: the item moves to a separate list for that shop under the REMA list, and is not sent to the REMA app. Each shop's list can be ticked off, amounts changed, items deleted or moved back to REMA, and **Ryd kurven** (empty the basket) removes what has been bought – the list disappears when it is empty.
 - In **Favoritter**, the same logo shows which of your favourite products are cheaper elsewhere that week.
@@ -189,6 +189,36 @@ If [Mealie](https://mealie.io) is set up in Home Assistant (the official Mealie 
 - **Mealie's calendar:** the plan's dinners go into Mealie's meal planner (as the recipe when it is in Mealie, otherwise as a note), and are updated when a dish is swapped, deleted or a day is skipped.
 
 The integration uses the Mealie integration's address and API token, so nothing has to be entered twice.
+
+### Cards for your own dashboards
+
+<img src="docs/images/cards.png" alt="Middagsro's dashboard cards on a phone, light and dark: Bubble buttons for tonight, the shopping and the budget, the week, tonight, the basket and the food budget" width="100%">
+
+Middagsro brings six cards for your own dashboards. They come with the integration – there is no resource to add and nothing to install in HACS – and are under **Add card** (search for *Middagsro*), with a visual editor. They follow Middagsro live: a new plan, a sent list or a booked purchase shows at once.
+
+| Card | | Size |
+| --- | --- | --- |
+| **Week** `custom:middagsro-week-card` | The week's dinners on one line, with tonight marked and in view. | Full width |
+| **Tonight** `custom:middagsro-tonight-card` | Tonight's dish with its time, servings and type, and tomorrow's. | Half width |
+| **Tonight, large** `custom:middagsro-tonight-large-card` | Tonight's recipe as on the *Opskrifter* page: ingredients and steps to tick off, and the timers. | Full width |
+| **Shopping** `custom:middagsro-shopping-card` | The basket (items and price), what has been sent, what is on the REMA list now, and **Send til REMA**. | Half width |
+| **Budget** `custom:middagsro-budget-card` | The week's food budget: what is left, per day, the bar with the even pace, and the month. | Half width |
+| **Bubble** `custom:middagsro-bubble-card` | Tonight, the shopping or the budget as one [Bubble Card](https://github.com/Clooos/Bubble-Card) button (`show: tonight`, `shopping` or `budget`): the budget fills it like a slider with the pace marked, the shopping has a *Send* button. | One row |
+
+**Tapping a card** opens a pop-up with that page of the panel – the day's recipe, the basket or *Økonomi* – and **Åbn i Middagsro** goes to the panel. The pop-up is Home Assistant's own dialog, so it opens above everything (also from a Bubble Card pop-up) and closes with the back button or by pulling it down on a phone. `tap_action: panel` opens the panel instead, `none` does nothing.
+
+```yaml
+type: custom:middagsro-bubble-card
+show: shopping          # tonight (default), shopping or budget
+name: Indkøb            # optional
+tap_action: popup       # popup (default), panel or none
+```
+
+The panel's pages have addresses of their own: `/middagsro/plan`, `/middagsro/recipes/<date>`, `/middagsro/shopping`, `/middagsro/budget` and so on.
+
+**Themes.** The cards and the pop-up follow your theme without card-mod: Home Assistant's card and dialog variables; Bubble Card's `--bubble-*` variables for the Bubble card and the pop-up (so it matches your Bubble pop-ups); and [Theme Studio](https://github.com/Dinnsen/theme-studio)'s glass blur (`--theme-studio-card-backdrop-filter`, also on the panel's own cards), raised surface (`--theme-studio-soft-background-color`), chip radius (`--theme-studio-chip-radius`) and pop-up border and shadow.
+
+<img src="docs/images/cards-theme-studio.png" alt="The Bubble cards and the week in a Theme Studio theme, light and dark" width="100%">
 
 ### Light and dark mode
 

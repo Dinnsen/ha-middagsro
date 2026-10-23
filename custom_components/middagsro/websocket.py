@@ -7,8 +7,11 @@ import functools
 from typing import Any
 
 from homeassistant.components import websocket_api
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.event import async_call_later, async_track_time_change
 from homeassistant.util import dt as dt_util
 
 from .api import Catalog, RemaError
@@ -34,7 +37,7 @@ from .chains import (
 from .const import DOMAIN
 from .coordinator import RemaConfigEntry
 from .health import plan_health
-from .mealplan import parse_date, plan_summary
+from .mealplan import parse_date, plan_summary, signal_plans_updated
 from .planedit import (
     async_add_pantry_item,
     async_add_product,
@@ -207,6 +210,65 @@ async def ws_state(
     if msg.get("refresh"):
         await entry.runtime_data.shopping_list.async_refresh()
     connection.send_result(msg["id"], _state(hass, entry))
+
+
+@websocket_api.websocket_command({vol.Required("type"): "middagsro/subscribe", ENTRY: str})
+@websocket_api.async_response
+@_wrap
+async def ws_subscribe(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The same as middagsro/state, now and each time it changes (for the dashboard cards).
+
+    Changes come from the plans and the budget (the planner's signal), the REMA list and
+    midnight (a new "tonight"); a burst of them is sent once.
+    """
+    entry = _entry(hass, msg)
+    msg_id = msg["id"]
+    pending: list[Any] = []
+
+    @callback
+    def send(*_: Any) -> None:
+        pending.clear()
+        if entry.state is not ConfigEntryState.LOADED:
+            # Reloaded (new settings, a new login): the cards subscribe again.
+            connection.send_message(websocket_api.event_message(msg_id, {"reload": True}))
+            return
+        connection.send_message(websocket_api.event_message(msg_id, _state(hass, entry)))
+
+    @callback
+    def changed(*_: Any) -> None:
+        if not pending:
+            pending.append(async_call_later(hass, 0.5, send))
+
+    unsubs = [
+        async_dispatcher_connect(hass, signal_plans_updated(entry.entry_id), changed),
+        entry.runtime_data.shopping_list.async_add_listener(changed),
+        async_track_time_change(hass, changed, hour=0, minute=0, second=10),
+    ]
+
+    live = [True]
+
+    @callback
+    def unsubscribe() -> None:
+        live.clear()
+        for unsub in unsubs:
+            unsub()
+        for cancel in pending:
+            cancel()
+
+    @callback
+    def unloaded() -> None:
+        # The entry is reloaded with a new list and planner: the cards subscribe again.
+        if live:
+            unsubscribe()
+            connection.send_message(websocket_api.event_message(msg_id, {"reload": True}))
+
+    entry.async_on_unload(unloaded)
+
+    connection.subscriptions[msg_id] = unsubscribe
+    connection.send_result(msg_id)
+    send()
 
 
 @websocket_api.websocket_command(
@@ -1321,5 +1383,6 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_purchase_add,
         ws_purchase_edit,
         ws_purchase_delete,
+        ws_subscribe,
     ):
         websocket_api.async_register_command(hass, command)

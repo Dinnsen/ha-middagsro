@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
 from custom_components.middagsro.api import RemaError
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 from .conftest import make_plan
 
@@ -61,6 +63,40 @@ async def test_state(
     msg = await _ws(client, 3, type="middagsro/state", entry_id="missing")
     assert not msg["success"]
     assert msg["error"]["code"] == "middagsro_error"
+
+
+async def test_subscribe(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    """The cards get the state at once, again after a change, and are told of a reload."""
+    client = await hass_ws_client(hass)
+    await client.send_json({"id": 1, "type": "middagsro/subscribe"})
+    msg = await client.receive_json()
+    assert msg["success"]
+    msg = await client.receive_json()
+    assert msg["type"] == "event"
+    assert msg["event"]["latest_plan"]["id"] == "plan-1"
+
+    # Two changes in a row are sent once.
+    planner = init_integration.runtime_data.planner
+    planner._notify()
+    planner._notify()
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=1))
+    msg = await client.receive_json()
+    assert msg["event"]["entry_id"] == init_integration.entry_id
+
+    await hass.config_entries.async_reload(init_integration.entry_id)
+    await hass.async_block_till_done()
+    msg = await client.receive_json()
+    assert msg["event"] == {"reload": True}
+
+    # Unsubscribed by the reload: nothing more comes.
+    await client.send_json({"id": 2, "type": "middagsro/subscribe", "entry_id": "missing"})
+    msg = await client.receive_json()
+    assert msg["id"] == 2
+    assert not msg["success"]
 
 
 async def test_plans(
