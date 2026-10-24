@@ -232,7 +232,7 @@ Panelets sider har hver sin adresse: `/middagsro/plan`, `/middagsro/recipes/<dat
 
 - Home Assistant **2026.1** eller nyere.
 - En REMA 1000-konto (samme login som på rema1000.dk og i REMA 1000-appen).
-- Til madplanen: en **AI-opgave** i Home Assistant, fx fra Google Generative AI, OpenAI eller Anthropic (**Indstillinger → Enheder og tjenester → Tilføj integration**). Indkøbslisten, søgning, tilbud og favoritter virker uden AI.
+- Til madplanen: en **AI-opgave** i Home Assistant, fx fra Google Generative AI, OpenAI eller Anthropic (**Indstillinger → Enheder og tjenester → Tilføj integration**). En AI, der kun har en **samtaleagent** – fx [LiteLLM](https://www.home-assistant.io/integrations/litellm) – virker også: vælg den under panelets indstillinger. Indkøbslisten, søgning, tilbud og favoritter virker uden AI.
 
 ## Installation
 
@@ -284,7 +284,7 @@ Indstillingerne gælder hver gang, en madplan laves, og gemmes pr. REMA 1000-kon
 
 | Indstilling | Hvad den gør | Standard |
 |---|---|---|
-| **AI-opgave-entitet** | Hvilken AI-opgave der laver planen. *Home Assistants standard* bruger den, der er valgt under AI-indstillingerne. | Standard |
+| **AI til madplanen** | Hvilken AI-opgave der laver planen – eller en samtaleagent til en AI uden AI-opgaver (LiteLLM); den bliver bedt om at svare i JSON. *Home Assistants standard* bruger den AI-opgave, der er valgt under AI-indstillingerne. | Standard |
 | **Madplanen starter / der handles ind** | Ugedagen, planen starter på. Tilbudsavisen gælder fra søndag. | Søndag |
 | **Antal dage** | 1–14 dage. | 7 |
 | **Budget** | Hele indkøbslisten i kr. Over budget prøver AI'en én gang mere. | 500 |

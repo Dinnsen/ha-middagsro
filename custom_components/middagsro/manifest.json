@@ -2,7 +2,8 @@
   "domain": "middagsro",
   "name": "Middagsro",
   "after_dependencies": [
-    "ai_task"
+    "ai_task",
+    "conversation"
   ],
   "codeowners": [
     "@Dinnsen"
@@ -20,5 +21,5 @@
   "issue_tracker": "https://github.com/Dinnsen/ha-middagsro/issues",
   "quality_scale": "platinum",
   "requirements": [],
-  "version": "2.2.0"
+  "version": "2.3.0"
 }

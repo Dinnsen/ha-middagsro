@@ -4007,9 +4007,13 @@ class Rema1000Panel extends HTMLElement {
       `<select data-path="${path}" data-type="number">${WEEKDAYS.map((d, i) => `<option value="${i}" ${Number(value) === i ? "selected" : ""}>${d}</option>`).join("")}</select>`;
     const num = (path, value, min = 0, max = 999) =>
       `<input type="number" data-path="${path}" data-type="number" min="${min}" max="${max}" value="${esc(value)}">`;
-    const ai = this._state.ai_entities
-      .map((e) => `<option value="${esc(e.entity_id)}" ${f.ai_task_entity === e.entity_id ? "selected" : ""}>${esc(e.name)}</option>`)
-      .join("");
+    // AI Tasks first; conversation agents (LiteLLM and others without an AI Task) after.
+    const aiOption = (e) => `<option value="${esc(e.entity_id)}" ${f.ai_task_entity === e.entity_id ? "selected" : ""}>${esc(e.name)}</option>`;
+    const aiGroup = (kind, label) => {
+      const list = (this._state.ai_entities || []).filter((e) => (e.kind || "ai_task") === kind);
+      return list.length ? `<optgroup label="${label}">${list.map(aiOption).join("")}</optgroup>` : "";
+    };
+    const ai = aiGroup("ai_task", "AI-opgaver") + aiGroup("agent", "Samtaleagenter");
     const household = f.household
       .map(
         (m, i) => `<div class="row wrap rowitem">
@@ -4089,10 +4093,11 @@ class Rema1000Panel extends HTMLElement {
       </div>`;
     const html = {
       plan: () => card(`        <h2 class="flush">AI</h2>
-        <label class="field">AI-opgave-entitet
+        <label class="field">AI til madplanen
           <select data-path="ai_task_entity" data-type="nullable">
-            <option value="">Home Assistants standard</option>${ai}
+            <option value="">Home Assistants standard-AI-opgave</option>${ai}
           </select></label>
+        <p class="muted small">En AI-opgave er bedst. Har jeres AI kun en samtaleagent (fx LiteLLM), kan den bruges i stedet – den bliver bedt om at svare i JSON.</p>
         `) + card(`        <h2 class="flush">Uge og budget</h2>
         <div class="grid">
           <label class="field">Madplanen starter / der handles ind ${weekdaySelect("start_weekday", f.start_weekday)}</label>

@@ -136,7 +136,7 @@
       "message": "Every day of the plan was skipped."
     },
     "no_ai_task": {
-      "message": "No AI Task entity was found. Set up an AI service such as Google Generative AI, OpenAI or Ollama, and choose it in the Middagsro panel's settings."
+      "message": "No AI was found to make the plan. Set up an AI service such as Google Generative AI, OpenAI or Ollama, and choose its AI Task – or a conversation agent such as LiteLLM – in the Middagsro panel's settings."
     },
     "ai_answer_too_long": {
       "message": "{error} - the AI's answer was too long. Raise the maximum number of tokens in the AI Task's settings (for example to 8000), or make a shorter plan."
@@ -232,7 +232,7 @@
   "issues": {
     "no_ai_task": {
       "title": "No AI Task for Middagsro",
-      "description": "Middagsro makes meal plans with an AI Task entity, but none was found.\n\nSet up an AI service that offers AI Tasks, for example Google Generative AI, OpenAI or Ollama (Settings → Devices & services → Add integration). Then choose it under Settings in the Middagsro panel, or set a preferred AI Task in Home Assistant.\n\nThis message goes away by itself the next time a meal plan is made."
+      "description": "Middagsro makes meal plans with an AI Task entity, but none was found.\n\nSet up an AI service that offers AI Tasks, for example Google Generative AI, OpenAI or Ollama (Settings → Devices & services → Add integration). Then choose it under Settings in the Middagsro panel, or set a preferred AI Task in Home Assistant. An AI that only offers a conversation agent (such as LiteLLM) can be chosen there too.\n\nThis message goes away by itself the next time a meal plan is made."
     }
   },
   "selector": {

@@ -48,7 +48,7 @@ async def test_state(
     assert state["latest_plan"]["id"] == "plan-1"
     assert state["plans"][0]["dishes"][0] == "Spaghetti bolognese"
     assert state["favorites"][0]["text"] == "Lasagne"
-    assert state["ai_entities"] == [{"entity_id": ai_task, "name": "Assistant"}]
+    assert state["ai_entities"] == [{"entity_id": ai_task, "name": "Assistant", "kind": "ai_task"}]
     assert state["catalogs"]["current"]["label"] == "Uge 42"
     assert state["rema_list"]["total"] == 21.9
     assert "fish" in state["options"]["allergies"]

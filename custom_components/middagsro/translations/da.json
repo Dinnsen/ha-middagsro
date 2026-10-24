@@ -136,7 +136,7 @@
       "message": "Alle dage i madplanen er sprunget over."
     },
     "no_ai_task": {
-      "message": "Der blev ikke fundet en AI-opgave (AI Task). Opsæt en AI-tjeneste, fx Google Generative AI, OpenAI eller Ollama, og vælg den under Indstillinger i Middagsro-panelet."
+      "message": "Der blev ikke fundet en AI til madplanen. Opsæt en AI-tjeneste, fx Google Generative AI, OpenAI eller Ollama, og vælg dens AI-opgave – eller en samtaleagent som LiteLLM – under Indstillinger i Middagsro-panelet."
     },
     "ai_answer_too_long": {
       "message": "{error} – AI'ens svar blev for langt. Hæv det maksimale antal tokens i AI-opgavens indstillinger (fx 8000), eller lav en kortere madplan."
@@ -232,7 +232,7 @@
   "issues": {
     "no_ai_task": {
       "title": "Ingen AI-opgave til Middagsro",
-      "description": "Middagsro laver madplaner med en AI-opgave (AI Task), men der blev ikke fundet nogen.\n\nOpsæt en AI-tjeneste, der kan løse AI-opgaver, fx Google Generative AI, OpenAI eller Ollama (Indstillinger → Enheder og tjenester → Tilføj integration). Vælg den derefter under Indstillinger i Middagsro-panelet, eller vælg en foretrukken AI-opgave i Home Assistant.\n\nBeskeden forsvinder af sig selv, næste gang der laves en madplan."
+      "description": "Middagsro laver madplaner med en AI-opgave (AI Task), men der blev ikke fundet nogen.\n\nOpsæt en AI-tjeneste, der kan løse AI-opgaver, fx Google Generative AI, OpenAI eller Ollama (Indstillinger → Enheder og tjenester → Tilføj integration). Vælg den derefter under Indstillinger i Middagsro-panelet, eller vælg en foretrukken AI-opgave i Home Assistant. En AI, der kun har en samtaleagent (fx LiteLLM), kan også vælges dér.\n\nBeskeden forsvinder af sig selv, næste gang der laves en madplan."
     }
   },
   "selector": {
