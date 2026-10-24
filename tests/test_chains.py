@@ -159,8 +159,9 @@ def test_cheaper() -> None:
     assert ch.cheaper_offer(beef, no_price, day) is None
 
 
-async def test_reading_tjek(hass: HomeAssistant) -> None:
+async def test_reading_tjek(hass: HomeAssistant, freezer: Any) -> None:
     """Logos, a chain's food offers, and caching."""
+    freezer.move_to("2026-10-20T10:00:00+00:00")  # while the offers run
     chains = ch.ChainOffers(hass)
     fake = FakeTjek()
     with patch.object(chains, "_get", new=fake):
@@ -189,8 +190,9 @@ async def test_reading_tjek(hass: HomeAssistant) -> None:
     assert ch.ChainOffers(hass)._near() == {}
 
 
-async def test_paging(hass: HomeAssistant) -> None:
+async def test_paging(hass: HomeAssistant, freezer: Any) -> None:
     """A big avis is read 100 offers at a time."""
+    freezer.move_to("2026-10-20T10:00:00+00:00")  # while the offers run
     chains = ch.ChainOffers(hass)
     many = [tjek_offer(f"m{i}", f"Vare {i}", 10) for i in range(150)]
 
