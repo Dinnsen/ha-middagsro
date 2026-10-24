@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.3.0] - 2026-10-24
+
+### Added
+- **A conversation agent can make the plans** ([#43](https://github.com/Dinnsen/ha-middagsro/issues/43)). AI services that only offer a conversation agent and no AI Task – such as **LiteLLM** – can now be chosen under *Indstillinger → Madplan og uge → AI til madplanen*, below the AI Tasks. The plan, the recipes, the swap suggestions and recipes read from a link are asked of the agent, which is told to answer in JSON. Home Assistant's own agent (*Home Assistant*) is not offered: it can't write a plan.
+
 ## [2.2.0] - 2026-10-23
 
 ### Added

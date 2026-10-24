@@ -12,7 +12,7 @@ import re
 from typing import Any, Protocol
 import uuid
 
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Context, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -84,6 +84,26 @@ ALLERGY_DA = {
 FREE_FROM = {"gluten": "GLUTENFRI", "lactose": "LAKTOSEFRI"}
 
 ISSUE_NO_AI_TASK = "no_ai_task"
+# A conversation agent can stand in for an AI Task (LiteLLM, Extended OpenAI …
+# only offer agents); Home Assistant's own agent can't write a plan.
+AGENT_DOMAIN = "conversation"
+OWN_AGENT = "conversation.home_assistant"
+
+
+def ai_choices(hass: HomeAssistant) -> list[dict[str, str]]:
+    """The AI Task entities, then the conversation agents that are AI models."""
+    tasks = [
+        {"entity_id": state.entity_id, "name": state.name, "kind": "ai_task"}
+        for state in hass.states.async_all("ai_task")
+    ]
+    agents = [
+        {"entity_id": state.entity_id, "name": state.name, "kind": "agent"}
+        for state in hass.states.async_all(AGENT_DOMAIN)
+        if state.entity_id != OWN_AGENT
+    ]
+    return tasks + agents
+
+
 AI_TASK_DOCS_URL = "https://www.home-assistant.io/integrations/ai_task/"
 
 MAX_AI_ROUNDS = 3  # first try + two more when the plan breaks a rule or the budget
@@ -1420,7 +1440,10 @@ class MealPlanner:
         return ids[0] if ids else entity
 
     def ai_available(self) -> bool:
-        """True if there is an AI Task entity to make plans with."""
+        """True if there is an AI Task entity (or a chosen conversation agent) to make plans with."""
+        chosen = str(self.store.settings.get("ai_task_entity") or "")
+        if chosen.startswith(f"{AGENT_DOMAIN}.") and self.hass.states.get(chosen) is not None:
+            return True
         prefs = self.hass.data.get("ai_task_preferences")
         if prefs is not None and getattr(prefs, "gen_data_entity_id", None):
             return True
@@ -1465,6 +1488,8 @@ class MealPlanner:
         entity_id = self._ai_entity()
 
         async def ask(instructions: str) -> Any:
+            if entity_id and entity_id.startswith(f"{AGENT_DOMAIN}."):
+                return await self._async_ask_agent(entity_id, instructions)
             try:
                 result = await async_generate_data(
                     self.hass, task_name=task_name, entity_id=entity_id, instructions=instructions
@@ -1488,6 +1513,28 @@ class MealPlanner:
             )
         except ValueError as err:
             raise _failed("ai_invalid_json", error=str(err)) from err
+
+    async def _async_ask_agent(self, agent_id: str, instructions: str) -> str:
+        """Ask a conversation agent instead of an AI Task: its answer is the reply's text."""
+        from homeassistant.components import conversation  # noqa: PLC0415
+        from homeassistant.helpers import intent  # noqa: PLC0415
+
+        try:
+            result = await conversation.async_converse(
+                self.hass,
+                instructions,
+                None,  # a new conversation each time
+                Context(),
+                language="da",
+                agent_id=agent_id,
+            )
+        except ValueError as err:  # the agent is gone
+            raise HomeAssistantError(str(err)) from err
+        response = result.response
+        speech = str(response.speech.get("plain", {}).get("speech") or "")
+        if response.response_type == intent.IntentResponseType.ERROR:
+            raise HomeAssistantError(speech or f"{agent_id} could not answer")
+        return speech
 
     # ------------------------------------------------------------- recipes
 

@@ -37,7 +37,7 @@ from .chains import (
 from .const import DOMAIN
 from .coordinator import RemaConfigEntry
 from .health import plan_health
-from .mealplan import parse_date, plan_summary, signal_plans_updated
+from .mealplan import ai_choices, parse_date, plan_summary, signal_plans_updated
 from .planedit import (
     async_add_pantry_item,
     async_add_product,
@@ -151,10 +151,7 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
         "notify_targets": notify_targets(hass),
         "status": data.planner.status,
         "default_start": data.planner.default_start().isoformat(),
-        "ai_entities": [
-            {"entity_id": state.entity_id, "name": state.name}
-            for state in hass.states.async_all("ai_task")
-        ],
+        "ai_entities": ai_choices(hass),
         "catalogs": {
             "current": _catalog(offers.current) if offers else None,
             "upcoming": _catalog(offers.upcoming) if offers else None,

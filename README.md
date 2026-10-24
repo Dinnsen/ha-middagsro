@@ -232,7 +232,7 @@ Open `https://<your-home-assistant>/middagsro_app/app.html` in Safari or Chrome,
 
 - Home Assistant **2026.1** or newer.
 - A REMA 1000 account (the same login as on rema1000.dk and in the REMA 1000 app).
-- For the meal plan: an **AI Task** in Home Assistant, e.g. from Google Generative AI, OpenAI or Anthropic (**Settings → Devices & services → Add integration**). The shopping list, search, offers and favourites work without AI.
+- For the meal plan: an **AI Task** in Home Assistant, e.g. from Google Generative AI, OpenAI or Anthropic (**Settings → Devices & services → Add integration**). An AI that only offers a **conversation agent** – such as [LiteLLM](https://www.home-assistant.io/integrations/litellm) – works too: choose it under the panel's settings. The shopping list, search, offers and favourites work without AI.
 
 ## Installation
 
@@ -284,7 +284,7 @@ The settings apply every time a meal plan is made and are stored per REMA 1000 a
 
 | Setting | What it does | Default |
 |---|---|---|
-| **AI Task entity** (*AI-opgave-entitet*) | Which AI Task makes the plan. *Home Assistants standard* uses the one chosen in the AI settings. | Default |
+| **AI for the meal plan** (*AI til madplanen*) | Which AI Task makes the plan – or a conversation agent, for an AI without AI Tasks (LiteLLM); it is asked to answer in JSON. *Home Assistants standard* uses the AI Task chosen in the AI settings. | Default |
 | **Plan starts / shopping day** (*Madplanen starter / der handles ind*) | The weekday the plan starts. The offers run from Sunday. | Sunday |
 | **Number of days** (*Antal dage*) | 1–14 days. | 7 |
 | **Budget** | The whole shopping list in DKK. Over budget, the AI tries once more. | 500 |

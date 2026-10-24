@@ -393,6 +393,81 @@ async def _generate(planner: mp.MealPlanner, ai: FakeAI, **kwargs: Any) -> None:
         await planner._task
 
 
+class FakeAgent:
+    """A conversation agent (LiteLLM and the like) answering like FakeAI, as text."""
+
+    def __init__(self, ai: FakeAI, error: str | None = None) -> None:
+        self.ai = ai
+        self.error = error
+        self.agents: list[str | None] = []
+
+    async def __call__(
+        self, hass: HomeAssistant, text: str, conversation_id: Any, context: Any, **kwargs: Any
+    ) -> Any:
+        from homeassistant.components.conversation import ConversationResult  # noqa: PLC0415
+        from homeassistant.helpers import intent  # noqa: PLC0415
+
+        self.agents.append(kwargs.get("agent_id"))
+        response = intent.IntentResponse(language="da")
+        if self.error:
+            response.async_set_error(intent.IntentResponseErrorCode.UNKNOWN, self.error)
+            return ConversationResult(response=response)
+        task = "REMA 1000 madplan" if "days skal have" in text else "REMA 1000 opskrift"
+        answer = await self.ai(
+            hass, task_name=task, entity_id=kwargs.get("agent_id"), instructions=text
+        )
+        data = answer.data
+        response.async_set_speech(
+            f"Her er planen:\n```json\n{json.dumps(data, ensure_ascii=False)}\n```"
+            if isinstance(data, dict)
+            else str(data)
+        )
+        return ConversationResult(response=response)
+
+
+async def test_conversation_agent(hass: HomeAssistant, init_integration: MockConfigEntry) -> None:
+    """An AI with only a conversation agent (LiteLLM) can make the plan and its recipes."""
+    planner = init_integration.runtime_data.planner
+    store = init_integration.runtime_data.store
+    hass.states.async_set("conversation.litellm", "unknown", {"friendly_name": "LiteLLM"})
+    hass.states.async_set("conversation.home_assistant", "unknown", {"friendly_name": "HA"})
+    assert mp.ai_choices(hass) == [
+        {"entity_id": "conversation.litellm", "name": "LiteLLM", "kind": "agent"}
+    ]
+    assert not planner.ai_available()  # not chosen, and no AI Task
+    await store.async_set_settings({**store.settings, "ai_task_entity": "conversation.litellm"})
+    assert planner.ai_available()
+
+    dates = mp.plan_dates(START, 7, set())
+    agent = FakeAgent(FakeAI(ai_answer(dates, SHOPPING)))  # type: ignore[arg-type]
+    with patch("homeassistant.components.conversation.async_converse", new=agent):
+        planner.async_start_generation(START)
+        await planner._task
+    assert planner.status["state"] == "idle"
+    plan = store.latest_plan
+    assert plan is not None
+    assert plan["start_date"] == "2026-10-18"
+    assert set(agent.agents) == {"conversation.litellm"}
+    assert any(day["steps"] for day in plan["days"])  # the recipes too
+
+    # The agent answers with an error: the plan fails with its message.
+    failing = FakeAgent(FakeAI(ai_answer(dates, SHOPPING)), error="LiteLLM: model not found")  # type: ignore[arg-type]
+    with patch("homeassistant.components.conversation.async_converse", new=failing):
+        planner.async_start_generation(START)
+        await planner._task
+    assert planner.status["state"] == "error"
+    assert "model not found" in planner.status["message"]
+
+    # The agent is gone.
+    with patch(
+        "homeassistant.components.conversation.async_converse",
+        side_effect=ValueError("Agent conversation.litellm not found"),
+    ):
+        planner.async_start_generation(START)
+        await planner._task
+    assert "not found" in planner.status["message"]
+
+
 async def test_plan_follows_food_budget(
     hass: HomeAssistant,
     init_integration: MockConfigEntry,
