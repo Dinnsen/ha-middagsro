@@ -3677,7 +3677,7 @@ class Rema1000Panel extends HTMLElement {
           </div>`
         : "";
       const onList = plan.shopping.filter((l) => l.sent && l.on_list).length;
-      planHtml = `<div class="card">
+      planHtml = `<div class="card shop-card">
         <div class="row between wrap">
           <div><h1>${lateLines.length ? "Indkøb på indkøbsdagen" : "Indkøbsliste"}</h1><p class="muted">${esc(plan.title)}${lateLines.length ? ` · plus ${lateLines.length} varer ${esc(dayShort(lateDay))}` : ""}</p></div>
           <div class="row shop-head">
@@ -4929,6 +4929,7 @@ const STYLE = `
     .step-text { font-size: 18px; }
     .line { grid-template-columns: 40px 1fr; } .line .cost { grid-column: 2; text-align: left; flex-direction: row; gap: 8px; }
     .line.has-send { grid-template-columns: 40px 1fr auto; } .line.has-send .to-rema-line { grid-column: 3; grid-row: 1 / span 2; }
+    .shop-card { position: relative; } .shop-card .store-badge { position: absolute; top: 14px; right: 14px; } .shop-card h1, .shop-card .shop-head { padding-right: 52px; }
     .prod-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
     .prod { padding: 6px; gap: 4px; font-size: 12px; border-radius: 10px; }
     .prod img, .prod .noimg { height: 64px; }
