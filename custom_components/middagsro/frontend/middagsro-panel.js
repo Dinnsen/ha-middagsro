@@ -68,6 +68,31 @@ const RATE_ICONS = {
   dislike: '<svg viewBox="0 0 24 24" aria-hidden="true" style="transform:rotate(180deg)"><path d="M7 10.5V20H4.2a.7.7 0 0 1-.7-.7v-8.1a.7.7 0 0 1 .7-.7H7zm0 0 3.6-6.2c.4-.7 1.3-.9 2-.5.6.4.9 1.1.7 1.8L12.6 9h5.6a2 2 0 0 1 2 2.4l-1.3 6.9a2 2 0 0 1-2 1.7H7"/></svg>',
   favorite: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z"/></svg>',
 };
+const CAMERA_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true" class="ico"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+
+// A photo as a JPEG data URL at most `max` pixels on its longest side (the AI reads it fine,
+// and the websocket message stays small).
+const shrinkPhoto = (file, max) =>
+  new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", 0.8));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Billedet kunne ikke åbnes"));
+    };
+    img.src = url;
+  });
+
 const MOVE_ICONS = {
   up: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
   down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>',
@@ -237,7 +262,7 @@ class Rema1000Panel extends HTMLElement {
     this._editFav = null;
     this._settingsSection = null; // the open sub-page of the settings
     this._recipesSub = "week"; // "week" (the plan's recipes) or "collection"
-    this._rc = { query: "", sort: "newest", filter: "all", link: "", importing: false };
+    this._rc = { query: "", sort: "newest", filter: "all", link: "", importing: false, scanning: false };
     // REMA 1000's own recipes: the chosen category, the pages read, and a day to put one on.
     this._rr = { key: "popular", query: "", page: 0, last: 1, total: 0, recipes: [], tags: [], loading: false, error: null };
     this._remaPick = null;
@@ -897,6 +922,13 @@ class Rema1000Panel extends HTMLElement {
         this._render();
       },
       "rc-import": () => this._recipeImport(),
+      "rc-scan": () => {
+        const input = this.shadowRoot.querySelector("#scan-input");
+        if (!input) return;
+        input.value = "";
+        input.onchange = () => this._recipeScan([...(input.files || [])]);
+        input.click();
+      },
       "rc-new": () => {
         this._modal = { kind: "recipe", recipe: { id: null, name: "", type: "normal", servings: 4, active_minutes: 0, total_minutes: 0,
           ingredients: [{ amount: "", name: "" }], steps: [{ text: "", minutes: 0 }], tip: "", rating: null, favorite: false, source: "manual" } };
@@ -2526,7 +2558,7 @@ class Rema1000Panel extends HTMLElement {
               r.total_minutes ? `${r.total_minutes} min` : "",
               r.type === "vegetar" ? "Vegetar" : "",
               r.times_planned ? `brugt ${r.times_planned} ${r.times_planned === 1 ? "gang" : "gange"}` : "",
-              r.source === "link" ? "fra link" : r.source === "manual" ? "egen opskrift" : "",
+              r.source === "link" ? "fra link" : r.source === "scan" ? "fra kogebog" : r.source === "manual" ? "egen opskrift" : "",
             ]
               .filter(Boolean)
               .join(" · ")}</span>
@@ -2549,7 +2581,12 @@ class Rema1000Panel extends HTMLElement {
           <button class="btn primary" data-action="rc-import" ${this._rc.importing ? "disabled" : ""}>${this._rc.importing ? '<span class="spinner small"></span> Henter …' : "Hent opskrift"}</button>
           <button class="btn" data-action="rc-new">Skriv selv</button>
         </div>
-        <p class="muted small">Opskriften hentes fra siden, og du kan rette den, før den gemmes. Linket gemmes ikke.</p>
+        <div class="row wrap scan-row">
+          <button class="btn scan-btn" data-action="rc-scan" ${this._rc.scanning ? "disabled" : ""}>${this._rc.scanning ? '<span class="spinner small"></span> Læser opskriften …' : `${CAMERA_ICON} Scan fra kogebog`}</button>
+          <input type="file" id="scan-input" accept="image/*" multiple hidden>
+          <span class="muted small">Tag et billede af siden – eller flere, hvis opskriften fylder mere end én.</span>
+        </div>
+        <p class="muted small">Opskriften hentes fra siden eller billedet, og du kan rette den, før den gemmes. Linket og billederne gemmes ikke.</p>
       </div>
       <div class="card">
         <div class="row wrap">
@@ -2563,6 +2600,25 @@ class Rema1000Panel extends HTMLElement {
         <div class="chips">${filters}</div>
         <div id="rc-list" class="rc-list">${this._collectionRows()}</div>
       </div>`;
+  }
+
+  // Photos of a cookbook page: made smaller in the browser, read by the AI, then edited.
+  async _recipeScan(files) {
+    const images = files.filter((f) => f.type.startsWith("image/") || !f.type).slice(0, 4);
+    if (!images.length) return;
+    this._rc.scanning = true;
+    this._render();
+    try {
+      const photos = [];
+      for (const file of images) photos.push(await shrinkPhoto(file, images.length > 2 ? 1400 : 1700));
+      const recipe = await this._ws("middagsro/recipes/scan", { photos });
+      this._modal = { kind: "recipe", recipe: { ...recipe, id: null }, imported: true };
+      this._renderModal();
+    } catch (err) {
+      this._say(`Fejl: ${err?.message || err}`);
+    }
+    this._rc.scanning = false;
+    this._render();
   }
 
   async _recipeImport() {
@@ -2705,7 +2761,7 @@ class Rema1000Panel extends HTMLElement {
         ${r.image ? `<img class="rc-photo" src="${esc(r.image)}" alt="">` : ""}
         ${r.rema_slug
           ? `<p class="muted small">Fra REMA 1000's opskrifter. Ingredienserne er koblet til REMA's varer, så indkøbslisten får de rigtige varer.${r.id ? "" : " Gem den i opskriftsamlingen, eller sæt den direkte på madplanen."}</p>`
-          : m.imported ? '<p class="muted small">Hentet fra linket. Ret det, der skal rettes, og gem den i opskriftsamlingen.</p>' : ""}
+          : m.imported ? `<p class="muted small">${m.recipe.source === "scan" ? "Læst fra billedet af AI'en – tjek mængder og trin" : "Hentet fra linket"}. Ret det, der skal rettes, og gem den i opskriftsamlingen.</p>` : ""}
         ${this._remaPick && r.rema_slug
           ? `<div class="banner info">Vælg den til ${esc(dateLabel(this._remaPick.date).toLowerCase())}?
               <button class="btn primary small" data-action="rr-pick" data-arg="${esc(r.rema_slug)}" ${busy ? "disabled" : ""}>${m.busy === "pick" ? '<span class="spinner small"></span> Sætter på …' : "Sæt på madplanen"}</button></div>`
@@ -4527,6 +4583,9 @@ const STYLE = `
   .ai { width: 1.1em; height: 1.1em; fill: currentColor; vertical-align: -.2em; margin-right: 6px; }
   .day-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; }
   .rate { display: inline-flex; gap: 2px; }
+  .scan-row { margin-top: 8px; align-items: center; gap: 10px; }
+  .scan-btn { display: inline-flex; align-items: center; gap: 6px; }
+  .scan-btn .ico { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; }
   .pickday { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .pickday .pick-btn { padding: 2px 10px; font-size: 12px; }
   .pick-chip { display: inline-flex; align-items: center; gap: 2px; background: var(--rema-tint); border-radius: 999px; padding: 0 2px 0 10px; font-size: 13px; }
