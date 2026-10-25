@@ -227,6 +227,18 @@
     },
     "no_monthly_budget": {
       "message": "Sæt et madbudget pr. måned under Indstillinger › Madbudget først."
+    },
+    "move_edge": {
+      "message": "Retten kan ikke flyttes længere den vej – dagen ligger ikke i samme madplan."
+    },
+    "move_past": {
+      "message": "Dage, der er gået, kan ikke flyttes."
+    },
+    "move_leftovers": {
+      "message": "Rester kan ikke ligge før den dag, maden laves."
+    },
+    "move_offer": {
+      "message": "Retten bygger på et tilbud, der først gælder fra en senere dag, og kan ikke flyttes før den."
     }
   },
   "issues": {

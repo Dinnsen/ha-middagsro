@@ -42,6 +42,9 @@ The integration adds a **Middagsro panel** to the sidebar. It follows your Home 
 - A **requirements checklist** shows whether the plan keeps your rules.
 - Turn on **automation** to make next week's plan when the new offers come out – and optionally send it straight to the REMA list.
 - **Swap, delete or skip:** tap a dish in the plan to get three other suggestions, delete it or skip the day. The shopping list and recipe follow along.
+- **Move a dish** a day up or down with the arrows under 👍 and 👎 – leftovers follow, and never come before the day the food is made.
+- **Choose a dish yourself** for a day of the next plan (*Vælg ret*): from the recipe collection, REMA's recipes or Mealie. The AI plans the rest around it. A dish asked for in the wishes ("frikadeller på onsdag") is kept on that day too.
+- **No leftovers on chosen weekdays**, e.g. the weekend.
 - **Det skal AI'en huske** (what the AI must remember): standing points for every plan, e.g. “always fresh broccoli with salmon” – typed or dictated.
 - **Nutrition targets** per dinner (kcal and the split of protein, carbs and fat), and the **Sundhed** (health) tab with nutrition, the dietary advice and labels like the Keyhole.
 - Buttons that use AI are marked with ✦.
@@ -62,7 +65,7 @@ Ingredients and steps in large type. Tick them off as you go, start a **timer** 
 
 - For each ingredient, **the cheapest REMA product** that meets your rules is found. Products from the offers, organic products and weekly fixed items are labelled.
 - Price per product, number of packs and the total against the budget. With a [food budget](#food-budget-økonomi), sending a list that costs more than the week has left asks first.
-- **Send til REMA-listen** puts everything on your primary list in the REMA 1000 app. Items without a safe match are added as text. Sent items leave Middagsro's basket, so the next send only has what was added since – nothing ends up twice in the app. **Genskab seneste kurv** puts the last sent items back if something went wrong.
+- **Send til REMA-listen** puts everything on your primary list in the REMA 1000 app. Items without a safe match are added as text. Sent items leave Middagsro's basket, so the next send only has what was added since – nothing ends up twice in the app. **Genskab seneste kurv** puts the last sent items back if something went wrong. The REMA logo next to an item puts just that item on the REMA list right away.
 - Search the basket for any REMA product – also the offers in REMA's avis, including *partivarer* that are only sold in the shops.
 - **Search and add** other REMA products to the shopping list – also to the list for later in the week – or put one **straight on the REMA list** in the app with *+ REMA-listen*, past the meal plan. Tap an item to change how many, swap it or delete it.
 - **Basic items in the plan** (*Basisvarer i madplanen*) shows the basic items (salt, oil, butter …) the recipes use. Out of one? Tap **Tilføj til indkøb**, and the product is found by your settings.

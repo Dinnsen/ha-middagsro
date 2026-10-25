@@ -37,12 +37,14 @@ from .chains import (
 from .const import DOMAIN
 from .coordinator import RemaConfigEntry
 from .health import plan_health
+from .mealie import MealieError
 from .mealplan import ai_choices, parse_date, plan_summary, signal_plans_updated
 from .planedit import (
     async_add_pantry_item,
     async_add_product,
     async_clear_day,
     async_edit_line,
+    async_move_day,
     async_remove_line,
     async_swap_dish,
     async_swap_options,
@@ -348,6 +350,16 @@ async def ws_favorite_delete(
         vol.Optional("start_date"): vol.Any(str, None),
         vol.Optional("skip_dates"): [str],
         vol.Optional("surprise", default=False): bool,
+        # {date: {dish, source: collection|rema|mealie, recipe_id | slug, type}}
+        vol.Optional("picks"): {
+            str: {
+                vol.Required("dish"): str,
+                vol.Optional("source"): vol.In(["collection", "rema", "mealie"]),
+                vol.Optional("recipe_id"): vol.Any(str, None),
+                vol.Optional("slug"): vol.Any(str, None),
+                vol.Optional("type"): vol.Any(str, None),
+            }
+        },
     }
 )
 @websocket_api.async_response
@@ -359,7 +371,10 @@ async def ws_generate(
     planner = _entry(hass, msg).runtime_data.planner
     skip = {d for d in (parse_date(v) for v in msg.get("skip_dates") or []) if d}
     planner.async_start_generation(
-        parse_date(msg.get("start_date")), skip=skip, surprise=msg["surprise"]
+        parse_date(msg.get("start_date")),
+        skip=skip,
+        surprise=msg["surprise"],
+        picks=msg.get("picks"),
     )
     connection.send_result(msg["id"], planner.status)
 
@@ -370,6 +385,7 @@ async def ws_generate(
         ENTRY: str,
         vol.Optional("plan_id"): vol.Any(str, None),
         vol.Optional("part", default="main"): vol.In(["main", "late", "all"]),
+        vol.Optional("line_id"): vol.Any(str, None),
     }
 )
 @websocket_api.async_response
@@ -377,8 +393,10 @@ async def ws_generate(
 async def ws_send(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Send a plan's shopping list to the REMA list."""
-    plan = await _entry(hass, msg).runtime_data.planner.async_send(msg.get("plan_id"), msg["part"])
+    """Send a plan's shopping list (or one line of it) to the REMA list."""
+    plan = await _entry(hass, msg).runtime_data.planner.async_send(
+        msg.get("plan_id"), msg["part"], msg.get("line_id")
+    )
     connection.send_result(msg["id"], {"plan_id": plan["id"], "status": plan["status"]})
 
 
@@ -669,6 +687,26 @@ async def ws_day_clear(
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "middagsro/day/move",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("date"): str,
+        vol.Required("direction"): vol.In(["up", "down"]),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_day_move(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Swap a day's dinner with the day before or after."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_move_day(planner, msg["plan_id"], msg["date"], msg["direction"])
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "middagsro/plan/line",
         ENTRY: str,
         vol.Required("plan_id"): str,
@@ -765,6 +803,24 @@ async def ws_mealie_save(
     await planner.store.async_save()
     await planner.async_mealie_sync(plan)
     connection.send_result(msg["id"], saved)
+
+
+@websocket_api.websocket_command({vol.Required("type"): "middagsro/mealie/recipes", ENTRY: str})
+@websocket_api.async_response
+@_wrap
+async def ws_mealie_recipes(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The family's recipes in Mealie (name and slug), to choose a dish for a day."""
+    mealie = _entry(hass, msg).runtime_data.planner.mealie
+    try:
+        summaries = await mealie.async_summaries()
+    except MealieError as err:
+        raise HomeAssistantError(f"Mealie: {err}") from err
+    connection.send_result(
+        msg["id"],
+        {"recipes": [{"slug": r["slug"], "name": r.get("name") or r["slug"]} for r in summaries]},
+    )
 
 
 @websocket_api.websocket_command(
@@ -1347,6 +1403,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_plan_remove,
         ws_plan_refresh,
         ws_day_clear,
+        ws_day_move,
+        ws_mealie_recipes,
         ws_plan_line,
         ws_health,
         ws_nutrition,

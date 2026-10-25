@@ -2,6 +2,21 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.4.0] - 2026-10-25
+
+### Added
+- **Move a dish up or down:** arrows under 👍 and 👎 on each day of the plan swap the dinner with the day before or after. Leftovers follow the dinner they are from and never come before the day it is made; a dish built on an offer that starts later (thursday) isn't moved before it; days that have passed stay. The place under ❤️ is kept free.
+- **Choose the dish for a day yourself** when making a new plan: *Vælg ret* next to each day opens the family's recipe collection, REMA 1000's recipes and (with Mealie) Mealie's recipes. The AI plans the rest of the week around it, and the chosen recipe is put on the day with its items on the list.
+- **No leftovers on chosen weekdays** (*Indstillinger → Retter, favoritter og ønsker → Ingen rester disse dage*): the AI is told, and a plan with leftovers on one of those days is sent back.
+- **The shop at the top of the shopping list**, and a **REMA button on every item** that puts just that item on the REMA list in the app right away (it leaves the basket like a sent item; the rest is sent as before).
+
+### Changed
+- **Recipes with taste.** The plan takes the items that give a dish its taste (onion, garlic, spices, herbs, stock, tomato purée …), and a recipe may add cheap flavourings, which then go on the shopping list. Dishes are made of the meat they traditionally are (hakkebøffer of beef), also when another meat is on offer. A recipe with "krydderier" as one ingredient, too few steps or meatballs formed of fried mince is sent back to the AI once.
+- **A dish asked for on a day is kept:** "frikadeller på onsdag" in the wishes for the plan is checked like a fixed day, and the AI is told again if it puts something else there.
+
+### Fixed
+- A shopping item is only a product whose name has the thing it is about: *grønne bønner* became *STENFRI GRØNNE DRUER* because "grønne" fitted. Now it is beans or free text.
+
 ## [2.3.0] - 2026-10-24
 
 ### Added

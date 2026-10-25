@@ -131,6 +131,87 @@ def in_text(name: str, text: str) -> bool:
     )
 
 
+# ------------------------------------------------------------------ wishes for a day
+
+_WEEKDAYS = ("mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag", "søndag")
+# "fløde skal bruges inden tirsdag", "ingen fisk fredag": not a dish for the day.
+_NOT_A_DISH = re.compile(
+    r"\b(?:inden|før|senest|efter|ingen|ikke|uden|undgå|bruges|brug|holder|udløber|ude|hjemme)\b"
+)
+_FILLER = {
+    "vi",
+    "vil",
+    "gerne",
+    "have",
+    "har",
+    "på",
+    "om",
+    "til",
+    "spise",
+    "spiser",
+    "skal",
+    "der",
+    "være",
+    "er",
+    "en",
+    "et",
+    "den",
+    "det",
+    "de",
+    "lave",
+    "laver",
+    "lav",
+    "aften",
+    "aftensmad",
+    "middag",
+    "dag",
+    "dagen",
+    "og",
+    "så",
+    "også",
+    "ønsker",
+    "ønske",
+    "kunne",
+    "godt",
+    "lyst",
+}
+
+
+def day_wishes(note: str, dates: list[str]) -> dict[str, str]:
+    """The dishes the family asked for on a weekday in the plan's wishes.
+
+    "Frikadeller på onsdag", "torsdag: tacos", "vi vil gerne have lasagne lørdag":
+    one weekday and a dish per sentence; "fløde skal bruges inden tirsdag" is not a dish.
+    Returns {date: dish} for the plan's dates.
+    """
+    wishes: dict[str, str] = {}
+    for part in re.split(r"[.,;\n!]|\bog så\b", note or ""):
+        lowered = part.lower()
+        named = [i for i, day in enumerate(_WEEKDAYS) if re.search(rf"\b{day}(?:en)?\b", lowered)]
+        if len(named) != 1 or _NOT_A_DISH.search(lowered):
+            continue
+        weekday = named[0]
+        words = [
+            w
+            for w in re.findall(r"[a-zæøåé-]+", part, re.IGNORECASE)
+            if w.lower().rstrip("en") not in _WEEKDAYS
+            and w.lower() not in _WEEKDAYS
+            and w.lower() not in _FILLER
+        ]
+        dish = " ".join(words).strip(" -")
+        if not dish or not dish_key(dish):
+            continue
+        when = next((d for d in dates if date.fromisoformat(d).weekday() == weekday), None)
+        if when is not None:
+            wishes[when] = dish
+    return wishes
+
+
+def fits_wish(dish: str, wish: str) -> bool:
+    """Is the dinner the dish the family asked for?"""
+    return same_dish(dish, wish) or in_text(dish, wish) or in_text(wish, dish)
+
+
 # ------------------------------------------------------------------ portions
 
 
@@ -166,6 +247,7 @@ def check_plan(
     due_ids: set[str],
     note: str = "",
     disliked: list[str] | None = None,
+    wishes: dict[str, str] | None = None,
 ) -> list[str]:
     """What a plan gets wrong, each as a line the AI (and the family) understands.
 
@@ -175,6 +257,14 @@ def check_plan(
     problems: list[str] = []
     days = plan.get("days") or []
     cooked = [d for d in days if is_cooked(d)]
+    # A dish the family asked for on a day (in the wishes, or chosen themselves).
+    for day in days:
+        wish = (wishes or {}).get(day["date"])
+        if wish and not fits_wish(str(day.get("dish") or ""), wish):
+            problems.append(
+                f'{day["weekday"]} {day["date"]}: familien har ønsket "{wish}" denne dag, ikke '
+                f'"{day.get("dish")}"'
+            )
     for day in cooked:
         dish = day["dish"]
         if day.get("favorite_id") in due_ids or in_text(dish, note):
@@ -234,6 +324,13 @@ def check_plan(
             f"Der er {len(leftovers)} restedage, men der skal være præcis {wanted}"
             + (' (type "rester" med uses_leftovers_from)' if wanted else "")
         )
+    banned = {int(w) for w in settings.get("no_leftover_weekdays") or []}
+    for day in leftovers:
+        if date.fromisoformat(day["date"]).weekday() in banned:
+            problems.append(
+                f"{day['weekday']} {day['date']}: familien vil ikke have rester om "
+                f"{_WEEKDAYS[date.fromisoformat(day['date']).weekday()]}en – lav en ny ret"
+            )
     for day in leftovers:
         source = day.get("uses_leftovers_from")
         before = next((d for d in days if d["date"] == source), None)

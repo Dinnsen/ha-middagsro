@@ -68,6 +68,10 @@ const RATE_ICONS = {
   dislike: '<svg viewBox="0 0 24 24" aria-hidden="true" style="transform:rotate(180deg)"><path d="M7 10.5V20H4.2a.7.7 0 0 1-.7-.7v-8.1a.7.7 0 0 1 .7-.7H7zm0 0 3.6-6.2c.4-.7 1.3-.9 2-.5.6.4.9 1.1.7 1.8L12.6 9h5.6a2 2 0 0 1 2 2.4l-1.3 6.9a2 2 0 0 1-2 1.7H7"/></svg>',
   favorite: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z"/></svg>',
 };
+const MOVE_ICONS = {
+  up: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
+  down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>',
+};
 const REMA_ID = "11deC"; // REMA 1000 on Tjek: its avis is shown first among the shops
 const RATE_LABELS = { like: "Synes om", dislike: "Synes ikke om", favorite: "Favorit" };
 const SURPRISE_ICON = '<svg class="ai" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11h16v9H4zM12 11v9M3 7.5h18V11H3zM12 7.5C10 3 6 4 7.5 6.5 8.4 8 12 7.5 12 7.5zm0 0c2-4.5 6-3.5 4.5-1C15.6 8 12 7.5 12 7.5z"/></svg>';
@@ -270,6 +274,8 @@ class Rema1000Panel extends HTMLElement {
     this._favSearch = { query: "", results: [], loading: false };
     // The food budget: the purchase being booked, and the economy page's month/year view.
     this._book = { amount: "", store: REMA_ID, date: "", monthly: "" };
+    // Dishes chosen for a day of the next plan: {date: {dish, source, recipe_id | slug}}.
+    this._picks = {};
     this._budgetSpan = "month";
     this._wake = null;
     this._wakeWanted = false;
@@ -782,6 +788,55 @@ class Rema1000Panel extends HTMLElement {
           }
         }, "Madplanen er slettet.");
       },
+      "send-line": () => {
+        const line = (this._plan?.shopping || []).find((l) => l.id === arg);
+        this._run(
+          () => this._ws("middagsro/send", { plan_id: this._plan?.id, line_id: arg }),
+          `${line?.product?.name || line?.name || "Varen"} er lagt på REMA-listen.`
+        );
+      },
+      "pick-open": () => {
+        this._modal = { kind: "pick", date: arg, tab: "collection", query: "", rema: null, mealie: null };
+        this._renderModal();
+      },
+      "pick-tab": () => {
+        const m = this._modal;
+        if (m?.kind !== "pick") return;
+        m.tab = arg;
+        this._renderModal();
+        if (arg === "rema" && !m.rema) this._pickLoad("rema");
+        if (arg === "mealie" && !m.mealie) this._pickLoad("mealie");
+      },
+      "pick-search": () => this._modal?.kind === "pick" && this._modal.tab === "rema" && this._pickLoad("rema"),
+      "pick-choose": () => {
+        const m = this._modal;
+        if (m?.kind !== "pick") return;
+        const [source, id] = String(arg).split("|");
+        let pick = null;
+        if (source === "collection") {
+          const r = (this._state.recipes || []).find((x) => x.id === id);
+          if (r) pick = { dish: r.name, source, recipe_id: r.id, type: r.type };
+        } else if (source === "rema") {
+          const r = (m.rema?.recipes || []).find((x) => x.slug === id);
+          if (r) pick = { dish: r.title, source, slug: r.slug, type: r.vegetarian ? "vegetar" : "normal" };
+        } else {
+          const r = (m.mealie?.recipes || []).find((x) => x.slug === id);
+          if (r) pick = { dish: r.name, source, slug: r.slug };
+        }
+        if (!pick) return;
+        this._picks[m.date] = pick;
+        this._modal = null;
+        this._renderModal();
+        this._render();
+      },
+      "pick-remove": () => {
+        delete this._picks[arg];
+        this._render();
+      },
+      "move-day": () => {
+        const [planId, date, direction] = String(arg).split("|");
+        this._run(() => this._ws("middagsro/day/move", { plan_id: planId, date, direction }));
+      },
       "rate-day": () => {
         const [planId, date, rate] = String(arg).split("|");
         this._run(async () => {
@@ -1266,6 +1321,17 @@ class Rema1000Panel extends HTMLElement {
       this._noteDraft = el.value;
       return;
     }
+    if (ds.bind === "pickq") {
+      const m = this._modal;
+      if (m?.kind !== "pick") return;
+      m.query = el.value;
+      if (m.tab === "rema") {
+        if (ev.type === "change") this._pickLoad("rema");
+        return;
+      }
+      this._soon("pickq", () => this._renderModal());
+      return;
+    }
     if (ds.bind === "book") {
       this._book[ds.field] = el.value;
       return;
@@ -1368,7 +1434,7 @@ class Rema1000Panel extends HTMLElement {
       return;
     }
     if (ds.list && this._form) {
-      const list = this._form[ds.list];
+      const list = (this._form[ds.list] ||= []);
       const idx = list.indexOf(el.value);
       if (el.checked && idx < 0) list.push(el.value);
       if (!el.checked && idx >= 0) list.splice(idx, 1);
@@ -1432,8 +1498,10 @@ class Rema1000Panel extends HTMLElement {
       start_date: this._startDate || null,
       skip_dates: [...this._skip].filter((d) => days.has(d)),
       surprise,
+      picks: Object.fromEntries(Object.entries(this._picks).filter(([d]) => days.has(d) && !this._skip.has(d))),
     });
     this._skip.clear();
+    this._picks = {};
     this._viewingLatest = true;
     this._tab = "plan";
   }
@@ -2380,7 +2448,7 @@ class Rema1000Panel extends HTMLElement {
 
   _rateButtons(plan, day) {
     const { cooked, recipe } = this._recipeForDay(plan, day);
-    if (!cooked?.dish || cooked.type === "tom") return '<span class="rate"></span>';
+    if (!cooked?.dish || cooked.type === "tom") return '<span class="rate"><span class="rate-gap"></span><span class="rate-gap"></span><span class="rate-gap"></span></span>';
     const on = { like: recipe?.rating === "like", dislike: recipe?.rating === "dislike", favorite: !!recipe?.favorite };
     return `<span class="rate">${["like", "dislike", "favorite"]
       .map(
@@ -2388,6 +2456,31 @@ class Rema1000Panel extends HTMLElement {
           title="${RATE_LABELS[a]}" aria-label="${RATE_LABELS[a]}: ${esc(cooked.dish)}" aria-pressed="${on[a]}" ${this._busy ? "disabled" : ""}>${RATE_ICONS[a]}</button>`
       )
       .join("")}</span>`;
+  }
+
+  // Move a dinner a day up or down: under 👍 and 👎; the place under ❤️ is kept free.
+  // The shop the family shops in (REMA 1000 unless chosen otherwise).
+  _storeId() {
+    return this._state?.store?.id || REMA_ID;
+  }
+
+  _isRema() {
+    return this._storeId() === REMA_ID;
+  }
+
+  _moveButtons(plan, day, past) {
+    const near = (step) => {
+      const d = new Date(`${day.date}T12:00:00`);
+      d.setDate(d.getDate() + step);
+      const iso = localDay(d.toISOString());
+      return (plan.days || []).find((x) => x.date === iso);
+    };
+    const button = (dir, other) => {
+      const off = past || !other || other.date < localToday() || this._busy;
+      return `<button class="rate-btn move" data-action="move-day" data-arg="${esc(plan.id)}|${esc(day.date)}|${dir}" ${off ? "disabled" : ""}
+        title="${dir === "up" ? "Flyt en dag op" : "Flyt en dag ned"}" aria-label="${dir === "up" ? "Flyt en dag op" : "Flyt en dag ned"}: ${esc(day.dish || "")}">${MOVE_ICONS[dir]}</button>`;
+    };
+    return `<span class="rate move-row">${button("up", near(-1))}${button("down", near(1))}<span class="rate-gap"></span></span>`;
   }
 
   _recipeRateButtons(recipe) {
@@ -2822,6 +2915,12 @@ class Rema1000Panel extends HTMLElement {
       node.innerHTML = this._lineModal(this._modal);
       return;
     }
+    if (this._modal?.kind === "pick") {
+      const keep = node.querySelector("input[data-bind=pickq]") === this.shadowRoot.activeElement;
+      node.innerHTML = this._pickModal(this._modal);
+      if (keep) node.querySelector("input[data-bind=pickq]")?.focus();
+      return;
+    }
     if (!this._noteOpen) {
       node.innerHTML = "";
       return;
@@ -2904,6 +3003,73 @@ class Rema1000Panel extends HTMLElement {
         <p class="muted">${esc(dateLabel(m.date))}</p>
         ${m.error ? `<div class="banner error">${esc(m.error)}</div>` : ""}
         ${body}
+      </div>`;
+  }
+
+  // Choose the dish for a day of the next plan: the collection, REMA's recipes or Mealie.
+  async _pickLoad(source) {
+    const m = this._modal;
+    if (m?.kind !== "pick") return;
+    m[source] = { loading: true, recipes: m[source]?.recipes || [] };
+    this._renderModal();
+    try {
+      const data =
+        source === "rema"
+          ? await this._ws("middagsro/rema_recipes/list", m.query.trim() ? { query: m.query.trim() } : {})
+          : await this._ws("middagsro/mealie/recipes");
+      if (this._modal === m) m[source] = { loading: false, recipes: data.recipes || [] };
+    } catch (err) {
+      if (this._modal === m) m[source] = { loading: false, recipes: [], error: err?.message || String(err) };
+    }
+    if (this._modal === m) this._renderModal();
+  }
+
+  _pickModal(m) {
+    const query = m.query.trim().toLowerCase();
+    const tabs = [["collection", "Opskriftsamling"], ["rema", "REMA-opskrifter"]];
+    if (this._state.mealie?.available) tabs.push(["mealie", "Mealie"]);
+    const row = (source, id, name, meta) => `<li class="pick-row"><div class="what"><b>${esc(name)}</b>${meta ? `<span class="muted small">${esc(meta)}</span>` : ""}</div>
+      <button class="btn small primary" data-action="pick-choose" data-arg="${source}|${esc(id)}">Vælg</button></li>`;
+    let body = "";
+    if (m.tab === "collection") {
+      const list = (this._state.recipes || [])
+        .filter((r) => r.rating !== "dislike" && (!query || r.name.toLowerCase().includes(query)))
+        .sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || a.name.localeCompare(b.name, "da"));
+      body = list.length
+        ? `<ul class="lines">${list.map((r) => row("collection", r.id, `${r.favorite ? "❤️ " : ""}${r.name}`, r.total_minutes ? `${r.total_minutes} min` : "")).join("")}</ul>`
+        : '<p class="muted">Ingen opskrifter i samlingen passer. Gem retter med 👍 eller ❤️, så kommer de her.</p>';
+    } else {
+      const data = m[m.tab];
+      const list = (data?.recipes || []).filter(
+        (r) => m.tab === "rema" || !query || r.name.toLowerCase().includes(query)
+      );
+      body = data?.loading && !list.length
+        ? '<p class="muted"><span class="spinner small"></span> Henter opskrifter …</p>'
+        : data?.error
+          ? `<div class="banner error">${esc(data.error)}</div>`
+          : list.length
+            ? `<ul class="lines">${list
+                .map((r) =>
+                  m.tab === "rema"
+                    ? row("rema", r.slug, r.title, [r.total_minutes ? `${r.total_minutes} min` : "", r.on_offer ? `${r.on_offer} på tilbud` : ""].filter(Boolean).join(" · "))
+                    : row("mealie", r.slug, r.name, "")
+                )
+                .join("")}</ul>`
+            : '<p class="muted">Ingen opskrifter fundet.</p>';
+    }
+    return `
+      <div class="scrim" data-action="modal-close"></div>
+      <div class="dialog wide sheet" role="dialog" aria-modal="true" aria-label="Vælg ret">
+        <div class="dialog-top"><h2>Ret til ${esc(dateLabel(m.date).toLowerCase())}</h2>
+          <button class="icon-btn close" data-action="modal-close" aria-label="Luk">${CLOSE_ICON}</button></div>
+        <div class="seg subnav">${tabs.map(([k, label]) => `<button class="${m.tab === k ? "active" : ""}" data-action="pick-tab" data-arg="${k}">${label}</button>`).join("")}</div>
+        <div class="row wrap">
+          <input class="grow" type="search" data-bind="pickq" value="${esc(m.query)}" placeholder="${m.tab === "rema" ? "Søg i REMA's opskrifter" : "Søg"}">
+          ${m.tab === "rema" ? `<button class="btn" data-action="pick-search">Søg</button>` : ""}
+        </div>
+        <p class="muted small">Madplanen bygges omkring den valgte ret, og dens varer kommer på indkøbslisten.</p>
+        ${body}
+        <div class="dialog-bottom"><button class="btn" data-action="modal-close">Luk</button></div>
       </div>`;
   }
 
@@ -3006,9 +3172,14 @@ class Rema1000Panel extends HTMLElement {
   _generateControls(label = "Lav ny madplan") {
     const generating = this._state?.status?.state === "generating";
     const skip = this._planDates()
-      .map(
-        (iso) => `<label class="check skipday"><input type="checkbox" data-bind="skip" value="${iso}" ${this._skip.has(iso) ? "checked" : ""}> ${esc(dateLabel(iso))}</label>`
-      )
+      .map((iso) => {
+        const pick = this._picks[iso];
+        const skipped = this._skip.has(iso);
+        return `<div class="pickday ${pick ? "picked" : ""}"><label class="check skipday"><input type="checkbox" data-bind="skip" value="${iso}" ${skipped ? "checked" : ""}> ${esc(dateLabel(iso))}</label>
+          ${skipped ? "" : pick
+            ? `<span class="pick-chip"><button class="link" data-action="pick-open" data-arg="${iso}" title="Skift retten">${esc(pick.dish)}</button><button class="icon-btn" data-action="pick-remove" data-arg="${iso}" aria-label="Fjern ${esc(pick.dish)}">${CLOSE_ICON}</button></span>`
+            : `<button class="btn small pick-btn" data-action="pick-open" data-arg="${iso}" title="Vælg selv retten til ${esc(dateLabel(iso).toLowerCase())}">Vælg ret</button>`}</div>`;
+      })
       .join("");
     const note = this._state?.note;
     const cat = this._state?.catalogs || {};
@@ -3025,7 +3196,7 @@ class Rema1000Panel extends HTMLElement {
       <button class="btn" data-action="note-open">${note ? "Ret ønsker til madplanen" : "Ønsker til madplanen"}</button>
       ${note ? `<p class="muted small note-preview">Bruges i næste madplan: ${esc(note)}</p>` : ""}
     </div>
-    ${skip ? `<p class="muted small skiphead">Spring over (ingen aftensmad de dage):</p><div class="skipdays">${skip}</div>` : ""}
+    ${skip ? `<p class="muted small skiphead">Spring over (ingen aftensmad de dage) – eller vælg selv retten til en dag:</p><div class="skipdays">${skip}</div>` : ""}
     <div class="row wrap skipgo">
       <button class="btn primary" data-action="generate" ${generating || this._busy ? "disabled" : ""}>
         ${generating ? "Laves …" : aiLabel(label)}
@@ -3064,7 +3235,7 @@ class Rema1000Panel extends HTMLElement {
           <span class="date">${day.date === today ? `I aften · ${esc(dateLabel(day.date))}` : esc(dateLabel(day.date))}</span>
           <span class="dish ${day.dish ? "" : "muted"}">${esc(day.dish || "Ingen ret – tryk for at vælge en")}</span>
           <span class="meta">${day.total_minutes ? `${day.total_minutes} min` : ""}${type ? ` <span class="badge">${esc(type)}</span>` : ""}${day.mealie ? ' <span class="badge mealie">Mealie</span>' : ""}${owner.surprise ? ' <span class="badge surprise">Overraskelse</span>' : ""}</span>
-        </button>${this._rateButtons(owner, day)}</div>`;
+        </button><span class="day-tools">${this._rateButtons(owner, day)}${this._moveButtons(owner, day, past)}</span></div>`;
     };
     // The newest plan decides each date; this week and the coming days show as one plan.
     const timeline = this._timeline();
@@ -3465,7 +3636,7 @@ class Rema1000Panel extends HTMLElement {
                 line.price_source === "avis" ? '<span class="badge">Avispris</span>' : "",
               ].join("");
               const need = line.amount && line.unit && line.unit !== "pk" ? `${line.amount} ${line.unit}` : "";
-              return `<li class="line tappable" data-action="line-menu" data-arg="${esc(line.id || "")}">
+              return `<li class="line tappable ${this._isRema() && line.id ? "has-send" : ""}" data-action="line-menu" data-arg="${esc(line.id || "")}">
                 ${p?.image ? `<img src="${esc(p.image)}" alt="" loading="lazy">` : '<span class="noimg">?</span>'}
                 <div class="what">
                   <span class="title"><b>${esc(p ? p.name : line.name)}</b> ${badges}</span>
@@ -3479,6 +3650,10 @@ class Rema1000Panel extends HTMLElement {
                     : ""}
                 </div>
                 <div class="cost">${p && p.price != null ? `${line.packages} × ${kr(p.price)}<b>${kr(line.cost)}</b>` : line.packages > 1 ? `${line.packages} stk.` : "–"}</div>
+                ${this._isRema() && line.id
+                  ? `<button class="icon-btn to-rema-line" data-action="send-line" data-arg="${esc(line.id)}" ${this._busy ? "disabled" : ""}
+                      title="Læg varen på REMA-listen i appen nu" aria-label="Læg ${esc(p ? p.name : line.name)} på REMA-listen nu">${this._chainLogo(REMA_ID, "tiny")}<span class="plus">+</span></button>`
+                  : ""}
               </li>`;
       };
       const sections = Object.entries(groups)
@@ -3502,11 +3677,14 @@ class Rema1000Panel extends HTMLElement {
           </div>`
         : "";
       const onList = plan.shopping.filter((l) => l.sent && l.on_list).length;
-      planHtml = `<div class="card">
+      planHtml = `<div class="card shop-card">
         <div class="row between wrap">
           <div><h1>${lateLines.length ? "Indkøb på indkøbsdagen" : "Indkøbsliste"}</h1><p class="muted">${esc(plan.title)}${lateLines.length ? ` · plus ${lateLines.length} varer ${esc(dayShort(lateDay))}` : ""}</p></div>
-          <div class="price ${plan.budget && plan.total > plan.budget ? "over" : ""}"><span class="big">${kr(sentCount ? basketTotal : plan.total)}</span>
-          <span class="muted">${sentCount ? `hele planen ${kr(plan.total)}` : plan.budget ? `budget ${kr(plan.budget)}` : ""}</span></div>
+          <div class="row shop-head">
+            <div class="price ${plan.budget && plan.total > plan.budget ? "over" : ""}"><span class="big">${kr(sentCount ? basketTotal : plan.total)}</span>
+            <span class="muted">${sentCount ? `hele planen ${kr(plan.total)}` : plan.budget ? `budget ${kr(plan.budget)}` : ""}</span></div>
+            <span class="store-badge" title="Butik: ${esc(this._chainName(this._storeId()))}">${this._chainLogo(this._storeId(), "big")}</span>
+          </div>
         </div>
         ${sentCount
           ? `<div class="banner info sent-banner"><span>✓ ${sentCount} ${sentCount === 1 ? "vare er sendt" : "varer er sendt"} til REMA-appen${plan.last_sent?.at ? ` ${esc(sentWhen(plan.last_sent.at))}` : ""} – kurven her har kun det, der ikke er sendt endnu.${onList ? ` ${onList} ${onList === 1 ? "fast vare stod" : "faste varer stod"} der allerede og blev ikke sendt igen.` : ""}</span>
@@ -4002,7 +4180,7 @@ class Rema1000Panel extends HTMLElement {
     const f = this._form;
     const opts = this._state.options;
     const check = (list, key, labels) =>
-      `<label class="check"><input type="checkbox" data-list="${list}" value="${key}" ${f[list].includes(key) ? "checked" : ""}> ${esc(labels[key] || key)}</label>`;
+      `<label class="check"><input type="checkbox" data-list="${list}" value="${key}" ${(f[list] || []).includes(key) ? "checked" : ""}> ${esc(labels[key] || key)}</label>`;
     const weekdaySelect = (path, value) =>
       `<select data-path="${path}" data-type="number">${WEEKDAYS.map((d, i) => `<option value="${i}" ${Number(value) === i ? "selected" : ""}>${d}</option>`).join("")}</select>`;
     const num = (path, value, min = 0, max = 999) =>
@@ -4129,6 +4307,8 @@ class Rema1000Panel extends HTMLElement {
           <label class="field">Maks. minutter på hverdage ${num("max_cook_minutes_weekday", f.max_cook_minutes_weekday, 5, 300)}</label>
           <label class="field">Ingen gentagelse i antal uger ${num("no_repeat_weeks", f.no_repeat_weeks, 0, 52)}</label>
         </div>
+        <h3>Ingen rester disse dage</h3>
+        <div class="checks">${WEEKDAYS.map((d, i) => check("no_leftover_weekdays", String(i), { [String(i)]: d })).join("")}</div>
         <h3>Faste dage</h3>
         ${fixed}
         <button class="btn small" data-action="add-row" data-arg="fixed_days">+ Tilføj fast dag</button>
@@ -4347,6 +4527,23 @@ const STYLE = `
   .ai { width: 1.1em; height: 1.1em; fill: currentColor; vertical-align: -.2em; margin-right: 6px; }
   .day-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; }
   .rate { display: inline-flex; gap: 2px; }
+  .pickday { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .pickday .pick-btn { padding: 2px 10px; font-size: 12px; }
+  .pick-chip { display: inline-flex; align-items: center; gap: 2px; background: var(--rema-tint); border-radius: 999px; padding: 0 2px 0 10px; font-size: 13px; }
+  .pick-chip .icon-btn { width: 24px; height: 24px; }
+  .pick-chip .icon-btn svg { width: 14px; height: 14px; }
+  .pick-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--divider-color); }
+  .pick-row .what { flex: 1; display: flex; flex-direction: column; }
+  .shop-head { gap: 12px; align-items: flex-start; }
+  .store-badge .chain-logo { width: 40px; height: 40px; }
+  .line.has-send { grid-template-columns: 48px 1fr auto auto; }
+  .lines .line .to-rema-line { position: relative; flex: none; align-self: center; padding: 0; background: none; border: none; cursor: pointer; }
+  .to-rema-line .plus { position: absolute; right: -4px; bottom: -4px; width: 16px; height: 16px; border-radius: 50%; background: var(--rema-accent); color: #fff; font-size: 13px; line-height: 16px; text-align: center; font-weight: 700; }
+  .to-rema-line:disabled { opacity: .4; }
+  .day-tools { display: flex; flex-direction: column; align-items: flex-end; gap: 0; }
+  .move-row .rate-btn { height: 26px; color: var(--secondary-text-color); }
+  .move-row .rate-btn:disabled { opacity: .25; cursor: default; background: none; }
+  .rate-gap { width: 34px; }
   .rate-btn { width: 34px; height: 34px; border-radius: 50%; border: none; background: none; cursor: pointer; display: grid; place-items: center;
     color: var(--secondary-text-color); padding: 0; }
   .rate-btn:hover { background: var(--rema-tint); }
@@ -4731,6 +4928,8 @@ const STYLE = `
     .price { text-align: left; }
     .step-text { font-size: 18px; }
     .line { grid-template-columns: 40px 1fr; } .line .cost { grid-column: 2; text-align: left; flex-direction: row; gap: 8px; }
+    .line.has-send { grid-template-columns: 40px 1fr auto; } .line.has-send .to-rema-line { grid-column: 3; grid-row: 1 / span 2; }
+    .shop-card { position: relative; } .shop-card .store-badge { position: absolute; top: 14px; right: 14px; } .shop-card h1, .shop-card .shop-head { padding-right: 52px; }
     .prod-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
     .prod { padding: 6px; gap: 4px; font-size: 12px; border-radius: 10px; }
     .prod img, .prod .noimg { height: 64px; }

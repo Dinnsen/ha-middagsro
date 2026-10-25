@@ -38,6 +38,9 @@ Integrationen lægger et **Middagsro-panel** i sidebaren. Det følger dit Home A
 - **Ønsker til madplanen:** skriv fx, hvad der skal bruges fra køleskabet inden en bestemt dag, eller hvilken ret I vil have en bestemt dag. Ønskerne bruges kun i den næste plan – også når den laves automatisk – og fjernes derefter.
 - **Én plan for ugen:** forsiden viser hele ugen, fra familiens første ugedag til den sidste planlagte dag, som én plan – også når den er lavet i flere omgange (en ny plan fra onsdag afløser den gamle fra onsdag). Når næste uges plan er klar, kommer den under sin egen ugeoverskrift. Dage, der er gået, er nedtonet. Kalenderen og sensoren *Aftensmad i dag* følger samme regel. Opskrifter-fanen åbner altid på aftenens ret.
 - **Skift, slet eller spring over:** tryk på en ret i madplanen, og få tre andre bud, slet retten eller spring dagen over. Indkøbslisten og opskriften følger med.
+- **Flyt en ret** en dag op eller ned med pilene under 👍 og 👎 – resterne følger med og kommer aldrig før den dag, maden laves.
+- **Vælg selv retten** til en dag i næste madplan (*Vælg ret*): fra opskriftsamlingen, REMA's opskrifter eller Mealie. AI'en planlægger resten omkring den. En ret, der står i ønskerne ("frikadeller på onsdag"), holdes også på den dag.
+- **Ingen rester på valgte ugedage**, fx i weekenden.
 - **Det skal AI'en huske:** faste punkter til alle madplaner, fx “altid frisk broccoli til laksefilet” – skrevet eller dikteret.
 - **Næringsmål** pr. aftensmad (kcal og fordeling af protein, kulhydrat og fedt), og fanen **Sundhed** med næring, kostrådene og mærker som Nøglehullet.
 - Knapper, der bruger AI, er mærket med ✦.
@@ -62,7 +65,7 @@ Ingredienser og trin i stor skrift. Kryds af undervejs, start en **timer** på h
 
 - Til hver ingrediens findes **den billigste REMA-vare**, der opfylder jeres regler. Varer fra tilbudsavisen, økologiske varer og faste ugevarer er mærket.
 - Pris pr. vare, antal pakker og samlet pris mod budgettet. Med et [madbudget](#madbudget-økonomi) spørger panelet først, hvis en liste koster mere, end der er tilbage af ugen.
-- **Send til REMA-listen** lægger det hele på din primære liste i REMA 1000-appen. Varer uden et sikkert match kommer på som tekst. Sendte varer forsvinder fra Middagsro's kurv, så næste gang sendes kun det, der er kommet til siden – intet havner to gange i appen. **Genskab seneste kurv** lægger de sidst sendte varer tilbage, hvis noget gik galt.
+- **Send til REMA-listen** lægger det hele på din primære liste i REMA 1000-appen. Varer uden et sikkert match kommer på som tekst. Sendte varer forsvinder fra Middagsro's kurv, så næste gang sendes kun det, der er kommet til siden – intet havner to gange i appen. **Genskab seneste kurv** lægger de sidst sendte varer tilbage, hvis noget gik galt. REMA-logoet ved en vare lægger lige præcis den vare på REMA-listen med det samme.
 - Søg en hvilken som helst REMA-vare frem i kurven – også tilbuddene i REMA's avis, med *partivarer*, der kun sælges i butikkerne.
 - **Søg og tilføj** andre REMA-varer til indkøbslisten – også til listen senere på ugen – eller læg en **direkte på REMA-listen** i appen med *+ REMA-listen*, uden om madplanen. Tryk på en vare for at rette antal, skifte den ud eller slette den.
 - **Basisvarer i madplanen** viser de basisvarer (salt, olie, smør …), opskrifterne bruger. Mangler I en, så tryk **Tilføj til indkøb**, og varen findes efter jeres indstillinger.
