@@ -470,3 +470,57 @@ async def test_recipe_read_by_the_ai(hass: HomeAssistant) -> None:
         assert recipe["site"] == "Valdemarsro"
         extract.return_value = {"name": "Intet"}
         assert await finder.async_recipe(url, extract) is None
+
+
+async def test_category_pages(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:
+    """DK-kogebogen's recipes are found on its category pages, with their names."""
+    dk = "https://www.dk-kogebogen.dk"
+    aioclient_mock.get(
+        f"{dk}/robots.txt", text=f"User-agent: *\nDisallow: /udskrift/\nSitemap: {dk}/sitemap.xml"
+    )
+    aioclient_mock.get(
+        f"{dk}/sitemap.xml",
+        text=f"""<urlset><url><loc>{dk}/retter/hovedretter/farsret-farsretter</loc></url>
+        <url><loc>{dk}/retter/suppe/supper/</loc></url>
+        <url><loc>{dk}/retter/kager/lagkager/</loc></url>
+        <url><loc>{dk}/retter/hovedretter</loc></url></urlset>""",
+    )
+    aioclient_mock.get(
+        f"{dk}/retter/hovedretter/farsret-farsretter/",
+        text=f"""<a href="/opskrifter/849/forloren-hare"><img src="x.jpg"></a>
+        <a href="/opskrifter/849/forloren-hare">se mere her</a>
+        <a class="x" href="https://www.dk-kogebogen.dk/opskrifter/849/forloren-hare">Forloren
+         hare med <b>vildtsovs</b></a>
+        <a href="/opskrifter/61/graeskfarsbroed#top">Græskfarsbrød</a>
+        <a href="/udskrift/61/">Græskfarsbrød</a>
+        <a href="https://example.com/opskrifter/1/fremmed">Fremmed</a>
+        <a href="?order=navn">Navn</a>
+        <a href="{dk}/retter/hovedretter/farsret-farsretter/100/">næste</a>""",
+    )
+    aioclient_mock.get(
+        f"{dk}/retter/hovedretter/farsret-farsretter/100/",
+        text='<a href="/opskrifter/62/kalvefrikadeller">Kalvefrikadeller</a>',
+    )
+    aioclient_mock.get(f"{dk}/retter/suppe/supper/", status=500)
+    finder = sites.RecipeSites(hass)
+    finder._async_titles = AsyncMock()  # type: ignore[method-assign]
+
+    found = await finder.async_search(["dkkogebogen"], "forloren hare")
+    assert found == [
+        {
+            "site": "dkkogebogen",
+            "site_name": "DK-kogebogen",
+            "url": f"{dk}/opskrifter/849/forloren-hare",
+            "title": "Forloren hare med vildtsovs",
+        }
+    ]
+    assert [h["title"] for h in await finder.async_search(["dkkogebogen"], "vildtsovs")] == [
+        "Forloren hare med vildtsovs"  # the words of the name, too
+    ]
+    assert [h["title"] for h in await finder.async_search(["dkkogebogen"], "frikadeller")] == [
+        "Kalvefrikadeller"
+    ]
+    assert len(finder._indexes["dkkogebogen"].recipes) == 3
+    assert finder._titles[f"{dk}/opskrifter/61/graeskfarsbroed"] == "Græskfarsbrød"
+    requested = {str(call[1]) for call in aioclient_mock.mock_calls}
+    assert f"{dk}/retter/kager/lagkager/" not in requested

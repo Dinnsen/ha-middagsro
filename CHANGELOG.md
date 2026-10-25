@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.6.4] - 2026-10-25
+
+### Fixed
+- **DK-kogebogen found nothing:** its sitemaps only have its categories. Its recipes are read from the dinner categories (*hovedretter* and *suppe*), with their real names; at most 150 category pages a day.
+
 ## [2.6.3] - 2026-10-25
 
 ### Fixed
