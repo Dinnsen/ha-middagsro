@@ -337,6 +337,7 @@ async def test_store_choice_notice(
         "id": REMA,
         "name": "REMA 1000",
         "rema": True,
+        "prices": True,
         "rema_only": state["shop"]["rema_only"],
     }
     await client.send_json({"id": 2, "type": "middagsro/notice_seen", "notice": "store_choice"})

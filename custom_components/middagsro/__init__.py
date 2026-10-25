@@ -16,6 +16,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from .api import Catalog, RemaAuthError, RemaClient, RemaError
+from .bilka import BILKA_ID
 from .const import DOMAIN, STORAGE_VERSION
 from .coordinator import (
     RemaConfigEntry,
@@ -29,7 +30,7 @@ from .migrate import async_migrate
 from .panel import async_register_panel, async_unregister_panel
 from .services import async_setup_services
 from .storage import STORE_VERSION, RemaPlanStore
-from .store_client import REMA, StoreClient, store_of
+from .store_client import REMA, BilkaStoreClient, StoreClient, store_of
 from .watch import CHECK_EVERY as WATCH_CHECK_EVERY, async_check as async_watch_check
 from .websocket import async_register_websocket
 
@@ -62,6 +63,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
     client: RemaClient
     if store_id == REMA:
         client = RemaClient(session, entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD])
+    elif store_id == BILKA_ID:
+        client = BilkaStoreClient(hass, session, entry.entry_id)
     else:
         client = StoreClient(hass, session, entry.entry_id, store_id)
     try:

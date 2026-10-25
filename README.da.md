@@ -270,7 +270,7 @@ Handlingerne hedder nu `middagsro.…` (før `rema1000.…`); ret dem i jeres au
 [![Åbn dit Home Assistant og tilføj Middagsro.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=middagsro)
 
 1. Gå til **Indstillinger → Enheder og tjenester → Tilføj integration**, og vælg **Middagsro**.
-2. Vælg butik. Med **REMA 1000** logger du ind (se nedenfor) og får priser på alle varer, REMA's opskrifter og indkøbslisten i REMA-appen. Vælger du en **anden butik** (Netto, føtex, Lidl, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, SPAR …), skal der ikke logges ind: madplanen bygges på butikkens tilbudsavis, kun tilbudsvarerne har en pris, og indkøbslisten ligger i Home Assistant (og kan også sendes til en anden to-do-liste, fx Bring!). Opsætningen viser, hvad der kun virker med REMA 1000. Butikken kan skiftes senere under **Omkonfigurér** – madplaner, opskrifter og indstillinger beholdes.
+2. Vælg butik. Med **REMA 1000** logger du ind (se nedenfor) og får priser på alle varer, REMA's opskrifter og indkøbslisten i REMA-appen. Vælger du en **anden butik** (Netto, føtex, Lidl, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, SPAR …), skal der ikke logges ind: madplanen bygges på butikkens tilbudsavis, kun tilbudsvarerne har en pris (i Bilka har alle varer deres pris fra Bilka ToGo), og indkøbslisten ligger i Home Assistant (og kan også sendes til en anden to-do-liste, fx Bring!). Opsætningen viser, hvad der kun virker med REMA 1000. Butikken kan skiftes senere under **Omkonfigurér** – madplaner, opskrifter og indstillinger beholdes.
 3. Med REMA 1000: log ind:
 
    | Felt | Beskrivelse |

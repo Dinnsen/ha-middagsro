@@ -8,6 +8,7 @@ dealer id); it is then not sent to the REMA list.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
 import logging
@@ -23,7 +24,8 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
-from .api import Offer, parse_time
+from .api import Offer, Product, RemaError, parse_time
+from .bilka import BILKA_ID
 from .const import DOMAIN
 
 if TYPE_CHECKING:
@@ -365,6 +367,51 @@ def cheaper_offer(
     return best
 
 
+def bilka_entry(product: Product) -> dict[str, Any]:
+    """A Bilka ToGo product as an offer-like entry: its price every day, not only on offer."""
+    size = (product.underline or "").split(" / ")[0] or None
+    normal = product.normal_price
+    return {
+        "dealer_id": BILKA_ID,
+        "id": f"bilka-{product.id}",
+        "heading": product.name,
+        # "Økologisk" as the avis writes it (Bilka's names say "øko").
+        "description": f"{size or ''} Økologisk".strip() if product.is_organic else size,
+        "quantity": size,
+        "price": product.price,
+        "pre_price": normal if normal and product.price and normal > product.price else None,
+        "image": product.image,
+        "valid_from": None,
+        "valid_to": None,
+        "full_price": True,
+    }
+
+
+def wants_bilka(planner: MealPlanner) -> bool:
+    """Bilka's prices on every item: when Bilka is among the chains (and not the shop)."""
+    return BILKA_ID in planner.store.settings["chains"] and planner.dealer_id != BILKA_ID
+
+
+async def async_bilka_entries(
+    planner: MealPlanner, queries: list[str]
+) -> dict[str, list[dict[str, Any]]]:
+    """Bilka ToGo's products for each search, as entries (none if it can't be read)."""
+    semaphore = asyncio.Semaphore(6)
+    out: dict[str, list[dict[str, Any]]] = {}
+
+    async def search(query: str) -> None:
+        async with semaphore:
+            try:
+                found = await planner.bilka.async_search(query, 8)
+            except RemaError as err:
+                _LOGGER.debug("Bilka ToGo not searched for %s: %s", query, err)
+                found = []
+        out[query] = [bilka_entry(p) for p in found]
+
+    await asyncio.gather(*(search(q) for q in dict.fromkeys(q for q in queries if q)))
+    return out
+
+
 async def async_compare(planner: MealPlanner, plan_id: str) -> dict[str, Any]:
     """Where the plan's items are cheaper in the family's other chains this week."""
     plan = planner.store.get_plan(plan_id)
@@ -381,11 +428,25 @@ async def async_compare(planner: MealPlanner, plan_id: str) -> dict[str, Any]:
     first = max(date.fromisoformat(plan["start_date"]), dt_util.now().date())
     lines: dict[str, dict[str, Any]] = {}
     totals: dict[str, dict[str, Any]] = {}
+    # Bilka's price on every item, searched by each line's own words.
+    bilka = (
+        await async_bilka_entries(
+            planner,
+            [
+                str(line.get("search") or line.get("name") or "")
+                for line in plan["shopping"]
+                if line.get("product") and not line.get("sent") and not line.get("buy_at")
+            ],
+        )
+        if wants_bilka(planner)
+        else {}
+    )
     for line in plan["shopping"]:
         if line.get("bought"):
             continue
         day = max(date.fromisoformat(line["buy_from"]), first) if line.get("buy_from") else first
-        if found := cheaper_offer(line, offers, day):
+        extra = bilka.get(str(line.get("search") or line.get("name") or ""), [])
+        if found := cheaper_offer(line, offers + extra, day):
             lines[line["id"]] = found
             total = totals.setdefault(found["dealer_id"], {"count": 0, "saving": 0.0})
             total["count"] += 1
@@ -516,6 +577,10 @@ async def async_search_everywhere(planner: MealPlanner, query: str) -> dict[str,
             if (end is None or end >= now) and text_has(
                 words, f"{entry['heading']} {entry.get('description') or ''}"
             ):
+                offers.append({**entry, "unit_price": offer_unit_price(entry)})
+    if wants_bilka(planner):
+        for entry in (await async_bilka_entries(planner, [query])).get(query, []):
+            if text_has(words, entry["heading"]):
                 offers.append({**entry, "unit_price": offer_unit_price(entry)})
 
     def order(item: dict[str, Any]) -> tuple[int, float]:
