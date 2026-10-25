@@ -350,16 +350,16 @@ async def test_websocket(
     assert msg["result"] == {"results": [{"title": "Lasagne"}]}
     assert search.call_args.args == (["valdemarsro"], "lasagne")
     with patch.object(planner.sites, "async_search", search):
-        msg = await ws(7, type="middagsro/sites/search", query="lasagne", sites=["arla"])
+        msg = await ws(4, type="middagsro/sites/search", query="lasagne", sites=["arla"])
     assert search.call_args.args == (["arla"], "lasagne")
 
-    msg = await ws(4, type="middagsro/sites/recipe", url="https://example.com/lasagne/")
+    msg = await ws(5, type="middagsro/sites/recipe", url="https://example.com/lasagne/")
     assert not msg["success"]
     recipe = {"name": "Lasagne", "source": "web"}
     with patch.object(planner.sites, "async_recipe", AsyncMock(side_effect=[recipe, None])):
-        msg = await ws(5, type="middagsro/sites/recipe", url=f"{VALDEMARSRO}/lasagne/")
-        assert msg["result"] == recipe
         msg = await ws(6, type="middagsro/sites/recipe", url=f"{VALDEMARSRO}/lasagne/")
+        assert msg["result"] == recipe
+        msg = await ws(7, type="middagsro/sites/recipe", url=f"{VALDEMARSRO}/lasagne/")
     assert not msg["success"]
 
 
