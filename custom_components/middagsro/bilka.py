@@ -108,7 +108,7 @@ class BilkaSearch:
         """Initialize."""
         self.hass = hass
         self._key: tuple[str, str] | None = None
-        self._key_failed = 0.0
+        self._key_failed: float | None = None
         self._lock = asyncio.Lock()
         self._searches: dict[str, tuple[float, list[int]]] = {}
         self._products: dict[int, Product] = {}
@@ -136,7 +136,8 @@ class BilkaSearch:
         async with self._lock:
             if self._key and not force:
                 return self._key
-            if time.monotonic() - self._key_failed < KEY_RETRY and not self._key:
+            failed = self._key_failed
+            if not self._key and failed is not None and time.monotonic() - failed < KEY_RETRY:
                 raise BilkaError("Bilka ToGo could not be read a moment ago")
             try:
                 self._key = await self._async_find_key()
