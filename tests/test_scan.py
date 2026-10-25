@@ -48,8 +48,7 @@ async def test_media_source(hass: HomeAssistant, tmp_path: Any) -> None:
     media = await source.async_resolve_media(item)
     assert (media.path, media.mime_type) == (tmp_path / "a.jpg", "image/jpeg")
     del ms.SCANS["abc"]
-    with pytest.raises(Unresolvable):
-        await source.async_browse_media(item)
+    assert (await source.async_browse_media(item)).children == []
 
 
 def test_decode_photo() -> None:

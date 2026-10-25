@@ -55,5 +55,14 @@ class ScannedPages(MediaSource):
         return PlayMedia(f"/{DOMAIN}/scan/{item.identifier}", page.mime_type, path=page.path)
 
     async def async_browse_media(self, item: MediaSourceItem) -> BrowseMediaSource:
-        """Nothing to browse."""
-        raise Unresolvable("Middagsro's scanned pages can't be browsed")
+        """An empty folder: the photos are only there while the AI reads them."""
+        return BrowseMediaSource(
+            domain=DOMAIN,
+            identifier=None,
+            media_class="directory",
+            media_content_type="",
+            title="Middagsro",
+            can_play=False,
+            can_expand=True,
+            children=[],
+        )
