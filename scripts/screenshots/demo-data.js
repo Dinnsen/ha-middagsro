@@ -151,6 +151,8 @@ const settings = {
   ai_task_entity: "ai_task.google_ai_task",
   start_weekday: 6,
   days: 7,
+  recipe_sites: ["valdemarsro", "madensverden", "louisesmadblog"],
+  recipe_sites_in_plan: true,
   budget: 900,
   organic: "prefer",
   organic_max_extra_pct: 20,
@@ -233,6 +235,13 @@ window.DEMO = {
     latest_plan: plan,
     status: { state: "idle", message: null, started: null },
     default_start: "2026-10-25",
+    recipe_sites: [
+      { id: "valdemarsro", name: "Valdemarsro" },
+      { id: "madensverden", name: "Madens Verden" },
+      { id: "louisesmadblog", name: "Louises madblog" },
+      { id: "dkkogebogen", name: "DK-kogebogen" },
+      { id: "arla", name: "Arla" },
+    ],
     ai_entities: [
       { entity_id: "ai_task.google_ai_task", name: "Google AI Task" },
       { entity_id: "ai_task.openai_ai_task", name: "OpenAI AI Task" },

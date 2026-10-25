@@ -36,6 +36,7 @@ from .recipes import (
     recipe_to_day,
 )
 from .rema_recipes import RemaRecipes
+from .sites import RecipeSites
 from .storage import RemaPlanStore
 from .words import (
     _DIFFERENT_PREFIXES,
@@ -53,6 +54,11 @@ from .words import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# The week's main items to look for on the recipe sites.
+SITE_WORDS = (
+    "kylling", "kalkun", "oksekød", "svinekød", "flæsk", "mørbrad", "nakke", "kotelet",
+    "lam", "laks", "torsk", "fisk", "rejer", "tun", "pølse", "bacon", "skinke", "hakket",
+)  # fmt: skip
 RECIPE_EXTRAS_PER_DAY = 4  # items an AI recipe may add to the list for a dinner
 WEEKDAYS_DA = ("mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag", "søndag")
 AVOID_DA = {
@@ -691,6 +697,7 @@ def build_prompt(
     surprise: bool = False,
     favorite_recipes: dict[str, dict[str, Any]] | None = None,
     wishes: dict[str, str] | None = None,
+    web: list[dict[str, Any]] | None = None,
 ) -> str:
     """Build the instructions for the AI."""
     s = settings
@@ -867,6 +874,18 @@ def build_prompt(
             "id | ret | ingredienser:",
         ]
         out += [f"{r['slug']} | {r['name']} | {', '.join(r['ingredients'])[:300]}" for r in mealie]
+    if web and not surprise:
+        out += [
+            "",
+            "OPSKRIFTER FRA FAMILIENS MADSIDER – brug gerne et par af dem, når de passer til "
+            "ugens tilbud og kravene: skriv dens id i recipe_id på dagen og opskriftens navn som "
+            "dish; indkøbslisten følger opskriftens ingredienser. id | ret | side | ingredienser:",
+        ]
+        out += [
+            f"{r['id']} | {r['name']} | {r.get('site') or ''} | "
+            f"{', '.join(ingredient_texts(r))[:300]}"
+            for r in web
+        ]
     if own and not surprise:
         out += [
             "",
@@ -1445,6 +1464,7 @@ class MealPlanner:
         self.mealie = MealieLink(hass)
         self.chains = ChainOffers(hass)
         self.rema_recipes = RemaRecipes(self)
+        self.sites = RecipeSites(hass)
         # Automatic sends waiting for REMA's prices: (plan id, key) -> cancel.
         self._sends: dict[tuple[str, str], Callable[[], None]] = {}
 
@@ -1988,6 +2008,11 @@ class MealPlanner:
             if (recipe := favorite_recipe(self.store, fav["text"])) is not None
         }
         disliked = disliked_names(self.store)
+        web = (
+            []
+            if surprise or not settings["recipe_sites_in_plan"]
+            else await self._async_site_recipes(settings["recipe_sites"], offers)
+        )
         iso = [d.isoformat() for d in dates]
         picks = {
             day: pick for day, pick in (picks or {}).items() if day in iso and pick.get("dish")
@@ -2029,6 +2054,7 @@ class MealPlanner:
                 surprise=surprise,
                 favorite_recipes=links,
                 wishes=wishes,
+                web=web,
             )
             raw = await self._async_ask_ai(prompt, "REMA 1000 madplan")
             self._set_status("generating", "Finder varer og priser i REMA 1000 …")
@@ -2036,7 +2062,9 @@ class MealPlanner:
                 raw, dates, catalog, offers, self.price_time(start), late
             )
             known = {r["slug"] for r in mealie}
-            ours = {r["id"] for r in own} | {r["id"] for r in links.values()}
+            ours = (
+                {r["id"] for r in own} | {r["id"] for r in links.values()} | {r["id"] for r in web}
+            )
             for day in plan["days"]:
                 if day.get("mealie") not in known:
                     day["mealie"] = None  # not one of the family's recipes
@@ -2091,6 +2119,19 @@ class MealPlanner:
 
         assert best is not None
         ir.async_delete_issue(self.hass, DOMAIN, ISSUE_NO_AI_TASK)
+        # A recipe from the sites that the AI chose goes in the collection, as the family's.
+        # One the family already has (and may have changed) is used as it is.
+        chosen: dict[str, Any] = {r["id"]: r for r in web}
+        for day in best["days"]:
+            web_id = day.get("recipe_id")
+            if (recipe := chosen.get(web_id)) is None:
+                continue
+            saved = next(
+                (r for r in self.store.recipes if r.get("url") and r["url"] == recipe.get("url")),
+                None,
+            ) or await async_save_recipe(self.store, {**recipe, "id": None})
+            chosen[web_id] = saved
+            day["recipe_id"] = saved["id"]
         problems = best.pop("problems")
         best["checklist"] += [{"requirement": p, "ok": False} for p in problems]
         if problems:
@@ -2117,6 +2158,26 @@ class MealPlanner:
         self._notify()
         return best
 
+    async def _async_site_recipes(
+        self, site_ids: list[str], offers: list[Offer]
+    ) -> list[dict[str, Any]]:
+        """Recipes from the family's sites for the week's main offers, for the AI to use."""
+        if not site_ids:
+            return []
+        words: list[str] = []
+        for offer in offers:
+            heading = offer.heading.lower()
+            for word in SITE_WORDS:
+                if word in heading and word not in words:
+                    words.append(word)
+        self._set_status("generating", "Finder opskrifter på jeres madsider …")
+        try:
+            recipes = await self.sites.async_candidates(site_ids, words[:5] or ["aftensmad"])
+        except Exception as err:
+            _LOGGER.warning("Could not read the recipe sites: %s", err)
+            return []
+        return [{**r, "id": f"web{i}"} for i, r in enumerate(recipes, 1)]
+
     async def _async_put_picks(
         self, plan: dict[str, Any], picks: dict[str, dict[str, Any]]
     ) -> dict[str, Any]:
@@ -2131,6 +2192,12 @@ class MealPlanner:
                     saved = await async_save_recipe(
                         self.store, await self.rema_recipes.async_get(str(pick["slug"]))
                     )
+                    option.update(dish=saved["name"], type=saved["type"], recipe_id=saved["id"])
+                elif pick.get("source") == "web" and pick.get("url"):
+                    recipe = await self.sites.async_recipe(str(pick["url"]))
+                    if recipe is None:
+                        raise _invalid("recipe_not_on_page")
+                    saved = await async_save_recipe(self.store, recipe)
                     option.update(dish=saved["name"], type=saved["type"], recipe_id=saved["id"])
                 elif pick.get("source") == "mealie" and pick.get("slug"):
                     option["mealie"] = str(pick["slug"])

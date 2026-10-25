@@ -13,7 +13,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .chains import CHAINS
-from .const import DOMAIN
+from .const import DOMAIN, SITE_IDS
 from .dishes import dish_key, matches_any
 
 STORE_VERSION = 1
@@ -70,6 +70,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "min_vegetarian": 0,
     "max_vegetarian": 1,
     "leftover_days": 2,
+    "recipe_sites": [],  # sites.SITES ids the family searches and plans from
+    "recipe_sites_in_plan": False,  # offer their recipes to the AI when planning
     "no_leftover_weekdays": [],  # "0".."6" (monday..sunday): never leftovers those days
     "fixed_days": [{"weekday": 3, "text": "Rugbrødsdag (kun denne ene dag med rugbrød)"}],
     "max_cook_minutes_weekday": 30,
@@ -145,6 +147,9 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
         except (TypeError, ValueError):
             continue
     settings["no_leftover_weekdays"] = sorted(weekdays)
+    sites = settings["recipe_sites"] if isinstance(settings["recipe_sites"], list) else []
+    settings["recipe_sites"] = [s for s in dict.fromkeys(map(str, sites)) if s in SITE_IDS]
+    settings["recipe_sites_in_plan"] = bool(settings["recipe_sites_in_plan"])
     settings["max_cook_minutes_weekday"] = _clamp(settings["max_cook_minutes_weekday"], 5, 300, 30)
     settings["no_repeat_weeks"] = _clamp(settings["no_repeat_weeks"], 0, 52, 3)
     if settings["organic"] not in ORGANIC_MODES:

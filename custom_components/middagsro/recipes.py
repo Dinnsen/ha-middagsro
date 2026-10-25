@@ -3,7 +3,7 @@
 A recipe in the collection:
     id, name, type ("normal"/"vegetar"), servings, active_minutes, total_minutes,
     ingredients [{name, amount}], steps [{text, minutes}], tip,
-    rating ("like" / "dislike" / None), favorite (bool), source ("plan"/"link"/"manual"/"scan"),
+    rating ("like" / "dislike" / None), favorite (bool), source ("plan"/"link"/"manual"/"scan"/"web"),
     created, updated, times_planned, last_planned
 
 Links are only read when a recipe is added; the link itself is not kept.
@@ -175,6 +175,13 @@ def _rema_fields(raw: dict[str, Any], old: dict[str, Any]) -> dict[str, Any]:
     slug = raw.get("rema_slug") or old.get("rema_slug")
     if isinstance(slug, str) and slug.strip():
         out["rema_slug"] = slug.strip()[:200]
+    # A recipe from one of the family's recipe sites: which, and the page.
+    site = raw.get("site") or old.get("site")
+    if isinstance(site, str) and site.strip():
+        out["site"] = site.strip()[:80]
+    url = raw.get("url") or old.get("url")
+    if isinstance(url, str) and url.startswith("https://") and len(url) <= 500:
+        out["url"] = url
     image = raw.get("image") if "image" in raw else old.get("image")
     if isinstance(image, str) and image.startswith("https://") and len(image) <= 500:
         out["image"] = image
@@ -199,6 +206,11 @@ async def async_save_recipe(store: RemaPlanStore, raw: dict[str, Any]) -> dict[s
     existing = find_recipe(store, raw.get("id"))
     if raw.get("id") and existing is None:
         raise _invalid("recipe_not_found")
+    if existing is None and raw.get("url") and raw.get("source") == "web":
+        # A recipe from a site saved again is the same recipe.
+        existing = next((r for r in store.recipes if r.get("url") == raw["url"]), None)
+        if existing is not None:
+            raw = {k: v for k, v in raw.items() if k not in ("rating", "favorite") or v}
     if existing is None and raw.get("rema_slug"):
         # A REMA recipe saved again is the same recipe (its ratings stay).
         existing = next((r for r in store.recipes if r.get("rema_slug") == raw["rema_slug"]), None)
