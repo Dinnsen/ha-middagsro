@@ -205,6 +205,9 @@ function shoppingOf(state) {
     total: lines.filter((l) => !l.buy_at).length,
     lastSent: plan?.last_sent?.at || null,
     list: list ? { count: listOpen.length, total: list.total } : null,
+    // REMA 1000 (the list in its app), or another shop (the list in Home Assistant).
+    rema: state?.shop ? state.shop.rema : true,
+    listName: !state?.shop || state.shop.rema ? "REMA-listen" : "Indkøbslisten",
   };
 }
 
@@ -312,7 +315,7 @@ class MiddagsroCard extends HTMLElement {
       const message = { type: "middagsro/send", plan_id: s.plan.id, part: "main" };
       if (this._state.entry_id) message.entry_id = this._state.entry_id;
       await this._hass.callWS(message);
-      this._notify("Indkøbslisten er sendt til REMA 1000-appen.");
+      this._notify(s.rema ? "Indkøbslisten er sendt til REMA 1000-appen." : "Varerne er sat på indkøbslisten.");
     } catch (err) {
       this._notify(`Fejl: ${err?.message || err}`);
     } finally {
@@ -462,7 +465,7 @@ class ShoppingCard extends MiddagsroCard {
     if (!s.plan) {
       return `<button class="mc" data-view="shopping" data-title="${esc(title)}" data-f="card">
         <span class="mc-head"><span class="mc-pic">${ICONS.shopping}</span><span class="mc-name"><strong>${esc(title)}</strong><span>${esc(TEXT.no_plan)}</span></span></span>
-        ${s.list ? `<span class="mc-row"><span class="soft">På REMA-listen</span><b>${esc(plural(s.list.count, "vare", "varer"))} · ${kr(s.list.total)}</b></span>` : ""}
+        ${s.list ? `<span class="mc-row"><span class="soft">På ${esc(s.listName.toLowerCase())}</span><b>${esc(plural(s.list.count, "vare", "varer"))}${s.rema ? ` · ${kr(s.list.total)}` : ""}</b></span>` : ""}
       </button>`;
     }
     const status = s.main.length
@@ -476,11 +479,11 @@ class ShoppingCard extends MiddagsroCard {
           ${s.main.length ? "" : s.sent ? `<span class="mc-pill ok">Sendt</span>` : ""}
         </span>
         ${s.sent ? `<span class="mc-bar" role="img" aria-label="${share} % af listen er sendt"><i style="width:${share}%"></i></span>
-          <span class="mc-row"><span class="soft">Sendt til REMA</span><b>${s.sent} af ${s.total}</b></span>` : ""}
+          <span class="mc-row"><span class="soft">Sendt${s.rema ? " til REMA" : ""}</span><b>${s.sent} af ${s.total}</b></span>` : ""}
         ${s.late.length ? `<span class="mc-row"><span class="soft">Senere på ugen</span><b>${esc(plural(s.late.length, "vare", "varer"))} · ${kr(s.lateCost)}</b></span>` : ""}
-        ${s.list ? `<span class="mc-row"><span class="soft">På REMA-listen nu</span><b>${esc(plural(s.list.count, "vare", "varer"))} · ${kr(s.list.total)}</b></span>` : ""}
+        ${s.list ? `<span class="mc-row"><span class="soft">På ${esc(s.listName.toLowerCase())} nu</span><b>${esc(plural(s.list.count, "vare", "varer"))}${s.rema ? ` · ${kr(s.list.total)}` : ""}</b></span>` : ""}
       </button>
-      ${s.main.length ? `<button class="mc-btn primary" data-act="send" data-f="send" aria-label="Send ${esc(plural(s.main.length, "vare", "varer"))} til REMA">${ICONS.send}<span>Send til REMA</span></button>` : ""}
+      ${s.main.length ? `<button class="mc-btn primary" data-act="send" data-f="send" aria-label="Send ${esc(plural(s.main.length, "vare", "varer"))} til ${s.rema ? "REMA" : "indkøbslisten"}">${ICONS.send}<span>Send til REMA</span></button>` : ""}
     </div>`;
   }
 
@@ -581,7 +584,7 @@ class BubbleCard extends MiddagsroCard {
     const s = shoppingOf(this._state);
     const name = this._config.name || "Indkøb";
     const state = !s.plan
-      ? s.list ? `REMA-listen: ${plural(s.list.count, "vare", "varer")}` : TEXT.no_plan
+      ? s.list ? `${s.listName}: ${plural(s.list.count, "vare", "varer")}` : TEXT.no_plan
       : s.main.length
         ? `${plural(s.main.length, "vare", "varer")} · ${kr(s.mainCost)}`
         : s.lastSent ? `Sendt ${sentWhen(s.lastSent)}` : "Kurven er tom";
@@ -594,7 +597,7 @@ class BubbleCard extends MiddagsroCard {
       state,
       fill: s.total ? (s.sent / s.total) * 100 : null,
       subs: s.main.length
-        ? `<button class="bub-sub on" data-act="send" data-f="send" aria-label="Send ${esc(plural(s.main.length, "vare", "varer"))} til REMA">${ICONS.send}<span>Send</span></button>`
+        ? `<button class="bub-sub on" data-act="send" data-f="send" aria-label="Send ${esc(plural(s.main.length, "vare", "varer"))} til ${s.rema ? "REMA" : "indkøbslisten"}">${ICONS.send}<span>Send</span></button>`
         : s.list ? `<span class="bub-sub info">${kr(s.list.total)}</span>` : "",
     });
   }

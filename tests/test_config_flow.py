@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.middagsro.api import RemaAuthError, RemaConnectionError
 from custom_components.middagsro.const import DOMAIN
+from custom_components.middagsro.store_client import CONF_STORE, REMA
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
@@ -27,6 +28,8 @@ async def test_user_flow(hass: HomeAssistant, mock_client: MagicMock) -> None:
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "user"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_STORE: REMA})
+    assert result["step_id"] == "rema"
     assert result["errors"] == {}
 
     result = await hass.config_entries.flow.async_configure(
@@ -53,6 +56,7 @@ async def test_user_flow_errors(
     """Errors are shown, and the flow can be finished after fixing them."""
     mock_client.async_login.side_effect = error
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_STORE: REMA})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_EMAIL: EMAIL, CONF_PASSWORD: "wrong"}
     )
@@ -73,6 +77,7 @@ async def test_user_flow_already_configured(
     """The same REMA account can only be added once."""
     config_entry.add_to_hass(hass)
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_STORE: REMA})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD}
     )
@@ -129,6 +134,9 @@ async def test_reconfigure_flow(
     result = await config_entry.start_reconfigure_flow(hass)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "reconfigure"
+    assert result["description_placeholders"] == {"store": "REMA 1000"}
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_STORE: REMA})
+    assert result["step_id"] == "reconfigure_rema"
 
     mock_client.async_login.side_effect = RemaConnectionError("down")
     result = await hass.config_entries.flow.async_configure(
@@ -153,6 +161,7 @@ async def test_reconfigure_flow_other_account(
     """Reconfigure cannot switch to another REMA account."""
     config_entry.add_to_hass(hass)
     result = await config_entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_STORE: REMA})
     mock_client.async_login.return_value = 999
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_EMAIL: "other@example.com", CONF_PASSWORD: "x"}
@@ -160,3 +169,114 @@ async def test_reconfigure_flow_other_account(
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "wrong_account"
     assert config_entry.data[CONF_EMAIL] == EMAIL
+
+
+NETTO = "9ba51"
+
+
+@pytest.fixture
+def no_entry_setup() -> object:
+    """Entries for another shop are not set up here (that reads Tjek)."""
+    with patch("custom_components.middagsro.async_setup_entry", AsyncMock(return_value=True)):
+        yield
+
+
+@pytest.mark.usefixtures("no_entry_setup")
+async def test_other_shop(hass: HomeAssistant) -> None:
+    """Another shop takes no login: what only works with REMA is listed first."""
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_STORE: NETTO})
+    assert result["step_id"] == "store"
+    assert result["description_placeholders"]["store"] == "Netto"
+    assert "- REMA's opskrifter" in result["description_placeholders"]["missing"]
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Middagsro – Netto"
+    assert result["data"] == {CONF_STORE: NETTO}
+    assert result["result"].unique_id == f"store_{NETTO}"
+
+    # Once per shop.
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_STORE: NETTO})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["reason"] == "already_configured"
+
+
+@pytest.mark.usefixtures("no_entry_setup")
+async def test_shop_already_chosen_by_a_changed_entry(hass: HomeAssistant) -> None:
+    """A REMA entry changed to Netto keeps its unique id, but Netto is taken."""
+    MockConfigEntry(domain=DOMAIN, unique_id="123", data={CONF_STORE: NETTO}).add_to_hass(hass)
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_STORE: NETTO})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["reason"] == "already_configured"
+
+
+@pytest.mark.usefixtures("no_entry_setup")
+async def test_reconfigure_to_another_shop(
+    hass: HomeAssistant, config_entry: MockConfigEntry
+) -> None:
+    """REMA to Netto: the login is forgotten, the entry (and its entities' ids) kept."""
+    config_entry.add_to_hass(hass)
+    result = await config_entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_STORE: NETTO})
+    assert result["step_id"] == "reconfigure_store"
+    assert result["description_placeholders"]["store"] == "Netto"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    await hass.async_block_till_done()
+    assert result["reason"] == "reconfigure_successful"
+    assert config_entry.data == {CONF_STORE: NETTO}
+    assert config_entry.title == "Middagsro – Netto"
+    assert config_entry.unique_id == str(USER_ID)
+
+    # Taken by another entry.
+    MockConfigEntry(domain=DOMAIN, unique_id="store_bdf5A", data={CONF_STORE: "bdf5A"}).add_to_hass(
+        hass
+    )
+    result = await config_entry.start_reconfigure_flow(hass)
+    assert result["description_placeholders"] == {"store": "Netto"}
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_STORE: "bdf5A"}
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["reason"] == "already_configured"
+
+
+@pytest.mark.usefixtures("no_entry_setup")
+async def test_reconfigure_from_another_shop_to_rema(
+    hass: HomeAssistant, mock_client: MagicMock
+) -> None:
+    """An entry made for Netto may log in to any REMA account not set up already."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=f"store_{NETTO}",
+        title="Middagsro – Netto",
+        data={CONF_STORE: NETTO},
+    )
+    entry.add_to_hass(hass)
+    other = MockConfigEntry(
+        domain=DOMAIN, unique_id="555", data={CONF_EMAIL: "x", CONF_PASSWORD: "y"}
+    )
+    other.add_to_hass(hass)
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_STORE: REMA})
+    assert result["step_id"] == "reconfigure_rema"
+    mock_client.async_login.return_value = 555
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD}
+    )
+    assert result["reason"] == "already_configured"
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_STORE: REMA})
+    mock_client.async_login.return_value = USER_ID
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD}
+    )
+    await hass.async_block_till_done()
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data == {CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD}
+    assert entry.title == EMAIL
+    assert entry.unique_id == f"store_{NETTO}"

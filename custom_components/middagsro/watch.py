@@ -199,7 +199,9 @@ async def async_deals(planner: MealPlanner) -> list[dict[str, Any]]:
             products = {p.id: p for p in await planner.client.async_get_products(ids)}
         except RemaError as err:
             _LOGGER.debug("Watched products not read: %s", err)
-    dealers = [REMA_ID] + [d for d in store.settings["chains"] if d in CHAINS]
+    # The family's own shop first (REMA 1000, or the shop chosen instead), then the chains.
+    own = REMA_ID if planner.prices else str(planner.client.dealer_id)
+    dealers = [own] + [d for d in store.settings["chains"] if d in CHAINS and d != own]
     offers: dict[str, list[dict[str, Any]]] = {}
     for dealer_id in dealers:
         try:

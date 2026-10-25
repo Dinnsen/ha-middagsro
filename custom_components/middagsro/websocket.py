@@ -43,6 +43,7 @@ from .mealplan import ai_choices, parse_date, plan_summary, signal_plans_updated
 from .planedit import (
     async_add_pantry_item,
     async_add_product,
+    async_add_text,
     async_clear_day,
     async_edit_line,
     async_move_day,
@@ -67,6 +68,7 @@ from .rema_recipes import TAGS as REMA_TAGS
 from .schema import vol
 from .sites import SITES, site_of
 from .storage import ALLERGY_OPTIONS, AVOID_OPTIONS, FAVORITE_FREQUENCIES
+from .store_client import REMA, REMA_ONLY, store_name, store_of
 from .watch import (
     async_check as async_watch_check,
     async_deals as async_watch_deals,
@@ -76,6 +78,8 @@ from .watch import (
 )
 
 ENTRY = vol.Optional("entry_id")
+# One-time notes in the panel: the shop can be chosen (2.7.0).
+NOTICES = ("store_choice",)
 
 type _Handler = Callable[
     [HomeAssistant, websocket_api.ActiveConnection, dict[str, Any]], Awaitable[None]
@@ -128,6 +132,7 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
     data = entry.runtime_data
     store = data.store
     offers = data.offers.data
+    shop = store_of(entry.data)
     shopping = data.shopping_list.data
 
     latest = store.latest_plan
@@ -157,6 +162,15 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
         "budget": budget_summary(store),
         "notify_targets": notify_targets(hass),
         "recipe_sites": [{"id": site.id, "name": site.name} for site in SITES.values()],
+        # The shop: REMA 1000 (with its login), or another without prices and app.
+        "shop": {
+            "id": shop,
+            "name": store_name(shop),
+            "rema": shop == REMA,
+            "rema_only": list(REMA_ONLY),
+        },
+        # One-time notes to show (the family closes them once).
+        "notices": [n for n in NOTICES if n not in store.seen and (shop == REMA)],
         "status": data.planner.status,
         "default_start": data.planner.default_start().isoformat(),
         "ai_entities": ai_choices(hass),
@@ -230,6 +244,23 @@ async def ws_state(
     if msg.get("refresh"):
         await entry.runtime_data.shopping_list.async_refresh()
     connection.send_result(msg["id"], _state(hass, entry))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/notice_seen",
+        ENTRY: str,
+        vol.Required("notice"): vol.In(NOTICES),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_notice_seen(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """A one-time note in the panel was closed: not shown again."""
+    await _entry(hass, msg).runtime_data.store.async_seen(msg["notice"])
+    connection.send_result(msg["id"])
 
 
 @websocket_api.websocket_command({vol.Required("type"): "middagsro/subscribe", ENTRY: str})
@@ -633,6 +664,7 @@ async def ws_pantry(
         vol.Required("plan_id"): str,
         vol.Exclusive("product_id", "what"): int,
         vol.Exclusive("pantry", "what"): str,
+        vol.Exclusive("name", "what"): str,
         vol.Optional("amount", default=1): int,
         vol.Optional("part", default="main"): vol.In(["main", "late"]),
     }
@@ -650,8 +682,12 @@ async def ws_plan_add(
         line = await async_add_product(
             planner, msg["plan_id"], msg["product_id"], msg["amount"], msg["part"]
         )
+    elif "name" in msg:
+        line = await async_add_text(
+            planner, msg["plan_id"], msg["name"], msg["amount"], msg["part"]
+        )
     else:
-        raise ValueError("product_id or pantry is required")
+        raise ValueError("product_id, pantry or name is required")
     connection.send_result(msg["id"], line)
 
 
@@ -1462,6 +1498,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     """Register the panel's commands."""
     for command in (
         ws_state,
+        ws_notice_seen,
         ws_plan,
         ws_settings,
         ws_note,

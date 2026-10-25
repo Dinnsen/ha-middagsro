@@ -161,6 +161,7 @@ def build_swap_prompt(
     mealie: list[dict[str, Any]] | None = None,
     own: list[dict[str, Any]] | None = None,
     earlier: list[str] | None = None,
+    shop: str = "REMA 1000",
 ) -> str:
     """Ask the AI for three other dishes for a day."""
     when = date.fromisoformat(day["date"])
@@ -170,7 +171,7 @@ def build_swap_prompt(
         if d["date"] != day["date"] and d.get("uses_leftovers_from") != day["date"]
     ]
     out = [
-        "Du er en erfaren dansk madplanlægger. Familien handler i REMA 1000.",
+        f"Du er en erfaren dansk madplanlægger. Familien handler i {shop}.",
         (
             f"Familien mangler aftensmad {WEEKDAYS_DA[when.weekday()]} {day['date']}. "
             "Foreslå TRE retter, der er forskellige fra hinanden."
@@ -201,7 +202,7 @@ def build_swap_prompt(
     if offer_lines:
         out += [
             "",
-            "Brug gerne ugens tilbud i REMA 1000 (id | vare | pris | mængde):",
+            f"Brug gerne ugens tilbud i {shop} (id | vare | pris | mængde):",
             *offer_lines,
         ]
     if mealie:
@@ -250,6 +251,7 @@ def build_swap_items_prompt(
     offer_lines: list[str],
     known_uses: bool,
     ingredients: list[str] | None = None,
+    shop: str = "REMA 1000",
 ) -> str:
     """Ask the AI for the shopping items of the new dish."""
     others = [
@@ -261,7 +263,7 @@ def build_swap_items_prompt(
     ]
     servings = int(day.get("servings") or 4)
     out = [
-        "Du er en erfaren dansk madplanlægger. Familien handler i REMA 1000.",
+        f"Du er en erfaren dansk madplanlægger. Familien handler i {shop}.",
         f'Aftensmaden {day["date"]} bliver "{dish}".'
         if day.get("type") == EMPTY_TYPE
         else f'Retten "{day["dish"]}" {day["date"]} skiftes ud med "{dish}".',
@@ -382,6 +384,7 @@ async def async_swap_options(planner: MealPlanner, plan_id: str, day_date: str) 
         mealie=mealie,
         own=own,
         earlier=earlier,
+        shop=planner.shop,
     )
     raw = await planner._async_ask_ai(prompt, "REMA 1000 andre retter")
     options = [o for o in (_clean_option(item) for item in raw.get("options") or []) if o]
@@ -462,6 +465,7 @@ async def async_swap_dish(
         offer_lines=_offer_lines(offers, date.fromisoformat(day["date"]), late),
         known_uses=known_uses,
         ingredients=recipe["ingredients"] if recipe else None,
+        shop=planner.shop,
     )
     raw = await planner._async_ask_ai(prompt, "REMA 1000 ny ret")
 
@@ -660,6 +664,32 @@ async def async_add_product(
     line = _new_line(product.name, product.name, ADDED_CATEGORY, buy_from=buy_from)
     line.update(amount=packages, product_id=product.id)
     planner._apply(line, product, packages)
+    plan["shopping"].append(line)
+    update_total(plan)
+    await planner.store.async_save()
+    planner._notify()
+    return line
+
+
+async def async_add_text(
+    planner: MealPlanner, plan_id: str, name: str, amount: int = 1, part: str = "main"
+) -> dict[str, Any]:
+    """Put something typed on the plan's list as free text (another shop has no products)."""
+    plan = planner.store.get_plan(plan_id)
+    if plan is None:
+        raise _invalid("plan_not_found")
+    text = " ".join(str(name or "").split())[:200]
+    if not text:
+        raise _invalid("line_not_found")
+    buy_from: str | None = None
+    if part == "late":
+        later = sorted(line["buy_from"] for line in plan["shopping"] if line.get("buy_from"))
+        if not later:
+            raise _invalid("no_late_list")
+        buy_from = later[0]
+    packages = max(1, min(99, amount))
+    line = _new_line(text, text, ADDED_CATEGORY, buy_from=buy_from)
+    line.update(amount=packages, packages=packages, cost=None, product=None)
     plan["shopping"].append(line)
     update_total(plan)
     await planner.store.async_save()

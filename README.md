@@ -270,14 +270,15 @@ Actions are now called `middagsro.…` (before `rema1000.…`); change them in y
 [![Open your Home Assistant and add Middagsro.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=middagsro)
 
 1. Go to **Settings → Devices & services → Add integration** and choose **Middagsro**.
-2. Log in:
+2. Choose the shop. With **REMA 1000** you log in (below) and get prices on every item, REMA's recipes and the shopping list in the REMA app. With **another shop** (Netto, føtex, Lidl, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, SPAR …) there is no login: the meal plan is built on the shop's offer catalogue, only the offers have a price, and the shopping list is kept in Home Assistant (and can also go to another to-do list, e.g. Bring!). The setup lists what only works with REMA 1000. The shop can be changed later under **Reconfigure** – meal plans, recipes and settings are kept.
+3. With REMA 1000: log in:
 
    | Field | Description |
    |---|---|
    | **E-mail** | The e-mail you log in to rema1000.dk and the REMA 1000 app with. |
    | **Password** | Your REMA 1000 password. It is stored in Home Assistant and only sent to REMA 1000. |
 
-3. Open **Middagsro** in the sidebar, go to **Indstillinger** (settings) and choose the family's rules. Then tap **Lav madplan** (make meal plan).
+4. Open **Middagsro** in the sidebar, go to **Indstillinger** (settings) and choose the family's rules. Then tap **Lav madplan** (make meal plan).
 
 The integration logs in again by itself when the session expires. If you change your password, Home Assistant asks you for the new one (**Settings → Devices & services → Middagsro**). To change the e-mail or password yourself, choose **⋮ → Reconfigure** on the integration. You can add several REMA 1000 accounts. Each gets its own entities, and the actions can target a given account; the panel shows the one added first.
 

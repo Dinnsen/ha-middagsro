@@ -2,15 +2,13 @@
   "config": {
     "step": {
       "user": {
-        "title": "Log ind på REMA 1000",
-        "description": "Brug samme e-mail og adgangskode som på rema1000.dk og i REMA 1000-appen. Varer tilføjes altid til din primære indkøbsliste, den der vises i appen.",
+        "title": "Vælg butik",
+        "description": "Hvor handler I? Med REMA 1000 logger du ind og får priser på alle varer, REMA's opskrifter og indkøbslisten i REMA-appen. Vælger du en anden butik, bruges dens tilbudsavis, og indkøbslisten ligger i Home Assistant. Butikken kan skiftes senere under Omkonfigurér.",
         "data": {
-          "email": "E-mail",
-          "password": "Adgangskode"
+          "store": "Butik"
         },
         "data_description": {
-          "email": "Den e-mail, du logger ind på rema1000.dk og i REMA 1000-appen med.",
-          "password": "Din REMA 1000-adgangskode. Den gemmes i Home Assistant og sendes kun til REMA 1000."
+          "store": "Den butik, madplanen og indkøbslisten laves til."
         }
       },
       "reauth_confirm": {
@@ -24,20 +22,50 @@
         }
       },
       "reconfigure": {
-        "title": "Skift REMA 1000-login",
-        "description": "Skift e-mail eller adgangskode for denne REMA 1000-konto. Det skal være samme konto; vil du bruge en anden konto, så tilføj integrationen igen.",
+        "title": "Skift butik eller login",
+        "description": "Nu: {store}. Vælg butik – madplaner, opskrifter og indstillinger beholdes.",
+        "data": {
+          "store": "Butik"
+        },
+        "data_description": {
+          "store": "REMA 1000 kræver login; andre butikker gør ikke."
+        }
+      },
+      "migrate": {
+        "title": "Flyt jeres REMA 1000-opsætning",
+        "description": "Der er en opsætning af den gamle REMA 1000-integration for {account}. Tryk på Indsend for at flytte den til Middagsro med madplaner, indstillinger, opskriftsamling og entiteter (de beholder deres id'er). Der skal ikke logges ind igen."
+      },
+      "rema": {
+        "title": "Log ind på REMA 1000",
+        "description": "Brug samme e-mail og adgangskode som på rema1000.dk og i REMA 1000-appen. Varer tilføjes altid til din primære indkøbsliste, den der vises i appen.",
         "data": {
           "email": "E-mail",
           "password": "Adgangskode"
         },
         "data_description": {
           "email": "Den e-mail, du logger ind på rema1000.dk og i REMA 1000-appen med.",
-          "password": "Den nuværende adgangskode til REMA 1000-kontoen."
+          "password": "Din REMA 1000-adgangskode. Den gemmes i Home Assistant og sendes kun til REMA 1000."
         }
       },
-      "migrate": {
-        "title": "Flyt jeres REMA 1000-opsætning",
-        "description": "Der er en opsætning af den gamle REMA 1000-integration for {account}. Tryk på Indsend for at flytte den til Middagsro med madplaner, indstillinger, opskriftsamling og entiteter (de beholder deres id'er). Der skal ikke logges ind igen."
+      "store": {
+        "title": "Middagsro med {store}",
+        "description": "Madplanen bygges på {store}s tilbudsavis, og indkøbslisten ligger i Home Assistant (og kan også sendes til en anden to-do-liste). Der skal ikke logges ind.\n\nDette virker kun med REMA 1000:\n{missing}\n\nTryk på Indsend for at fortsætte."
+      },
+      "reconfigure_store": {
+        "title": "Skift til {store}",
+        "description": "Madplanen bygges på {store}s tilbudsavis, og indkøbslisten ligger i Home Assistant. Et REMA-login glemmes. Madplaner, opskrifter og indstillinger beholdes.\n\nDette virker kun med REMA 1000:\n{missing}"
+      },
+      "reconfigure_rema": {
+        "title": "Log ind på REMA 1000",
+        "description": "Brug samme e-mail og adgangskode som på rema1000.dk og i REMA 1000-appen. Madplaner, opskrifter og indstillinger beholdes.",
+        "data": {
+          "email": "E-mail",
+          "password": "Adgangskode"
+        },
+        "data_description": {
+          "email": "Den e-mail, du logger ind på rema1000.dk og i REMA 1000-appen med.",
+          "password": "Din REMA 1000-adgangskode. Den gemmes i Home Assistant og sendes kun til REMA 1000."
+        }
       }
     },
     "error": {
@@ -46,10 +74,10 @@
       "unknown": "Uventet fejl. Se loggen for detaljer."
     },
     "abort": {
-      "already_configured": "Denne REMA 1000-konto er allerede sat op.",
+      "already_configured": "Denne REMA 1000-konto eller butik er allerede sat op.",
       "reauth_successful": "Logget ind igen.",
       "wrong_account": "Login hører til en anden REMA 1000-konto.",
-      "reconfigure_successful": "Login er ændret."
+      "reconfigure_successful": "Ændret. Madplaner, opskrifter og indstillinger er beholdt."
     }
   },
   "entity": {

@@ -2,15 +2,13 @@
   "config": {
     "step": {
       "user": {
-        "title": "Log in to REMA 1000",
-        "description": "Use the same e-mail and password as on rema1000.dk and in the REMA 1000 app. Items are always added to your primary shopping list, the one shown in the app.",
+        "title": "Choose the shop",
+        "description": "Where do you shop? With REMA 1000 you log in and get prices on every item, REMA's recipes and the shopping list in the REMA app. With another shop its offer catalogue is used, and the shopping list is kept in Home Assistant. The shop can be changed later under Reconfigure.",
         "data": {
-          "email": "E-mail",
-          "password": "Password"
+          "store": "Shop"
         },
         "data_description": {
-          "email": "The e-mail you log in to rema1000.dk and the REMA 1000 app with.",
-          "password": "Your REMA 1000 password. It is stored in Home Assistant and only sent to REMA 1000."
+          "store": "The shop the meal plan and shopping list are made for."
         }
       },
       "reauth_confirm": {
@@ -24,20 +22,50 @@
         }
       },
       "reconfigure": {
-        "title": "Change REMA 1000 login",
-        "description": "Change the e-mail or password used for this REMA 1000 account. It must be the same account; to use another account, add the integration again.",
+        "title": "Change shop or login",
+        "description": "Now: {store}. Choose the shop – meal plans, recipes and settings are kept.",
+        "data": {
+          "store": "Shop"
+        },
+        "data_description": {
+          "store": "REMA 1000 needs a login; other shops don't."
+        }
+      },
+      "migrate": {
+        "title": "Move your REMA 1000 setup",
+        "description": "There is a setup of the old REMA 1000 integration for {account}. Submit to move it to Middagsro with its meal plans, settings, recipe collection and entities (they keep their IDs). You don't have to log in again."
+      },
+      "rema": {
+        "title": "Log in to REMA 1000",
+        "description": "Use the same e-mail and password as on rema1000.dk and in the REMA 1000 app. Items are always added to your primary shopping list, the one shown in the app.",
         "data": {
           "email": "E-mail",
           "password": "Password"
         },
         "data_description": {
           "email": "The e-mail you log in to rema1000.dk and the REMA 1000 app with.",
-          "password": "The current password for the REMA 1000 account."
+          "password": "Your REMA 1000 password. It is stored in Home Assistant and only sent to REMA 1000."
         }
       },
-      "migrate": {
-        "title": "Move your REMA 1000 setup",
-        "description": "There is a setup of the old REMA 1000 integration for {account}. Submit to move it to Middagsro with its meal plans, settings, recipe collection and entities (they keep their IDs). You don't have to log in again."
+      "store": {
+        "title": "Middagsro with {store}",
+        "description": "The meal plan is built on {store}'s offer catalogue, and the shopping list is kept in Home Assistant (and can also go to another to-do list). No login.\n\nOnly with REMA 1000:\n{missing}\n\nPress Submit to continue."
+      },
+      "reconfigure_store": {
+        "title": "Change to {store}",
+        "description": "The meal plan is built on {store}'s offer catalogue, and the shopping list is kept in Home Assistant. A REMA login is forgotten. Meal plans, recipes and settings are kept.\n\nOnly with REMA 1000:\n{missing}"
+      },
+      "reconfigure_rema": {
+        "title": "Log in to REMA 1000",
+        "description": "Use the same e-mail and password as on rema1000.dk and in the REMA 1000 app. Meal plans, recipes and settings are kept.",
+        "data": {
+          "email": "E-mail",
+          "password": "Password"
+        },
+        "data_description": {
+          "email": "The e-mail you log in to rema1000.dk and the REMA 1000 app with.",
+          "password": "Your REMA 1000 password. It is stored in Home Assistant and only sent to REMA 1000."
+        }
       }
     },
     "error": {
@@ -46,10 +74,10 @@
       "unknown": "Unexpected error. See the log for details."
     },
     "abort": {
-      "already_configured": "This REMA 1000 account is already set up.",
+      "already_configured": "This REMA 1000 account or shop is already set up.",
       "reauth_successful": "Logged in again.",
       "wrong_account": "The login belongs to a different REMA 1000 account.",
-      "reconfigure_successful": "The login was changed."
+      "reconfigure_successful": "Changed."
     }
   },
   "entity": {

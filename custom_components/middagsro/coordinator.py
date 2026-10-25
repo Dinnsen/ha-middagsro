@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import logging
@@ -60,6 +60,8 @@ class RemaShoppingListCoordinator(DataUpdateCoordinator[ShoppingList]):
         # One change to the list at a time: a send and a quick add must not
         # both read the list, then write their own idea of it.
         self._change = asyncio.Lock()
+        # Also put added items on another to-do list (another shop than REMA 1000).
+        self.mirror: Callable[[list[dict[str, Any]]], Awaitable[None]] | None = None
 
     async def _async_update_data(self) -> ShoppingList:
         """Fetch the primary list. It is looked up every time so a change of
@@ -89,6 +91,7 @@ class RemaShoppingListCoordinator(DataUpdateCoordinator[ShoppingList]):
         ``on_added`` is told about each item as soon as it is on the list, so a
         caller knows what got there if a later item fails.
         """
+        added: list[dict[str, Any]] = []
         async with self._change:
             shopping_list = await self.client.async_get_primary_list()
             try:
@@ -99,11 +102,14 @@ class RemaShoppingListCoordinator(DataUpdateCoordinator[ShoppingList]):
                         product_id=item.get("product_id"),
                         name=item.get("name"),
                     )
+                    added.append(item)
                     if on_added is not None:
                         on_added(item)
             finally:
                 # Refresh right away (not debounced) so HA shows the change at once.
                 await self.async_refresh()
+                if self.mirror is not None and added:
+                    await self.mirror(added)
 
     async def async_clear(self) -> int:
         """Remove every item from the primary list. Returns how many."""

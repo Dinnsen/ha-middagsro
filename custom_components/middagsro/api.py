@@ -557,6 +557,12 @@ class RemaClient:
             str, tuple[float, tuple[tuple[int, ...], tuple[str, ...], tuple[str, ...]]]
         ] = {}
         self._primary_list: tuple[float, int] | None = None
+        self.dealer_id = TJEK_DEALER_ID  # the shop's avis on Tjek
+
+    @property
+    def has_prices(self) -> bool:
+        """Every product has a price (another shop than REMA 1000 has only its offers)."""
+        return True
 
     @property
     def user_id(self) -> int | None:
@@ -1104,9 +1110,9 @@ class RemaClient:
             await asyncio.sleep(delay)
 
     async def async_get_catalogs(self) -> list[Catalog]:
-        """Return REMA 1000's current and upcoming tilbudsaviser."""
+        """Return the shop's (REMA 1000's) current and upcoming tilbudsaviser."""
         data = await self._async_tjek(
-            "/v2/catalogs", {"dealer_ids": TJEK_DEALER_ID, "limit": 24, "offset": 0}
+            "/v2/catalogs", {"dealer_ids": self.dealer_id, "limit": 24, "offset": 0}
         )
         catalogs: list[Catalog] = []
         for entry in data or []:

@@ -225,7 +225,11 @@ def planned(store: RemaPlanStore, first: date, last: date) -> float:
 
     A line is bought on its plan's first day, or later in the week (buy_from);
     sent lines (in the REMA app) count too, until a purchase is booked that day.
+    Another shop than REMA 1000 has no prices for most items: only what the family
+    books counts then.
     """
+    if not store.prices:
+        return 0.0
     total = 0.0
     seen: set[str] = set()
     for day in _days(first, last):
@@ -439,6 +443,8 @@ def _stats(store: RemaPlanStore, ledger: Ledger, today: date) -> dict[str, Any]:
 
 def _month_lists(store: RemaPlanStore, first: date, today: date) -> tuple[float, float]:
     """(saved on offers, what the lists cost) for the lines sent this month."""
+    if not store.prices:
+        return 0.0, 0.0
     saved = 0.0
     cost = 0.0
     for plan in store.plans:
