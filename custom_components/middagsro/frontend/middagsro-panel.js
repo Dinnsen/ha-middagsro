@@ -1498,7 +1498,7 @@ class Rema1000Panel extends HTMLElement {
       if (ds.list) m.recipe[ds.list][Number(ds.idx)][ds.field] = value;
       else m.recipe[ds.field] = value;
       // Typing an ingredient searches REMA, so it can be linked to the very product.
-      if (ds.list === "ingredients" && ds.field === "name" && ev.type === "input" && this._isRema()) this._ingSearchSoon(Number(ds.idx), el.value);
+      if (ds.list === "ingredients" && ds.field === "name" && ev.type === "input" && this._hasPrices()) this._ingSearchSoon(Number(ds.idx), el.value);
       return;
     }
     if (ds.bind === "newrule") {
@@ -1719,13 +1719,13 @@ class Rema1000Panel extends HTMLElement {
     const avis = part === "main" ? this._remaAvisMatches(query) : Promise.resolve([]);
     try {
       // Another shop has no products online: the avis, and the text as it is typed.
-      search.results = this._isRema() ? await this._ws("middagsro/search", { query }) : [];
+      search.results = this._hasPrices() ? await this._ws("middagsro/search", { query }) : [];
     } catch (err) {
       search.results = [];
       this._say(`Søgningen fejlede: ${err?.message || err}`);
     }
     search.offers = await avis;
-    if (this._isRema() && !search.results.length && !search.offers.length) this._say(`Ingen varer fundet for "${query}".`);
+    if (this._hasPrices() && !search.results.length && !search.offers.length) this._say(`Ingen varer fundet for "${query}".`);
     search.loading = false;
     this._render();
   }
@@ -2085,9 +2085,9 @@ class Rema1000Panel extends HTMLElement {
                 .map(([k, label, unit]) => `<tr><td>${label}</td><td>${String(m.nutrition[k]).replace(".", ",")}${unit}</td></tr>`)
                 .join("")}</table></details>`
           : ""}
-        ${this._isRema() ? `<h2 class="small-h">Skift til en anden vare</h2>
+        ${this._hasPrices() ? `<h2 class="small-h">Skift til en anden vare</h2>
         <div class="row wrap">
-          <input class="grow" type="search" data-bind="linesearch" value="${esc(m.query)}" placeholder="Søg i REMA 1000">
+          <input class="grow" type="search" data-bind="linesearch" value="${esc(m.query)}" placeholder="Søg i ${esc(this._shopName())}">
           <button class="btn small" data-action="line-search" ${busy ? "disabled" : ""}>Søg</button>
           ${clearBtn("linesearch")}
         </div>
@@ -2466,7 +2466,7 @@ class Rema1000Panel extends HTMLElement {
         (o) => `<li class="ev ${isBest("chain", o.id) ? "best" : ""}">
           ${this._chainLogo(o.dealer_id, "tiny")}
           ${o.image ? `<img src="${esc(o.image)}" alt="" loading="lazy">` : '<span class="noimg">?</span>'}
-          <div class="what"><b>${esc(o.heading)}</b><span class="muted small">${esc(this._chainName(o.dealer_id))}${o.description ? ` · ${esc(o.description)}` : ""}${o.unit_price ? ` · ${unit(o.unit_price)}` : ""}</span>
+          <div class="what"><b>${esc(o.heading)}</b><span class="muted small">${esc(this._chainName(o.dealer_id))}${o.full_price ? " · fast pris" : ""}${o.description ? ` · ${esc(o.description)}` : ""}${o.unit_price ? ` · ${unit(o.unit_price)}` : ""}</span>
             ${isBest("chain", o.id) ? '<span class="badge eco">Billigst</span>' : ""}</div>
           <span class="ev-price sale">${o.price != null ? kr(o.price) : ""}</span>
           <button class="btn small" data-action="ev-chain" data-arg="${esc(o.id)}" ${this._busy || !plan ? "disabled" : ""} title="${plan ? "" : "Lav en madplan først"}">+ ${esc(this._chainName(o.dealer_id))}</button>
@@ -2481,7 +2481,7 @@ class Rema1000Panel extends HTMLElement {
       ${this._isRema() ? `<h3>REMA 1000</h3>
       <ul class="evs">${products || '<li class="muted">Ingen varer fundet hos REMA.</li>'}</ul>` : ""}
       ${chains
-        ? `<h3>Tilbud i andre butikker</h3><ul class="evs">${offers || '<li class="muted">Ingen af de andre butikker har den på tilbud lige nu.</li>'}</ul>`
+        ? `<h3>${data.offers.some((o) => o.full_price) ? "Andre butikker" : "Tilbud i andre butikker"}</h3><ul class="evs">${offers || '<li class="muted">Ingen af de andre butikker har den på tilbud lige nu.</li>'}</ul>`
         : '<p class="muted small">Vælg andre butikker under Indstillinger › Andre butikker for at sammenligne med deres tilbud.</p>'}
     </div>`;
   }
@@ -2580,6 +2580,11 @@ class Rema1000Panel extends HTMLElement {
 
   _isRema() {
     return this._storeId() === REMA_ID;
+  }
+
+  // Every item has a price and can be searched: REMA 1000, and Bilka (its webshop).
+  _hasPrices() {
+    return this._isRema() || !!this._state?.shop?.prices;
   }
 
   // "REMA-listen" (the list in the REMA app), or "indkøbslisten" with another shop.
@@ -3296,7 +3301,7 @@ class Rema1000Panel extends HTMLElement {
           )
           .join("");
     const text = search.query.trim();
-    const typed = !this._isRema() && text && !search.loading && search.searched
+    const typed = !this._hasPrices() && text && !search.loading && search.searched
       ? `<div class="result-pair"><button class="result" data-action="shop-add-text" data-arg="${part}" ${this._busy ? "disabled" : ""}>
           <span><b>${esc(text)}</b><span class="muted">Som fritekst</span></span><span class="add">+ Tilføj</span></button></div>`
       : "";
@@ -3314,7 +3319,7 @@ class Rema1000Panel extends HTMLElement {
     return `<div class="shop-search">
         <div class="row wrap">
           <input class="grow" type="search" data-bind="shopsearch" data-part="${part}" value="${esc(search.query)}"
-            placeholder="${this._isRema() ? "Tilføj en vare – søg i REMA 1000, fx kaffe" : "Tilføj en vare, fx kaffe"}">
+            placeholder="${this._hasPrices() ? `Tilføj en vare – søg i ${esc(this._shopName())}, fx kaffe` : "Tilføj en vare, fx kaffe"}">
           <button class="btn small" data-action="shop-search" data-arg="${part}">Søg</button>
           ${clearBtn(`shopsearch|${part}`)}
         </div>
@@ -3909,7 +3914,7 @@ class Rema1000Panel extends HTMLElement {
         <div class="row between wrap">
           <div><h1>${lateLines.length ? "Indkøb på indkøbsdagen" : "Indkøbsliste"}</h1><p class="muted">${esc(plan.title)}${lateLines.length ? ` · plus ${lateLines.length} varer ${esc(dayShort(lateDay))}` : ""}</p></div>
           <div class="row shop-head">
-            ${this._isRema()
+            ${this._hasPrices()
               ? `<div class="price ${plan.budget && plan.total > plan.budget ? "over" : ""}"><span class="big">${kr(sentCount ? basketTotal : plan.total)}</span>
             <span class="muted">${sentCount ? `hele planen ${kr(plan.total)}` : plan.budget ? `budget ${kr(plan.budget)}` : ""}</span></div>`
               : `<div class="price"><span class="big">${kr(sentCount ? basketTotal : plan.total)}</span>
@@ -4598,10 +4603,10 @@ class Rema1000Panel extends HTMLElement {
         <label class="check"><input type="checkbox" data-path="must_haves_once" ${f.must_haves_once ? "checked" : ""}> Send ikke faste varer, der allerede står på ${this._listName()}</label>
         <p class="muted small">Når madplanen sendes, springes en fast vare over, hvis den står på ${this._isRema() ? "listen i REMA-appen" : "indkøbslisten"} og ikke er købt – så bliver antallet ikke lagt oven i.</p>
         <div class="row wrap">
-          ${this._isRema() ? `<input class="grow" type="search" data-bind="search" value="${esc(this._search.query)}" placeholder="Søg i REMA 1000, fx letmælk">
+          ${this._hasPrices() ? `<input class="grow" type="search" data-bind="search" value="${esc(this._search.query)}" placeholder="Søg i ${esc(this._shopName())}, fx letmælk">
           <button class="btn small" data-action="search">Søg</button>
           ${clearBtn("search")}` : ""}
-          <button class="btn small" data-action="add-row" data-arg="must_haves">+ ${this._isRema() ? "Fritekst" : "Tilføj vare"}</button>
+          <button class="btn small" data-action="add-row" data-arg="must_haves">+ ${this._hasPrices() ? "Fritekst" : "Tilføj vare"}</button>
         </div>
         <div class="results">${results}</div>
         `),
@@ -4628,6 +4633,7 @@ class Rema1000Panel extends HTMLElement {
         `),
       chains: () => card(`<h2 class="flush">Andre butikker</h2>
         <p class="muted">Vælg de kæder, I også handler i. Deres madtilbud vises på forsiden, og i indkøbslisten og favoritterne står der, når en vare er billigere hos dem denne uge. Madplanen laves stadig med ${esc(this._shopName())}.</p>
+        ${this._storeId() !== "93f13" ? '<p class="muted small">Bilka sammenlignes på <b>alle varer</b>, ikke kun tilbud – med priserne fra Bilka ToGo (webshoppens priser, tæt på butikkens).</p>' : ""}
         ${this._chains
           ? `<div class="chain-pick">${this._chains
               .filter((c) => this._isRema() || c.id !== this._storeId())
@@ -4669,7 +4675,9 @@ class Rema1000Panel extends HTMLElement {
           .filter((id) => id.startsWith("todo.") && !id.includes("middagsro"))
           .sort();
         return card(`        <h2 class="flush">I handler i ${esc(shop.name)}</h2>
-        <p>Madplanen bygges på ${esc(genitive(shop.name))} tilbudsavis, og tilbudsvarerne har deres pris. Andre varer står på listen uden pris, så madbudgettet følger det, I selv konterer.</p>
+        <p>${shop.prices
+          ? `Madplanen bygges på ${esc(genitive(shop.name))} tilbudsavis, og alle varer har deres pris fra ${esc(shop.name)} ToGo – webshoppens priser, som ligger tæt på butikkens.`
+          : `Madplanen bygges på ${esc(genitive(shop.name))} tilbudsavis, og tilbudsvarerne har deres pris. Andre varer står på listen uden pris, så madbudgettet følger det, I selv konterer.`}</p>
         <h2>Indkøbsliste</h2>
         <p class="muted small">Det, der sendes, kommer på Middagsros indkøbsliste (også som to-do-liste i Home Assistant). Vælg en liste her, hvis det også skal på jeres egen – fx Bring!, Google Keep eller Home Assistants indkøbsliste.</p>
         <label class="field">Send også til

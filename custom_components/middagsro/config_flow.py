@@ -23,7 +23,7 @@ from .api import RemaAuthError, RemaClient, RemaConnectionError, RemaError
 from .const import DOMAIN
 from .migrate import MIGRATE_FROM, old_entries
 from .schema import vol
-from .store_client import CONF_STORE, REMA, REMA_ONLY, STORES, store_name, store_of
+from .store_client import CONF_STORE, REMA, STORES, rema_only, store_name, store_of
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,9 +56,9 @@ REAUTH_SCHEMA = vol.Schema(
 )
 
 
-def _missing() -> str:
+def _missing(store: str) -> str:
     """What only works with REMA 1000, as a list for a form's description."""
-    return "\n".join(f"- {line}" for line in REMA_ONLY)
+    return "\n".join(f"- {line}" for line in rema_only(store))
 
 
 def _store_unique_id(store: str) -> str:
@@ -118,7 +118,8 @@ class RemaConfigFlow(ConfigFlow, domain=DOMAIN):
                 title=f"Middagsro – {name}", data={CONF_STORE: self._store}
             )
         return self.async_show_form(
-            step_id="store", description_placeholders={"store": name, "missing": _missing()}
+            step_id="store",
+            description_placeholders={"store": name, "missing": _missing(self._store)},
         )
 
     async def async_step_rema(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -232,7 +233,7 @@ class RemaConfigFlow(ConfigFlow, domain=DOMAIN):
             )
         return self.async_show_form(
             step_id="reconfigure_store",
-            description_placeholders={"store": name, "missing": _missing()},
+            description_placeholders={"store": name, "missing": _missing(self._store)},
         )
 
     async def async_step_reconfigure_rema(

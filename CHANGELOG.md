@@ -2,6 +2,13 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.8.0] - 2026-10-25
+
+### Added
+- **Bilka's prices on every item, not only its offers.** With Bilka among *Indstillinger → Andre butikker*, the shopping list says when an item is cheaper in Bilka at its everyday price, and *Tilbud og priser* shows Bilka's products next to REMA's. The prices are Bilka ToGo's (the webshop's, close to a Bilka shop's).
+- **Bilka as the shop with prices:** chosen in the setup (or under Reconfigure), every item is matched to a Bilka ToGo product with its price, like with REMA 1000 – the plan's total, the budget and product search work; the list is kept in Home Assistant.
+- Bilka ToGo's search key is read from its webshop when it is needed (and again if it changes). Unofficial, like REMA's: it may stop working if Bilka changes the webshop.
+
 ## [2.7.1] - 2026-10-25
 
 ### Fixed

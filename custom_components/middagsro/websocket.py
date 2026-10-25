@@ -68,7 +68,7 @@ from .rema_recipes import TAGS as REMA_TAGS
 from .schema import vol
 from .sites import SITES, site_of
 from .storage import ALLERGY_OPTIONS, AVOID_OPTIONS, FAVORITE_FREQUENCIES
-from .store_client import REMA, REMA_ONLY, store_name, store_of
+from .store_client import REMA, REMA_ONLY, rema_only, store_name, store_of
 from .watch import (
     async_check as async_watch_check,
     async_deals as async_watch_deals,
@@ -167,7 +167,9 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
             "id": shop,
             "name": store_name(shop),
             "rema": shop == REMA,
-            "rema_only": list(REMA_ONLY),
+            # Bilka has every item's price (its webshop); the others only their offers'.
+            "prices": bool(data.client.has_prices),
+            "rema_only": rema_only(shop) or list(REMA_ONLY),
         },
         # One-time notes to show (the family closes them once).
         "notices": [n for n in NOTICES if n not in store.seen and (shop == REMA)],

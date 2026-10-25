@@ -19,7 +19,17 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util import dt as dt_util
 
-from .api import DANISH_TIME, Catalog, Offer, Product, RemaClient, RemaError, parse_time
+from .api import (
+    DANISH_TIME,
+    TJEK_DEALER_ID,
+    Catalog,
+    Offer,
+    Product,
+    RemaClient,
+    RemaError,
+    parse_time,
+)
+from .bilka import BilkaSearch
 from .budget import plan_budget
 from .chains import ChainOffers
 from .const import DOMAIN
@@ -1494,6 +1504,8 @@ class MealPlanner:
         self.chains = ChainOffers(hass)
         self.rema_recipes = RemaRecipes(self)
         self.sites = RecipeSites(hass)
+        # Bilka ToGo's prices (the shop's own search when the family shops in Bilka).
+        self.bilka: BilkaSearch = getattr(client, "bilka", None) or BilkaSearch(hass)
         # Automatic sends waiting for REMA's prices: (plan id, key) -> cancel.
         self._sends: dict[tuple[str, str], Callable[[], None]] = {}
 
@@ -1505,9 +1517,14 @@ class MealPlanner:
         return bool(self.client.has_prices)
 
     @property
+    def dealer_id(self) -> str:
+        """The shop's id on Tjek: REMA 1000's, or the shop chosen instead."""
+        return str(getattr(self.client, "dealer_id", TJEK_DEALER_ID))
+
+    @property
     def shop(self) -> str:
         """Where the family shops: REMA 1000, Netto, føtex ..."""
-        return "REMA 1000" if self.prices else store_name(self.client.dealer_id)
+        return "REMA 1000" if self.dealer_id == TJEK_DEALER_ID else store_name(self.dealer_id)
 
     @callback
     def _notify(self) -> None:

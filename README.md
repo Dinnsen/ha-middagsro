@@ -270,7 +270,7 @@ Actions are now called `middagsro.…` (before `rema1000.…`); change them in y
 [![Open your Home Assistant and add Middagsro.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=middagsro)
 
 1. Go to **Settings → Devices & services → Add integration** and choose **Middagsro**.
-2. Choose the shop. With **REMA 1000** you log in (below) and get prices on every item, REMA's recipes and the shopping list in the REMA app. With **another shop** (Netto, føtex, Lidl, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, SPAR …) there is no login: the meal plan is built on the shop's offer catalogue, only the offers have a price, and the shopping list is kept in Home Assistant (and can also go to another to-do list, e.g. Bring!). The setup lists what only works with REMA 1000. The shop can be changed later under **Reconfigure** – meal plans, recipes and settings are kept.
+2. Choose the shop. With **REMA 1000** you log in (below) and get prices on every item, REMA's recipes and the shopping list in the REMA app. With **another shop** (Netto, føtex, Lidl, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, SPAR …) there is no login: the meal plan is built on the shop's offer catalogue, only the offers have a price (in Bilka every item has its Bilka ToGo price), and the shopping list is kept in Home Assistant (and can also go to another to-do list, e.g. Bring!). The setup lists what only works with REMA 1000. The shop can be changed later under **Reconfigure** – meal plans, recipes and settings are kept.
 3. With REMA 1000: log in:
 
    | Field | Description |

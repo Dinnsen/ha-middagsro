@@ -22,6 +22,7 @@ import aiohttp
 from homeassistant.helpers.storage import Store
 
 from .api import Catalog, Offer, Product, RemaClient, ShoppingList, ShoppingListItem
+from .bilka import BILKA_ID, BilkaSearch
 from .chains import CHAINS, is_food_catalog
 from .const import DOMAIN
 
@@ -50,6 +51,23 @@ REMA_ONLY = (
     "Sammenligning med andre butikkers tilbud",
     "Budgettets prognose (beløb bogføres selv)",
 )
+
+
+# What Bilka has online too: its prices on every item (Bilka ToGo).
+_WITH_PRICES = {
+    "Priser på alle varer (kun tilbudsvarer har en pris)",
+    "Valg af præcis vare til en ingrediens",
+    "Budgettets prognose (beløb bogføres selv)",
+}
+
+
+def rema_only(store: str) -> list[str]:
+    """What doesn't work with a shop (only with REMA 1000)."""
+    if store == REMA:
+        return []
+    if store == BILKA_ID:
+        return [line for line in REMA_ONLY if line not in _WITH_PRICES]
+    return list(REMA_ONLY)
 
 
 def store_of(data: Any) -> str:
@@ -219,3 +237,30 @@ class StoreClient(RemaClient):
     async def async_get_recipe(self, slug: str) -> dict[str, Any] | None:
         """REMA's recipes need a REMA account."""
         return None
+
+
+class BilkaStoreClient(StoreClient):
+    """Bilka: its avis from Tjek, and every item priced from Bilka ToGo's webshop."""
+
+    def __init__(self, hass: HomeAssistant, session: aiohttp.ClientSession, entry_id: str) -> None:
+        """Initialize."""
+        super().__init__(hass, session, entry_id, BILKA_ID)
+        self.bilka = BilkaSearch(hass)
+
+    @property
+    def has_prices(self) -> bool:
+        """Every item has Bilka ToGo's price."""
+        return True
+
+    async def async_search_products_at(
+        self, query: str, limit: int, times: list[datetime]
+    ) -> list[list[Product]]:
+        """Bilka ToGo's products, at today's prices (the webshop shows no later ones)."""
+        products = await self.bilka.async_search(query, limit)
+        return [list(products) for _ in times]
+
+    async def async_get_products(
+        self, product_ids: list[int], at: datetime | None = None
+    ) -> list[Product]:
+        """Products found before."""
+        return self.bilka.known(product_ids)
