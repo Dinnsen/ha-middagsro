@@ -597,6 +597,18 @@ async def _check_public(hass: HomeAssistant, host: str) -> None:
             raise _invalid("recipe_bad_link")
 
 
+async def async_read_body(resp: aiohttp.ClientResponse, limit: int) -> str:
+    """The body, up to limit bytes (content.read(n) stops at the first chunk)."""
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in resp.content.iter_chunked(65_536):
+        chunks.append(chunk)
+        size += len(chunk)
+        if size >= limit:
+            break
+    return b"".join(chunks)[:limit].decode(resp.charset or "utf-8", errors="replace")
+
+
 def page_session(hass: HomeAssistant) -> aiohttp.ClientSession:
     """A session for reading recipe sites, which takes long headers."""
     session: aiohttp.ClientSession | None = hass.data.get(_SESSION)
@@ -619,8 +631,7 @@ async def async_fetch_page(hass: HomeAssistant, url: str) -> str:
         ) as resp:
             if resp.status >= 400:
                 raise _invalid("recipe_link_failed", error=f"HTTP {resp.status}")
-            raw = await resp.content.read(PAGE_LIMIT)
-            return raw.decode(resp.charset or "utf-8", errors="replace")
+            return await async_read_body(resp, PAGE_LIMIT)
     except (aiohttp.ClientError, TimeoutError) as err:
         raise _invalid("recipe_link_failed", error=str(err) or err.__class__.__name__) from err
 
