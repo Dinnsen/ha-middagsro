@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.7.1] - 2026-10-25
+
+### Fixed
+- **The right item also when the AI writes it as a list:** an item must have the thing a line is about (*grønne bønner* are beans, never *grønne druer*). Written the other way round – "tomater, hakkede", "løg rødt", "oksekød hakket 8-12%", "mælk let" – the describing word came last and was taken for the thing, so "løg rødt" could become anything red. Describing words after the thing are now skipped, for every item.
+
 ## [2.7.0] - 2026-10-25
 
 ### Added

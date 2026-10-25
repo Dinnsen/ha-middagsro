@@ -57,6 +57,15 @@ def test_head_word() -> None:
     assert mp.head_word("hakket oksekød 8-12%") == "oksekød"
     assert mp.head_word("salt og peber") == "salt"
     assert mp.head_word("") is None
+    # A list's way of writing it: how it is comes after the thing.
+    assert mp.head_word("tomater, hakkede") == "tomater"
+    assert mp.head_word("oksekød hakket 8-12%") == "oksekød"
+    assert mp.head_word("løg rødt") == "løg"
+    assert mp.head_word("mælk let") == "mælk"
+    assert mp.head_word("æg str. M") == "æg"
+    assert mp.head_word("rødløg") == "rødløg"
+    assert mp.head_word("peber sort") == "peber"
+    assert mp.head_word("sort") == "sort"  # nothing else to go by
 
 
 async def test_green_beans_are_not_grapes(
@@ -73,6 +82,13 @@ async def test_green_beans_are_not_grapes(
     # A typed line needs every word.
     typed = {**line, "prefer": "relevance"}
     assert planner._candidates(typed, [beans], "grønne bønner")[0] == []
+
+    # Written as a list ("løg rødt"): the onions, not something red.
+    onions = {"name": "Løg", "search": "løg rødt", "amount": 2, "unit": "stk"}
+    paste = make_product(3, "RØDT KARRYPASTA", 20, underline="100 GR.", department="Kolonial")
+    red = make_product(4, "RØDLØG", 8, underline="500 GR.", department="Frugt")
+    assert planner._candidates(onions, [paste], "løg rødt")[0] == []
+    assert [p.id for p in planner._candidates(onions, [paste, red], "løg rødt")[0]] == [4]
 
 
 # ------------------------------------------------------------------ recipes
