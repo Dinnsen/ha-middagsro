@@ -3,7 +3,8 @@
   "name": "Middagsro",
   "after_dependencies": [
     "ai_task",
-    "conversation"
+    "conversation",
+    "media_source"
   ],
   "codeowners": [
     "@Dinnsen"
@@ -21,5 +22,5 @@
   "issue_tracker": "https://github.com/Dinnsen/ha-middagsro/issues",
   "quality_scale": "platinum",
   "requirements": [],
-  "version": "2.4.1"
+  "version": "2.5.0"
 }

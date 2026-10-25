@@ -3,7 +3,7 @@
 A recipe in the collection:
     id, name, type ("normal"/"vegetar"), servings, active_minutes, total_minutes,
     ingredients [{name, amount}], steps [{text, minutes}], tip,
-    rating ("like" / "dislike" / None), favorite (bool), source ("plan"/"link"/"manual"),
+    rating ("like" / "dislike" / None), favorite (bool), source ("plan"/"link"/"manual"/"scan"),
     created, updated, times_planned, last_planned
 
 Links are only read when a recipe is added; the link itself is not kept.
@@ -11,14 +11,19 @@ Links are only read when a recipe is added; the link itself is not kept.
 
 from __future__ import annotations
 
+import base64
+import binascii
 from datetime import datetime
 import html
 import ipaddress
 import json
 import logging
 import math
+import mimetypes
+from pathlib import Path
 import re
 import socket
+import tempfile
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 import uuid
@@ -31,6 +36,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DOMAIN
 from .dishes import matches_any, same_dish
+from .media_source import SCANS, ScannedPage
 
 if TYPE_CHECKING:
     from .mealplan import MealPlanner
@@ -576,5 +582,104 @@ async def async_import(planner: MealPlanner, url: str) -> dict[str, Any]:
         if not isinstance(found, dict) or not found.get("name"):
             raise _invalid("recipe_not_on_page")
     recipe = clean_recipe({**found, "source": "link"})
+    recipe["id"] = None  # not in the collection until saved
+    return recipe
+
+
+# ------------------------------------------------------------------ cookbook photos
+
+MAX_SCAN_PAGES = 4
+MAX_SCAN_BYTES = 6 * 1024 * 1024  # a photo; the panel makes them much smaller
+
+
+def build_scan_prompt(pages: int) -> str:
+    """Ask the AI for the recipe in photos of a cookbook."""
+    where = "billedet" if pages == 1 else f"de {pages} billeder (sider af samme opskrift)"
+    return "\n".join(
+        [
+            f"På {where} er en opskrift fra en kogebog eller et blad. Skriv den af på dansk "
+            "(oversæt, hvis den er på et andet sprog): navn, antal personer, tider, alle "
+            "ingredienser med mængder og alle trin i rækkefølge. Brug kun det, der står på "
+            "siden – find ikke på noget. Kan noget ikke læses, så udelad det. Er der ingen "
+            "opskrift, så svar med name: null.",
+            "",
+            "SVARFORMAT: kun gyldig JSON, sådan:",
+            json.dumps(
+                {
+                    "name": "Kylling i karry",
+                    "type": "normal | vegetar",
+                    "servings": 4,
+                    "active_minutes": 20,
+                    "total_minutes": 40,
+                    "ingredients": [{"name": "kyllingebryst", "amount": "600 g"}],
+                    "steps": [{"text": "Skær kyllingen i tern.", "minutes": 5}],
+                    "tip": "",
+                },
+                ensure_ascii=False,
+            ),
+        ]
+    )
+
+
+def _decode_photo(data: str) -> tuple[bytes, str]:
+    """A photo the panel sent ("data:image/jpeg;base64,..."): its bytes and type."""
+    header, _, body = data.partition(",") if data.startswith("data:") else ("", "", data)
+    mime = header[5:].split(";")[0] if header else "image/jpeg"
+    if not mime.startswith("image/"):
+        raise _invalid("scan_bad_photo")
+    try:
+        content = base64.b64decode(body, validate=True)
+    except (binascii.Error, ValueError) as err:
+        raise _invalid("scan_bad_photo") from err
+    if not content or len(content) > MAX_SCAN_BYTES:
+        raise _invalid("scan_bad_photo")
+    return content, mime
+
+
+def _write_photo(content: bytes, mime: str) -> Path:
+    suffix = mimetypes.guess_extension(mime) or ".jpg"
+    with tempfile.NamedTemporaryFile(prefix="middagsro-", suffix=suffix, delete=False) as file:
+        file.write(content)
+        return Path(file.name)
+
+
+def _remove_photos(paths: list[Path]) -> None:
+    for path in paths:
+        path.unlink(missing_ok=True)
+
+
+async def async_scan(planner: MealPlanner, photos: list[str]) -> dict[str, Any]:
+    """Read the recipe in photos of cookbook pages (not saved: the panel shows it first)."""
+    if not photos:
+        raise _invalid("scan_bad_photo")
+    if not planner.ai_task_available():
+        raise _invalid("scan_needs_ai_task")
+    decoded = [_decode_photo(photo) for photo in photos[:MAX_SCAN_PAGES]]
+    keys: list[str] = []
+    try:
+        for content, mime in decoded:
+            path = await planner.hass.async_add_executor_job(_write_photo, content, mime)
+            key = uuid.uuid4().hex
+            SCANS[key] = ScannedPage(path, mime)
+            keys.append(key)
+        attachments = [
+            {"media_content_id": f"media-source://{DOMAIN}/{key}",
+             "media_content_type": SCANS[key].mime_type}
+            for key in keys
+        ]  # fmt: skip
+        try:
+            found = await planner._async_ask_ai(
+                build_scan_prompt(len(keys)),
+                "Middagsro opskrift fra kogebog",
+                attachments=attachments,
+            )
+        except HomeAssistantError as err:
+            raise _invalid("recipe_scan_failed", error=str(err)) from err
+    finally:
+        paths = [SCANS.pop(key).path for key in keys]
+        await planner.hass.async_add_executor_job(_remove_photos, paths)
+    if not isinstance(found, dict) or not found.get("name"):
+        raise _invalid("recipe_not_in_photo")
+    recipe = clean_recipe({**found, "source": "scan"})
     recipe["id"] = None  # not in the collection until saved
     return recipe

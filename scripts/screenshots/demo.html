@@ -277,6 +277,12 @@
         ingredients: [{ amount: "600 g", name: "kyllingebryst" }, { amount: "2 spsk", name: "rød karrypasta" }, { amount: "400 ml", name: "kokosmælk" }, { amount: "1", name: "rød peberfrugt" }, { amount: "300 g", name: "jasminris" }],
         steps: [{ text: "Skær kyllingen i strimler.", minutes: 5 }, { text: "Svits karrypastaen, og tilsæt kokosmælk og kylling.", minutes: 15 }], tip: "" };
     },
+    "middagsro/recipes/scan": async (msg) => {
+      await wait(900);
+      return { id: null, name: "Mormors frikadeller med kartofler og brun sovs", type: "normal", servings: 4, active_minutes: 30, total_minutes: 45, rating: null, favorite: false, source: "scan",
+        ingredients: [{ amount: "500 g", name: "hakket svine- og kalvekød" }, { amount: "1", name: "løg, revet" }, { amount: "1", name: "æg" }, { amount: "3 spsk", name: "mel" }, { amount: "1 dl", name: "mælk" }, { amount: "1 tsk", name: "salt" }],
+        steps: [{ text: "Rør farsen med løg, æg, mel, mælk, salt og peber.", minutes: 5 }, { text: "Lad farsen hvile i køleskabet i 15 minutter.", minutes: 15 }, { text: "Form frikadellerne med en ske, og steg dem 5-6 minutter på hver side.", minutes: 15 }], tip: "" };
+    },
     "middagsro/recipes/rate": (msg) => {
       const r = D.state.recipes.find((x) => x.id === msg.recipe_id);
       if (msg.action === "favorite") Object.assign(r, r.favorite ? { favorite: false } : { favorite: true, rating: "like" });

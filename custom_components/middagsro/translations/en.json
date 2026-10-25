@@ -239,6 +239,18 @@
     },
     "move_offer": {
       "message": "The dish is built on an offer that starts on a later day, and can't be moved before it."
+    },
+    "scan_bad_photo": {
+      "message": "The photo could not be read. Try taking it again."
+    },
+    "scan_needs_ai_task": {
+      "message": "Scanning needs an AI Task that can read photos (e.g. Google Gemini or OpenAI) - a conversation agent can't. Choose it under Settings → Meal plan and week."
+    },
+    "recipe_scan_failed": {
+      "message": "The AI could not read the recipe: {error}"
+    },
+    "recipe_not_in_photo": {
+      "message": "No recipe was found in the photo. Take it close up, straight on and in good light."
     }
   },
   "issues": {

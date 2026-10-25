@@ -1613,7 +1613,19 @@ class MealPlanner:
             _LOGGER.warning("Could not load offers for the meal plan: %s", err)
             return catalog, []
 
-    async def _async_ask_ai(self, prompt: str, task_name: str) -> dict[str, Any]:
+    def ai_task_available(self) -> bool:
+        """True if an AI Task (not a conversation agent) is chosen or preferred: it can read photos."""
+        chosen = str(self.store.settings.get("ai_task_entity") or "")
+        if chosen.startswith(f"{AGENT_DOMAIN}."):
+            return False
+        prefs = self.hass.data.get("ai_task_preferences")
+        if prefs is not None and getattr(prefs, "gen_data_entity_id", None):
+            return True
+        return bool(self.hass.states.async_entity_ids("ai_task"))
+
+    async def _async_ask_ai(
+        self, prompt: str, task_name: str, attachments: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
         from homeassistant.components.ai_task import async_generate_data  # noqa: PLC0415
 
         entity_id = self._ai_entity()
@@ -1623,7 +1635,11 @@ class MealPlanner:
                 return await self._async_ask_agent(entity_id, instructions)
             try:
                 result = await async_generate_data(
-                    self.hass, task_name=task_name, entity_id=entity_id, instructions=instructions
+                    self.hass,
+                    task_name=task_name,
+                    entity_id=entity_id,
+                    instructions=instructions,
+                    attachments=attachments,
                 )
             except HomeAssistantError as err:
                 if "MAX_TOKENS" in str(err).upper():

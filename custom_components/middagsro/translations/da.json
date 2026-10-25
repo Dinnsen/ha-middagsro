@@ -239,6 +239,18 @@
     },
     "move_offer": {
       "message": "Retten bygger på et tilbud, der først gælder fra en senere dag, og kan ikke flyttes før den."
+    },
+    "scan_bad_photo": {
+      "message": "Billedet kunne ikke læses. Prøv at tage det igen."
+    },
+    "scan_needs_ai_task": {
+      "message": "Scanning kræver en AI-opgave, der kan læse billeder (fx Google Gemini eller OpenAI) – en samtaleagent kan ikke. Vælg den under Indstillinger → Madplan og uge."
+    },
+    "recipe_scan_failed": {
+      "message": "Opskriften kunne ikke læses af AI'en: {error}"
+    },
+    "recipe_not_in_photo": {
+      "message": "Der blev ikke fundet en opskrift på billedet. Tag billedet tæt på, lige på og med godt lys."
     }
   },
   "issues": {

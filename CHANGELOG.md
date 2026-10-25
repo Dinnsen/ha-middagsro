@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.5.0] - 2026-10-25
+
+### Added
+- **Scan a recipe from a cookbook:** *Scan fra kogebog* under *Opskrifter → Opskriftsamling* takes a photo of the page (or several, when the recipe fills more than one) – or picks one from the phone's photos. The AI reads it, and the recipe opens to be checked and corrected before it is saved in the collection. The photos are made smaller in the browser and only kept while the AI reads them. Needs an AI Task that can read images (Google Gemini, OpenAI, Anthropic …); a conversation agent can't.
+
 ## [2.4.1] - 2026-10-25
 
 ### Fixed

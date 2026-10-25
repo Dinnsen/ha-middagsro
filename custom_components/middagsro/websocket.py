@@ -59,6 +59,7 @@ from .recipes import (
     async_rate,
     async_rate_day,
     async_save_recipe,
+    async_scan,
     find_recipe,
 )
 from .rema_recipes import TAGS as REMA_TAGS
@@ -946,6 +947,23 @@ async def ws_recipe_rate_day(
 
 
 @websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/recipes/scan",
+        ENTRY: str,
+        vol.Required("photos"): vol.All([str], vol.Length(min=1, max=4)),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_recipe_scan(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Read the recipe in photos of cookbook pages; saved when the family has looked it over."""
+    planner = _entry(hass, msg).runtime_data.planner
+    connection.send_result(msg["id"], await async_scan(planner, msg["photos"]))
+
+
+@websocket_api.websocket_command(
     {vol.Required("type"): "middagsro/recipes/import", ENTRY: str, vol.Required("url"): str}
 )
 @websocket_api.async_response
@@ -1420,6 +1438,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_plan_refresh,
         ws_day_clear,
         ws_day_move,
+        ws_recipe_scan,
         ws_mealie_recipes,
         ws_plan_line,
         ws_health,
