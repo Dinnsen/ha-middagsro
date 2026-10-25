@@ -539,20 +539,39 @@ def name_fit(search_words: list[str], product_name: str) -> tuple[int, float]:
 
 
 _PHRASE_BREAKS = {"med", "uden", "i", "til", "fra", "af", "på", "pa", "eller", "og"}
+# Words that say how a thing is, not what it is: "tomater, hakkede" are tomatoes,
+# "løg rødt" onions, "mælk let" milk. Skipped when they come after the thing.
+_DESCRIBING = frozenset({
+    "hakket", "hakkede", "revet", "revne", "skåret", "skårne", "kogt", "kogte", "stegt",
+    "stegte", "røget", "røgede", "tørret", "tørrede", "frossen", "frosne", "frosset", "fersk",
+    "ferske", "frisk", "friske", "hel", "hele", "halv", "halve", "ny", "nye", "små", "store",
+    "stor", "lille", "mager", "magert", "magre", "let", "lette", "fed", "fede", "saltet",
+    "usaltet", "rød", "rødt", "røde", "grøn", "grønt", "grønne", "gul", "gult", "gule",
+    "hvid", "hvidt", "hvide", "sort", "sorte", "brun", "brune", "dansk", "danske", "øko",
+    "økologisk", "økologiske", "skiver", "tern", "strimler", "stykker", "str", "stk", "pk",
+    "dåse", "glas", "naturel", "neutral", "ekstra", "fin", "fint", "fine", "grov",
+    "groft", "grove", "mellem", "skrællet", "skrællede", "flået", "flåede", "pillet",
+    "pillede", "renset", "rensede", "marineret", "marinerede", "krydret", "krydrede",
+})  # fmt: skip
 
 
 def head_word(query: str) -> str | None:
     """The word a search is about: the last one before "med", "uden", "til" …
 
     Danish puts the thing last: "grønne bønner" are beans, "hakket oksekød" beef,
-    "laksefilet med skind" a salmon fillet.
+    "laksefilet med skind" a salmon fillet. A list's way of writing it ("tomater,
+    hakkede", "oksekød hakket 8-12%") puts how it is last: that is skipped.
     """
     words: list[str] = []
     for token in _tokens(query):
         if token in _PHRASE_BREAKS and words:
             break
-        if len(token) > 1 and token not in _NEUTRAL_WORDS:
+        if len(token) > 1 and token not in _NEUTRAL_WORDS and not token.isdigit():
             words.append(token)
+    # "Tomater, hakkede": a describing word after the thing is not the thing.
+    things = [w for w in words if w not in _DESCRIBING]
+    if things:
+        return things[-1]
     return words[-1] if words else None
 
 
