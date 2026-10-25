@@ -39,6 +39,7 @@ from .recipes import (
 from .rema_recipes import RemaRecipes
 from .sites import RecipeSites
 from .storage import RemaPlanStore
+from .store_client import genitive, store_name
 from .words import (
     _DIFFERENT_PREFIXES,
     _DIFFERENT_WORDS,
@@ -699,13 +700,16 @@ def build_prompt(
     favorite_recipes: dict[str, dict[str, Any]] | None = None,
     wishes: dict[str, str] | None = None,
     web: list[dict[str, Any]] | None = None,
+    shop: str = "REMA 1000",
+    prices: bool = True,
 ) -> str:
-    """Build the instructions for the AI."""
+    """Build the instructions for the AI (shop: where the family shops; prices: whether
+    every item has a price there, or only the offers)."""
     s = settings
     day_list = ", ".join(f"{WEEKDAYS_DA[d.weekday()]} {d.isoformat()}" for d in dates)
     portions = f"{household_portions(s):g}".replace(".", ",")
     out: list[str] = [
-        "Du er en erfaren dansk madplanlægger. Familien handler i REMA 1000 i Danmark.",
+        f"Du er en erfaren dansk madplanlægger. Familien handler i {shop} i Danmark.",
         f"Lav en madplan med aftensmad for {len(dates)} dage: {day_list}.",
         "",
         "HUSSTAND (beregn mængder til hele husstanden; børn spiser mindre end voksne):",
@@ -776,9 +780,14 @@ def build_prompt(
         out += [f"  {line}" for line in rule_lines(s)]
     if target := nutrition_target(s):
         out.append(f"- Næring: {target}.")
-    if s["budget"]:
+    if s["budget"] and not prices:
         out.append(
-            f"- Hele indkøbslisten skal koste under {s['budget']} kr. med REMA 1000-priser"
+            f"- Hold indkøbslisten inden for ca. {s['budget']} kr. (et skøn: kun tilbudsvarerne "
+            "har en kendt pris – brug gerne mange af dem)."
+        )
+    elif s["budget"]:
+        out.append(
+            f"- Hele indkøbslisten skal koste under {s['budget']} kr. med {shop}-priser"
             + (
                 " (det, der er tilbage af ugens madbudget – hold dig gerne et stykke under)."
                 if s.get("monthly_budget")
@@ -786,7 +795,7 @@ def build_prompt(
             )
         )
     organic = {
-        "only": "Brug udelukkende økologiske varer, hvor REMA 1000 har dem.",
+        "only": f"Brug udelukkende økologiske varer, hvor {shop} har dem.",
         "prefer": f"Foretræk økologiske varer, når de højst er {s['organic_max_extra_pct']} % dyrere.",
         "none": "Vælg de billigste varer; økologi er ikke et krav.",
     }[s["organic"]]
@@ -903,7 +912,7 @@ def build_prompt(
     if offers:
         label = catalog.label if catalog and catalog.label else "Ugens tilbud"
         late = late or {}
-        out += ["", f"UGENS TILBUD I REMA 1000 ({label}) – id | vare | pris | mængde:"]
+        out += ["", f"UGENS TILBUD I {shop.upper()} ({label}) – id | vare | pris | mængde:"]
         if late and s["shop_late_week"]:
             out.append(
                 'Tilbud markeret "gælder først fra" må KUN bruges i retter på eller efter den dag '
@@ -949,7 +958,7 @@ def build_prompt(
         "INDKØBSLISTE: Saml alle ingredienser på tværs af dagene. Angiv for hver vare: navn, "
         "mængde som tal, enhed (g, kg, ml eller l når muligt; pk for pakker, dåser og poser, fx "
         "3 pk hakkede tomater; stk kun for løse enkeltvarer, fx 10 stk æg eller 2 stk "
-        "peberfrugt), et søgeord til REMA 1000's varesøgning "
+        f"peberfrugt), et søgeord til {genitive(shop)} varesøgning "
         '(1-3 ord, fx "hakket oksekød", "laks", "broccoli"), kategori (Frugt & grønt, Kød, '
         "Fisk, Mejeri, Brød, Kolonial, Frost eller Andet) og evt. tilbuddets id. Udelad basisvarer.",
         "",
@@ -1472,6 +1481,16 @@ class MealPlanner:
     # ------------------------------------------------------------- status
 
     @callback
+    @property
+    def prices(self) -> bool:
+        """Every item has a price (REMA 1000); with another shop only the offers have."""
+        return bool(self.client.has_prices)
+
+    @property
+    def shop(self) -> str:
+        """Where the family shops: REMA 1000, Netto, føtex ..."""
+        return "REMA 1000" if self.prices else store_name(self.client.dealer_id)
+
     def _notify(self) -> None:
         async_dispatcher_send(self.hass, signal_plans_updated(self.entry_id))
 
@@ -2056,9 +2075,16 @@ class MealPlanner:
                 favorite_recipes=links,
                 wishes=wishes,
                 web=web,
+                shop=self.shop,
+                prices=self.prices,
             )
             raw = await self._async_ask_ai(prompt, "REMA 1000 madplan")
-            self._set_status("generating", "Finder varer og priser i REMA 1000 …")
+            self._set_status(
+                "generating",
+                f"Finder varer og priser i {self.shop} …"
+                if self.prices
+                else "Laver indkøbslisten med ugens tilbud …",
+            )
             plan = await self._async_build_plan(
                 raw, dates, catalog, offers, self.price_time(start), late
             )
@@ -2084,11 +2110,13 @@ class MealPlanner:
                 disliked=disliked,
                 wishes=wishes,
             )
-            over = max(0.0, plan["total"] - settings["budget"]) if settings["budget"] else 0.0
+            # Without prices (another shop than REMA) the total is only the offers.
+            budget = settings["budget"] if self.prices else 0
+            over = max(0.0, plan["total"] - budget) if budget else 0.0
             plan["problems"] = problems
             if best is None or (len(problems), over, plan["total"]) < (
                 len(best["problems"]),
-                max(0.0, best["total"] - settings["budget"]) if settings["budget"] else 0.0,
+                max(0.0, best["total"] - budget) if budget else 0.0,
                 best["total"],
             ):
                 best = plan
@@ -2425,7 +2453,7 @@ class MealPlanner:
             priced = [p for p in products if p.price]
             if priced:
                 self._apply(line, priced[0], int(line["amount"] or 1))
-            else:
+            elif self.prices:
                 line["note"] = "Ingen vare fundet – tilføjes som fritekst"
             return
 
@@ -2513,6 +2541,13 @@ class MealPlanner:
         offer: Offer | None = None,
     ) -> None:
         """Choose the best product by name, the family's rules and price."""
+        if not self.prices:
+            # Another shop: no products online. An offer the line is about is bought as
+            # the avis has it, at its price; everything else is free text without one.
+            line["note"] = None
+            if offer is not None and self._store_only(line, offer):
+                line["note"] = f"Tilbud i {genitive(self.shop)} avis"
+            return
         offered = await self._async_offered(offer, at)
         if (
             offer is not None

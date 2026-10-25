@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from datetime import date, datetime, timedelta
+import re
 from typing import Any
 import uuid
 
@@ -72,6 +73,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "leftover_days": 2,
     "recipe_sites": [],  # sites.SITES ids the family searches and plans from
     "recipe_sites_in_plan": False,  # offer their recipes to the AI when planning
+    "ha_todo_entity": "",  # another shop than REMA: sent items also go on this to-do list
     "no_leftover_weekdays": [],  # "0".."6" (monday..sunday): never leftovers those days
     "fixed_days": [{"weekday": 3, "text": "Rugbrødsdag (kun denne ene dag med rugbrød)"}],
     "max_cook_minutes_weekday": 30,
@@ -150,6 +152,8 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
     sites = settings["recipe_sites"] if isinstance(settings["recipe_sites"], list) else []
     settings["recipe_sites"] = [s for s in dict.fromkeys(map(str, sites)) if s in SITE_IDS]
     settings["recipe_sites_in_plan"] = bool(settings["recipe_sites_in_plan"])
+    todo = str(settings.get("ha_todo_entity") or "").strip()
+    settings["ha_todo_entity"] = todo if re.fullmatch(r"todo\.[a-z0-9_]+", todo) else ""
     settings["max_cook_minutes_weekday"] = _clamp(settings["max_cook_minutes_weekday"], 5, 300, 30)
     settings["no_repeat_weeks"] = _clamp(settings["no_repeat_weeks"], 0, 52, 3)
     if settings["organic"] not in ORGANIC_MODES:
@@ -241,6 +245,8 @@ class RemaPlanStore:
         self.plans: list[dict[str, Any]] = []
         self.note = ""  # the family's wishes for the next plan only
         self.recipes: list[dict[str, Any]] = []  # the recipe collection (recipes.py)
+        # Every item has a price (REMA 1000); another shop has only its offers'.
+        self.prices = True
         # The watch list (watch.py), the family's own favourite products, and the offers
         # already told about (key -> when it ends), so each is told once.
         self.watch: list[dict[str, Any]] = []
@@ -249,6 +255,8 @@ class RemaPlanStore:
         # The food budget's purchases (budget.py), and the week last told it was nearly used.
         self.purchases: list[dict[str, Any]] = []
         self.budget_told = ""
+        # One-time notes in the panel the family has read (e.g. "store_choice").
+        self.seen: list[str] = []
 
     async def async_load(self) -> None:
         """Load from disk."""
@@ -272,6 +280,7 @@ class RemaPlanStore:
             if isinstance(p, dict) and p.get("id") and p.get("date") and p.get("amount")
         ]
         self.budget_told = str(data.get("budget_told") or "")
+        self.seen = [str(n) for n in data.get("seen") or [] if isinstance(n, str)][:50]
         for plan in self.plans:
             ensure_line_ids(plan)
 
@@ -291,6 +300,7 @@ class RemaPlanStore:
                 "watch_sent": self.watch_sent,
                 "purchases": self.purchases,
                 "budget_told": self.budget_told,
+                "seen": self.seen,
             }
         )
 
@@ -310,6 +320,12 @@ class RemaPlanStore:
         self.settings["budget_since"] = since if self.settings["monthly_budget"] else None
         await self.async_save()
         return self.settings
+
+    async def async_seen(self, notice: str) -> None:
+        """A one-time note in the panel has been read."""
+        if notice not in self.seen:
+            self.seen = [*self.seen, notice][-50:]
+            await self.async_save()
 
     # ------------------------------------------------------------- note
 

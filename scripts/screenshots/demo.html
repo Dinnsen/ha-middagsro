@@ -67,6 +67,12 @@
   await import("../../custom_components/middagsro/frontend/middagsro-panel.js");
   const D = window.DEMO;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  // ?shop=9ba51: Middagsro with Netto instead of REMA 1000; ?notice=1: the one-time note.
+  const REMA_ONLY = ["Priser på alle varer (kun tilbudsvarer har en pris)", "Indkøbslisten i REMA-appen (listen er i Home Assistant)", "REMA's opskrifter", "Valg af præcis vare til en ingrediens", "Næringsindhold", "REMA-favoritter og købte varer", "Sammenligning med andre butikkers tilbud", "Budgettets prognose (beløb bogføres selv)"];
+  D.state.shop = q.get("shop")
+    ? { id: q.get("shop"), name: { "9ba51": "Netto", bdf5A: "føtex", "71c90": "Lidl" }[q.get("shop")] || q.get("shop"), rema: false, rema_only: REMA_ONLY }
+    : { id: "rema", name: "REMA 1000", rema: true, rema_only: REMA_ONLY };
+  D.state.notices = q.get("notice") ? ["store_choice"] : [];
   const handlers = {
     "middagsro/state": () => D.state,
     "middagsro/plan": () => D.state.latest_plan,
@@ -191,8 +197,15 @@
         avis_item: { name: msg.offer.heading, underline: msg.offer.description, price: msg.offer.price, is_advertised: true, image: msg.offer.image } });
       return { added_to: "plan", name: msg.offer.heading };
     },
+    "middagsro/notice_seen": () => { D.state.notices = []; return null; },
     "middagsro/plan/add": (msg) => {
       const plan = D.state.latest_plan;
+      if (msg.name) {
+        const line = { id: `x${plan.shopping.length}`, name: msg.name, amount: 1, unit: "pk", search: msg.name, category: "Tilføjet",
+          added: true, buy_from: null, product: null, packages: 1, cost: null, note: null };
+        plan.shopping.push(line);
+        return line;
+      }
       const product = msg.pantry
         ? D.pantryProducts[msg.pantry]
         : [...D.search, ...D.coffee].find((p) => p.id === msg.product_id);

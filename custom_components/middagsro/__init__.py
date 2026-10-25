@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import logging
+from typing import Any
 
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
 from homeassistant.core import HomeAssistant, callback
@@ -28,6 +29,7 @@ from .migrate import async_migrate
 from .panel import async_register_panel, async_unregister_panel
 from .services import async_setup_services
 from .storage import STORE_VERSION, RemaPlanStore
+from .store_client import REMA, StoreClient, store_of
 from .watch import CHECK_EVERY as WATCH_CHECK_EVERY, async_check as async_watch_check
 from .websocket import async_register_websocket
 
@@ -52,11 +54,16 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool:
-    """Set up Middagsro for a REMA 1000 account."""
+    """Set up Middagsro for a REMA 1000 account, or for another shop (no login)."""
     await async_migrate(hass, entry)
     # Own session so the login cookies of this account are kept apart.
     session = async_create_clientsession(hass)
-    client = RemaClient(session, entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD])
+    store_id = store_of(entry.data)
+    client: RemaClient
+    if store_id == REMA:
+        client = RemaClient(session, entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD])
+    else:
+        client = StoreClient(hass, session, entry.entry_id, store_id)
     try:
         await client.async_login()
     except RemaAuthError as err:
@@ -74,6 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
 
     store = RemaPlanStore(hass, entry.entry_id)
     await store.async_load()
+    store.prices = client.has_prices
 
     shopping_list = RemaShoppingListCoordinator(hass, entry, client)
     offers = RemaOffersCoordinator(hass, entry, client)
@@ -84,6 +92,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
     def catalogs() -> tuple[Catalog | None, Catalog | None]:
         data = offers.data
         return (data.current, data.upcoming) if data else (None, None)
+
+    async def _mirror(items: list[dict[str, Any]]) -> None:
+        """Copy what was put on the list to the family's own to-do list, if chosen."""
+        target = str(store.settings.get("ha_todo_entity") or "")
+        if not target or hass.states.get(target) is None:
+            return
+        for item in items:
+            name = str(item.get("name") or "").strip()
+            amount = int(item.get("amount") or 1)
+            if not name:
+                continue
+            try:
+                await hass.services.async_call(
+                    "todo",
+                    "add_item",
+                    {"item": f"{amount} x {name}" if amount > 1 else name},
+                    target={"entity_id": target},
+                    blocking=True,
+                )
+            except HomeAssistantError as err:
+                _LOGGER.warning("Could not put %s on %s: %s", name, target, err)
+                return
+
+    if store_id != REMA:
+        shopping_list.mirror = _mirror
 
     planner = MealPlanner(
         hass, entry.entry_id, client, store, catalogs, shopping_list.async_add_items
@@ -125,7 +158,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
 
 async def async_remove_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> None:
     """Remove the account's stored plans and offers when the account is removed."""
-    for name, version in (("mealplans", STORE_VERSION), ("catalogs", STORAGE_VERSION)):
+    for name, version in (("mealplans", STORE_VERSION), ("catalogs", STORAGE_VERSION), ("list", 1)):
         await Store(hass, version, f"{DOMAIN}.{entry.entry_id}.{name}").async_remove()
 
 

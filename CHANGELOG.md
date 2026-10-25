@@ -2,6 +2,18 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.7.0] - 2026-10-25
+
+### Added
+- **Choose the shop – also without REMA 1000.** The setup starts with a shop: REMA 1000 (log in, as before) or Netto, føtex, Lidl, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, Brugsen, SPAR, Løvbjerg, Min Købmand or ABC Lavpris – no login. With another shop the meal plan is built on its offer catalogue (from Tjek), an item on offer gets the avis's price and the rest are free text, and the shopping list is kept in Home Assistant (the to-do entity as before). The setup lists what only works with REMA 1000.
+- **Change the shop under Reconfigure:** meal plans, recipes, budget and settings are kept, and so are the entities and their ids.
+- **Also on your own to-do list** (another shop): *Indstillinger → Butik → Send også til* puts what is sent on another to-do list too, e.g. Bring!, Google Keep or Home Assistant's shopping list.
+- **Indstillinger → Butik** tells which shop is used and how to change it.
+- A **one-time note** in the panel tells REMA families about the choice. Nothing changes for them.
+
+### Changed
+- With another shop: REMA's recipes, product search, nutrition, favourites and price comparisons are left out of the panel; the plan's total is the offers', the AI is told the budget is a guess (no "over budget" rounds), and the budget's forecast is only what the family books. Something typed on the shopping list is added as free text.
+
 ## [2.6.4] - 2026-10-25
 
 ### Fixed

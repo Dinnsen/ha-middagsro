@@ -9,17 +9,19 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpda
 
 from .const import DOMAIN
 from .coordinator import RemaConfigEntry
+from .store_client import REMA, store_name, store_of
 
 
 def device_info(entry: RemaConfigEntry) -> DeviceInfo:
-    """The one service device per REMA 1000 account."""
+    """The one service device per REMA 1000 account (or other shop)."""
+    store = store_of(entry.data)
     return DeviceInfo(
         identifiers={(DOMAIN, str(entry.unique_id))},
         name="Middagsro",
         manufacturer="Middagsro",
-        model=f"REMA 1000-konto: {entry.title}",
+        model=f"REMA 1000-konto: {entry.title}" if store == REMA else store_name(store),
         entry_type=DeviceEntryType.SERVICE,
-        configuration_url="https://shop.rema1000.dk",
+        configuration_url="https://shop.rema1000.dk" if store == REMA else None,
     )
 
 
