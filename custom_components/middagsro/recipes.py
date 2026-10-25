@@ -32,7 +32,7 @@ import aiohttp
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .const import DOMAIN
 from .dishes import matches_any, same_dish
@@ -49,6 +49,9 @@ PROMPT_RECIPES = 40
 ACTIONS = ("like", "dislike", "favorite")
 SORTS = ("name", "newest", "most_used", "quickest")
 PAGE_LIMIT = 3_000_000
+# Some sites (Arla) send a header longer than aiohttp's 8 KB.
+HEADER_LIMIT = 65_536
+_SESSION = f"{DOMAIN}_pages"
 TIMEOUT = aiohttp.ClientTimeout(total=20)
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Home Assistant; Middagsro) AppleWebKit/537.36 Chrome/130 Safari/537.36",
@@ -485,7 +488,8 @@ def parse_recipe_page(page: str) -> dict[str, Any] | None:
         r"<script[^>]+application/ld\+json[^>]*>(.*?)</script>", page, re.DOTALL | re.IGNORECASE
     ):
         try:
-            data = json.loads(block.strip())
+            # strict=False: some sites have line breaks inside the texts.
+            data = json.loads(block.strip(), strict=False)
         except ValueError:
             continue
         for node in _walk(data):
@@ -504,7 +508,67 @@ def parse_recipe_page(page: str) -> dict[str, Any] | None:
                 "steps": _steps(node.get("recipeInstructions")),
                 "tip": _text(node.get("description"))[:500],
             }
-    return None
+    return _microdata(page)
+
+
+def _props(page: str, *names: str) -> list[str]:
+    """The values of the elements with one of these itemprops, in order."""
+    found: list[tuple[int, str]] = []
+    alts = "|".join(names)
+    for match in re.finditer(
+        rf"<(\w+)\b[^>]*\bitemprop=[\"'](?:{alts})[\"'][^>]*?(/?)>", page, re.IGNORECASE
+    ):
+        tag = match.group(0)
+        content = re.search(r"\bcontent=[\"']([^\"']*)[\"']", tag)
+        if content or match.group(2) or match.group(1).lower() == "meta":
+            found.append((match.start(), html.unescape(content.group(1)) if content else ""))
+            continue
+        end = re.compile(rf"</{match.group(1)}\s*>", re.IGNORECASE).search(page, match.end())
+        found.append((match.start(), page[match.end() : end.start()] if end else ""))
+    return [value for _, value in sorted(found)]
+
+
+def _line(value: str) -> str:
+    return re.sub(r"\s+", " ", _text(value)).strip()
+
+
+def _microdata(page: str) -> dict[str, Any] | None:
+    """The recipe in a page's schema.org microdata (itemprop attributes), if it has it."""
+    start = re.search(r"itemtype=[\"'][^\"']*schema\.org/Recipe[\"']", page, re.IGNORECASE)
+    if start is None:
+        return None
+    part = page[start.start() :]
+    ingredients = [
+        t for t in (_line(i) for i in _props(part, "recipeIngredient", "ingredients")) if t
+    ]
+    if not ingredients:
+        return None
+    steps: list[str] = []
+    for block in _props(part, "recipeInstructions"):
+        items = re.findall(r"<li\b[^>]*>(.*?)</li>", block, re.DOTALL | re.IGNORECASE)
+        parts = items or re.split(r"<br\s*/?>|</p>|\n+", block)
+        steps += [t for t in (_line(i) for i in parts) if t]
+    names = [t for t in (_line(n) for n in _props(part, "name")) if t]
+    heading = re.search(r"<h1\b[^>]*>(.*?)</h1>", page, re.DOTALL | re.IGNORECASE)
+    name = names[0] if names else _text(heading.group(1)) if heading else ""
+    if not name:
+        return None
+
+    def first(*props: str) -> str:
+        values = _props(part, *props)
+        return _text(values[0]) if values else ""
+
+    category = " ".join(_text(c) for c in _props(part, "recipeCategory")).lower()
+    return {
+        "name": name,
+        "servings": _servings(first("recipeYield")),
+        "total_minutes": _iso_minutes(first("totalTime")),
+        "active_minutes": _iso_minutes(first("prepTime")),
+        "type": "vegetar" if "veget" in category else "normal",
+        "ingredients": ingredients,
+        "steps": steps,
+        "tip": first("description")[:500],
+    }
 
 
 def page_text(page: str) -> str:
@@ -532,11 +596,22 @@ async def _check_public(hass: HomeAssistant, host: str) -> None:
             raise _invalid("recipe_bad_link")
 
 
+def page_session(hass: HomeAssistant) -> aiohttp.ClientSession:
+    """A session for reading recipe sites, which takes long headers."""
+    session: aiohttp.ClientSession | None = hass.data.get(_SESSION)
+    if session is None or session.closed:
+        session = async_create_clientsession(
+            hass, max_line_size=HEADER_LIMIT, max_field_size=HEADER_LIMIT
+        )
+        hass.data[_SESSION] = session
+    return session
+
+
 async def async_fetch_page(hass: HomeAssistant, url: str) -> str:
     """Read a recipe page."""
     url = _check_url(url)
     await _check_public(hass, urlparse(url).hostname or "")
-    session = async_get_clientsession(hass)
+    session = page_session(hass)
     try:
         async with session.get(
             url, headers=HEADERS, timeout=TIMEOUT, allow_redirects=True, max_redirects=5
@@ -578,21 +653,27 @@ def build_extract_prompt(text: str) -> str:
     )
 
 
+async def async_extract(planner: MealPlanner, page: str) -> dict[str, Any]:
+    """The AI reads the recipe on a page without recipe data."""
+    if not planner.ai_available():
+        raise _invalid("recipe_not_on_page")
+    try:
+        found = await planner._async_ask_ai(
+            build_extract_prompt(page_text(page)), "Middagsro opskrift fra link"
+        )
+    except HomeAssistantError as err:
+        raise _invalid("recipe_link_failed", error=str(err)) from err
+    if not isinstance(found, dict) or not found.get("name"):
+        raise _invalid("recipe_not_on_page")
+    return found
+
+
 async def async_import(planner: MealPlanner, url: str) -> dict[str, Any]:
     """Read the recipe behind a link (not saved: the panel shows it to be edited first)."""
     page = await async_fetch_page(planner.hass, url)
     found = parse_recipe_page(page)
     if found is None or not found.get("ingredients"):
-        if not planner.ai_available():
-            raise _invalid("recipe_not_on_page")
-        try:
-            found = await planner._async_ask_ai(
-                build_extract_prompt(page_text(page)), "Middagsro opskrift fra link"
-            )
-        except HomeAssistantError as err:
-            raise _invalid("recipe_link_failed", error=str(err)) from err
-        if not isinstance(found, dict) or not found.get("name"):
-            raise _invalid("recipe_not_on_page")
+        found = await async_extract(planner, page)
     recipe = clean_recipe({**found, "source": "link"})
     recipe["id"] = None  # not in the collection until saved
     return recipe
