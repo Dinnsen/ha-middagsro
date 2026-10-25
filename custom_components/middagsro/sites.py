@@ -17,7 +17,7 @@ import logging
 import re
 import time
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import aiohttp
 
@@ -41,6 +41,9 @@ TITLE_LIMIT = 300_000  # bytes of a page read for its title
 TITLE_TIMEOUT = aiohttp.ClientTimeout(total=10)
 SITEMAP_LIMIT = 15_000_000  # bytes of one sitemap file
 MAX_SITEMAPS = 40  # files of one site
+MAX_LISTINGS = 150  # category pages of a site without its recipes in the sitemaps
+LISTING_LIMIT = 2_000_000
+LISTING_BATCH = 6
 MAX_RESULTS = 40
 TIMEOUT = aiohttp.ClientTimeout(total=30)
 
@@ -56,6 +59,8 @@ class Site:
     recipe: str = r"^/[a-z0-9-]+/?$"
     # Sitemaps with these words are not recipes.
     skip_maps: tuple[str, ...] = ("page", "category", "tag", "author", "attachment", "media")
+    # Category pages that list the recipes, for a site whose sitemaps don't have them.
+    listing: str | None = None
 
 
 SITES: dict[str, Site] = {
@@ -64,7 +69,8 @@ SITES: dict[str, Site] = {
         Site("valdemarsro", "Valdemarsro", "https://www.valdemarsro.dk"),
         Site("madensverden", "Madens Verden", "https://madensverden.dk"),
         Site("louisesmadblog", "Louises madblog", "https://www.louisesmadblog.dk"),
-        Site("dkkogebogen", "DK-kogebogen", "https://www.dk-kogebogen.dk", r"^/opskrifter/\d+/[a-z0-9-]+/?$"),
+        Site("dkkogebogen", "DK-kogebogen", "https://www.dk-kogebogen.dk", r"^/opskrifter/\d+/[a-z0-9-]+/?$",
+             listing=r"^/retter/(?:hovedretter|suppe)/[a-z0-9-]+/?$"),
         Site("arla", "Arla", "https://www.arla.dk", r"^/opskrifter/[a-z0-9-]+/?$"),
     )
 }  # fmt: skip
@@ -73,6 +79,8 @@ SITES: dict[str, Site] = {
 _NOT_RECIPES = re.compile(
     r"madplan|indkoebsliste|guide|tips|konkurrence|nyhedsbrev|om-mig|kontakt|inspiration"
 )
+# Link texts that are not a recipe's name.
+_GENERIC = re.compile(r"(?i)^(se|læs) (mere|opskrift)|^opskrift(en)?$|^klik")
 _DANISH = str.maketrans({"æ": "ae", "ø": "oe", "å": "aa", "é": "e", "ü": "u", "ö": "oe", "ä": "ae"})
 _BACK = ((r"oe", "ø"), (r"aa", "å"), (r"ae", "æ"))
 
@@ -165,6 +173,8 @@ class RecipeSites:
             failures: list[str] = []
             found: dict[str, tuple[str, frozenset[str], str]] = {}
             pattern = re.compile(site.recipe)
+            listing = re.compile(site.listing) if site.listing else None
+            listings: list[str] = []
             while queue and len(seen) < MAX_SITEMAPS:
                 url = queue.pop(0)
                 if url in seen:
@@ -187,6 +197,9 @@ class RecipeSites:
                     continue
                 for loc in locs:
                     path = urlparse(loc).path
+                    if listing and listing.match(path) and site_of(loc) is site:
+                        listings.append(loc)
+                        continue
                     if (
                         site_of(loc) is not site
                         or not pattern.match(path)
@@ -196,6 +209,8 @@ class RecipeSites:
                         continue
                     slug = [part for part in path.split("/") if part][-1]
                     found[loc] = (loc, frozenset(ascii_words(slug)), title_from_slug(slug))
+            if listing:
+                await self._async_listings(site, listings, found, disallowed)
             # Without sitemaps in robots.txt, only one of the usual addresses need be there.
             defaults = {f"{site.base}/sitemap.xml", f"{site.base}/sitemap_index.xml"}
             failed = len([u for u in failures if u not in defaults]) + (defaults <= set(failures))
@@ -214,6 +229,57 @@ class RecipeSites:
                 return old
             self._indexes[site.id] = index
             return index
+
+    async def _async_listings(
+        self,
+        site: Site,
+        queue: list[str],
+        found: dict[str, tuple[str, frozenset[str], str]],
+        disallowed: list[str],
+    ) -> None:
+        """The recipes linked from a site's category pages (and their next pages)."""
+        assert site.listing is not None
+        pattern = re.compile(site.recipe)
+        listing = re.compile(site.listing)
+        seen: set[str] = set()
+
+        async def read(url: str) -> str:
+            try:
+                return await self._get(url, LISTING_LIMIT)
+            except (aiohttp.ClientError, TimeoutError) as err:
+                _LOGGER.debug("Could not read %s: %s", url, err)
+                return ""
+
+        while queue and len(seen) < MAX_LISTINGS:
+            batch = []
+            while queue and len(batch) < LISTING_BATCH and len(seen) < MAX_LISTINGS:
+                url = queue.pop(0).rstrip("/") + "/"
+                if url not in seen and not any(
+                    _blocked(urlparse(url).path, rule) for rule in disallowed
+                ):
+                    seen.add(url)
+                    batch.append(url)
+            for url, text in zip(
+                batch, await asyncio.gather(*(read(u) for u in batch)), strict=True
+            ):
+                for href, label in re.findall(
+                    r"<a\b[^>]*?href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", text, re.DOTALL | re.I
+                ):
+                    loc = urljoin(url, html.unescape(href)).split("#")[0]
+                    path = urlparse(loc).path
+                    if site_of(loc) is not site:
+                        continue
+                    if pattern.match(path) and not any(_blocked(path, r) for r in disallowed):
+                        title = _clean(label)
+                        if title and not _GENERIC.match(title) and loc not in found:
+                            slug = [part for part in path.split("/") if part][-1]
+                            words = frozenset(ascii_words(slug)) | frozenset(ascii_words(title))
+                            found[loc] = (loc, words, title[:120])
+                            self._titles[loc] = title[:120]
+                    elif re.search(r"/\d+/?$", path) and listing.match(
+                        path.rstrip("/").rsplit("/", 1)[0]
+                    ):
+                        queue.append(loc)  # the category's next page
 
     async def async_search(
         self, site_ids: list[str], query: str, limit: int = MAX_RESULTS, titles: bool = True
@@ -314,22 +380,23 @@ class RecipeSites:
         return [r for r in recipes if r][:most]
 
 
+def _clean(text: str) -> str:
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", html.unescape(text)).strip()
+
+
 def page_title(page: str) -> str:
     """A recipe page's title: its heading, else og:title or <title> without the site's name."""
 
-    def clean(text: str) -> str:
-        text = re.sub(r"<[^>]+>", " ", text)
-        return re.sub(r"\s+", " ", html.unescape(text)).strip()
-
     heading = re.search(r"<h1\b[^>]*>(.*?)</h1>", page, re.DOTALL | re.IGNORECASE)
-    if heading and (text := clean(heading.group(1))):
+    if heading and (text := _clean(heading.group(1))):
         return text[:120]
     meta = re.search(
         r"<meta[^>]+property=[\"']og:title[\"'][^>]+content=[\"']([^\"']*)", page, re.IGNORECASE
     ) or re.search(r"<title\b[^>]*>(.*?)</title>", page, re.DOTALL | re.IGNORECASE)
     if not meta:
         return ""
-    return re.split(r"\s+[|–-]\s+", clean(meta.group(1)))[0][:120]
+    return re.split(r"\s+[|–-]\s+", _clean(meta.group(1)))[0][:120]
 
 
 def _blocked(path: str, rule: str) -> bool:
