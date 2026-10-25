@@ -70,6 +70,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "min_vegetarian": 0,
     "max_vegetarian": 1,
     "leftover_days": 2,
+    "no_leftover_weekdays": [],  # "0".."6" (monday..sunday): never leftovers those days
     "fixed_days": [{"weekday": 3, "text": "Rugbrødsdag (kun denne ene dag med rugbrød)"}],
     "max_cook_minutes_weekday": 30,
     "no_repeat_weeks": 3,
@@ -132,6 +133,18 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
     settings["min_vegetarian"] = _clamp(settings["min_vegetarian"], 0, 14, 0)
     settings["max_vegetarian"] = _clamp(settings["max_vegetarian"], 0, 14, 1)
     settings["leftover_days"] = _clamp(settings["leftover_days"], 0, 7, 2)
+    weekdays: set[str] = set()
+    for value in (
+        settings["no_leftover_weekdays"]
+        if isinstance(settings["no_leftover_weekdays"], list)
+        else []
+    ):
+        try:
+            if 0 <= int(value) <= 6:
+                weekdays.add(str(int(value)))
+        except (TypeError, ValueError):
+            continue
+    settings["no_leftover_weekdays"] = sorted(weekdays)
     settings["max_cook_minutes_weekday"] = _clamp(settings["max_cook_minutes_weekday"], 5, 300, 30)
     settings["no_repeat_weeks"] = _clamp(settings["no_repeat_weeks"], 0, 52, 3)
     if settings["organic"] not in ORGANIC_MODES:

@@ -227,6 +227,18 @@
     },
     "no_monthly_budget": {
       "message": "Set a monthly food budget under Settings › Madbudget first."
+    },
+    "move_edge": {
+      "message": "The dish can't be moved further that way – that day is not in the same meal plan."
+    },
+    "move_past": {
+      "message": "Days that have passed can't be moved."
+    },
+    "move_leftovers": {
+      "message": "Leftovers can't come before the day the food is made."
+    },
+    "move_offer": {
+      "message": "The dish is built on an offer that starts on a later day, and can't be moved before it."
     }
   },
   "issues": {

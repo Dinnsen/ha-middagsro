@@ -9,7 +9,8 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+import copy
+from datetime import date, datetime, timedelta
 import json
 import logging
 import re
@@ -17,6 +18,7 @@ from typing import Any
 import uuid
 
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.util import dt as dt_util
 
 from .api import Offer, RemaError
 from .dishes import matches_any
@@ -762,6 +764,64 @@ async def async_clear_day(
         _empty(day)
         day["mealie"] = None
     update_total(plan)
+    await planner.store.async_save()
+    await planner.async_mealie_sync(plan)
+    planner._notify()
+    return plan
+
+
+# ------------------------------------------------------------------ moving a dish
+
+# What belongs to the date, not to the dinner: it stays when dinners change places.
+_DATE_KEYS = ("date", "weekday", "mealie_entry")
+
+
+def _move_problem(plan: dict[str, Any]) -> str | None:
+    """Why a plan's days can't be as they are now (after a move), or None."""
+    for day in plan["days"]:
+        source = day.get("uses_leftovers_from")
+        if source and source >= day["date"]:
+            return "move_leftovers"
+        uses = {u.lower() for u in day.get("uses") or []}
+        for line in plan.get("shopping") or []:
+            buy_from = str(line.get("buy_from") or "")[:10]
+            if buy_from and day["date"] < buy_from and line["name"].lower() in uses:
+                return "move_offer"
+    return None
+
+
+async def async_move_day(
+    planner: MealPlanner, plan_id: str, day_date: str, direction: str
+) -> dict[str, Any]:
+    """Swap a day's dinner with the day before ("up") or after ("down").
+
+    Leftovers never come before the day the food is made, a dish built on an
+    offer that starts on thursday isn't moved before it, and days that have
+    passed stay as they were.
+    """
+    plan, day = _plan_and_day(planner, plan_id, day_date)
+    step = -1 if direction == "up" else 1
+    other_date = (date.fromisoformat(day_date) + timedelta(days=step)).isoformat()
+    other = next((d for d in plan["days"] if d["date"] == other_date), None)
+    if other is None:
+        raise _invalid("move_edge")
+    if min(day_date, other_date) < dt_util.now().date().isoformat():
+        raise _invalid("move_past")
+    saved = copy.deepcopy(plan["days"])
+    moved = {k: v for k, v in day.items() if k not in _DATE_KEYS}
+    staying = {k: v for k, v in other.items() if k not in _DATE_KEYS}
+    for target, content in ((day, staying), (other, moved)):
+        for key in [k for k in target if k not in _DATE_KEYS]:
+            del target[key]
+        target.update(content)
+    # Leftovers follow the dinner they are from.
+    swap = {day_date: other_date, other_date: day_date}
+    for d in plan["days"]:
+        if d.get("uses_leftovers_from") in swap:
+            d["uses_leftovers_from"] = swap[d["uses_leftovers_from"]]
+    if (problem := _move_problem(plan)) is not None:
+        plan["days"] = saved
+        raise _invalid(problem)
     await planner.store.async_save()
     await planner.async_mealie_sync(plan)
     planner._notify()

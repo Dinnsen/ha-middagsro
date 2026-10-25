@@ -23,9 +23,10 @@ from .api import DANISH_TIME, Catalog, Offer, Product, RemaClient, RemaError, pa
 from .budget import plan_budget
 from .chains import ChainOffers
 from .const import DOMAIN
-from .dishes import check_plan, household_portions, is_cooked, same_dish
+from .dishes import check_plan, day_wishes, household_portions, is_cooked, same_dish
 from .mealie import MealieError, MealieLink
 from .recipes import (
+    async_save_recipe,
     disliked_names,
     favorite_recipe,
     find_recipe,
@@ -52,6 +53,7 @@ from .words import (
 
 _LOGGER = logging.getLogger(__name__)
 
+RECIPE_EXTRAS_PER_DAY = 4  # items an AI recipe may add to the list for a dinner
 WEEKDAYS_DA = ("mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag", "søndag")
 AVOID_DA = {
     "meat": "kød",
@@ -528,6 +530,24 @@ def name_fit(search_words: list[str], product_name: str) -> tuple[int, float]:
     return matched, penalty
 
 
+_PHRASE_BREAKS = {"med", "uden", "i", "til", "fra", "af", "på", "pa", "eller", "og"}
+
+
+def head_word(query: str) -> str | None:
+    """The word a search is about: the last one before "med", "uden", "til" …
+
+    Danish puts the thing last: "grønne bønner" are beans, "hakket oksekød" beef,
+    "laksefilet med skind" a salmon fillet.
+    """
+    words: list[str] = []
+    for token in _tokens(query):
+        if token in _PHRASE_BREAKS and words:
+            break
+        if len(token) > 1 and token not in _NEUTRAL_WORDS:
+            words.append(token)
+    return words[-1] if words else None
+
+
 def kind_penalty(line: dict[str, Any], product: Product, words: list[str]) -> float:
     """Extra cost for a product that is another kind of thing than the line asks for.
 
@@ -647,6 +667,11 @@ def _household_lines(settings: dict[str, Any]) -> list[str]:
     return lines or ["- 2 voksne"]
 
 
+def no_leftover_weekdays(settings: dict[str, Any]) -> set[int]:
+    """The weekdays (0 = monday) the family never wants leftovers on."""
+    return {int(w) for w in settings.get("no_leftover_weekdays") or []}
+
+
 def build_prompt(
     *,
     settings: dict[str, Any],
@@ -665,6 +690,7 @@ def build_prompt(
     disliked: list[str] | None = None,
     surprise: bool = False,
     favorite_recipes: dict[str, dict[str, Any]] | None = None,
+    wishes: dict[str, str] | None = None,
 ) -> str:
     """Build the instructions for the AI."""
     s = settings
@@ -706,6 +732,12 @@ def build_prompt(
             'portion, og dagen efter spises resten (type "rester", angiv uses_leftovers_from, '
             "ingen nye ingredienser). Rester må ikke ligge på første dag."
         )
+        if banned := no_leftover_weekdays(s):
+            out.append(
+                "- Rester må ALDRIG ligge på: "
+                + ", ".join(WEEKDAYS_DA[w] for w in sorted(banned))
+                + " – de dage laves der altid en ny ret."
+            )
     else:
         out.append("- Ingen restedage; hver dag er en ny ret.")
     for fixed in s["fixed_days"]:
@@ -763,6 +795,15 @@ def build_prompt(
             "- Familiens ønsker til netop denne madplan – SKAL følges (fx varer de allerede har, "
             "der skal bruges før en bestemt dato, eller en bestemt ret på en bestemt dag). Varer, "
             f"familien allerede har, skal IKKE på indkøbslisten: {note}"
+        )
+    if wishes:
+        out.append(
+            "- Disse dage har familien selv bestemt retten – brug PRÆCIS den ret den dag (som "
+            "dish), læg dens varer på indkøbslisten, og brug den ikke andre dage: "
+            + "; ".join(
+                f"{WEEKDAYS_DA[date.fromisoformat(day).weekday()]} {day}: {dish}"
+                for day, dish in sorted(wishes.items())
+            )
         )
     if feedback:
         out.append(f"- VIGTIGT fra sidste forsøg: {feedback}")
@@ -873,6 +914,15 @@ def build_prompt(
         "tomater på dåse til kødsovs, lasagne og bolognese (ikke friske tomater, der skal "
         "hakkes), frossen spinat, revet ost. Samme slags vare til forskellige formål står hver "
         "for sig (friske tomater til gnavegrønt OG hakkede tomater på dåse til sovsen).",
+        "Retterne skal smage af noget – som en god hjemmelavet version, ikke en nødløsning. Tag "
+        "de varer med, der giver smagen: løg og hvidløg, krydderier og friske eller tørrede "
+        "krydderurter, bouillon, tomatpuré, citron, fløde eller ost, hvor retten normalt har det "
+        "(fx lasagne: hakket oksekød, løg, hvidløg, gulerod, hakkede tomater, tomatpuré, "
+        "oregano/basilikum, bouillon, lasagneplader, mælk, smør, mel og revet ost).",
+        "Brug den kødtype, retten traditionelt laves af – også når en anden er på tilbud: "
+        "hakkebøffer, burgere, bøf bearnaise og chili con carne af hakket oksekød; frikadeller "
+        "af hakket svine- og kalvekød; kyllingeretter af kylling. Et tilbud på en anden kødtype "
+        "er en grund til at vælge en anden ret, ikke til at lave retten om.",
         "Angiv for hver dag i uses navnene på de varer fra indkøbslisten, retten bruger "
         "(præcis som de står på listen; ikke basisvarer). Restedage har en tom liste.",
         "",
@@ -988,13 +1038,15 @@ def build_recipe_prompt(
         # are not the lasagne's tomatoes.
         out.append(
             "Rettens varer fra indkøbslisten (brug dem, som de købes – fx hakkede tomater på "
-            "dåse hældes i, de skal ikke hakkes; tilføj ikke nye dyre varer): "
-            + ", ".join(describe(line) for line in mine)
-            + "."
+            "dåse hældes i, de skal ikke hakkes; tilføj ikke nye dyre varer, men gerne billige "
+            "smagsgivere som krydderier, krydderurter, hvidløg, bouillon og tomatpuré – de "
+            "kommer på indkøbslisten): " + ", ".join(describe(line) for line in mine) + "."
         )
     else:
         out.append(
-            "Ugens indkøb (brug disse varer og basisvarerne; tilføj ikke nye dyre varer): "
+            "Ugens indkøb (brug disse varer og basisvarerne; tilføj ikke nye dyre varer, men "
+            "gerne billige smagsgivere som krydderier, krydderurter, hvidløg, bouillon og "
+            "tomatpuré – de kommer på indkøbslisten): "
             + ", ".join(describe(line) for line in lines)
             + "."
         )
@@ -1003,8 +1055,21 @@ def build_recipe_prompt(
         "",
         "Lav retten, som en dansk familie normalt laver den, med de nemmeste varer: hakkede "
         "tomater på dåse i kødsovs og lasagne, ikke friske tomater, der skal hakkes.",
+        "Den skal smage godt: krydr ordentligt (salt og peber er ikke nok), byg smag med løg, "
+        "hvidløg, krydderurter, bouillon eller tomatpuré, og giv sovsen tid til at simre. "
+        "Brug den kødtype, retten traditionelt laves af (hakkebøffer af oksekød).",
         "Skriv til en uerfaren kok: præcise mængder, højst 10 korte trin med minutter, og ét "
         "kort tip, der gør det nemt for børnefamilien.",
+        "Krav til opskriften:",
+        "- Hvert krydderi står for sig med sin egen mængde (fx 2 tsk karrypulver, 1 tsk "
+        'spidskommen) – aldrig bare "krydderier" eller "grøntsager". Et færdigt krydderi '
+        "eller en karrypasta må gerne bruges, men så med sit navn.",
+        "- Retten er det, navnet siger: kødboller formes af det rå fars og brunes, før de "
+        "kommer i sovsen; en korma har en cremet sovs (fløde, yoghurt eller kokosmælk).",
+        "- Trinnene står i den rækkefølge, man laver dem, og modsiger ikke hinanden (farsen "
+        "steges ikke løs, hvis den skal formes til boller bagefter).",
+        "- Alle ingredienser bruges i trinnene, og alt i trinnene står i ingredienslisten – "
+        "også tilbehøret (ris, kartofler, brød), hvis retten serveres med det.",
         "",
         "SVARFORMAT: Svar KUN med gyldig JSON uden markdown og uden forklaring, præcis sådan:",
         json.dumps(
@@ -1030,6 +1095,65 @@ def build_recipe_prompt(
 
 
 # ------------------------------------------------------------------ planner
+
+
+_VAGUE_INGREDIENTS = {
+    "krydderier",
+    "krydderi",
+    "krydderiblanding",
+    "grøntsager",
+    "grønt",
+    "sovs",
+    "sauce",
+    "tilbehør",
+    "diverse",
+}
+
+
+def recipe_problems(raw: Any) -> list[str]:
+    """What is wrong with an AI recipe, in words the AI can act on (empty: nothing)."""
+    if not isinstance(raw, dict):
+        return ["Svaret var ikke en opskrift."]
+    problems: list[str] = []
+    vague = [
+        str(i.get("name"))
+        for i in raw.get("ingredients") or []
+        if isinstance(i, dict) and str(i.get("name") or "").strip().lower() in _VAGUE_INGREDIENTS
+    ]
+    if vague:
+        problems.append(
+            f"Ingrediensen {', '.join(vague)} er for upræcis: skriv hvert krydderi eller "
+            "hver grøntsag for sig med mængde."
+        )
+    steps = [
+        {"text": s} if isinstance(s, str) else s
+        for s in raw.get("steps") or []
+        if (isinstance(s, str) and s.strip()) or (isinstance(s, dict) and s.get("text"))
+    ]
+    if len(steps) < 2:
+        problems.append("Der er for få trin: skriv hele fremgangsmåden.")
+    sentences = [
+        part
+        for step in steps
+        for part in re.split(r"[.!;]", str(step["text"]).lower())
+        if part.strip()
+    ]
+    fried = next(
+        (
+            i
+            for i, part in enumerate(sentences)
+            if re.search(r"\b(steg|brun)", part)
+            and re.search(r"fars|kød|kylling", part)
+            and not re.search(r"bolle|frikadelle", part)
+        ),
+        None,
+    )
+    formed = next((i for i, part in enumerate(sentences) if re.search(r"\bform", part)), None)
+    if fried is not None and formed is not None and fried < formed:
+        problems.append(
+            "Farsen steges, før bollerne formes: form bollerne af den rå fars, og brun dem bagefter."
+        )
+    return problems
 
 
 def link_favorites(
@@ -1393,10 +1517,12 @@ class MealPlanner:
         send: bool = False,
         skip: set[date] | None = None,
         surprise: bool = False,
+        picks: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         """Start making a plan in the background. Days in skip get no dinner.
 
         surprise: dishes the family has never had (Overrask os).
+        picks: {date: dish} the family chose themselves (from the collection, REMA or Mealie).
         """
         if self.generating:
             raise _invalid("already_generating")
@@ -1409,15 +1535,20 @@ class MealPlanner:
             raise _invalid("no_ai_task")
         self._set_status("generating", "Laver madplan …")
         self._task = self.hass.async_create_background_task(
-            self._async_run(start, send, skip or set(), surprise),
+            self._async_run(start, send, skip or set(), surprise, picks or {}),
             name=f"{DOMAIN} meal plan",
         )
 
     async def _async_run(
-        self, start: date, send: bool, skip: set[date], surprise: bool = False
+        self,
+        start: date,
+        send: bool,
+        skip: set[date],
+        surprise: bool = False,
+        picks: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         try:
-            plan = await self.async_generate(start, skip, surprise=surprise)
+            plan = await self.async_generate(start, skip, surprise=surprise, picks=picks)
             if send:
                 await self._async_send_when_ready(plan)
         except Exception as err:
@@ -1571,12 +1702,25 @@ class MealPlanner:
             recipe_to_day(own, day, recipe_factor(self.store.settings, own, day))
             return
         prompt = build_recipe_prompt(settings=self.store.settings, day=day, plan=plan)
+        task = f"REMA 1000 opskrift {day['date']}"
         try:
-            raw = await self._async_ask_ai(prompt, f"REMA 1000 opskrift {day['date']}")
+            raw = await self._async_ask_ai(prompt, task)
         except HomeAssistantError as err:
             _LOGGER.warning("Could not write the recipe for %s: %s", day["date"], err)
             day["recipe_error"] = str(err)
             return
+        if problems := recipe_problems(raw):
+            # Once more with what was wrong; the better of the two is kept.
+            fix = "\n".join(f"- {p}" for p in problems)
+            try:
+                again = await self._async_ask_ai(
+                    f"{prompt}\n\nDin første opskrift havde fejl – ret dem:\n{fix}", task
+                )
+            except HomeAssistantError as err:
+                _LOGGER.debug("Could not have the recipe for %s put right: %s", day["date"], err)
+            else:
+                if len(recipe_problems(again)) < len(problems):
+                    raw = again
         cleaned = self._clean_days(
             [{**raw, "date": day["date"]}], [date.fromisoformat(day["date"])]
         )[0]
@@ -1691,6 +1835,50 @@ class MealPlanner:
             await self._async_price_lines(new_lines, offers, at, late)
         plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
 
+    async def _async_recipe_extras(
+        self,
+        plan: dict[str, Any],
+        offers: list[Offer],
+        at: datetime | None,
+        late: dict[int, date] | None,
+    ) -> None:
+        """What an AI recipe uses that isn't on the list (the herbs, a spice) goes on it.
+
+        A few items a day at most; basic items and what the list has under another
+        name ("hakkede tomater på dåse" is the line "Hakkede tomater") are left out.
+        """
+        pantry = pantry_words(self.store.settings["pantry"])
+        new_lines: list[dict[str, Any]] = []
+        for day in plan["days"]:
+            if (
+                not is_cooked(day)
+                or day.get("recipe_id")
+                or day.get("mealie")
+                or day.get("recipe_error")
+            ):
+                continue
+            added = 0
+            for ingredient in day.get("ingredients") or []:
+                name = str(ingredient.get("name") or "").strip()
+                head = head_word(name)
+                if not head or added >= RECIPE_EXTRAS_PER_DAY:
+                    continue
+                if any(_uses_item(item, name) or _uses_item(item, head) for item in pantry):
+                    continue
+                if any(
+                    _names_match(line, {"name": head}) or _names_match(line, ingredient)
+                    for line in plan["shopping"]
+                ):
+                    continue
+                line = recipe_line(ingredient)
+                plan["shopping"].append(line)
+                new_lines.append(line)
+                day.setdefault("uses", []).append(line["name"])
+                added += 1
+        if new_lines:
+            await self._async_price_lines(new_lines, offers, at, late)
+            plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
+
     async def _async_add_recipes(self, plan: dict[str, Any]) -> None:
         """Write all recipes, a few at a time."""
         semaphore = asyncio.Semaphore(RECIPE_CONCURRENCY)
@@ -1733,9 +1921,18 @@ class MealPlanner:
         return noon(start)
 
     async def async_generate(
-        self, start: date, skip: set[date] | None = None, *, surprise: bool = False
+        self,
+        start: date,
+        skip: set[date] | None = None,
+        *,
+        surprise: bool = False,
+        picks: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """Make, price and store a plan. Returns the plan."""
+        """Make, price and store a plan. Returns the plan.
+
+        picks: dishes the family chose for a day themselves - the AI plans around
+        them, and their own recipe is put on the day afterwards.
+        """
         settings = self.store.settings
         dates = plan_dates(start, settings["days"], skip)
         # Not past the last avis that is out: those days' prices aren't known yet.
@@ -1750,7 +1947,11 @@ class MealPlanner:
         # Fewer days to cook: no more leftover or vegetarian days than there is room for.
         settings = {
             **settings,
-            "leftover_days": min(settings["leftover_days"], (len(dates) - 1) // 2),
+            "leftover_days": min(
+                settings["leftover_days"],
+                (len(dates) - 1) // 2,
+                sum(1 for d in dates[1:] if d.weekday() not in no_leftover_weekdays(settings)),
+            ),
             "min_vegetarian": min(settings["min_vegetarian"], len(dates)),
             "max_vegetarian": min(settings["max_vegetarian"], len(dates)),
         }
@@ -1771,6 +1972,12 @@ class MealPlanner:
             if (recipe := favorite_recipe(self.store, fav["text"])) is not None
         }
         disliked = disliked_names(self.store)
+        iso = [d.isoformat() for d in dates]
+        picks = {
+            day: pick for day, pick in (picks or {}).items() if day in iso and pick.get("dish")
+        }
+        # The dishes asked for on a day: in the wishes ("frikadeller onsdag"), or chosen.
+        wishes = {**day_wishes(note, iso), **{day: p["dish"] for day, p in picks.items()}}
         mealie: list[dict[str, Any]] = []
         if settings["mealie_recipes"] and self.mealie.available and not surprise:
             self._set_status("generating", "Henter jeres opskrifter fra Mealie …")
@@ -1805,6 +2012,7 @@ class MealPlanner:
                 disliked=disliked,
                 surprise=surprise,
                 favorite_recipes=links,
+                wishes=wishes,
             )
             raw = await self._async_ask_ai(prompt, "REMA 1000 madplan")
             self._set_status("generating", "Finder varer og priser i REMA 1000 …")
@@ -1829,6 +2037,7 @@ class MealPlanner:
                 due_ids=set() if surprise else {f["id"] for f in due},
                 note=note,
                 disliked=disliked,
+                wishes=wishes,
             )
             over = max(0.0, plan["total"] - settings["budget"]) if settings["budget"] else 0.0
             plan["problems"] = problems
@@ -1877,6 +2086,7 @@ class MealPlanner:
         await self._async_align_recipes(best, offers, self.price_time(start), late)
         best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
         await self._async_add_recipes(best)
+        await self._async_recipe_extras(best, offers, self.price_time(start), late)
         fit_amounts(best)
         best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
         mark_planned(self.store, best)
@@ -1886,8 +2096,34 @@ class MealPlanner:
         if note and self.store.note.strip() == note:
             # The wishes are for this plan only (unless changed meanwhile).
             await self.store.async_set_note("")
+        if picks:
+            best = await self._async_put_picks(best, picks)
         self._notify()
         return best
+
+    async def _async_put_picks(
+        self, plan: dict[str, Any], picks: dict[str, dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Put the dishes the family chose on their days, with their own recipes."""
+        from .planedit import async_swap_dish  # noqa: PLC0415 - planedit imports this module
+
+        for day, pick in sorted(picks.items()):
+            self._set_status("generating", f"Sætter {pick['dish']} på madplanen …")
+            option: dict[str, Any] = {"dish": pick["dish"], "type": pick.get("type") or "normal"}
+            try:
+                if pick.get("source") == "rema" and pick.get("slug"):
+                    saved = await async_save_recipe(
+                        self.store, await self.rema_recipes.async_get(str(pick["slug"]))
+                    )
+                    option.update(dish=saved["name"], type=saved["type"], recipe_id=saved["id"])
+                elif pick.get("source") == "mealie" and pick.get("slug"):
+                    option["mealie"] = str(pick["slug"])
+                elif pick.get("recipe_id"):
+                    option["recipe_id"] = str(pick["recipe_id"])
+                plan = await async_swap_dish(self, plan["id"], day, option)
+            except (HomeAssistantError, RemaError) as err:
+                _LOGGER.warning("Could not put %s on %s: %s", pick["dish"], day, err)
+        return plan
 
     async def _async_build_plan(
         self,
@@ -2385,13 +2621,17 @@ class MealPlanner:
             return (self._free_from(fitting), penalty) if fitting else ([], penalty)
 
         best = max(fit[0] for fit in fits.values())
-        if best == 0:
-            return [], penalty  # nothing is called what we searched for
-        if line.get("prefer") == "relevance" and best < len(words):
-            # Typed by a person: every word must fit, or "kage til Anna" could
-            # become anything with "ana" in it. Free text is the safe answer.
+        relevant = [p for p in priced if best and fits[p.id][0] == best]
+        if best < len(words) and (head := head_word(query)):
+            # Only some of the words fit: the one the thing is (the last before
+            # "med", "uden" ...) must be among them - "grønne bønner" is never
+            # "grønne druer", but "laksefilet med skind" may be "LAKSEFILET".
+            relevant = [p for p in relevant if name_fit([head], p.name)[0]]
+        if not relevant or (line.get("prefer") == "relevance" and best < len(words)):
+            # Nothing is called what we searched for. Typed by a person: every
+            # word must fit, or "kage til Anna" could become anything with "ana"
+            # in it. Free text is the safe answer.
             return [], penalty
-        relevant = [p for p in priced if fits[p.id][0] == best]
         # "Laksefilet" searched as "laks": products that are what the line is
         # called beat the rest (salmon fillet, not salmon in pastry).
         named = [
@@ -2503,29 +2743,39 @@ class MealPlanner:
             "note": line.get("note"),
         }
 
-    async def async_send(self, plan_id: str | None = None, part: str = "main") -> dict[str, Any]:
+    async def async_send(
+        self, plan_id: str | None = None, part: str = "main", line_id: str | None = None
+    ) -> dict[str, Any]:
         """Put a plan's shopping list on the primary REMA list.
 
         part: "main" (bought on the shopping day), "late" (the items for later
-        in the week, e.g. thursday offers) or "all".
+        in the week, e.g. thursday offers) or "all". line_id: just that line.
 
         One send at a time. Each line is marked sent the moment its item is on
         the REMA list, so if REMA fails halfway, the next send only sends the rest.
         """
         async with self._send_lock:
-            return await self._async_send(plan_id, part)
+            return await self._async_send(plan_id, part, line_id)
 
-    async def _async_send(self, plan_id: str | None, part: str) -> dict[str, Any]:
+    async def _async_send(
+        self, plan_id: str | None, part: str, line_id: str | None = None
+    ) -> dict[str, Any]:
         plan = self.store.get_plan(plan_id) if plan_id else self.store.latest_plan
         if plan is None:
             raise _invalid("no_plan" if not plan_id else "plan_not_found")
         lines = [
             line
             for line in plan["shopping"]
-            if (part == "all" or bool(line.get("buy_from")) == (part == "late"))
+            if (
+                line.get("id") == line_id
+                if line_id
+                else part == "all" or bool(line.get("buy_from")) == (part == "late")
+            )
             and not line.get("buy_at")  # bought in another shop
             and not line.get("sent")  # already in the REMA app
         ]
+        if line_id and not lines:
+            raise _invalid("line_not_found")
         # The offers' products and prices as REMA has them now (once they run).
         try:
             await self._async_refresh_lines(plan, lines)
@@ -2549,7 +2799,7 @@ class MealPlanner:
                     label += f" ({amount:g} {line['unit']})"
                 item = {"name": label, "amount": int(line.get("packages") or 1)}
             pairs.append((line, item))
-        if self.store.settings["must_haves_once"]:
+        if self.store.settings["must_haves_once"] and not line_id:
             pairs = await self._async_skip_listed(pairs)
         stamp = dt_util.now().isoformat()
         by_item = {id(item): line for line, item in pairs}
@@ -2575,6 +2825,11 @@ class MealPlanner:
             for line in lines:
                 line["sent"] = stamp
             plan["last_sent"] = {"at": stamp, "ids": [line["id"] for line in lines]}
+        if line_id:
+            # One item now: the rest of the list is sent as before.
+            await self.store.async_save()
+            self._notify()
+            return plan
         for key in {"main": ("send_at",), "late": ("late_send_at",)}.get(
             part, ("send_at", "late_send_at")
         ):
