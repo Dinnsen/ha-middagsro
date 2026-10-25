@@ -251,7 +251,7 @@ class RecipeSites:
                 return ""
 
         while queue and len(seen) < MAX_LISTINGS:
-            batch = []
+            batch: list[str] = []
             while queue and len(batch) < LISTING_BATCH and len(seen) < MAX_LISTINGS:
                 url = queue.pop(0).rstrip("/") + "/"
                 if url not in seen and not any(
