@@ -2610,19 +2610,24 @@ class MealPlanner:
         fits = {p.id: name_fit(words, p.name) for p in priced}
         penalty = {p.id: fits[p.id][1] + kind_penalty(line, p, words) for p in priced}
 
+        head = head_word(query)
         if offer is not None:
             # The AI built the dish on this avis offer: only the product it is
-            # for, and only if that is also what the line asks for.
+            # for, and only if that is also what the line asks for - the thing
+            # itself, not just "hakket" (an offer on minced beef, pork and veal or
+            # chicken is beef for "hakket oksekød").
             fitting = [
                 p
                 for p in priced
-                if fits[p.id][0] and offer_covers(offer, p.id, p.name, p.underline, p.is_organic)
+                if fits[p.id][0]
+                and (fits[p.id][0] == len(words) or not head or name_fit([head], p.name)[0])
+                and offer_covers(offer, p.id, p.name, p.underline, p.is_organic)
             ]
             return (self._free_from(fitting), penalty) if fitting else ([], penalty)
 
         best = max(fit[0] for fit in fits.values())
         relevant = [p for p in priced if best and fits[p.id][0] == best]
-        if best < len(words) and (head := head_word(query)):
+        if best < len(words) and head:
             # Only some of the words fit: the one the thing is (the last before
             # "med", "uden" ...) must be among them - "grønne bønner" is never
             # "grønne druer", but "laksefilet med skind" may be "LAKSEFILET".

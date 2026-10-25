@@ -776,18 +776,19 @@ async def async_clear_day(
 _DATE_KEYS = ("date", "weekday", "mealie_entry")
 
 
-def _move_problem(plan: dict[str, Any]) -> str | None:
-    """Why a plan's days can't be as they are now (after a move), or None."""
+def _move_problems(plan: dict[str, Any]) -> set[tuple[str, str]]:
+    """What is wrong with the order of a plan's days: (problem, dish) pairs."""
+    problems: set[tuple[str, str]] = set()
     for day in plan["days"]:
         source = day.get("uses_leftovers_from")
         if source and source >= day["date"]:
-            return "move_leftovers"
+            problems.add(("move_leftovers", str(day.get("dish"))))
         uses = {u.lower() for u in day.get("uses") or []}
         for line in plan.get("shopping") or []:
             buy_from = str(line.get("buy_from") or "")[:10]
             if buy_from and day["date"] < buy_from and line["name"].lower() in uses:
-                return "move_offer"
-    return None
+                problems.add(("move_offer", str(day.get("dish"))))
+    return problems
 
 
 async def async_move_day(
@@ -808,6 +809,7 @@ async def async_move_day(
     if min(day_date, other_date) < dt_util.now().date().isoformat():
         raise _invalid("move_past")
     saved = copy.deepcopy(plan["days"])
+    before = _move_problems(plan)
     moved = {k: v for k, v in day.items() if k not in _DATE_KEYS}
     staying = {k: v for k, v in other.items() if k not in _DATE_KEYS}
     for target, content in ((day, staying), (other, moved)):
@@ -819,9 +821,10 @@ async def async_move_day(
     for d in plan["days"]:
         if d.get("uses_leftovers_from") in swap:
             d["uses_leftovers_from"] = swap[d["uses_leftovers_from"]]
-    if (problem := _move_problem(plan)) is not None:
+    # Only what the move breaks counts: a plan the AI made a little wrong can still be moved.
+    if new := sorted(_move_problems(plan) - before):
         plan["days"] = saved
-        raise _invalid(problem)
+        raise _invalid(new[0][0])
     await planner.store.async_save()
     await planner.async_mealie_sync(plan)
     planner._notify()
