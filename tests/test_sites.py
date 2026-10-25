@@ -366,3 +366,61 @@ def storage_contents() -> dict[str, Any]:
     from .conftest import make_plan  # noqa: PLC0415
 
     return {"plans": [make_plan("p", start="2026-10-18")]}
+
+
+MICRODATA = """<html><h1>Lasagne</h1><div itemscope itemtype="https://schema.org/Recipe">
+<meta itemprop="totalTime" content="PT3H"><span itemprop="prepTime">PT40M</span>
+<span itemprop="recipeYield">4 personer</span><span itemprop="recipeCategory">Aftensmad</span>
+<h2 itemprop="name">Lasagne &amp; kødsovs</h2><img itemprop="image" src="x.jpg"/>
+<ul><li itemprop="recipeIngredient">500 g hakket oksekød</li>
+<li itemprop="ingredients"><span>2</span>
+ løg</li><li itemprop="recipeIngredient"> </li></ul>
+<div itemprop="recipeInstructions"><ol><li>Brun kødet.</li><li>Lag lasagnen.</li></ol></div>
+<p itemprop="recipeInstructions">Bag den.<br>Server.</p>
+<p itemprop="description">God og klassisk</p></div></html>"""
+
+
+def test_microdata() -> None:
+    """A page with the recipe as microdata (itemprop) instead of JSON-LD."""
+    recipe = rc.parse_recipe_page(MICRODATA)
+    assert recipe == {
+        "name": "Lasagne & kødsovs",
+        "servings": 4,
+        "total_minutes": 180,
+        "active_minutes": 40,
+        "type": "normal",
+        "ingredients": ["500 g hakket oksekød", "2 løg"],
+        "steps": ["Brun kødet.", "Lag lasagnen.", "Bag den.", "Server."],
+        "tip": "God og klassisk",
+    }
+    nameless = MICRODATA.replace('itemprop="name"', "")
+    assert rc.parse_recipe_page(nameless)["name"] == "Lasagne"  # type: ignore[index]
+    assert rc.parse_recipe_page(nameless.replace("<h1>Lasagne</h1>", "")) is None
+    assert rc.parse_recipe_page(MICRODATA.replace("recipeIngredient", "x").replace(
+        "ingredients", "x")) is None  # fmt: skip
+    assert rc.parse_recipe_page("<p>Ingen opskrift</p>") is None
+    # Line breaks inside the JSON-LD texts.
+    page = '<script type="application/ld+json">{"@type": "Recipe", "name": "A",\n'
+    page += '"recipeIngredient": ["1 løg\nhakket"]}</script>'
+    assert rc.parse_recipe_page(page)["ingredients"] == ["1 løg\nhakket"]  # type: ignore[index]
+
+
+async def test_page_session(hass: HomeAssistant) -> None:
+    """One session for the recipe sites, with room for long headers."""
+    session = rc.page_session(hass)
+    assert rc.page_session(hass) is session
+
+
+async def test_recipe_read_by_the_ai(hass: HomeAssistant) -> None:
+    """A page without recipe data is read by the AI, when the panel asks for it."""
+    finder = sites.RecipeSites(hass)
+    url = f"{VALDEMARSRO}/lasagne/"
+    extract = AsyncMock(return_value={"name": "Lasagne", "ingredients": ["500 g oksekød"]})
+    with patch.object(sites, "async_fetch_page", AsyncMock(return_value="<p>Lasagne</p>")):
+        recipe = await finder.async_recipe(url, extract)
+        assert extract.call_args.args == ("<p>Lasagne</p>",)
+        assert recipe is not None
+        assert recipe["name"] == "Lasagne"
+        assert recipe["site"] == "Valdemarsro"
+        extract.return_value = {"name": "Intet"}
+        assert await finder.async_recipe(url, extract) is None

@@ -26,6 +26,7 @@ from .const import DOMAIN
 from .dishes import check_plan, day_wishes, household_portions, is_cooked, same_dish
 from .mealie import MealieError, MealieLink
 from .recipes import (
+    async_extract,
     async_save_recipe,
     disliked_names,
     favorite_recipe,
@@ -2194,7 +2195,9 @@ class MealPlanner:
                     )
                     option.update(dish=saved["name"], type=saved["type"], recipe_id=saved["id"])
                 elif pick.get("source") == "web" and pick.get("url"):
-                    recipe = await self.sites.async_recipe(str(pick["url"]))
+                    recipe = await self.sites.async_recipe(
+                        str(pick["url"]), lambda page: async_extract(self, page)
+                    )
                     if recipe is None:
                         raise _invalid("recipe_not_on_page")
                     saved = await async_save_recipe(self.store, recipe)

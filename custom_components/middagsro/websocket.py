@@ -55,6 +55,7 @@ from .planedit import (
 from .recipes import (
     ACTIONS,
     async_delete_recipe,
+    async_extract,
     async_import,
     async_rate,
     async_rate_day,
@@ -977,7 +978,7 @@ async def ws_sites_recipe(
     planner = _entry(hass, msg).runtime_data.planner
     if site_of(msg["url"]) is None:
         raise ServiceValidationError(translation_domain=DOMAIN, translation_key="recipe_bad_link")
-    recipe = await planner.sites.async_recipe(msg["url"])
+    recipe = await planner.sites.async_recipe(msg["url"], lambda page: async_extract(planner, page))
     if recipe is None:
         raise ServiceValidationError(
             translation_domain=DOMAIN, translation_key="recipe_not_on_page"

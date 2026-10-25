@@ -2,6 +2,12 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.6.1] - 2026-10-25
+
+### Fixed
+- **Arla's recipes could not be read:** the site sends a header longer than Home Assistant's web client takes. Recipe pages (also links pasted in the collection) are read with room for it.
+- **Recipes without JSON-LD:** a page with the recipe as microdata (*itemprop*) is read too, and a JSON-LD block with line breaks inside its texts. A recipe opened from *Madsider* on a page with no recipe data at all is read by the AI, like a pasted link.
+
 ## [2.6.0] - 2026-10-25
 
 ### Added

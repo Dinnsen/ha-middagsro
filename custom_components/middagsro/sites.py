@@ -10,6 +10,7 @@ have). The sitemaps are kept for a day. Each site's robots.txt is respected.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 import logging
 import re
@@ -19,9 +20,7 @@ from urllib.parse import urlparse
 
 import aiohttp
 
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-
-from .recipes import HEADERS, async_fetch_page, clean_recipe, parse_recipe_page
+from .recipes import HEADERS, async_fetch_page, clean_recipe, page_session, parse_recipe_page
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -103,7 +102,7 @@ class RecipeSites:
         self._locks: dict[str, asyncio.Lock] = {}
 
     async def _get(self, url: str, limit: int = SITEMAP_LIMIT) -> str:
-        session = async_get_clientsession(self.hass)
+        session = page_session(self.hass)
         async with session.get(
             url, headers={**HEADERS, "Accept": "*/*"}, timeout=TIMEOUT, allow_redirects=True
         ) as resp:
@@ -209,11 +208,18 @@ class RecipeSites:
                 break
         return out
 
-    async def async_recipe(self, url: str) -> dict[str, Any] | None:
-        """The recipe on a page of one of the sites, in the collection's shape (not saved)."""
+    async def async_recipe(
+        self, url: str, extract: Callable[[str], Awaitable[dict[str, Any]]] | None = None
+    ) -> dict[str, Any] | None:
+        """The recipe on a page of one of the sites, in the collection's shape (not saved).
+
+        A page without recipe data is read by the AI (extract), when it is given.
+        """
         site = site_of(url)
         page = await async_fetch_page(self.hass, url)
         found = parse_recipe_page(page)
+        if (not found or not found.get("ingredients")) and extract is not None:
+            found = await extract(page)
         if not found or not found.get("ingredients"):
             return None
         recipe = clean_recipe({**found, "source": "web"})
