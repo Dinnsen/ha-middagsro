@@ -401,3 +401,53 @@ async def test_generation_keeps_the_picks(
         )
         await planner._task
     assert seen["picks"] == {"2026-10-21": {"dish": "Frikadeller"}}
+
+
+# ------------------------------------------------------------------ 2.4.1
+
+
+async def test_mixed_meat_offer_is_beef_for_beef(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """An offer on minced beef, pork-veal or chicken: "hakket oksekød" is the beef."""
+    from custom_components.middagsro.api import Offer  # noqa: PLC0415
+
+    planner = init_integration.runtime_data.planner
+    offer = Offer(
+        id="o0",
+        heading="Hakket dansk oksekød, grise- og kalvekød eller kyllingekød",
+        description=None,
+        price=29.0,
+        pre_price=None,
+        quantity="400 g",
+        valid_from=None,
+        valid_to=None,
+        product_ids=(1, 2),
+    )
+    pork = make_product(1, "HK. GRIS & KALV 4-7%", 29, underline="400 GR.")
+    beef = make_product(2, "HK. OKSEKØD 8-12%", 29, underline="400 GR.")
+    line = {"name": "Hakket dansk oksekød", "search": "Hakket oksekød", "amount": 2, "unit": "pk"}
+    assert planner._candidates(line, [pork], "Hakket oksekød", offer=offer)[0] == []
+    found, _ = planner._candidates(line, [pork, beef], "Hakket oksekød", offer=offer)
+    assert [p.id for p in found] == [2]
+
+
+async def test_move_in_a_plan_that_was_a_little_wrong(
+    hass: HomeAssistant, init_integration: MockConfigEntry, hass_ws_client: WebSocketGenerator
+) -> None:
+    """What was wrong before the move doesn't stop it; the error is in Danish."""
+    store = init_integration.runtime_data.store
+    plan = store.plans[0]
+    # The AI put a dish on tuesday with an item from a wednesday offer.
+    plan["days"][2]["uses"] = ["Persille"]
+    plan["shopping"][1]["buy_from"] = "2026-10-21"
+    client = await hass_ws_client(hass)
+    msg = await _ws(client, 1, type="middagsro/day/move", plan_id="p", date="2026-10-19",
+                    direction="down")  # fmt: skip
+    assert msg["success"]
+    msg = await _ws(client, 2, type="middagsro/day/move", plan_id="p", date="2026-10-18",
+                    direction="down")  # fmt: skip
+    assert msg["success"]  # spaghetti on monday, its leftovers on tuesday
+    msg = await _ws(client, 3, type="middagsro/day/move", plan_id="p", date="2026-10-20",
+                    direction="up")  # fmt: skip
+    assert msg["error"]["message"] == "Rester kan ikke ligge før den dag, maden laves"

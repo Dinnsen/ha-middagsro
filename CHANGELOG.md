@@ -2,6 +2,13 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.4.1] - 2026-10-25
+
+### Fixed
+- **Errors in the panel are in Danish** (Home Assistant words its errors in English, whatever the language).
+- **Moving a dish in a plan the AI made a little wrong:** a dish on wednesday with an item from thursday's offers stopped every move in the plan. Only what a move itself breaks stops it now.
+- **Minced beef is beef:** an avis offer on "hakket oksekød, grise- og kalvekød eller kyllingekød" put pork and veal on the list for a line that asked for beef (the hakkebøffer). The product must be the thing the line is about, also from an offer.
+
 ## [2.4.0] - 2026-10-25
 
 ### Added
