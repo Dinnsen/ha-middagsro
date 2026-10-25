@@ -24,7 +24,7 @@ from custom_components.middagsro.store_client import (
     store_name,
     store_of,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -174,32 +174,38 @@ async def test_set_up_for_netto(
     assert "REMA's opskrifter" in state["shop"]["rema_only"]
     assert state["notices"] == []
 
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, f"store_{NETTO}")})
-    assert device is not None
-    assert device.model == "Netto"
+    devices = dr.async_entries_for_config_entry(dr.async_get(hass), netto.entry_id)
+    assert [d.model for d in devices] == ["Netto"]
 
 
 async def test_list_also_on_another_todo_list(hass: HomeAssistant, netto: MockConfigEntry) -> None:
     """What is put on the list goes on the family's own to-do list too, when chosen."""
     data = netto.runtime_data
-    calls = AsyncMock()
-    with patch.object(hass.services, "async_call", calls):
-        await data.shopping_list.async_add_items([{"name": "Mælk", "amount": 2}])
-        calls.assert_not_called()  # none chosen
+    calls: list[dict[str, Any]] = []
+    failing = [False]
 
-        data.store.settings["ha_todo_entity"] = "todo.familie"
-        await data.shopping_list.async_add_items([{"name": "Mælk", "amount": 2}])
-        calls.assert_not_called()  # not there
+    async def add_item(call: ServiceCall) -> None:
+        calls.append(dict(call.data))
+        if failing[0]:
+            raise HomeAssistantError("nede")
 
-        hass.states.async_set("todo.familie", "0")
-        await data.shopping_list.async_add_items([{"name": "Kaffe", "amount": 2}, {"name": "Te"}])
-        assert [c.args[2] for c in calls.call_args_list] == [{"item": "2 x Kaffe"}, {"item": "Te"}]
-        assert calls.call_args.kwargs == {"target": {"entity_id": "todo.familie"}, "blocking": True}
+    hass.services.async_register("todo", "add_item", add_item)
+    await data.shopping_list.async_add_items([{"name": "Mælk", "amount": 2}])
+    assert calls == []  # none chosen
 
-        calls.reset_mock()
-        calls.side_effect = HomeAssistantError("nede")
-        await data.shopping_list.async_add_items([{"name": "Ost"}, {"name": "Brød"}])
-        assert calls.call_count == 1  # stops at the first error
+    data.store.settings["ha_todo_entity"] = "todo.familie"
+    await data.shopping_list.async_add_items([{"name": "Mælk", "amount": 2}])
+    assert calls == []  # not there
+
+    hass.states.async_set("todo.familie", "0")
+    await data.shopping_list.async_add_items([{"name": "Kaffe", "amount": 2}, {"name": "Te"}])
+    assert [c["item"] for c in calls] == ["2 x Kaffe", "Te"]
+    assert calls[0]["entity_id"] in ("todo.familie", ["todo.familie"])
+
+    calls.clear()
+    failing[0] = True
+    await data.shopping_list.async_add_items([{"name": "Ost"}, {"name": "Brød"}])
+    assert len(calls) == 1  # stops at the first error
     shopping = await data.client.async_get_primary_list()
     assert [(i.name, i.amount) for i in shopping.items][:2] == [("Mælk", 4), ("Kaffe", 2)]
 

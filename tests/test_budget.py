@@ -34,6 +34,7 @@ class FakeStore:
         }
         self.purchases = purchases or []
         self.plans: list[dict[str, Any]] = []
+        self.prices = True  # REMA 1000: every item has a price
         self.budget_told = ""
         self.saves = 0
 
