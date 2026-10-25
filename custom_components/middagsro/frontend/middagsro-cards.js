@@ -33,7 +33,7 @@ const TEXT = {
   card_tonight_large: "Middagsro – i aften, stor",
   card_tonight_large_desc: "Aftenens opskrift som i panelet: ingredienser, fremgangsmåde og æggeure.",
   card_shopping: "Middagsro – indkøb",
-  card_shopping_desc: "Kurven og indkøbslisten (REMA-listen), med Send.",
+  card_shopping_desc: "Kurven og REMA-listen, med Send til REMA.",
   card_budget: "Middagsro – økonomi",
   card_budget_desc: "Ugens madbudget: brugt, tilbage og tempoet.",
   card_bubble: "Middagsro – Bubble",

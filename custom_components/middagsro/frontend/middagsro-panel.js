@@ -97,8 +97,8 @@ const MOVE_ICONS = {
   up: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
   down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>',
 };
-// A name's genitive in Danish: "Nettos", but "føtex'".
-const genitive = (name) => (/[sxz]$/i.test(name) ? `${name}'` : `${name}s`);
+// A name's genitive in Danish: "Nettos", but "føtex'" (and "REMA's", as the app always said).
+const genitive = (name) => (name === "REMA 1000" ? "REMA's" : /[sxz]$/i.test(name) ? `${name}'` : `${name}s`);
 const REMA_ID = "11deC"; // REMA 1000 on Tjek: its avis is shown first among the shops
 const RATE_LABELS = { like: "Synes om", dislike: "Synes ikke om", favorite: "Favorit" };
 const SURPRISE_ICON = '<svg class="ai" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11h16v9H4zM12 11v9M3 7.5h18V11H3zM12 7.5C10 3 6 4 7.5 6.5 8.4 8 12 7.5 12 7.5zm0 0c2-4.5 6-3.5 4.5-1C15.6 8 12 7.5 12 7.5z"/></svg>';
@@ -328,6 +328,7 @@ class Rema1000Panel extends HTMLElement {
     this.shadowRoot.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape" && (this._noteOpen || this._modal)) {
         this._noteOpen = false;
+        if (this._modal?.kind === "notice") this._ws("middagsro/notice_seen", { notice: this._modal.notice }).catch(() => {});
         if (!this._modal?.busy) this._modal = null;
         this._renderModal();
       }
@@ -2515,7 +2516,7 @@ class Rema1000Panel extends HTMLElement {
             (l) => `<li class="cline ${l.bought ? "bought" : ""}">
               <button class="box" data-action="chain-tick" data-arg="${esc(l.id)}" aria-label="Købt" aria-pressed="${!!l.bought}">${l.bought ? "✓" : ""}</button>
               <div class="what"><b>${esc(l.chain_heading || l.product?.name || l.name)}</b>
-                <span class="muted small">${l.chain_only ? esc(l.note || "") : `I stedet for ${esc(l.product?.name || l.name)} hos ${esc(this._shopName())}`}</span></div>
+                <span class="muted small">${l.chain_only ? esc(l.note || "") : `I stedet for ${esc(l.product?.name || l.name)} hos ${this._isRema() ? "REMA" : esc(this._shopName())}`}</span></div>
               <span class="cost"><b>${kr(l.cost)}</b></span>
               <span class="ctrl">
                 <span class="stepper">
@@ -3952,7 +3953,7 @@ class Rema1000Panel extends HTMLElement {
         </div>
         <ul class="rema">${remaItems}</ul>
         ${rema && this._isRema() ? `<p class="muted">Anslået pris for det, der mangler: ${kr(rema.total)}</p>` : ""}
-        ${!this._isRema() && this._state.settings.ha_todo_entity ? `<p class="muted small">Det, der sendes, kommer også på ${esc(this.hass?.states?.[this._state.settings.ha_todo_entity]?.attributes?.friendly_name || this._state.settings.ha_todo_entity)}.</p>` : ""}
+        ${!this._isRema() && this._state.settings.ha_todo_entity ? `<p class="muted small">Det, der sendes, kommer også på ${esc(this._hass?.states?.[this._state.settings.ha_todo_entity]?.attributes?.friendly_name || this._state.settings.ha_todo_entity)}.</p>` : ""}
       </div>`;
   }
 
@@ -4629,7 +4630,7 @@ class Rema1000Panel extends HTMLElement {
         <p class="muted">Vælg de kæder, I også handler i. Deres madtilbud vises på forsiden, og i indkøbslisten og favoritterne står der, når en vare er billigere hos dem denne uge. Madplanen laves stadig med ${esc(this._shopName())}.</p>
         ${this._chains
           ? `<div class="chain-pick">${this._chains
-              .filter((c) => c.id !== this._storeId())
+              .filter((c) => this._isRema() || c.id !== this._storeId())
               .map((c) => `<label class="chain-choice"><input type="checkbox" data-list="chains" value="${esc(c.id)}" ${f.chains.includes(c.id) ? "checked" : ""}>${this._chainLogo(c.id)}<span>${esc(c.name)}</span></label>`)
               .join("")}</div>`
           : '<p class="muted"><span class="spinner small"></span> Henter kæderne …</p>'}
@@ -4664,7 +4665,7 @@ class Rema1000Panel extends HTMLElement {
         <p class="muted small">${how}</p>
         <a class="btn" href="/config/integrations/integration/middagsro" target="_top">Åbn Middagsro under Enheder og tjenester</a>`);
         }
-        const todos = Object.keys(this.hass?.states || {})
+        const todos = Object.keys(this._hass?.states || {})
           .filter((id) => id.startsWith("todo.") && !id.includes("middagsro"))
           .sort();
         return card(`        <h2 class="flush">I handler i ${esc(shop.name)}</h2>
@@ -4674,7 +4675,7 @@ class Rema1000Panel extends HTMLElement {
         <label class="field">Send også til
           <select data-path="ha_todo_entity">
             <option value="" ${f.ha_todo_entity ? "" : "selected"}>Ingen anden liste</option>
-            ${todos.map((id) => `<option value="${esc(id)}" ${f.ha_todo_entity === id ? "selected" : ""}>${esc(this.hass.states[id].attributes?.friendly_name || id)}</option>`).join("")}
+            ${todos.map((id) => `<option value="${esc(id)}" ${f.ha_todo_entity === id ? "selected" : ""}>${esc(this._hass.states[id].attributes?.friendly_name || id)}</option>`).join("")}
           </select></label>
         <h2>Kun med REMA 1000</h2>
         <ul class="plain">${(shop.rema_only || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>

@@ -77,7 +77,7 @@
       "already_configured": "Denne REMA 1000-konto eller butik er allerede sat op.",
       "reauth_successful": "Logget ind igen.",
       "wrong_account": "Login hører til en anden REMA 1000-konto.",
-      "reconfigure_successful": "Ændret."
+      "reconfigure_successful": "Ændret. Madplaner, opskrifter og indstillinger er beholdt."
     }
   },
   "entity": {
