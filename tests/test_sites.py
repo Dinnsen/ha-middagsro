@@ -39,6 +39,7 @@ INDEX = f"""<?xml version="1.0"?><sitemapindex>
 <sitemap><loc>{VALDEMARSRO}/page-sitemap.xml</loc></sitemap>
 <sitemap><loc>{VALDEMARSRO}/post-sitemap2.xml</loc></sitemap>
 <sitemap><loc>{VALDEMARSRO}/post-sitemap.xml</loc></sitemap>
+<sitemap><loc>https://example.com/post-sitemap.xml</loc></sitemap>
 </sitemapindex>"""
 
 POSTS = f"""<?xml version="1.0"?><urlset>
@@ -51,6 +52,7 @@ POSTS = f"""<?xml version="1.0"?><urlset>
 <url><loc>{VALDEMARSRO}/opskrifter/kylling/karry/</loc></url>
 <url><loc>{VALDEMARSRO}/frikadeller-med-kartoffelsalat/</loc></url>
 <url><loc>{VALDEMARSRO}/broendkarse-suppe/</loc></url>
+<url><loc>https://example.com/kylling-karry/</loc></url>
 </urlset>"""
 
 
@@ -78,6 +80,7 @@ async def test_search(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) 
     )
     aioclient_mock.get(f"{MADENSVERDEN}/sitemap_index.xml", exc=TimeoutError())
     finder = sites.RecipeSites(hass)
+    finder._async_titles = AsyncMock()  # type: ignore[method-assign]
 
     found = await finder.async_search(["valdemarsro", "madensverden", "ukendt"], "Kylling karry")
     assert [hit["url"] for hit in found] == [
@@ -97,7 +100,7 @@ async def test_search(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) 
     ]
     calls = aioclient_mock.call_count
     assert await finder.async_search(["valdemarsro"], "frikadeller") != []
-    assert aioclient_mock.call_count == calls  # kept for a day
+    assert aioclient_mock.call_count == calls  # kept (half an hour, as a sitemap failed)
     assert await finder.async_search(["valdemarsro"], "i og") == []  # no real words
     assert await finder.async_search(["valdemarsro"], "madplan") == []  # not a recipe
 
@@ -126,12 +129,47 @@ async def test_search_keeps_the_last_index(
     aioclient_mock.get(f"{VALDEMARSRO}/sitemap.xml", status=500)
     aioclient_mock.get(f"{VALDEMARSRO}/sitemap_index.xml", status=500)
     finder = sites.RecipeSites(hass)
+    finder._async_titles = AsyncMock()  # type: ignore[method-assign]
     finder._indexes["valdemarsro"] = sites._Index(
         [(f"{VALDEMARSRO}/lasagne/", frozenset({"lasagne"}), "Lasagne")], [], -1e9
     )
     assert [h["title"] for h in await finder.async_search(["valdemarsro"], "lasagne")] == [
         "Lasagne"
     ]
+    assert finder._indexes["valdemarsro"].failed == 1
+    calls = aioclient_mock.call_count
+    await finder.async_search(["valdemarsro"], "lasagne")
+    assert aioclient_mock.call_count == calls  # tried again in half an hour
+    finder._indexes["valdemarsro"].loaded -= sites.RETRY_SECONDS + 1
+    assert not finder._indexes["valdemarsro"].fresh()
+    finder._indexes["valdemarsro"].failed = 0
+    assert finder._indexes["valdemarsro"].fresh()  # a day, when all was read
+
+
+async def test_titles(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:
+    """The hits get the titles of their pages (addresses leave out æ, ø and å)."""
+    finder = sites.RecipeSites(hass)
+    urls = [f"{VALDEMARSRO}/{slug}/" for slug in ("aben-lasagne", "karry", "nede", "fejl")]
+    aioclient_mock.get(urls[0], text="<html><h1>\n Åben <em>lasagne</em></h1></html>")
+    aioclient_mock.get(
+        urls[1],
+        text='<meta property="og:title" content="Kylling i karry - Valdemarsro">',
+    )
+    aioclient_mock.get(urls[2], status=404)
+    aioclient_mock.get(urls[3], exc=aiohttp.ClientError("nede"))
+    hits = [{"url": url, "title": "Slug"} for url in urls]
+    await finder._async_titles(hits)
+    assert [h["title"] for h in hits] == ["Åben lasagne", "Kylling i karry", "Slug", "Slug"]
+    calls = aioclient_mock.call_count
+    await finder._async_titles([{"url": urls[0], "title": "Slug"}])
+    assert aioclient_mock.call_count == calls  # kept
+
+
+def test_page_title() -> None:
+    """A page's heading, else og:title or <title> without the site's name."""
+    assert sites.page_title("<h1> </h1><title>Lasagne | Arla</title>") == "Lasagne"
+    assert sites.page_title("<title>Boller i karry – DK-kogebogen</title>") == "Boller i karry"
+    assert sites.page_title("<p>Ingen titel</p>") == ""
 
 
 async def test_recipe(hass: HomeAssistant) -> None:
@@ -163,7 +201,10 @@ async def test_candidates(hass: HomeAssistant) -> None:
         "laks": [{"url": "b"}, {"url": "fejl"}],
     }
 
-    async def search(site_ids: list[str], query: str, limit: int = 40) -> list[dict[str, Any]]:
+    async def search(
+        site_ids: list[str], query: str, limit: int = 40, titles: bool = True
+    ) -> list[dict[str, Any]]:
+        assert not titles
         return hits[query]
 
     async def recipe(url: str) -> dict[str, Any] | None:

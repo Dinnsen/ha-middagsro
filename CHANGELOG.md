@@ -2,6 +2,13 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.6.3] - 2026-10-25
+
+### Fixed
+- **Madsider found too few recipes:** only the first part of each sitemap (and of a recipe page) was read. They are read whole now, so Louises madblog, Madens Verden, DK-kogebogen and Arla find all their recipes.
+- **Real titles in the results:** some sites leave æ, ø and å out of their addresses ("Aben lasagne med salsiccia"); the hits shown get the title from their page.
+- A sitemap that could not be read is tried again after half an hour instead of the next day, and a site that is down keeps the recipes it had.
+
 ## [2.6.2] - 2026-10-25
 
 ### Fixed
