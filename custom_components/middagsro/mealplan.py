@@ -1480,7 +1480,6 @@ class MealPlanner:
 
     # ------------------------------------------------------------- status
 
-    @callback
     @property
     def prices(self) -> bool:
         """Every item has a price (REMA 1000); with another shop only the offers have."""
@@ -1491,6 +1490,7 @@ class MealPlanner:
         """Where the family shops: REMA 1000, Netto, føtex ..."""
         return "REMA 1000" if self.prices else store_name(self.client.dealer_id)
 
+    @callback
     def _notify(self) -> None:
         async_dispatcher_send(self.hass, signal_plans_updated(self.entry_id))
 
