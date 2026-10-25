@@ -1434,7 +1434,7 @@ class Rema1000Panel extends HTMLElement {
       return;
     }
     if (ds.list && this._form) {
-      const list = this._form[ds.list];
+      const list = (this._form[ds.list] ||= []);
       const idx = list.indexOf(el.value);
       if (el.checked && idx < 0) list.push(el.value);
       if (!el.checked && idx >= 0) list.splice(idx, 1);
@@ -4180,7 +4180,7 @@ class Rema1000Panel extends HTMLElement {
     const f = this._form;
     const opts = this._state.options;
     const check = (list, key, labels) =>
-      `<label class="check"><input type="checkbox" data-list="${list}" value="${key}" ${f[list].includes(key) ? "checked" : ""}> ${esc(labels[key] || key)}</label>`;
+      `<label class="check"><input type="checkbox" data-list="${list}" value="${key}" ${(f[list] || []).includes(key) ? "checked" : ""}> ${esc(labels[key] || key)}</label>`;
     const weekdaySelect = (path, value) =>
       `<select data-path="${path}" data-type="number">${WEEKDAYS.map((d, i) => `<option value="${i}" ${Number(value) === i ? "selected" : ""}>${d}</option>`).join("")}</select>`;
     const num = (path, value, min = 0, max = 999) =>

@@ -896,7 +896,9 @@ async def test_generate_over_budget_tries_again(
     planner = init_integration.runtime_data.planner
     dates = mp.plan_dates(START, 7)
     cheap = [{"name": "Løg", "amount": 2, "unit": "stk", "search": "løg"}]
-    ai = FakeAI(ai_answer(dates, SHOPPING[:4]), ai_answer(dates, cheap))
+    # The recipes use what is on the list (else their items would go on it too).
+    onions = {**RECIPE, "ingredients": [{"name": "løg", "amount": "2 stk"}]}
+    ai = FakeAI(ai_answer(dates, SHOPPING[:4]), ai_answer(dates, cheap), recipe=onions)
     await _generate(planner, ai, send=True)
 
     assert len(ai.prompts) == 2
