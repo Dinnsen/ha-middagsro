@@ -108,9 +108,7 @@ class RecipeSites:
             url, headers={**HEADERS, "Accept": "*/*"}, timeout=TIMEOUT, allow_redirects=True
         ) as resp:
             if resp.status >= 400:
-                raise aiohttp.ClientResponseError(
-                    resp.request_info, resp.history, status=resp.status
-                )
+                raise aiohttp.ClientError(f"HTTP {resp.status}")
             raw = await resp.content.read(limit)
             return raw.decode(resp.charset or "utf-8", errors="replace")
 
