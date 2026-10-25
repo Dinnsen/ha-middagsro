@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
@@ -27,31 +28,33 @@ RECIPE = {
 }
 
 
+def _all_gone(paths: list[Path]) -> bool:
+    return bool(paths) and not any(path.exists() for path in paths)
+
+
 async def _ws(client: Any, msg_id: int, **msg: Any) -> dict[str, Any]:
     await client.send_json({"id": msg_id, **msg})
     result: dict[str, Any] = await client.receive_json()
     return result
 
 
-async def test_media_source(hass: HomeAssistant) -> None:
+async def test_media_source(hass: HomeAssistant, tmp_path: Any) -> None:
     """The photos are only there for the AI, while it reads them."""
     source = await ms.async_get_media_source(hass)
     item = MediaSourceItem(hass, "middagsro", "abc", None)
-    assert await source.async_get_media_image(item) is None
-    ms.SCANS["abc"] = rc._decode_photo(PHOTO)
-    image = await source.async_get_media_image(item)
-    assert image is not None
-    assert image.mime_type == "image/jpeg"
-    del ms.SCANS["abc"]
     with pytest.raises(Unresolvable):
         await source.async_resolve_media(item)
+    ms.SCANS["abc"] = ms.ScannedPage(tmp_path / "a.jpg", "image/jpeg")
+    media = await source.async_resolve_media(item)
+    assert (media.path, media.mime_type) == (tmp_path / "a.jpg", "image/jpeg")
+    del ms.SCANS["abc"]
     with pytest.raises(Unresolvable):
         await source.async_browse_media(item)
 
 
 def test_decode_photo() -> None:
     """A data URL, or plain base64; never something else or too big."""
-    assert rc._decode_photo(base64.b64encode(b"x").decode()).mime_type == "image/jpeg"
+    assert rc._decode_photo(base64.b64encode(b"x").decode()) == (b"x", "image/jpeg")
     for bad in (
         "data:text/plain;base64,eA==",
         "data:image/png;base64,***",
@@ -76,12 +79,13 @@ async def test_scan(
     planner = init_integration.runtime_data.planner
     client = await hass_ws_client(hass)
     seen: list[dict[str, Any]] = []
+    seen_paths: list[Path] = []
 
     async def ai(hass: HomeAssistant, **kwargs: Any) -> SimpleNamespace:
         seen.append(kwargs)
         for attachment in kwargs["attachments"]:
             key = attachment["media_content_id"].removeprefix("media-source://middagsro/")
-            assert key in ms.SCANS  # there while the AI reads it
+            seen_paths.append(ms.SCANS[key].path)  # there while the AI reads it
         return SimpleNamespace(data=RECIPE)
 
     with patch("homeassistant.components.ai_task.async_generate_data", new=ai):
@@ -92,6 +96,7 @@ async def test_scan(
     assert len(seen[0]["attachments"]) == 2
     assert seen[0]["attachments"][0]["media_content_type"] == "image/jpeg"
     assert ms.SCANS == {}  # gone again
+    assert _all_gone(seen_paths)
     assert init_integration.runtime_data.store.recipes == []
 
     # No recipe in the photo, or the AI fails.
