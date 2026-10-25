@@ -64,6 +64,7 @@ from .recipes import (
 )
 from .rema_recipes import TAGS as REMA_TAGS
 from .schema import vol
+from .sites import SITES, site_of
 from .storage import ALLERGY_OPTIONS, AVOID_OPTIONS, FAVORITE_FREQUENCIES
 from .watch import (
     async_check as async_watch_check,
@@ -114,6 +115,7 @@ def _recipe_summary(recipe: dict[str, Any]) -> dict[str, Any]:
             "rating",
             "favorite",
             "source",
+            "site",
             "created",
             "times_planned",
             "last_planned",
@@ -153,6 +155,7 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
         # The food budget (budget.py): None when the family keeps none.
         "budget": budget_summary(store),
         "notify_targets": notify_targets(hass),
+        "recipe_sites": [{"id": site.id, "name": site.name} for site in SITES.values()],
         "status": data.planner.status,
         "default_start": data.planner.default_start().isoformat(),
         "ai_entities": ai_choices(hass),
@@ -371,7 +374,8 @@ async def ws_favorite_delete(
         vol.Optional("picks"): {
             str: {
                 vol.Required("dish"): str,
-                vol.Optional("source"): vol.In(["collection", "rema", "mealie"]),
+                vol.Optional("source"): vol.In(["collection", "rema", "mealie", "web"]),
+                vol.Optional("url"): vol.Any(str, None),
                 vol.Optional("recipe_id"): vol.Any(str, None),
                 vol.Optional("slug"): vol.Any(str, None),
                 vol.Optional("type"): vol.Any(str, None),
@@ -947,6 +951,41 @@ async def ws_recipe_rate_day(
 
 
 @websocket_api.websocket_command(
+    {vol.Required("type"): "middagsro/sites/search", ENTRY: str, vol.Required("query"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_sites_search(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Search the family's recipe sites."""
+    planner = _entry(hass, msg).runtime_data.planner
+    sites = planner.store.settings["recipe_sites"]
+    results = await planner.sites.async_search(sites, msg["query"]) if sites else []
+    connection.send_result(msg["id"], {"results": results})
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "middagsro/sites/recipe", ENTRY: str, vol.Required("url"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_sites_recipe(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """A recipe from one of the sites, to look over and save (not saved yet)."""
+    planner = _entry(hass, msg).runtime_data.planner
+    if site_of(msg["url"]) is None:
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key="recipe_bad_link")
+    recipe = await planner.sites.async_recipe(msg["url"])
+    if recipe is None:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="recipe_not_on_page"
+        )
+    connection.send_result(msg["id"], recipe)
+
+
+@websocket_api.websocket_command(
     {
         vol.Required("type"): "middagsro/recipes/scan",
         ENTRY: str,
@@ -1439,6 +1478,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_day_clear,
         ws_day_move,
         ws_recipe_scan,
+        ws_sites_search,
+        ws_sites_recipe,
         ws_mealie_recipes,
         ws_plan_line,
         ws_health,

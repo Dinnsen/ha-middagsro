@@ -25,3 +25,6 @@ SERVICE_GET_OFFERS: Final = "get_offers"
 SERVICE_GENERATE_MEAL_PLAN: Final = "generate_meal_plan"
 SERVICE_SEND_MEAL_PLAN: Final = "send_meal_plan"
 SERVICE_REGISTER_PURCHASE: Final = "register_purchase"
+
+# The recipe sites the family can choose (sites.py has their details).
+SITE_IDS: Final = ("valdemarsro", "madensverden", "louisesmadblog", "dkkogebogen", "arla")

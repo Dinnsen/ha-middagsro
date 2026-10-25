@@ -277,6 +277,20 @@
         ingredients: [{ amount: "600 g", name: "kyllingebryst" }, { amount: "2 spsk", name: "rød karrypasta" }, { amount: "400 ml", name: "kokosmælk" }, { amount: "1", name: "rød peberfrugt" }, { amount: "300 g", name: "jasminris" }],
         steps: [{ text: "Skær kyllingen i strimler.", minutes: 5 }, { text: "Svits karrypastaen, og tilsæt kokosmælk og kylling.", minutes: 15 }], tip: "" };
     },
+    "middagsro/sites/search": async (msg) => {
+      await wait(500);
+      const names = { valdemarsro: "Valdemarsro", madensverden: "Madens Verden", louisesmadblog: "Louises madblog", dkkogebogen: "DK-kogebogen", arla: "Arla" };
+      const q = (msg.query || "").toLowerCase();
+      const dishes = ["Lasagne med oksekød", "Kylling i karry med ris", "Frikadeller med kartoffelsalat", "Laks i ovn med citron og dild", "Boller i karry", "Pasta med kødsovs", "Kyllingesuppe med boller", "Ovnbagt torsk med persillesovs"];
+      const hits = dishes.filter((d) => d.toLowerCase().includes(q.split(" ")[0] || ""));
+      return { results: (D.state.settings.recipe_sites || []).flatMap((id) => (hits.length ? hits : dishes.slice(0, 2)).slice(0, 3).map((title) => ({ site: id, site_name: names[id], url: `https://example.com/${id}/${title.toLowerCase().replace(/ /g, "-")}`, title }))) };
+    },
+    "middagsro/sites/recipe": async (msg) => {
+      await wait(500);
+      return { id: null, name: "Lasagne med oksekød", type: "normal", servings: 4, active_minutes: 30, total_minutes: 75, rating: null, favorite: false, source: "web", site: "Valdemarsro", url: msg.url,
+        ingredients: [{ amount: "500 g", name: "hakket oksekød" }, { amount: "1", name: "løg" }, { amount: "2", name: "fed hvidløg" }, { amount: "2", name: "gulerødder" }, { amount: "1 dåse", name: "hakkede tomater" }, { amount: "2 spsk", name: "tomatpuré" }, { amount: "12", name: "lasagneplader" }, { amount: "5 dl", name: "mælk" }, { amount: "100 g", name: "revet parmesan" }],
+        steps: [{ text: "Brun kødet med løg, hvidløg og gulerod.", minutes: 10 }, { text: "Tilsæt tomater og puré, og lad sovsen simre.", minutes: 20 }, { text: "Lav bechamelsovsen, læg lasagnen i lag, og bag den.", minutes: 45 }], tip: "" };
+    },
     "middagsro/recipes/scan": async (msg) => {
       await wait(900);
       return { id: null, name: "Mormors frikadeller med kartofler og brun sovs", type: "normal", servings: 4, active_minutes: 30, total_minutes: 45, rating: null, favorite: false, source: "scan",

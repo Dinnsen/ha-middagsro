@@ -2,6 +2,13 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.6.0] - 2026-10-25
+
+### Added
+- **Recipes from known Danish recipe sites:** choose the family's sites in *Indstillinger → Opskrifter og madsider* – Valdemarsro, Madens Verden, Louises madblog, DK-kogebogen and Arla. *Opskrifter → Madsider* searches them; a recipe opens to be looked over and saved in the collection, with a link back to the site. *Vælg ret* in a new plan has a *Madsider* tab too.
+- **Plans from the sites:** with *Brug madsidernes opskrifter, når madplanen laves* on, the AI is offered recipes from the sites for the week's main offers (chicken, salmon, minced beef …). A recipe it chooses is saved in the collection, and its ingredients go on the shopping list.
+- The sites are searched by their sitemaps (read once a day, robots.txt respected), and a recipe is only read when it is opened or offered to the AI.
+
 ## [2.5.0] - 2026-10-25
 
 ### Added

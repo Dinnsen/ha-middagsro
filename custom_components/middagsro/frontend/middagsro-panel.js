@@ -143,6 +143,7 @@ const SETTING_ICONS = {
   rules: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>',
   nutrition: TAB_ICONS.health,
   mealie: TAB_ICONS.recipes,
+  sites: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.3 2.4 3.4 5.2 3.4 8.5s-1.1 6.1-3.4 8.5c-2.3-2.4-3.4-5.2-3.4-8.5s1.1-6.1 3.4-8.5z"/></svg>',
   watch: BELL_ICON,
   budget: TAB_ICONS.budget,
   chains: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5 5.5 4h13L20 9.5M4 9.5h16M4 9.5c0 1.7 1.3 2.5 2.7 2.5S9.3 11.2 9.3 9.5c0 1.7 1.3 2.5 2.7 2.5s2.7-.8 2.7-2.5c0 1.7 1.3 2.5 2.7 2.5S20 11.2 20 9.5M5.5 12v8h13v-8M10 20v-4.5h4V20"/></svg>',
@@ -175,6 +176,10 @@ const SETTINGS_SECTIONS = (panel) => {
       summary: f.chains?.length ? f.chains.map((id) => panel._chainName(id)).join(", ") : "Kun REMA 1000" },
     { key: "watch", title: "Overvågning og beskeder", form: true,
       summary: `${(state.watch || []).length} overvåget${f.watch_notify ? " · besked ved tilbud" : " · ingen beskeder"}` },
+    { key: "sites", title: "Opskrifter og madsider", form: true,
+      summary: (f.recipe_sites || []).length
+        ? `${(state.recipe_sites || []).filter((x) => f.recipe_sites.includes(x.id)).map((x) => x.name).join(", ")}${f.recipe_sites_in_plan ? " · i madplanen" : ""}`
+        : "Ingen valgt" },
     { key: "mealie", title: "Mealie", form: true,
       summary: state.mealie?.available ? (f.mealie_recipes || f.mealie_calendar ? "Slået til" : "Slået fra") : "Ikke sat op" },
     { key: "app", title: "App på hjemmeskærmen", form: false, summary: "Åbn Middagsro som en app på telefonen" },
@@ -301,6 +306,7 @@ class Rema1000Panel extends HTMLElement {
     this._book = { amount: "", store: REMA_ID, date: "", monthly: "" };
     // Dishes chosen for a day of the next plan: {date: {dish, source, recipe_id | slug}}.
     this._picks = {};
+    this._sites = { query: "", results: [], loading: false, error: null, searched: false, opening: null };
     this._budgetSpan = "month";
     this._wake = null;
     this._wakeWanted = false;
@@ -820,6 +826,21 @@ class Rema1000Panel extends HTMLElement {
           `${line?.product?.name || line?.name || "Varen"} er lagt på REMA-listen.`
         );
       },
+      "site-search": () => this._siteSearch(this._sites.query),
+      "site-open": () => {
+        this._sites.opening = arg;
+        this._render();
+        this._ws("middagsro/sites/recipe", { url: arg })
+          .then((recipe) => {
+            this._modal = { kind: "recipe", recipe: { ...recipe, id: null }, imported: true };
+            this._renderModal();
+          })
+          .catch((err) => this._say(`Fejl: ${err?.message || err}`))
+          .finally(() => {
+            this._sites.opening = null;
+            this._render();
+          });
+      },
       "pick-open": () => {
         this._modal = { kind: "pick", date: arg, tab: "collection", query: "", rema: null, mealie: null };
         this._renderModal();
@@ -832,7 +853,12 @@ class Rema1000Panel extends HTMLElement {
         if (arg === "rema" && !m.rema) this._pickLoad("rema");
         if (arg === "mealie" && !m.mealie) this._pickLoad("mealie");
       },
-      "pick-search": () => this._modal?.kind === "pick" && this._modal.tab === "rema" && this._pickLoad("rema"),
+      "pick-search": () => {
+        const m = this._modal;
+        if (m?.kind !== "pick") return;
+        if (m.tab === "rema") this._pickLoad("rema");
+        if (m.tab === "sites") this._siteSearch(m.query, (m.sites ||= {}));
+      },
       "pick-choose": () => {
         const m = this._modal;
         if (m?.kind !== "pick") return;
@@ -844,6 +870,9 @@ class Rema1000Panel extends HTMLElement {
         } else if (source === "rema") {
           const r = (m.rema?.recipes || []).find((x) => x.slug === id);
           if (r) pick = { dish: r.title, source, slug: r.slug, type: r.vegetarian ? "vegetar" : "normal" };
+        } else if (source === "web") {
+          const r = (m.sites?.results || []).find((x) => x.url === id);
+          if (r) pick = { dish: r.title, source, url: r.url };
         } else {
           const r = (m.mealie?.recipes || []).find((x) => x.slug === id);
           if (r) pick = { dish: r.name, source, slug: r.slug };
@@ -1353,12 +1382,21 @@ class Rema1000Panel extends HTMLElement {
       this._noteDraft = el.value;
       return;
     }
+    if (ds.bind === "sitequery") {
+      this._sites.query = el.value;
+      if (ev.type === "change") this._siteSearch(el.value);
+      return;
+    }
     if (ds.bind === "pickq") {
       const m = this._modal;
       if (m?.kind !== "pick") return;
       m.query = el.value;
       if (m.tab === "rema") {
         if (ev.type === "change") this._pickLoad("rema");
+        return;
+      }
+      if (m.tab === "sites") {
+        if (ev.type === "change") this._siteSearch(m.query, (m.sites ||= {}));
         return;
       }
       this._soon("pickq", () => this._renderModal());
@@ -2558,7 +2596,7 @@ class Rema1000Panel extends HTMLElement {
               r.total_minutes ? `${r.total_minutes} min` : "",
               r.type === "vegetar" ? "Vegetar" : "",
               r.times_planned ? `brugt ${r.times_planned} ${r.times_planned === 1 ? "gang" : "gange"}` : "",
-              r.source === "link" ? "fra link" : r.source === "scan" ? "fra kogebog" : r.source === "manual" ? "egen opskrift" : "",
+              r.source === "link" ? "fra link" : r.source === "web" ? `fra ${r.site || "madside"}` : r.source === "scan" ? "fra kogebog" : r.source === "manual" ? "egen opskrift" : "",
             ]
               .filter(Boolean)
               .join(" · ")}</span>
@@ -2761,7 +2799,8 @@ class Rema1000Panel extends HTMLElement {
         ${r.image ? `<img class="rc-photo" src="${esc(r.image)}" alt="">` : ""}
         ${r.rema_slug
           ? `<p class="muted small">Fra REMA 1000's opskrifter. Ingredienserne er koblet til REMA's varer, så indkøbslisten får de rigtige varer.${r.id ? "" : " Gem den i opskriftsamlingen, eller sæt den direkte på madplanen."}</p>`
-          : m.imported ? `<p class="muted small">${m.recipe.source === "scan" ? "Læst fra billedet af AI'en – tjek mængder og trin" : "Hentet fra linket"}. Ret det, der skal rettes, og gem den i opskriftsamlingen.</p>` : ""}
+          : m.imported ? `<p class="muted small">${m.recipe.source === "scan" ? "Læst fra billedet af AI'en – tjek mængder og trin" : m.recipe.source === "web" ? `Fra ${esc(m.recipe.site || "madsiden")}` : "Hentet fra linket"}. Ret det, der skal rettes, og gem den i opskriftsamlingen.</p>` : ""}
+        ${m.recipe.url ? `<p class="muted small"><a href="${esc(m.recipe.url)}" target="_blank" rel="noopener">Se opskriften på ${esc(m.recipe.site || "siden")} ↗</a></p>` : ""}
         ${this._remaPick && r.rema_slug
           ? `<div class="banner info">Vælg den til ${esc(dateLabel(this._remaPick.date).toLowerCase())}?
               <button class="btn primary small" data-action="rr-pick" data-arg="${esc(r.rema_slug)}" ${busy ? "disabled" : ""}>${m.busy === "pick" ? '<span class="spinner small"></span> Sætter på …' : "Sæt på madplanen"}</button></div>`
@@ -3082,8 +3121,9 @@ class Rema1000Panel extends HTMLElement {
 
   _pickModal(m) {
     const query = m.query.trim().toLowerCase();
-    const tabs = [["collection", "Opskriftsamling"], ["rema", "REMA-opskrifter"]];
+    const tabs = [["collection", '<span class="wide">Opskriftsamling</span><span class="narrow">Samling</span>'], ["rema", 'REMA<span class="wide">-opskrifter</span>']];
     if (this._state.mealie?.available) tabs.push(["mealie", "Mealie"]);
+    if ((this._state.settings.recipe_sites || []).length) tabs.push(["sites", "Madsider"]);
     const row = (source, id, name, meta) => `<li class="pick-row"><div class="what"><b>${esc(name)}</b>${meta ? `<span class="muted small">${esc(meta)}</span>` : ""}</div>
       <button class="btn small primary" data-action="pick-choose" data-arg="${source}|${esc(id)}">Vælg</button></li>`;
     let body = "";
@@ -3094,6 +3134,15 @@ class Rema1000Panel extends HTMLElement {
       body = list.length
         ? `<ul class="lines">${list.map((r) => row("collection", r.id, `${r.favorite ? "❤️ " : ""}${r.name}`, r.total_minutes ? `${r.total_minutes} min` : "")).join("")}</ul>`
         : '<p class="muted">Ingen opskrifter i samlingen passer. Gem retter med 👍 eller ❤️, så kommer de her.</p>';
+    } else if (m.tab === "sites") {
+      const data = m.sites || {};
+      body = data.loading
+        ? '<p class="muted"><span class="spinner small"></span> Søger på madsiderne …</p>'
+        : data.error
+          ? `<div class="banner error">${esc(data.error)}</div>`
+          : (data.results || []).length
+            ? `<ul class="lines">${data.results.map((r) => row("web", r.url, r.title, r.site_name)).join("")}</ul>`
+            : `<p class="muted">${data.searched ? "Ingen opskrifter fundet." : "Søg efter en ret på jeres madsider."}</p>`;
     } else {
       const data = m[m.tab];
       const list = (data?.recipes || []).filter(
@@ -3118,10 +3167,10 @@ class Rema1000Panel extends HTMLElement {
       <div class="dialog wide sheet" role="dialog" aria-modal="true" aria-label="Vælg ret">
         <div class="dialog-top"><h2>Ret til ${esc(dateLabel(m.date).toLowerCase())}</h2>
           <button class="icon-btn close" data-action="modal-close" aria-label="Luk">${CLOSE_ICON}</button></div>
-        <div class="seg subnav">${tabs.map(([k, label]) => `<button class="${m.tab === k ? "active" : ""}" data-action="pick-tab" data-arg="${k}">${label}</button>`).join("")}</div>
+        <div class="seg subnav fit">${tabs.map(([k, label]) => `<button class="${m.tab === k ? "active" : ""}" data-action="pick-tab" data-arg="${k}">${label}</button>`).join("")}</div>
         <div class="row wrap">
-          <input class="grow" type="search" data-bind="pickq" value="${esc(m.query)}" placeholder="${m.tab === "rema" ? "Søg i REMA's opskrifter" : "Søg"}">
-          ${m.tab === "rema" ? `<button class="btn" data-action="pick-search">Søg</button>` : ""}
+          <input class="grow" type="search" data-bind="pickq" value="${esc(m.query)}" placeholder="${m.tab === "rema" ? "Søg i REMA's opskrifter" : m.tab === "sites" ? "Søg på madsiderne" : "Søg"}">
+          ${m.tab === "rema" || m.tab === "sites" ? `<button class="btn" data-action="pick-search">Søg</button>` : ""}
         </div>
         <p class="muted small">Madplanen bygges omkring den valgte ret, og dens varer kommer på indkøbslisten.</p>
         ${body}
@@ -3432,6 +3481,49 @@ class Rema1000Panel extends HTMLElement {
   }
 
   // REMA 1000's own recipes: categories, cards and "Vis flere".
+  // The family's recipe sites: search them, open a recipe, save it in the collection.
+  _sitesView() {
+    const chosen = this._state.settings.recipe_sites || [];
+    const names = (this._state.recipe_sites || []).filter((x) => chosen.includes(x.id)).map((x) => x.name);
+    const s = this._sites;
+    if (!chosen.length) {
+      return `<div class="card"><h2 class="flush">Madsider</h2>
+        <p>Søg i opskrifter fra kendte madsider – Valdemarsro, Madens Verden, Louises madblog, DK-kogebogen og Arla – og gem dem i opskriftsamlingen. Madplanen kan også tage udgangspunkt i dem.</p>
+        <button class="btn primary" data-action="settings-open" data-arg="sites">Vælg madsider</button></div>`;
+    }
+    const rows = (s.results || [])
+      .map(
+        (r) => `<li class="pick-row"><div class="what"><b>${esc(r.title)}</b><span class="muted small">${esc(r.site_name)}</span></div>
+          <button class="btn small" data-action="site-open" data-arg="${esc(r.url)}" ${s.opening ? "disabled" : ""}>${s.opening === r.url ? '<span class="spinner small"></span>' : "Se opskrift"}</button></li>`
+      )
+      .join("");
+    return `<div class="card">
+      <h2 class="flush">Madsider</h2>
+      <p class="muted small">Søger i ${esc(names.join(", "))}. <button class="link" data-action="settings-open" data-arg="sites">Ret</button></p>
+      <div class="row wrap">
+        <input class="grow" type="search" data-bind="sitequery" value="${esc(s.query)}" placeholder="Søg fx frikadeller, lasagne eller laks" enterkeyhint="search">
+        <button class="btn" data-action="site-search" ${s.loading ? "disabled" : ""}>Søg</button>
+      </div>
+      ${s.loading ? '<p class="muted"><span class="spinner small"></span> Søger … (første gang tager det lidt længere)</p>' : ""}
+      ${s.error ? `<div class="banner error">${esc(s.error)}</div>` : ""}
+      ${rows ? `<ul class="lines">${rows}</ul>` : s.searched && !s.loading ? '<p class="muted">Ingen opskrifter fundet. Prøv et andet ord.</p>' : ""}
+    </div>`;
+  }
+
+  async _siteSearch(query, into) {
+    const target = into || this._sites;
+    if (!query.trim()) return;
+    Object.assign(target, { loading: true, error: null, searched: true });
+    into ? this._renderModal() : this._render();
+    try {
+      target.results = (await this._ws("middagsro/sites/search", { query })).results || [];
+    } catch (err) {
+      target.error = err?.message || String(err);
+    }
+    target.loading = false;
+    into ? this._renderModal() : this._render();
+  }
+
   _remaView() {
     const rr = this._rr;
     const pick = this._remaPick;
@@ -3560,12 +3652,13 @@ class Rema1000Panel extends HTMLElement {
   }
 
   _recipesView() {
-    const seg = `<div class="seg subnav">
-        <button class="${this._recipesSub === "week" ? "active" : ""}" data-action="recipes-sub" data-arg="week">Ugens opskrifter</button>
-        <button class="${this._recipesSub === "collection" ? "active" : ""}" data-action="recipes-sub" data-arg="collection">Opskriftsamling${this._state.recipes?.length ? ` (${this._state.recipes.length})` : ""}</button>
-        <button class="${this._recipesSub === "rema" ? "active" : ""}" data-action="recipes-sub" data-arg="rema">REMA-opskrifter</button>
+    const seg = `<div class="seg subnav fit">
+        <button class="${this._recipesSub === "week" ? "active" : ""}" data-action="recipes-sub" data-arg="week">Ugens<span class="wide"> opskrifter</span></button>
+        <button class="${this._recipesSub === "collection" ? "active" : ""}" data-action="recipes-sub" data-arg="collection"><span class="wide">Opskriftsamling</span><span class="narrow">Samling</span>${this._state.recipes?.length ? ` (${this._state.recipes.length})` : ""}</button>
+        <button class="${this._recipesSub === "rema" ? "active" : ""}" data-action="recipes-sub" data-arg="rema">REMA<span class="wide">-opskrifter</span></button>
+        <button class="${this._recipesSub === "sites" ? "active" : ""}" data-action="recipes-sub" data-arg="sites">Madsider</button>
       </div>`;
-    const view = { collection: () => this._collectionView(), rema: () => this._remaView() }[this._recipesSub];
+    const view = { collection: () => this._collectionView(), rema: () => this._remaView(), sites: () => this._sitesView() }[this._recipesSub];
     return (view ? "" : this._olderBanner()) + seg + (view ? view() : this._weekRecipesView());
   }
 
@@ -4465,6 +4558,12 @@ class Rema1000Panel extends HTMLElement {
         <p class="muted small">Beskeden har en klokke i titlen, 🛒 ved REMA's tilbud og 🏷️ ved de andre butikkers, varens billede, og den åbner Middagsro, når du trykker på den. Der tjekkes hver tredje time.</p>
         <div class="row wrap"><button class="btn small" data-action="watch-check" ${this._busy ? "disabled" : ""}>Tjek nu og send besked</button></div>
         <p class="muted small">${(this._state.watch || []).length} ting overvåges. Tilføj flere med klokken under Favoritter.</p>`),
+      sites: () => card(`        <h2 class="flush">Madsider</h2>
+        <p class="muted">Søg i opskrifterne på kendte madsider under Opskrifter › Madsider, og gem dem i opskriftsamlingen – eller vælg en til en dag i næste madplan.</p>
+        <div class="checks">${(this._state.recipe_sites || []).map((x) => check("recipe_sites", x.id, { [x.id]: x.name })).join("")}</div>
+        <label class="check"><input type="checkbox" data-path="recipe_sites_in_plan" ${f.recipe_sites_in_plan ? "checked" : ""}> Brug madsidernes opskrifter, når madplanen laves – AI'en vælger blandt opskrifter, der passer til ugens tilbud</label>
+        <p class="muted small">Opskriften, AI'en vælger, gemmes i opskriftsamlingen med et link til siden, og dens ingredienser kommer på indkøbslisten.</p>
+        `),
       mealie: () => card(`        <h2 class="flush">Mealie</h2>
         ${this._state.mealie?.available
           ? `<p class="muted">Bruger Mealie-integrationen i Home Assistant${this._state.mealie.url ? ` (${esc(this._state.mealie.url)})` : ""}.</p>
@@ -4788,6 +4887,13 @@ const STYLE = `
   .seg button { border: none; background: none; color: var(--secondary-text-color); padding: 7px 16px; border-radius: 999px;
     font-size: 14px; font-weight: 500; cursor: pointer; }
   .seg button.active { background: var(--rema-accent); color: var(--rema-on-accent); }
+  .seg .narrow { display: none; }
+  @media (max-width: 600px) {
+    .seg.fit { display: flex; max-width: 100%; }
+    .seg.fit button { flex: 1 1 0; min-width: 0; padding: 7px 6px; white-space: nowrap; }
+    .seg.fit .wide { display: none; }
+    .seg.fit .narrow { display: inline; }
+  }
   /* Like Home Assistant's dialogs, so a theme's scrim (Theme Studio's blur) reaches these too. */
   .scrim { position: fixed; inset: 0; z-index: 20; background: var(--mdc-dialog-scrim-color, rgba(0, 0, 0, .45));
     -webkit-backdrop-filter: var(--ha-dialog-scrim-backdrop-filter, none); backdrop-filter: var(--ha-dialog-scrim-backdrop-filter, none); }
