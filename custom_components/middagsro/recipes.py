@@ -550,7 +550,8 @@ def _microdata(page: str) -> dict[str, Any] | None:
         steps += [t for t in (_line(i) for i in parts) if t]
     names = [t for t in (_line(n) for n in _props(part, "name")) if t]
     heading = re.search(r"<h1\b[^>]*>(.*?)</h1>", page, re.DOTALL | re.IGNORECASE)
-    name = names[0] if names else _text(heading.group(1)) if heading else ""
+    # The page's heading is the recipe's name; the first "name" may be the site's or author's.
+    name = (_line(heading.group(1)) if heading else "") or (names[0] if names else "")
     if not name:
         return None
 

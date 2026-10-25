@@ -349,6 +349,9 @@ async def test_websocket(
         msg = await ws(3, type="middagsro/sites/search", query="lasagne")
     assert msg["result"] == {"results": [{"title": "Lasagne"}]}
     assert search.call_args.args == (["valdemarsro"], "lasagne")
+    with patch.object(planner.sites, "async_search", search):
+        msg = await ws(7, type="middagsro/sites/search", query="lasagne", sites=["arla"])
+    assert search.call_args.args == (["arla"], "lasagne")
 
     msg = await ws(4, type="middagsro/sites/recipe", url="https://example.com/lasagne/")
     assert not msg["success"]
@@ -384,7 +387,7 @@ def test_microdata() -> None:
     """A page with the recipe as microdata (itemprop) instead of JSON-LD."""
     recipe = rc.parse_recipe_page(MICRODATA)
     assert recipe == {
-        "name": "Lasagne & kødsovs",
+        "name": "Lasagne",
         "servings": 4,
         "total_minutes": 180,
         "active_minutes": 40,
@@ -395,6 +398,8 @@ def test_microdata() -> None:
     }
     nameless = MICRODATA.replace('itemprop="name"', "")
     assert rc.parse_recipe_page(nameless)["name"] == "Lasagne"  # type: ignore[index]
+    named = MICRODATA.replace("<h1>Lasagne</h1>", "<h1> </h1>")
+    assert rc.parse_recipe_page(named)["name"] == "Lasagne & kødsovs"  # type: ignore[index]
     assert rc.parse_recipe_page(nameless.replace("<h1>Lasagne</h1>", "")) is None
     assert rc.parse_recipe_page(MICRODATA.replace("recipeIngredient", "x").replace(
         "ingredients", "x")) is None  # fmt: skip

@@ -952,7 +952,13 @@ async def ws_recipe_rate_day(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "middagsro/sites/search", ENTRY: str, vol.Required("query"): str}
+    {
+        vol.Required("type"): "middagsro/sites/search",
+        ENTRY: str,
+        vol.Required("query"): str,
+        # Other sites than the chosen ones (to try a site before choosing it).
+        vol.Optional("sites"): [vol.In(SITES)],
+    }
 )
 @websocket_api.async_response
 @_wrap
@@ -961,7 +967,7 @@ async def ws_sites_search(
 ) -> None:
     """Search the family's recipe sites."""
     planner = _entry(hass, msg).runtime_data.planner
-    sites = planner.store.settings["recipe_sites"]
+    sites = msg.get("sites") or planner.store.settings["recipe_sites"]
     results = await planner.sites.async_search(sites, msg["query"]) if sites else []
     connection.send_result(msg["id"], {"results": results})
 
