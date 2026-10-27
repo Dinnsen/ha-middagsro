@@ -24,7 +24,17 @@
 
 **Indhold:** [Funktioner](#funktioner) · [Madbudget](#madbudget-økonomi) · [Kort til dashboards](#kort-til-dashboards) · [Krav](#krav) · [Installation](#installation) · [Opsætning](#opsætning) · [Indstillinger](#indstillinger-i-panelet) · [Entiteter](#entiteter) · [Handlinger](#handlinger) · [Eksempler](#eksempler) · [Sådan virker det](#sådan-virker-det) · [Begrænsninger](#kendte-begrænsninger) · [Fejlfinding](#fejlfinding) · [Fjern integrationen](#fjern-integrationen)
 
+### BilkaToGo: vælg varehus og send til kurven
+
+Vælg **Bilka** ved opsætning, log ind med din Salling Group-konto, og vælg det konkrete Bilka-varehus til afhentning. Sortiment og priser følger varehuset. **Send til BilkaToGo-kurven** overfører madplanens varer til samme kurv, som du ser i BilkaToGo-appen og på hjemmesiden. Du vælger selv afhentningstid og bestiller i BilkaToGo.
+
+Har du allerede sat Bilka op med en lokal liste, vælg **Indstillinger → Enheder og tjenester → Middagsro → ⋮ → Omkonfigurér → Bilka** for at tilføje login og varehus. Samme sted kan du skifte mellem REMA 1000 og Bilka eller ændre Bilka-varehus. Tidligere madplaner og opskrifter beholdes. Fundne varer sendes til BilkaToGo; ingredienser uden et sikkert match bliver i Middagsro og vises på en særskilt liste. Du kan vælge et produkt og sende resten senere. Kurven kan ikke afkrydses som en indkøbsliste. Hvis du ændrer varehus i Bilka-appen, stopper integrationen overførsler, indtil du har valgt varehus via Omkonfigurér.
+
+Overførsler af madplaner har gemte kvitteringer og kontrolleres i den aktuelle kurv, så gentagne tryk og forsøg efter timeout ikke lægger samme madplansvare ind igen. **Genskab seneste kurv** er et udtrykkeligt nyt forsøg og kan derfor tilføje varerne igen. Eksisterende Bilka-opsætninger uden login beholder deres lokale liste. BilkaToGo-forbindelsen er uofficiel og kan kræve tilpasning, hvis webshoppen ændres.
+
 ## Funktioner
+
+**Månedens frysermad:** Under knapperne til en ny madplan kan du lave en særskilt fryserplan med 4 eller 5 retter til én maddag. Åbn planen, og vælg portioner for hver ret, fx 16. Ingredienser og den samlede indkøbsliste genberegnes fra opskriftens oprindelige 4 portioner, uden familiens portionsprocent og faste ugevarer. Separat tilbehør som ris og pasta er ikke med i fryserindkøbet. Portionsvalget låses, når overførsel til kurven starter. Fryserplaner gemmes særskilt og overtager ikke ugens aftensmad eller kalender. Poser på fx 400 g fordeles efter den færdige vægt; der føres endnu ikke automatisk lager over poser eller forbrug på spisedage.
 
 Integrationen lægger et **Middagsro-panel** i sidebaren. Det følger dit Home Assistant-tema, lys og mørk tilstand, og virker lige godt på computer, tablet og telefon, hvor fanerne ligger i bunden, og man kan stryge mellem dem.
 

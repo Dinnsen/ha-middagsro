@@ -17,6 +17,7 @@ from homeassistant.helpers.typing import ConfigType
 
 from .api import Catalog, RemaAuthError, RemaClient, RemaError
 from .bilka import BILKA_ID
+from .bilka_cart import CONF_PICKUP
 from .const import DOMAIN, STORAGE_VERSION
 from .coordinator import (
     RemaConfigEntry,
@@ -64,7 +65,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
     if store_id == REMA:
         client = RemaClient(session, entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD])
     elif store_id == BILKA_ID:
-        client = BilkaStoreClient(hass, session, entry.entry_id)
+        client = BilkaStoreClient(
+            hass,
+            session,
+            entry.entry_id,
+            entry.data.get(CONF_EMAIL, ""),
+            entry.data.get(CONF_PASSWORD, ""),
+            entry.data.get(CONF_PICKUP, ""),
+        )
     else:
         client = StoreClient(hass, session, entry.entry_id, store_id)
     try:
@@ -124,6 +132,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
     planner = MealPlanner(
         hass, entry.entry_id, client, store, catalogs, shopping_list.async_add_items
     )
+    if store_id == BILKA_ID and entry.data.get("bilka_rematch"):
+        # Keep history intact; old product matches must be checked before send.
+        for plan in [*store.plans, *store.freezer_plans]:
+            plan["bilka_rematch"] = True
+        await store.async_save()
+        updated = dict(entry.data)
+        updated.pop("bilka_rematch", None)
+        hass.config_entries.async_update_entry(entry, data=updated)
     entry.runtime_data = RemaRuntimeData(
         client=client,
         shopping_list=shopping_list,
@@ -161,7 +177,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
 
 async def async_remove_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> None:
     """Remove the account's stored plans and offers when the account is removed."""
-    for name, version in (("mealplans", STORE_VERSION), ("catalogs", STORAGE_VERSION), ("list", 1)):
+    for name, version in (
+        ("mealplans", STORE_VERSION),
+        ("catalogs", STORAGE_VERSION),
+        ("list", 1),
+        ("bilka_transfers", 1),
+    ):
         await Store(hass, version, f"{DOMAIN}.{entry.entry_id}.{name}").async_remove()
 
 

@@ -37,6 +37,7 @@ from .chains import (
 )
 from .const import DOMAIN
 from .coordinator import RemaConfigEntry
+from .freezer import async_generate as async_generate_freezer, async_portions
 from .health import plan_health
 from .mealie import MealieError
 from .mealplan import ai_choices, parse_date, plan_summary, signal_plans_updated
@@ -146,6 +147,7 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
         "settings": store.settings,
         "favorites": store.favorites,
         "plans": [plan_summary(plan) for plan in store.plans],
+        "freezer_plans": [plan_summary(plan) for plan in store.freezer_plans],
         "latest_plan": latest,
         # The plan with tonight's dinner, when it is not the newest one.
         "current_plan": current if current is not latest else None,
@@ -169,6 +171,14 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
             "rema": shop == REMA,
             # Bilka has every item's price (its webshop); the others only their offers'.
             "prices": bool(data.client.has_prices),
+            **(
+                {
+                    "bilka_cart": True,
+                    "pickup_name": getattr(getattr(data.client, "cart", None), "pickup_name", ""),
+                }
+                if getattr(data.client, "cart", None) is not None
+                else {}
+            ),
             "rema_only": rema_only(shop) or list(REMA_ONLY),
         },
         # One-time notes to show (the family closes them once).
@@ -457,6 +467,59 @@ async def ws_send(
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "middagsro/freezer/generate",
+        ENTRY: str,
+        vol.Required("count"): vol.In([4, 5]),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_freezer_generate(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Generate in the background, just as weekly plans do."""
+    planner = _entry(hass, msg).runtime_data.planner
+    if planner.generating:
+        raise ValueError("En plan er allerede ved at blive lavet.")
+    if not planner.ai_available():
+        raise ValueError("Vælg en AI-opgave under Indstillinger først.")
+    planner._set_status("generating", "Laver fryserplan …")
+
+    async def generate() -> None:
+        try:
+            await async_generate_freezer(planner, msg["count"])
+        except Exception as err:  # match the weekly background task's error reporting
+            planner._set_status("error", str(err) or err.__class__.__name__)
+        else:
+            planner._set_status("idle")
+
+    planner._task = hass.async_create_background_task(generate(), name="middagsro freezer plan")
+    connection.send_result(msg["id"], planner.status)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/freezer/portions",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("date"): str,
+        vol.Required("portions"): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_freezer_portions(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Scale a single dish and update the shared list."""
+    plan = await async_portions(
+        _entry(hass, msg).runtime_data.planner, msg["plan_id"], msg["date"], msg["portions"]
+    )
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "middagsro/send/restore",
         ENTRY: str,
         vol.Optional("plan_id"): vol.Any(str, None),
@@ -694,7 +757,12 @@ async def ws_plan_add(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "middagsro/plan/refresh", ENTRY: str, vol.Required("plan_id"): str}
+    {
+        vol.Required("type"): "middagsro/plan/refresh",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Optional("unmatched", default=False): bool,
+    }
 )
 @websocket_api.async_response
 @_wrap
@@ -703,7 +771,12 @@ async def ws_plan_refresh(
 ) -> None:
     """Match the plan's offer items again with REMA's products and prices now."""
     planner = _entry(hass, msg).runtime_data.planner
-    connection.send_result(msg["id"], await planner.async_refresh_offers(msg["plan_id"]))
+    plan = await (
+        planner.async_rematch_missing(msg["plan_id"])
+        if msg["unmatched"]
+        else planner.async_refresh_offers(msg["plan_id"])
+    )
+    connection.send_result(msg["id"], plan)
 
 
 @websocket_api.websocket_command(
@@ -1507,6 +1580,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_favorite_save,
         ws_favorite_delete,
         ws_generate,
+        ws_freezer_generate,
+        ws_freezer_portions,
         ws_send,
         ws_send_restore,
         ws_recipe,

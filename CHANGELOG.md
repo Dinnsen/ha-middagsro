@@ -2,6 +2,19 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## Unreleased
+
+### Added
+- Match fresh/dried herbs using recipe descriptors and product shelf categories. Retry plain shelf names for dried herbs, curry powder and bouillon cubes; normalize home-diced meat/vegetables and add guarded pork-fillet/stew-beef searches. Retry unresolved shopping lines without regenerating recipes, changing selected products or sending to the cart.
+- Group settings by everyday planning, shopping/budget, recipes/health and setup. Separate AI setup from weekly choices, place pantry items with shopping, and show unsaved changes immediately while typing. Local frontend changes now update the panel/card cache revision even when the manifest version stays the same.
+- Separate freezer plans with four or five complete dishes for one cooking day. Choose portions for each dish after generation, without the household percentage; recipes and the combined shopping list are recalculated from the original quantities. Rice/pasta served separately are excluded from the batch shopping list. Freezer plans do not replace weekly dinners or calendars.
+- Choose normal portions, 25% more, 50% more or double under Family settings for new meal plans. Food quantities and planned leftovers grow while household members and fixed weekly items remain unchanged.
+- Remove the Rummo brand hint from recipe shopping searches, without excluding Rummo products. Treat stock as a package of bouillon cubes rather than a volume of diluted liquid, and remove bouillon from the default pantry list.
+- Recipe water is omitted from shopping lists while remaining in cooking instructions. Home-preparation words are removed from ingredient searches and shopping names (e.g. finely chopped onion and pressed garlic), while product types such as minced beef, canned chopped tomatoes and dried oregano are preserved.
+- BilkaToGo login with a Salling Group account and explicit selection of a physical Bilka pickup store. Product availability and prices follow the selected store.
+- Transfer matched meal-plan products to the BilkaToGo cart shared with the app. Persistent transfer receipts prevent duplicate plan sends after retries or restarts. Unmatched ingredients stay unsent and are reported separately while matched products are transferred.
+- Reconfigure an existing Bilka entry to add cart login or change pickup store. Existing local Bilka entries remain usable without login. Checkout and pickup-time selection stay in BilkaToGo.
+
 ## [2.8.0] - 2026-10-25
 
 ### Added

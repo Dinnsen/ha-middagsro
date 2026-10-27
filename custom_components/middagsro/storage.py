@@ -65,6 +65,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         {"role": "child", "age": 8, "sex": "female"},
         {"role": "child", "age": 5, "sex": "male"},
     ],
+    "portion_percent": 100,
     "must_haves": [],
     # Don't send a must-have that is on the REMA list already (and not bought).
     "must_haves_once": False,
@@ -78,7 +79,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "fixed_days": [{"weekday": 3, "text": "Rugbrødsdag (kun denne ene dag med rugbrød)"}],
     "max_cook_minutes_weekday": 30,
     "no_repeat_weeks": 3,
-    "pantry": "salt, peber, olie, smør, mel, sukker, eddike, bouillon",
+    "pantry": "salt, peber, olie, smør, mel, sukker, eddike",
     "wishes": "Sund, varieret og børnevenlig mad, som er let at lave og hurtig at rydde op efter.",
     "egg_min": "caged",
     "milk_organic": False,
@@ -137,6 +138,9 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
     settings["min_vegetarian"] = _clamp(settings["min_vegetarian"], 0, 14, 0)
     settings["max_vegetarian"] = _clamp(settings["max_vegetarian"], 0, 14, 1)
     settings["leftover_days"] = _clamp(settings["leftover_days"], 0, 7, 2)
+    settings["portion_percent"] = _clamp(settings["portion_percent"], 100, 200, 100)
+    if settings["portion_percent"] not in (100, 125, 150, 200):
+        settings["portion_percent"] = 100
     weekdays: set[str] = set()
     for value in (
         settings["no_leftover_weekdays"]
@@ -162,6 +166,8 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
     settings["allergies"] = [a for a in settings["allergies"] or [] if a in ALLERGY_OPTIONS]
     for key in ("avoid_other", "allergies_other", "pantry", "wishes"):
         settings[key] = str(settings[key] or "")[:2000]
+    if settings["pantry"] == "salt, peber, olie, smør, mel, sukker, eddike, bouillon":
+        settings["pantry"] = DEFAULT_SETTINGS["pantry"]
     settings["ai_task_entity"] = settings["ai_task_entity"] or None
     notify = str(settings["watch_notify"] or "").strip()[:120]
     settings["watch_notify"] = (
@@ -243,6 +249,7 @@ class RemaPlanStore:
         self.settings: dict[str, Any] = copy.deepcopy(DEFAULT_SETTINGS)
         self.favorites: list[dict[str, Any]] = []
         self.plans: list[dict[str, Any]] = []
+        self.freezer_plans: list[dict[str, Any]] = []
         self.note = ""  # the family's wishes for the next plan only
         self.recipes: list[dict[str, Any]] = []  # the recipe collection (recipes.py)
         # Every item has a price (REMA 1000); another shop has only its offers'.
@@ -264,6 +271,7 @@ class RemaPlanStore:
         self.settings = clean_settings(data.get("settings") or {})
         self.favorites = list(data.get("favorites") or [])
         self.plans = list(data.get("plans") or [])
+        self.freezer_plans = list(data.get("freezer_plans") or [])
         self.note = str(data.get("note") or "")
         self.recipes = [r for r in data.get("recipes") or [] if isinstance(r, dict) and r.get("id")]
         self.watch = [w for w in data.get("watch") or [] if isinstance(w, dict) and w.get("key")]
@@ -281,18 +289,19 @@ class RemaPlanStore:
         ]
         self.budget_told = str(data.get("budget_told") or "")
         self.seen = [str(n) for n in data.get("seen") or [] if isinstance(n, str)][:50]
-        for plan in self.plans:
+        for plan in [*self.plans, *self.freezer_plans]:
             ensure_line_ids(plan)
 
     async def async_save(self) -> None:
         """Write to disk."""
-        for plan in self.plans:
+        for plan in [*self.plans, *self.freezer_plans]:
             ensure_line_ids(plan)
         await self._store.async_save(
             {
                 "settings": self.settings,
                 "favorites": self.favorites,
                 "plans": self.plans,
+                "freezer_plans": self.freezer_plans,
                 "note": self.note,
                 "recipes": self.recipes,
                 "watch": self.watch,
@@ -387,7 +396,7 @@ class RemaPlanStore:
 
     def get_plan(self, plan_id: str) -> dict[str, Any] | None:
         """Return a plan by id."""
-        return next((p for p in self.plans if p["id"] == plan_id), None)
+        return next((p for p in [*self.plans, *self.freezer_plans] if p["id"] == plan_id), None)
 
     @property
     def latest_plan(self) -> dict[str, Any] | None:
@@ -484,8 +493,9 @@ class RemaPlanStore:
 
     async def async_add_plan(self, plan: dict[str, Any]) -> None:
         """Store a new plan and mark used favourites."""
-        self.plans.insert(0, plan)
-        del self.plans[MAX_PLANS:]
+        plans = self.freezer_plans if plan.get("kind") == "freezer" else self.plans
+        plans.insert(0, plan)
+        del plans[MAX_PLANS:]
         used = {day.get("favorite_id") for day in plan.get("days", []) if day.get("favorite_id")}
         for fav in self.favorites:
             if fav["id"] in used:
@@ -506,4 +516,5 @@ class RemaPlanStore:
     async def async_delete_plan(self, plan_id: str) -> None:
         """Delete a plan."""
         self.plans = [p for p in self.plans if p["id"] != plan_id]
+        self.freezer_plans = [p for p in self.freezer_plans if p["id"] != plan_id]
         await self.async_save()

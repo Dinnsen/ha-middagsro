@@ -45,6 +45,7 @@ from .recipes import (
     mark_planned,
     prompt_recipes,
     recipe_to_day,
+    scale_amount,
 )
 from .rema_recipes import RemaRecipes
 from .sites import RecipeSites
@@ -61,7 +62,12 @@ from .words import (
     _stem,
     _tokens,
     _uses_item,
+    herb_form,
+    herb_form_matches,
+    ingredient_name,
+    is_tap_water,
     pantry_words,
+    stock_cubes,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -484,8 +490,8 @@ def search_queries(line: dict[str, Any]) -> list[str]:
     REMA names minced meat "HK. ...KØD", so "kyllingefars" is also tried as
     "hakket kylling", and the line's own name is tried last.
     """
-    queries = [line["search"]]
-    for word in _tokens(line["search"]):
+    queries = [ingredient_name(line["search"])]
+    for word in _tokens(queries[0]):
         if word.endswith("fars") and len(word) > 4:
             meat = word[:-4].rstrip("e")
             queries.append(f"hakket {meat}")
@@ -493,7 +499,25 @@ def search_queries(line: dict[str, Any]) -> list[str]:
         for tail in _SPLIT_TAILS:
             if word.endswith(tail) and len(word) > len(tail) + 2:
                 queries.append(f"{word[: -len(tail)]} {tail}")
-    queries.append(line["name"])
+    queries.append(ingredient_name(line["name"]))
+    for query in list(queries):
+        if herb_form(query):
+            queries.append(
+                re.sub(
+                    r"\b(?:tørret|tørrede|tør|tørre|frisk|friske|fersk|ferske)\b",
+                    "",
+                    query,
+                    flags=re.IGNORECASE,
+                ).strip(" ,;")
+            )
+        if cubes := stock_cubes(query):
+            queries.append(cubes.removesuffix(" terninger"))
+        if "karrypulver" in _tokens(query):
+            queries.append(re.sub(r"\bkarrypulver\b", "karry", query, flags=re.IGNORECASE))
+        if "svinemørbrad" in _tokens(query):
+            queries.append("mørbrad gris")
+        if {"oksekød", "gryderet"} <= set(_tokens(query)):
+            queries.extend(["oksekød tern", "gullasch"])
     unique: list[str] = []
     for query in queries:
         if query and query.lower() not in (q.lower() for q in unique):
@@ -562,6 +586,7 @@ _DESCRIBING = frozenset({
     "dåse", "glas", "naturel", "neutral", "ekstra", "fin", "fint", "fine", "grov",
     "groft", "grove", "mellem", "skrællet", "skrællede", "flået", "flåede", "pillet",
     "pillede", "renset", "rensede", "marineret", "marinerede", "krydret", "krydrede",
+    "terning", "terninger",
 })  # fmt: skip
 
 
@@ -748,6 +773,12 @@ def build_prompt(
         "",
         "KRAV – SKAL OVERHOLDES:",
     ]
+    if s.get("portion_percent", 100) != 100:
+        out.append(
+            "- Beregn shopping og ingredienser til husstandens normale standardportioner. "
+            "Systemet skalerer bagefter mængderne til familiens valgte portionsstørrelse; "
+            "du skal ikke selv lægge ekstra til."
+        )
     if skipped:
         out.append(
             "- Disse dage springes over (ingen aftensmad og intet på indkøbslisten): "
@@ -1038,7 +1069,7 @@ def build_recipe_prompt(
     *, settings: dict[str, Any], day: dict[str, Any], plan: dict[str, Any]
 ) -> str:
     """Instructions for the recipe of one dinner."""
-    s = settings
+    s = {**settings, "portion_percent": plan.get("portion_percent", 100)}
     current = date.fromisoformat(day["date"])
     out = [
         "Du er en erfaren dansk kok, der skriver opskrifter til en børnefamilie.",
@@ -1048,6 +1079,12 @@ def build_recipe_prompt(
         "HUSSTAND (mængderne skal passe til alle; børn spiser mindre):",
         *_household_lines(s),
     ]
+    if s.get("portion_percent", 100) != 100:
+        out.append(
+            f"Familiens portionsstørrelse er {s['portion_percent']} % af standard. "
+            "Indkøbslisten er allerede skaleret. Opskriften skal bruge de viste mængder "
+            "og må ikke skalere dem igen."
+        )
     if day.get("makes_leftovers"):
         out.append(
             "Lav dobbelt portion – halvdelen spises som rester dagen efter. Mængderne skal "
@@ -1256,9 +1293,14 @@ def link_favorites(
 
 def recipe_factor(settings: dict[str, Any], recipe: dict[str, Any], day: dict[str, Any]) -> float:
     """How much of a recipe the household needs: twice when it makes leftovers."""
-    portions = household_portions(settings) * (2 if day.get("makes_leftovers") else 1)
+    portions = (
+        household_portions(settings)
+        * settings.get("portion_percent", 100)
+        / 100
+        * (2 if day.get("makes_leftovers") else 1)
+    )
     servings = recipe.get("servings") or 4
-    return max(0.25, min(4.0, portions / servings))
+    return float(max(0.25, min(20.0, portions / servings)))
 
 
 def recipe_line(ingredient: dict[str, Any], factor: float = 1.0) -> dict[str, Any]:
@@ -1268,7 +1310,7 @@ def recipe_line(ingredient: dict[str, Any], factor: float = 1.0) -> dict[str, An
     rounded up to whole ones. A spoonful or a clove is one package, whatever the
     scale. Without an amount it is one package.
     """
-    name = str(ingredient.get("name") or "").strip()
+    name = ingredient_name(str(ingredient.get("name") or ""))
     amount: float | None = None
     unit: str | None = None
     if parsed := parse_amount(str(ingredient.get("amount") or "")):
@@ -1286,18 +1328,25 @@ def recipe_line(ingredient: dict[str, Any], factor: float = 1.0) -> dict[str, An
     if amount is None:
         amount, unit = 1, "pk"
     product = ingredient.get("product") or {}
-    return {
+    line = {
         "id": uuid.uuid4().hex[:8],
         "name": name[:1].upper() + name[1:],
         "amount": amount,
         "unit": unit,
-        "search": str(product.get("name") or name)[:80],
+        "search": ingredient_name(str(product.get("name") or name))[:80],
         "category": line_category(name),
         "offer": None,
         "must_have": False,
         "product_id": product.get("id") or None,
         "recipe": True,
     }
+    if "rummo" in _tokens(f"{ingredient.get('name') or ''} {product.get('name') or ''}"):
+        line["product_id"] = None
+    if query := stock_cubes(name):
+        line.update(
+            name=query[:1].upper() + query[1:], search=query, amount=1, unit="pk", stock_cubes=True
+        )
+    return line
 
 
 _FRACTIONS = {"½": 0.5, "¼": 0.25, "¾": 0.75, "⅓": 1 / 3, "⅔": 2 / 3}
@@ -1367,13 +1416,13 @@ def _names_match(line: dict[str, Any], ingredient: dict[str, Any]) -> bool:
     A compound counts ("laksefilet" is laks), unless its first part makes it
     another thing: hvidløg is not løg, havremælk is not mælk.
     """
-    wanted = _name_words(ingredient.get("name") or "")
+    wanted = _name_words(ingredient_name(ingredient.get("name") or ""))
     if not wanted:
         return False
     product = line.get("product") or {}
     have = (
-        _name_words(line["name"])
-        | _name_words(line.get("search") or "")
+        _name_words(ingredient_name(line["name"]))
+        | _name_words(ingredient_name(line.get("search") or ""))
         | _name_words(product.get("name") or "")
     )
 
@@ -1791,7 +1840,15 @@ class MealPlanner:
             return
         own = find_recipe(self.store, day.get("recipe_id"))
         if own and (own["ingredients"] or own["steps"]):
-            recipe_to_day(own, day, recipe_factor(self.store.settings, own, day))
+            recipe_to_day(
+                own,
+                day,
+                recipe_factor(
+                    {**self.store.settings, "portion_percent": plan.get("portion_percent", 100)},
+                    own,
+                    day,
+                ),
+            )
             return
         prompt = build_recipe_prompt(settings=self.store.settings, day=day, plan=plan)
         task = f"REMA 1000 opskrift {day['date']}"
@@ -1872,7 +1929,7 @@ class MealPlanner:
         product the recipe names when it does. An item two recipes share is
         bought for both.
         """
-        settings = self.store.settings
+        settings = {**self.store.settings, "portion_percent": plan.get("portion_percent", 100)}
         pantry = pantry_words(settings["pantry"])
         new_lines: list[dict[str, Any]] = []
         own_all: set[int] = set()  # the AI's lines of the recipe days
@@ -1886,6 +1943,8 @@ class MealPlanner:
             own_all |= {id(line) for line in own}
             uses: list[str] = []
             for ingredient in recipe["ingredients"]:
+                if is_tap_water(ingredient["name"]):
+                    continue
                 if ingredient.get("basic") or any(
                     _uses_item(item, ingredient["name"]) for item in pantry
                 ):
@@ -1906,7 +1965,9 @@ class MealPlanner:
                 elif line.get("recipe") and line["name"] not in uses:
                     # Another recipe day made this line: this day needs its share too.
                     more = recipe_line(ingredient, factor)
-                    if more["unit"] == line["unit"]:
+                    if more.get("stock_cubes") and line.get("stock_cubes"):
+                        line["amount"] = max(line.get("amount") or 1, more["amount"])
+                    elif more["unit"] == line["unit"]:
                         line["amount"] = (line.get("amount") or 0) + more["amount"]
                     else:
                         line = more
@@ -1952,6 +2013,8 @@ class MealPlanner:
             added = 0
             for ingredient in day.get("ingredients") or []:
                 name = str(ingredient.get("name") or "").strip()
+                if is_tap_water(name):
+                    continue
                 head = head_word(name)
                 if not head or added >= RECIPE_EXTRAS_PER_DAY:
                     continue
@@ -2289,6 +2352,17 @@ class MealPlanner:
         shopping = [
             line for line in (self._clean_line(item) for item in raw.get("shopping") or []) if line
         ]
+        factor = settings.get("portion_percent", 100) / 100
+        if factor != 1:
+            for line in shopping:
+                if line.get("amount") and not line.get("stock_cubes"):
+                    line["amount"] = round(line["amount"] * factor, 2)
+            for day in days:
+                day["servings"] = math.ceil(day["servings"] * factor)
+                day["ingredients"] = [
+                    {**item, "amount": scale_amount(item.get("amount") or "", factor)}
+                    for item in day["ingredients"]
+                ]
         for item in settings["must_haves"]:
             shopping.append(
                 {
@@ -2316,6 +2390,7 @@ class MealPlanner:
             "summary": str(raw.get("summary") or "")[:2000],
             "days": days,
             "shopping": shopping,
+            "portion_percent": settings.get("portion_percent", 100),
             "checklist": [
                 {"requirement": str(c.get("requirement") or "")[:300], "ok": bool(c.get("ok"))}
                 for c in raw.get("checklist") or []
@@ -2430,16 +2505,30 @@ class MealPlanner:
         if not isinstance(item, dict) or not item.get("name"):
             return None
         name = str(item["name"]).strip()[:200]
-        return {
+        if is_tap_water(name):
+            return None
+        name = ingredient_name(name)
+        if not name:
+            return None
+        line = {
             "name": name,
             "amount": _num(item.get("amount")),
             "unit": str(item.get("unit") or "").strip().lower()[:10] or None,
-            "search": str(item.get("search") or name).strip()[:80],
+            "search": ingredient_name(str(item.get("search") or name))[:80] or name[:80],
             "category": str(item.get("category") or "Andet")[:40],
             "offer": item.get("offer") or None,
             "must_have": False,
             "product_id": None,
         }
+        if query := stock_cubes(name):
+            line.update(
+                name=query[:1].upper() + query[1:],
+                search=query,
+                amount=1,
+                unit="pk",
+                stock_cubes=True,
+            )
+        return line
 
     async def _async_search(self, query: str, at: datetime | None) -> list[Product]:
         """Search REMA, priced now or (at) when the plan is bought."""
@@ -2453,6 +2542,8 @@ class MealPlanner:
         """Pick a REMA product for a shopping line and price it (now, or at a time)."""
         line.update(product=None, avis_item=None, packages=1, cost=None, note=None)
         line.pop("price_source", None)
+        if not line.get("product_id"):
+            line["search"] = ingredient_name(line["search"])
         try:
             products = await self._async_search(line["search"], at)
             if not line.get("product_id") and not line.get("must_have"):
@@ -2616,7 +2707,11 @@ class MealPlanner:
                 note = f"Ingen vare opfylder kravet om {requirement[1]} – billigste valgt"
         if not candidates:
             # Better a free-text line than a wrong product.
-            line["note"] = "Ingen sikker vare fundet – tilføjes som fritekst"
+            line["note"] = (
+                "Ingen sikker vare fundet – vælg en vare"
+                if getattr(self.client, "cart", None) is not None
+                else "Ingen sikker vare fundet – tilføjes som fritekst"
+            )
             return
         need = to_base(line["amount"], line.get("unit")) if line.get("amount") else None
         if need and need[0] in ("g", "ml"):
@@ -2759,6 +2854,50 @@ class MealPlanner:
         With an avis offer, only the products that offer is for.
         """
         priced = [p for p in products[:limit] if p.price and (require is None or require(p))]
+        asked = f"{line.get('name') or ''} {line.get('search') or ''}"
+        priced = [p for p in priced if herb_form_matches(asked, p.name, p.department, p.category)]
+        asked_words = set(_tokens(asked))
+        if "svinemørbrad" in asked_words:
+            priced = [
+                p
+                for p in priced
+                if name_fit(["mørbrad"], p.name)[0]
+                and (
+                    "svinemørbrad" in _tokens(p.name)
+                    or set(_tokens(f"{p.name} {p.category or ''}")) & {"gris", "svin", "svinekød"}
+                )
+            ]
+        if {"oksekød", "gryderet"} <= asked_words and query.lower() == "gullasch":
+            priced = [
+                p
+                for p in priced
+                if "oksekød" in _tokens(p.category or "")
+                and (p.department or "").lower() in ("kød", "kød og fisk", "frost")
+                and not set(_tokens(p.name)) & {"hakket", "fars", "hakkebøffer"}
+            ]
+        if "karrypulver" in asked_words:
+            priced = [
+                p
+                for p in priced
+                if "karrypulver" in _tokens(p.name)
+                or (
+                    "karry" in _tokens(p.name)
+                    and (
+                        set(_tokens(p.category or "")) & {"krydderi", "krydderier"}
+                        or set(_tokens(p.name)) <= {"karry", "mild", "stærk", "madras", "økologisk"}
+                    )
+                )
+            ]
+        if line.get("stock_cubes"):
+            priced = [
+                p
+                for p in priced
+                if not (
+                    ((size := package_size(p.underline)) and size[0] == "ml")
+                    or set(_tokens(f"{p.name} {p.underline or ''}"))
+                    & {"pulver", "fond", "flydende", "drikkeklar"}
+                )
+            ]
         if not priced:
             return [], {}
         words = [w for w in _tokens(query) if len(w) > 1 and w not in _NEUTRAL_WORDS]
@@ -2925,6 +3064,9 @@ class MealPlanner:
         plan = self.store.get_plan(plan_id) if plan_id else self.store.latest_plan
         if plan is None:
             raise _invalid("no_plan" if not plan_id else "plan_not_found")
+        if plan.get("kind") == "freezer":
+            plan["portions_locked"] = True
+            await self.store.async_save()
         lines = [
             line
             for line in plan["shopping"]
@@ -2938,6 +3080,19 @@ class MealPlanner:
         ]
         if line_id and not lines:
             raise _invalid("line_not_found")
+        cart = getattr(self.client, "cart", None)
+        if cart is not None and plan.get("bilka_rematch"):
+            for line in lines:
+                if line.get("bilka_price_store") == cart.store_id:
+                    continue
+                product = line.get("product") or {}
+                # A product explicitly chosen in the current store is already valid.
+                if not product or not self.bilka.known([product["id"]]):
+                    for key in ("product_id", "offer", "offer_name", "price_source"):
+                        line.pop(key, None)
+                    await self._async_match(line)
+                line["bilka_price_store"] = cart.store_id
+            await self.store.async_save()
         # The offers' products and prices as REMA has them now (once they run).
         try:
             await self._async_refresh_lines(plan, lines)
@@ -2945,6 +3100,21 @@ class MealPlanner:
             _LOGGER.debug("Could not look at the offers again before sending: %s", err)
         await asyncio.gather(*(self._async_resolve_avis_item(line) for line in lines))
         plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
+        missing: list[dict[str, Any]] = []
+        if cart is not None:
+            missing = [
+                {
+                    "id": line["id"],
+                    "name": line["name"],
+                    "amount": line.get("amount"),
+                    "unit": line.get("unit"),
+                }
+                for line in lines
+                if not line.get("product")
+            ]
+            # A skipped ingredient stays unsent and editable in Middagsro.
+            lines = [line for line in lines if line.get("product")]
+            plan["missing_products"] = missing
         pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
         for line in lines:
             line.pop("on_list", None)
@@ -2960,6 +3130,10 @@ class MealPlanner:
                 if amount and line.get("unit") and line["unit"] != "pk":
                     label += f" ({amount:g} {line['unit']})"
                 item = {"name": label, "amount": int(line.get("packages") or 1)}
+            if getattr(self.client, "cart", None) is not None:
+                item["transfer_id"] = (
+                    f"{plan['id']}:{line['id']}:{plan.get('transfer_revision', 0)}"
+                )
             pairs.append((line, item))
         if self.store.settings["must_haves_once"] and not line_id:
             pairs = await self._async_skip_listed(pairs)
@@ -2997,7 +3171,11 @@ class MealPlanner:
         ):
             plan.pop(key, None)  # sent: nothing left to send automatically
             self._cancel_send(plan["id"], key)
-        await self.store.async_mark_sent(plan["id"], part)
+        if missing:
+            plan["status"] = "draft"
+            await self.store.async_save()
+        else:
+            await self.store.async_mark_sent(plan["id"], part)
         self._notify()
         return plan
 
@@ -3037,6 +3215,7 @@ class MealPlanner:
         ids = set(last.get("ids") or [])
         if not ids:
             raise _invalid("nothing_to_restore")
+        plan["transfer_revision"] = int(plan.get("transfer_revision", 0)) + 1
         for line in plan["shopping"]:
             if line.get("id") in ids:
                 line.pop("sent", None)
@@ -3098,6 +3277,36 @@ class MealPlanner:
         await self.store.async_save()
         self._notify()
         return plan
+
+    async def async_rematch_missing(self, plan_id: str) -> dict[str, Any]:
+        """Retry only unresolved, unsent recipe lines; preserve transfer identities."""
+        async with self._send_lock:
+            plan = self.store.get_plan(plan_id)
+            if plan is None:
+                raise _invalid("plan_not_found")
+            for line in plan["shopping"]:
+                if any(
+                    line.get(key) for key in ("product", "sent", "product_id", "added", "buy_at")
+                ):
+                    continue
+                candidate = dict(line)
+                candidate["name"] = ingredient_name(line["name"])
+                candidate["search"] = ingredient_name(line["search"])
+                await self._async_match(candidate)
+                line.update(candidate)
+            plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
+            missing = {
+                line["id"]
+                for line in plan["shopping"]
+                if not line.get("product") and not line.get("sent")
+            }
+            if "missing_products" in plan:
+                plan["missing_products"] = [
+                    item for item in plan["missing_products"] if item["id"] in missing
+                ]
+            await self.store.async_save()
+            self._notify()
+            return plan
 
     async def _async_refresh_lines(self, plan: dict[str, Any], lines: list[dict[str, Any]]) -> None:
         now = dt_util.utcnow()

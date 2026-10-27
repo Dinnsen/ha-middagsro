@@ -2,11 +2,30 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from custom_components.middagsro import panel
 from homeassistant.components import frontend
 from homeassistant.core import HomeAssistant
+
+
+def test_frontend_revision_tracks_both_modules(tmp_path: Path) -> None:
+    """Local test packages invalidate both panel and dashboard-card imports."""
+    folder = tmp_path / "frontend"
+    folder.mkdir()
+    panel_file = folder / "middagsro-panel.js"
+    cards_file = folder / "middagsro-cards.js"
+    panel_file.write_text("panel one", encoding="utf-8")
+    cards_file.write_text("cards one", encoding="utf-8")
+    with patch.object(panel, "__file__", str(tmp_path / "panel.py")):
+        first = panel._frontend_revision()
+        assert panel._frontend_revision() == first
+        panel_file.write_text("panel two", encoding="utf-8")
+        second = panel._frontend_revision()
+        assert second != first
+        cards_file.write_text("cards two", encoding="utf-8")
+        assert panel._frontend_revision() not in (first, second)
 
 
 async def test_register_and_remove_panel(hass: HomeAssistant) -> None:

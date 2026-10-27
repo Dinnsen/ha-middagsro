@@ -24,7 +24,17 @@
 
 **Contents:** [Features](#features) · [Food budget](#food-budget-økonomi) · [Dashboard cards](#cards-for-your-own-dashboards) · [Requirements](#requirements) · [Installation](#installation) · [Setup](#setup) · [Settings](#settings-in-the-panel) · [Entities](#entities) · [Actions](#actions) · [Examples](#examples) · [How it works](#how-it-works) · [Limitations](#known-limitations) · [Troubleshooting](#troubleshooting) · [Removal](#removing-the-integration) · [Privacy](#privacy)
 
+### BilkaToGo: choose a pickup store and send groceries to your cart
+
+Choose **Bilka** during setup, sign in with your Salling Group account, and select a physical Bilka pickup store. Product availability and prices follow that store. Sending a meal plan adds its matched products to the cart shared by the BilkaToGo website and app. Choose a pickup time and complete checkout yourself in BilkaToGo.
+
+Existing local Bilka setups can add login and a pickup store through **Settings → Devices & services → Middagsro → ⋮ → Reconfigure → Bilka**. Use the same flow to change grocery chains or pickup stores. Plans and recipes are preserved. Matched products are transferred; unmatched ingredients stay unsent in Middagsro and appear in a separate list. Choose a product and send those remaining ingredients later. Free-text cart entries and ticking cart products as bought are unsupported. Changing the store in the Bilka app blocks transfers until you reconfigure Middagsro.
+
+Persistent transfer receipts and fresh cart checks prevent repeated plan sends and retries after timeouts from adding the same plan items again. Explicitly restoring a sent plan starts a new transfer and may add the products again. Older Bilka entries without login keep their local list. This is an unofficial connection and may need updating when Bilka changes its webshop.
+
 ## Features
+
+**Monthly freezer cooking:** Below the new meal-plan controls, create a separate batch plan with four or five dishes for one cooking day. Open it and choose portions for each dish, such as 16. Ingredients and the combined shopping list are recalculated from the original four portions, without the household percentage or fixed weekly items. Separately cooked rice/pasta are excluded from batch shopping. Portion changes lock when cart transfer starts. Freezer plans are stored separately and do not replace weekly dinners or calendar entries. Divide the cooked food into bags by its actual weight; automatic bag inventory and consumption tracking are not included yet.
 
 The integration adds a **Middagsro panel** to the sidebar. It follows your Home Assistant theme, light and dark mode, and works on a computer, tablet and phone, where the tabs sit at the bottom and you can swipe between them.
 

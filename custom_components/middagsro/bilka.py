@@ -59,18 +59,22 @@ def _kr(value: Any) -> float | None:
         return None
 
 
-def to_product(hit: dict[str, Any]) -> Product | None:
+def to_product(hit: dict[str, Any], store_id: str = STORE) -> Product | None:
     """A Bilka ToGo product in the shape the app knows (REMA's products)."""
     try:
         product_id = int(hit.get("id") or hit["objectID"])
     except (KeyError, TypeError, ValueError):
         return None
     name = str(hit.get("name") or "").strip()
-    price = _kr(hit.get("sales_price")) or _kr(hit.get("price"))
+    store = (hit.get("storeData") or {}).get(store_id) or {}
+    price = _kr(store.get("price")) or _kr(hit.get("sales_price")) or _kr(hit.get("price"))
     if not name or price is None:
         return None
-    normal = _kr(hit.get("price")) or price
-    store = (hit.get("storeData") or {}).get(STORE) or {}
+    normal = (
+        (_kr(store.get("beforePrice")) or price)
+        if store.get("price") is not None
+        else (_kr(hit.get("price")) or price)
+    )
     unit = str(store.get("unitsOfMeasurePriceUnit") or "").strip(" .").lower() or None
     categories = hit.get("categories") or {}
     top = [str(c) for c in categories.get("lvl0") or []]
@@ -104,14 +108,22 @@ def to_product(hit: dict[str, Any]) -> Product | None:
 class BilkaSearch:
     """Search Bilka ToGo's products, with their prices now."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(self, hass: HomeAssistant, store_id: str = STORE) -> None:
         """Initialize."""
         self.hass = hass
+        self.store_id = store_id
         self._key: tuple[str, str] | None = None
         self._key_failed: float | None = None
         self._lock = asyncio.Lock()
         self._searches: dict[str, tuple[float, list[int]]] = {}
         self._products: dict[int, Product] = {}
+
+    def set_store(self, store_id: str) -> None:
+        """Changing warehouses invalidates both product prices and searches."""
+        if store_id != self.store_id:
+            self.store_id = store_id
+            self._searches.clear()
+            self._products.clear()
 
     async def _async_text(self, url: str, limit: int) -> str:
         async with page_session(self.hass).get(
@@ -161,7 +173,7 @@ class BilkaSearch:
                     json={
                         "query": query,
                         "hitsPerPage": limit,
-                        "filters": FILTERS,
+                        "filters": f"isInAssortmentIn:{self.store_id} AND inStockStore:{self.store_id} AND nonsearchable:false",
                         "attributesToRetrieve": ATTRIBUTES,
                     },
                     timeout=TIMEOUT,
@@ -187,7 +199,11 @@ class BilkaSearch:
         cached = self._searches.get(key)
         if cached and time.monotonic() - cached[0] < SEARCH_CACHE:
             return [self._products[i] for i in cached[1] if i in self._products]
-        products = [p for p in (to_product(h) for h in await self._async_query(text, limit)) if p]
+        products = [
+            p
+            for p in (to_product(h, self.store_id) for h in await self._async_query(text, limit))
+            if p
+        ]
         for product in products:
             self._products[product.id] = product
         self._searches[key] = (time.monotonic(), [p.id for p in products])
