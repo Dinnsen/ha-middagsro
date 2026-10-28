@@ -35,6 +35,7 @@ from .chains import ChainOffers
 from .const import DOMAIN
 from .dishes import check_plan, day_wishes, household_portions, is_cooked, same_dish
 from .mealie import MealieError, MealieLink
+from .messages import async_danish
 from .recipes import (
     async_extract,
     async_save_recipe,
@@ -179,6 +180,50 @@ def _failed(key: str, **placeholders: str) -> HomeAssistantError:
         translation_key=key,
         translation_placeholders=placeholders or None,
     )
+
+
+# What an AI service says when it can't answer, and what the family can do about it.
+_AI_NO_CREDIT = re.compile(
+    r"\b402\b|prepayment|credits? (are )?depleted|insufficient[_ ]quota|exceeded your current "
+    r"quota|billing|credit balance|payment required",
+    re.IGNORECASE,
+)
+_AI_BUSY = re.compile(
+    r"\b(429|529|503)\b|rate.?limit|resource_exhausted|overloaded|too many requests|unavailable",
+    re.IGNORECASE,
+)
+_AI_KEY = re.compile(
+    r"\b(401|403)\b|api key|api_key|permission_denied|unauthori[sz]ed|authentication",
+    re.IGNORECASE,
+)
+
+
+def ai_provider(text: str, fallback: str | None = None) -> str:
+    """Who the AI is from, as the error tells it (else the AI's name)."""
+    lowered = text.lower()
+    for word, name in (
+        ("ai.studio", "Google AI Studio"),
+        ("google", "Google AI Studio"),
+        ("gemini", "Google AI Studio"),
+        ("openai", "OpenAI"),
+        ("anthropic", "Anthropic"),
+        ("mistral", "Mistral"),
+    ):
+        if word in lowered:
+            return name
+    return fallback or "AI-tjenesten"
+
+
+def ai_problem(err: Exception, name: str | None = None) -> HomeAssistantError | None:
+    """An AI service's error the family can do something about, in plain words (else None)."""
+    text = str(err)
+    if _AI_NO_CREDIT.search(text):
+        return _failed("ai_no_credit", provider=ai_provider(text, name))
+    if _AI_KEY.search(text) and not _AI_BUSY.search(text):
+        return _failed("ai_key_failed", provider=ai_provider(text, name))
+    if _AI_BUSY.search(text):
+        return _failed("ai_busy", provider=ai_provider(text, name))
+    return None
 
 
 def signal_plans_updated(entry_id: str) -> str:
@@ -1628,10 +1673,19 @@ class MealPlanner:
             if send:
                 await self._async_send_when_ready(plan)
         except Exception as err:
-            _LOGGER.exception("Could not make a meal plan")
-            self._set_status("error", str(err) or err.__class__.__name__)
+            if getattr(err, "translation_key", "") in ("ai_no_credit", "ai_busy", "ai_key_failed"):
+                # Nothing wrong here: the AI service said no (credit, too busy, its key).
+                _LOGGER.warning("Could not make a meal plan: %s", err.__cause__ or err)
+            else:
+                _LOGGER.exception("Could not make a meal plan")
+            self._set_status("error", await async_danish(self.hass, err) or err.__class__.__name__)
         else:
             self._set_status("idle")
+
+    def _ai_name(self, entity_id: str | None) -> str | None:
+        """The AI's name in Home Assistant (for an error about it)."""
+        state = self.hass.states.get(entity_id) if entity_id else None
+        return state.name if state is not None else None
 
     def _ai_entity(self) -> str | None:
         """The AI Task entity to use; None means Home Assistant's preferred one."""
@@ -1720,6 +1774,8 @@ class MealPlanner:
             except HomeAssistantError as err:
                 if "MAX_TOKENS" in str(err).upper():
                     raise _failed("ai_answer_too_long", error=str(err)) from err
+                if (problem := ai_problem(err, self._ai_name(entity_id))) is not None:
+                    raise problem from err
                 raise
             return result.data
 
@@ -1756,7 +1812,8 @@ class MealPlanner:
         response = result.response
         speech = str(response.speech.get("plain", {}).get("speech") or "")
         if response.response_type == intent.IntentResponseType.ERROR:
-            raise HomeAssistantError(speech or f"{agent_id} could not answer")
+            error = HomeAssistantError(speech or f"{agent_id} could not answer")
+            raise ai_problem(error, self._ai_name(agent_id)) or error
         return speech
 
     # ------------------------------------------------------------- recipes

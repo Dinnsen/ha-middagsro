@@ -10,7 +10,6 @@ from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers import translation
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.event import async_call_later, async_track_time_change
 from homeassistant.util import dt as dt_util
@@ -40,6 +39,7 @@ from .coordinator import RemaConfigEntry
 from .health import plan_health
 from .mealie import MealieError
 from .mealplan import ai_choices, parse_date, plan_summary, signal_plans_updated
+from .messages import async_danish
 from .planedit import (
     async_add_pantry_item,
     async_add_product,
@@ -218,19 +218,7 @@ def _wrap(handler: _Handler) -> _Handler:
     return wrapper
 
 
-async def _async_danish(hass: HomeAssistant, err: Exception) -> str:
-    """The error in Danish, as the panel is (Home Assistant words them in English)."""
-    key = getattr(err, "translation_key", None)
-    if not isinstance(err, HomeAssistantError) or err.translation_domain != DOMAIN or not key:
-        return str(err)
-    messages = await translation.async_get_translations(hass, "da", "exceptions", [DOMAIN])
-    message = messages.get(f"component.{DOMAIN}.exceptions.{key}.message")
-    if not message:
-        return str(err)
-    try:
-        return message.format(**(err.translation_placeholders or {})).rstrip(".")
-    except (KeyError, IndexError, ValueError):
-        return str(err)
+_async_danish = async_danish
 
 
 @websocket_api.websocket_command(
