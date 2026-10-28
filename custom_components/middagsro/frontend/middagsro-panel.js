@@ -3399,7 +3399,7 @@ class Rema1000Panel extends HTMLElement {
       .map((iso) => {
         const pick = this._picks[iso];
         const skipped = this._skip.has(iso);
-        return `<div class="pickday ${pick ? "picked" : ""}"><label class="check skipday"><input type="checkbox" data-bind="skip" value="${iso}" ${skipped ? "checked" : ""}> ${esc(dateLabel(iso))}</label>
+        return `<div class="pickday ${pick ? "picked" : ""}"><b>${esc(dateLabel(iso))}</b><label class="check skipday"><input type="checkbox" data-bind="skip" value="${iso}" ${skipped ? "checked" : ""}> Spring over</label>
           ${skipped ? "" : pick
             ? `<span class="pick-chip"><button class="link" data-action="pick-open" data-arg="${iso}" title="Skift retten">${esc(pick.dish)}</button><button class="icon-btn" data-action="pick-remove" data-arg="${iso}" aria-label="Fjern ${esc(pick.dish)}">${CLOSE_ICON}</button></span>`
             : `<button class="btn small pick-btn" data-action="pick-open" data-arg="${iso}" title="Vælg selv retten til ${esc(dateLabel(iso).toLowerCase())}">Vælg ret</button>`}</div>`;
@@ -3420,7 +3420,7 @@ class Rema1000Panel extends HTMLElement {
       <button class="btn" data-action="note-open">${note ? "Ret ønsker til madplanen" : "Ønsker til madplanen"}</button>
       ${note ? `<p class="muted small note-preview">Bruges i næste madplan: ${esc(note)}</p>` : ""}
     </div>
-    ${skip ? `<p class="muted small skiphead">Spring over (ingen aftensmad de dage) – eller vælg selv retten til en dag:</p><div class="skipdays">${skip}</div>` : ""}
+    ${skip ? `<h3>Tilpas dagene</h3><p class="muted small">AI'en vælger retterne. Du kan selv vælge en ret eller springe en dag over.</p><div class="skipdays">${skip}</div>` : ""}
     <div class="row wrap skipgo">
       <button class="btn primary" data-action="generate" ${generating || this._busy ? "disabled" : ""}>
         ${generating ? "Laves …" : aiLabel(label)}
@@ -3432,31 +3432,33 @@ class Rema1000Panel extends HTMLElement {
 
   _freezerControls() {
     const busy = this._busy || this._state?.status?.state === "generating";
-    return `<details class="card"><summary>Månedens frysermad</summary>
-      <p>Lav 4–5 retter på én maddag. Vælg bagefter portioner for hver ret, fx 16. Familiens portionsprocent bruges ikke.</p>
-      <div class="row wrap">${[4, 5].map(n => `<button class="btn" data-action="freezer-generate" data-arg="${n}" ${busy ? "disabled" : ""}>${aiLabel(`Lav ${n} fryserretter`)}</button>`).join("")}</div>
-      ${(this._state?.freezer_plans || []).map(p => `<p><button class="btn" data-action="freezer-open" data-arg="${esc(p.id)}">${esc(p.title)} · ${kr(p.total)}</button></p>`).join("")}
-    </details>`;
+    const plans = this._state?.freezer_plans || [];
+    return `<section class="freezer-section">
+      <h2>Månedens frysermad</h2>
+      <p class="muted">Én maddag, flere aftener med nem mad. Lav en separat plan, og vælg bagefter portioner for hver ret.</p>
+      <div class="row wrap">${[4, 5].map(n => `<button class="btn" data-action="freezer-generate" data-arg="${n}" ${busy ? "disabled" : ""}>${aiLabel(`Lav en plan med ${n} retter`)}</button>`).join("")}</div>
+      ${plans.length ? `<h3>Dine fryserplaner</h3><div class="batch-plans">${plans.map(p => `<button class="setting-row" data-action="freezer-open" data-arg="${esc(p.id)}"><span class="setting-text"><b>${esc(p.title)}</b><span class="muted small">${p.dishes?.length || ""} retter · ${kr(p.total)}</span></span><span class="chev" aria-hidden="true">›</span></button>`).join("")}</div>` : '<p class="muted small">Når planen er klar, kan du åbne den her. Den ændrer ikke ugens madplan.</p>'}
+    </section>`;
   }
 
   _freezerView(plan) {
     const locked = plan.portions_locked || plan.shopping.some(l => l.sent);
     const portions = day => {
       const values = [...new Set([4, 8, 12, 16, 20, 24, 32, 40, day.servings])].sort((a, b) => a - b);
-      return `<label class="field inline">Portioner <select data-bind="freezer-portions" data-date="${day.date}" ${locked || this._busy ? "disabled" : ""}>${values.map(n => `<option value="${n}" ${n === day.servings ? "selected" : ""}>${n}</option>`).join("")}</select></label>`;
+      return `<label class="field batch-portions">Antal portioner <select data-bind="freezer-portions" data-date="${day.date}" aria-label="Portioner til ${esc(day.dish)}" ${locked || this._busy ? "disabled" : ""}>${values.map(n => `<option value="${n}" ${n === day.servings ? "selected" : ""}>${n} portioner</option>`).join("")}</select></label>`;
     };
     return `<div class="card">
       <h1>${esc(plan.title)}</h1>
-      <p>Vælg portioner pr. ret. Opskrifter og den samlede indkøbsliste følger med. Ingen portionsprocent lægges oveni.</p>
-      <p class="muted">Tilbehør som friskkogt ris og pasta er ikke med i fryserindkøbet. Fordel den færdige ret i fx 400 g poser; antal poser afhænger af den færdige vægt.</p>
+      <ol class="batch-steps" aria-label="Sådan bruger du fryserplanen"><li>Retterne er valgt</li><li ${!locked ? 'aria-current="step"' : ""}>Vælg portioner</li><li ${locked ? 'aria-current="step"' : ""}>Gennemgå indkøb</li></ol>
+      <p>Hvor meget vil I lave af hver ret? Vælg fx 16 portioner. Opskrift og indkøbsliste opdateres automatisk.</p>
+      <p class="muted small">Familiens portionsprocent bruges ikke her. Ris og pasta til spisedagen købes separat.</p>
       ${locked ? '<div class="banner info">Portionsvalget er låst, fordi overførsel til indkøbskurven er startet.</div>' : ""}
-      ${plan.days.map(day => `<div class="card"><div class="row between wrap"><h2>${esc(day.dish)}</h2>${portions(day)}</div>
+      <div class="batch-dishes">${plan.days.map((day, i) => `<article class="batch-dish"><div class="batch-dish-name"><span class="batch-number" aria-hidden="true">${i + 1}</span><h2>${esc(day.dish)}</h2></div>${portions(day)}
         ${day.tip ? `<p class="muted">${esc(day.tip)}</p>` : ""}
-        <button class="btn" data-action="open-day" data-arg="${esc(plan.id)}|${day.date}">Se opskrift</button></div>`).join("")}
-      <p class="price">Samlet indkøb: ${kr(plan.total)}</p>
-      <div class="row wrap"><button class="btn primary" data-action="send" ${this._busy || !plan.shopping.some(l => !l.sent) ? "disabled" : ""}>Send til ${this._listName()}</button>
-      <button class="btn" data-action="tab" data-arg="shopping">Se indkøbsliste</button>
-      <button class="btn" data-action="view-latest">Til ugens madplan</button></div>
+        <button class="btn small" data-action="open-day" data-arg="${esc(plan.id)}|${day.date}" aria-label="Se opskrift på ${esc(day.dish)}">Se opskrift</button></article>`).join("")}</div>
+      <details><summary>Fordeling i fryseposer</summary><p class="muted small">Fordel den færdige ret i fx 400 g poser. Antallet afhænger af rettens færdige vægt og beregnes ikke automatisk.</p></details>
+      <div class="batch-footer"><div><span class="muted small">Anslået indkøb i alt</span><strong>${kr(plan.total)}</strong></div><button class="btn primary" data-action="tab" data-arg="shopping">Se indkøbsliste →</button></div>
+      <button class="link" data-action="view-latest">‹ Til ugens madplan</button>
     </div>${this._freezerControls()}`;
   }
 
@@ -3995,9 +3997,9 @@ class Rema1000Panel extends HTMLElement {
           ? `<div class="banner info sent-banner"><span>✓ ${sentCount} ${sentCount === 1 ? "vare er sendt" : "varer er sendt"} til ${this._isRema() ? "REMA-appen" : this._state?.shop?.bilka_cart ? "BilkaToGo-kurven" : "indkøbslisten"}${plan.last_sent?.at ? ` ${esc(sentWhen(plan.last_sent.at))}` : ""} – kurven her har kun det, der ikke er sendt endnu.${onList ? ` ${onList} ${onList === 1 ? "fast vare stod" : "faste varer stod"} der allerede og blev ikke sendt igen.` : ""}</span>
               ${plan.last_sent ? `<button class="btn small" data-action="send-restore" ${this._busy ? "disabled" : ""}>Genskab seneste kurv</button>` : ""}</div>`
           : ""}
-        ${missingProducts.length ? `<div class="banner warning"><div><b>Disse varer blev ikke sendt til BilkaToGo</b>
+        ${missingProducts.length ? `<div class="banner warn"><div><b>${missingProducts.length} ${missingProducts.length === 1 ? "vare mangler" : "varer mangler"} et match</b>
           <ul>${missingProducts.map((item) => `<li>${esc(item.name)}${item.amount && item.unit ? ` (${esc(item.amount)} ${esc(item.unit)})` : ""}</li>`).join("")}</ul>
-          <p>De fundne varer er sendt. Varerne ovenfor bliver på listen her. Tryk på en vare for at vælge et produkt, eller tilføj den selv i BilkaToGo.</p></div></div>` : ""}
+          <p>Disse varer er ikke sendt. Vælg selv et produkt til dem, der mangler, eller prøv søgningen igen.</p><button class="btn small" data-action="rematch-missing" ${this._busy ? "disabled" : ""}>Søg manglende varer igen</button></div></div>` : ""}
         ${mainLines.length ? '<p class="muted small">Tryk på en vare for at rette antal, skifte den ud eller slette den.</p>' : '<p class="muted">Kurven er tom. Søg en vare frem nedenfor for at tilføje den.</p>'}
         ${Object.entries(basketSavings)
           .map(
@@ -4012,10 +4014,12 @@ class Rema1000Panel extends HTMLElement {
         <div class="row wrap actions">
           <button class="btn primary" data-action="send" ${this._busy || !mainLines.length ? "disabled" : ""}>
             ${mainLines.length ? `Send ${mainLines.length} ${mainLines.length === 1 ? "vare" : "varer"} til ${this._listName()}` : "Alt er sendt ✓"}</button>
-          <button class="btn" data-action="pantry-open">Basisvarer i madplanen</button>
-          <button class="btn" data-action="plan-refresh" ${this._busy ? "disabled" : ""}>Opdatér tilbudsvarer</button>
-          ${this._hasPrices() && plan.shopping.some(line => !line.product && !line.sent && !line.product_id && !line.added && !line.buy_at) ? `<button class="btn" data-action="rematch-missing" ${this._busy ? "disabled" : ""}>Søg manglende varer igen</button>` : ""}
         </div>
+        <details class="shopping-tools"><summary>Flere muligheder</summary><div class="row wrap">
+          <button class="btn small" data-action="pantry-open">Basisvarer i madplanen</button>
+          <button class="btn small" data-action="plan-refresh" ${this._busy ? "disabled" : ""}>Opdatér tilbudspriser</button>
+          ${!missingProducts.length && this._hasPrices() && plan.shopping.some(line => !line.product && !line.sent && !line.product_id && !line.added && !line.buy_at) ? `<button class="btn small" data-action="rematch-missing" ${this._busy ? "disabled" : ""}>Søg manglende varer igen</button>` : ""}
+        </div></details>
       </div>${lateHtml}${this._chainListsHtml(plan)}`;
     }
     const remaItems = rema?.items?.length
@@ -4860,7 +4864,7 @@ const STYLE = `
   * { box-sizing: border-box; }
   a { color: var(--rema-accent); overflow-wrap: anywhere; }
   .skiphead { margin: 14px 0 6px; }
-  .skipdays { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 2px 12px; }
+  .skipdays { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 12px; }
   .skipgo { margin-top: 12px; }
   #content.from-right { animation: rema-from-right .2s ease-out; }
   #content.from-left { animation: rema-from-left .2s ease-out; }
@@ -4914,8 +4918,8 @@ const STYLE = `
   .scan-row { margin-top: 8px; align-items: center; gap: 10px; }
   .scan-btn { display: inline-flex; align-items: center; gap: 6px; }
   .scan-btn .ico { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; }
-  .pickday { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .pickday .pick-btn { padding: 2px 10px; font-size: 12px; }
+  .pickday { display: flex; align-items: flex-start; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--divider-color); border-radius: 12px; }
+  .pickday .pick-btn { padding: 6px 12px; font-size: 14px; }
   .pick-chip { display: inline-flex; align-items: center; gap: 2px; background: var(--rema-tint); border-radius: 999px; padding: 0 2px 0 10px; font-size: 13px; }
   .pick-chip .icon-btn { width: 24px; height: 24px; }
   .pick-chip .icon-btn svg { width: 14px; height: 14px; }
@@ -5109,6 +5113,22 @@ const STYLE = `
   .chev { font-size: 22px; color: var(--secondary-text-color); }
   .settings-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
   .settings-head h1 { margin: 0; }
+  .freezer-section { border-top: 1px solid var(--divider-color); margin-top: 24px; padding-top: 8px; text-align: left; }
+  .batch-plans .setting-row { grid-template-columns: 1fr auto; padding: 14px 8px; }
+  .batch-steps { display: flex; flex-wrap: wrap; gap: 12px 28px; padding: 12px 12px 12px 32px; background: var(--rema-subtle); border-radius: 12px; color: var(--secondary-text-color); }
+  .batch-steps [aria-current] { color: var(--rema-accent); font-weight: 700; }
+  .batch-dishes { display: grid; gap: 12px; margin: 20px 0; }
+  .batch-dish { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 20px; padding: 18px; border: 1px solid var(--divider-color); border-radius: 14px; }
+  .batch-dish-name { display: flex; gap: 10px; align-items: center; min-width: 0; }
+  .batch-dish h2 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
+  .batch-number { display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; background: var(--rema-tint); color: var(--rema-accent); font-weight: 700; }
+  .batch-portions { margin: 0; }
+  .batch-dish p { grid-column: 1 / -1; margin: 2px 0; }
+  .batch-dish > .btn { justify-self: start; }
+  .batch-footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; padding: 20px 0; margin-top: 12px; border-top: 1px solid var(--divider-color); }
+  .batch-footer strong { display: block; font-size: 24px; color: var(--rema-accent); }
+  .shopping-tools .row { margin-top: 12px; }
+  @media (max-width: 520px) { .batch-dish { grid-template-columns: 1fr; } .batch-portions { max-width: 220px; } .batch-footer > .btn { width: 100%; } }
   .settings-head p { margin: 6px 0 0; }
   .settings-intro { margin: 0 0 20px; }
   .settings-intro h1 { margin-bottom: 8px; }
