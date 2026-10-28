@@ -279,6 +279,15 @@
     },
     "recipe_not_in_photo": {
       "message": "No recipe was found in the photo. Take it close up, straight on and in good light."
+    },
+    "ai_no_credit": {
+      "message": "The AI did not answer: the account at {provider} has run out of credit. Top it up at {provider}, or choose another AI under Indstillinger › Madplan og uge"
+    },
+    "ai_busy": {
+      "message": "The AI at {provider} is too busy right now. Try again in a moment"
+    },
+    "ai_key_failed": {
+      "message": "The AI at {provider} refused the key. Check the AI integration under Settings › Devices & services"
     }
   },
   "issues": {

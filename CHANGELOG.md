@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.8.1] - 2026-10-28
+
+### Fixed
+- **An AI service's error in plain Danish:** when the AI can't answer, the panel showed the service's raw error (e.g. Google's "402 … prepayment credits are depleted"). It now says what is wrong and what to do: the account has run out of credit, the service is too busy right now, or it refused the key – for the meal plan, recipes, other dishes and scanning. The log gets a short warning instead of a traceback.
+
 ## [2.8.0] - 2026-10-25
 
 ### Added
