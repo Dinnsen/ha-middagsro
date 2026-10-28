@@ -15,6 +15,11 @@ All notable changes to REMA 1000 for Home Assistant. The version is the one in `
 - Transfer matched meal-plan products to the BilkaToGo cart shared with the app. Persistent transfer receipts prevent duplicate plan sends after retries or restarts. Unmatched ingredients stay unsent and are reported separately while matched products are transferred.
 - Reconfigure an existing Bilka entry to add cart login or change pickup store. Existing local Bilka entries remain usable without login. Checkout and pickup-time selection stay in BilkaToGo.
 
+## [2.8.1] - 2026-10-28
+
+### Fixed
+- **An AI service's error in plain Danish:** when the AI can't answer, the panel showed the service's raw error (e.g. Google's "402 … prepayment credits are depleted"). It now says what is wrong and what to do: the account has run out of credit, the service is too busy right now, or it refused the key – for the meal plan, recipes, other dishes and scanning. The log gets a short warning instead of a traceback.
+
 ## [2.8.0] - 2026-10-25
 
 ### Added

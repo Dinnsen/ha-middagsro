@@ -311,6 +311,15 @@
     },
     "recipe_not_in_photo": {
       "message": "Der blev ikke fundet en opskrift på billedet. Tag billedet tæt på, lige på og med godt lys."
+    },
+    "ai_no_credit": {
+      "message": "AI'en svarede ikke: kontoen hos {provider} er løbet tør for kredit. Fyld kredit på hos {provider}, eller vælg en anden AI under Indstillinger › Madplan og uge"
+    },
+    "ai_busy": {
+      "message": "AI'en hos {provider} har for travlt lige nu. Prøv igen om lidt"
+    },
+    "ai_key_failed": {
+      "message": "AI'en hos {provider} afviste nøglen. Tjek AI-integrationen under Indstillinger › Enheder og tjenester"
     }
   },
   "issues": {
