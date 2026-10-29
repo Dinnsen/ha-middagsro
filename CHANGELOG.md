@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.10.1] - 2026-10-29
+
+### Fixed
+- **A REMA 1000 account without a shopping list** (a new account, or one whose list was never made in the app) could not be set up: "The account has no shopping lists", and Home Assistant kept retrying (#62). Middagsro now starts with an empty list and finds the list as soon as one is made in the REMA 1000 app; sending to the list until then says so in Danish.
+
 ## [2.10.0] - 2026-10-29
 
 ### Added
