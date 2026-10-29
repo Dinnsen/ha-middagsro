@@ -17,7 +17,9 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import Catalog, RemaAuthError, RemaClient, RemaError, ShoppingList, is_insert, parse_time
+from .bilka import BilkaError
 from .const import DOMAIN, LIST_SCAN_INTERVAL, OFFERS_SCAN_INTERVAL, STORAGE_VERSION
+from .store_client import BilkaStoreClient
 
 if TYPE_CHECKING:
     from .favorites import FavoriteOffers
@@ -92,24 +94,54 @@ class RemaShoppingListCoordinator(DataUpdateCoordinator[ShoppingList]):
         caller knows what got there if a later item fails.
         """
         added: list[dict[str, Any]] = []
+        cart = isinstance(self.client, BilkaStoreClient) and self.client.cart is not None
         async with self._change:
+            if cart and any(not item.get("product_id") for item in items):
+                raise BilkaError("Vælg en BilkaToGo-vare til alle ingredienser, før listen sendes")
             shopping_list = await self.client.async_get_primary_list()
+            # BilkaToGo: written one by one, confirmed together with one read of the cart.
+            pending: list[dict[str, Any]] = []
             try:
                 for item in items:
-                    await self.client.async_add_to_list(
-                        shopping_list,
-                        amount=int(item.get("amount") or 1),
-                        product_id=item.get("product_id"),
-                        name=item.get("name"),
-                    )
+                    if isinstance(self.client, BilkaStoreClient) and item.get("transfer_id"):
+                        await self.client.async_add_once(
+                            shopping_list,
+                            operation_id=str(item["transfer_id"]),
+                            amount=int(item.get("amount") or 1),
+                            product_id=item.get("product_id"),
+                            name=item.get("name"),
+                        )
+                        if cart:
+                            pending.append(item)
+                            continue
+                    else:
+                        await self.client.async_add_to_list(
+                            shopping_list,
+                            amount=int(item.get("amount") or 1),
+                            product_id=item.get("product_id"),
+                            name=item.get("name"),
+                        )
                     added.append(item)
                     if on_added is not None:
                         on_added(item)
             finally:
-                # Refresh right away (not debounced) so HA shows the change at once.
-                await self.async_refresh()
-                if self.mirror is not None and added:
-                    await self.mirror(added)
+                try:
+                    if pending and isinstance(self.client, BilkaStoreClient):
+                        done = await self.client.async_confirm_transfers()
+                        for item in pending:
+                            if str(item["transfer_id"]) in done:
+                                added.append(item)
+                                if on_added is not None:
+                                    on_added(item)
+                finally:
+                    # Refresh right away (not debounced) so HA shows the change at once.
+                    await self.async_refresh()
+                    if self.mirror is not None and added:
+                        await self.mirror(added)
+            if len(added) < len(items):
+                raise BilkaError(
+                    "BilkaToGo bekræftede ikke alle varer i kurven. Send listen igen for resten"
+                )
 
     async def async_clear(self) -> int:
         """Remove every item from the primary list. Returns how many."""

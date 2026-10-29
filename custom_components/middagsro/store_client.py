@@ -12,6 +12,7 @@ works the same; what needs REMA simply finds nothing.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 from datetime import datetime
 import logging
@@ -23,6 +24,7 @@ from homeassistant.helpers.storage import Store
 
 from .api import Catalog, Offer, Product, RemaClient, ShoppingList, ShoppingListItem
 from .bilka import BILKA_ID, BilkaSearch
+from .bilka_cart import BilkaCart, BilkaError
 from .chains import CHAINS, is_food_catalog
 from .const import DOMAIN
 
@@ -242,10 +244,138 @@ class StoreClient(RemaClient):
 class BilkaStoreClient(StoreClient):
     """Bilka: its avis from Tjek, and every item priced from Bilka ToGo's webshop."""
 
-    def __init__(self, hass: HomeAssistant, session: aiohttp.ClientSession, entry_id: str) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        session: aiohttp.ClientSession,
+        entry_id: str,
+        email: str = "",
+        password: str = "",
+        pickup: str = "",
+    ) -> None:
         """Initialize."""
         super().__init__(hass, session, entry_id, BILKA_ID)
         self.bilka = BilkaSearch(hass)
+        self.cart = BilkaCart(session, self.bilka, email, password, pickup) if email else None
+        self._transfers: Store[dict[str, Any]] = Store(
+            hass, 1, f"{DOMAIN}.{entry_id}.bilka_transfers"
+        )
+        self._receipts: dict[str, Any] | None = None
+        self._pending: dict[str, tuple[int, int]] = {}  # written, not yet confirmed
+        self._transfer_lock = asyncio.Lock()
+
+    async def async_login(self) -> int:
+        """Old Bilka entries remain local until login is added in Reconfigure."""
+        if self.cart is None:
+            return await super().async_login()
+        uid = await self.cart.async_login()
+        await self.cart.async_select_location()
+        return uid
+
+    async def async_get_list(self, list_id: int) -> ShoppingList:
+        """Read the remote cart when this entry has a BilkaToGo login."""
+        return await self.cart.async_list() if self.cart else await super().async_get_list(list_id)
+
+    async def async_create_item(
+        self,
+        list_id: int,
+        *,
+        amount: int = 1,
+        product_id: int | None = None,
+        name: str | None = None,
+    ) -> dict[str, Any]:
+        """A remote cart accepts concrete products only."""
+        if self.cart is None:
+            return await super().async_create_item(
+                list_id, amount=amount, product_id=product_id, name=name
+            )
+        if not product_id:
+            raise BilkaError("Vælg en BilkaToGo-vare til ingrediensen, før den sendes")
+        await self.cart.async_set_amount(product_id, max(1, amount))
+        return {"id": product_id}
+
+    async def async_update_item(self, list_id: int, item_id: int, **changes: Any) -> dict[str, Any]:
+        """Cart products can change quantity, but cannot be ticked off as bought."""
+        if self.cart is None:
+            return await super().async_update_item(list_id, item_id, **changes)
+        if changes.get("bought"):
+            raise BilkaError("BilkaToGo-kurven kan ikke afkrydses. Gennemfør købet i BilkaToGo")
+        if "amount" in changes:
+            await self.cart.async_set_amount(item_id, max(1, int(changes["amount"])))
+        return {"id": item_id}
+
+    async def async_delete_items(self, list_id: int, item_ids: list[int]) -> None:
+        """Remove only groceries, never the cart's packing services."""
+        if self.cart is None:
+            await super().async_delete_items(list_id, item_ids)
+            return
+        for item_id in item_ids:
+            await self.cart.async_set_amount(item_id, 0, verify=False)
+        targets = dict.fromkeys(item_ids, 0)
+        if await self.cart.async_confirm(targets) != set(targets):
+            raise BilkaError("BilkaToGo fjernede ikke alle varer. Prøv igen")
+
+    async def async_add_once(
+        self,
+        shopping_list: ShoppingList,
+        *,
+        operation_id: str,
+        amount: int,
+        product_id: int | None = None,
+        name: str | None = None,
+    ) -> None:
+        """Persist the target before writing; a repeated plan send reuses it.
+
+        The write is confirmed for the whole batch with ``async_confirm_transfers``
+        (one read of the cart), and only then is the receipt done.
+        """
+        if self.cart is None:
+            await self.async_add_to_list(
+                shopping_list, amount=amount, product_id=product_id, name=name
+            )
+            return
+        if not product_id:
+            raise BilkaError("Vælg en BilkaToGo-vare til ingrediensen, før den sendes")
+        async with self._transfer_lock:
+            if self._receipts is None:
+                self._receipts = await self._transfers.async_load() or {}
+            receipt = self._receipts.get(operation_id)
+            if receipt and receipt.get("done"):
+                return
+            if receipt is None:
+                existing = self.cart.amount(product_id, shopping_list)
+                receipt = {
+                    "product_id": product_id,
+                    "target": existing + max(1, amount),
+                    "done": False,
+                }
+                self._receipts[operation_id] = receipt
+                await self._transfers.async_save(self._receipts)
+            elif receipt.get("product_id") != product_id:
+                raise BilkaError(
+                    "Et tidligere forsøg gælder en anden vare; genskab kurven før nyt forsøg"
+                )
+            await self.cart.async_set_amount(product_id, int(receipt["target"]), verify=False)
+            self._pending[operation_id] = (product_id, int(receipt["target"]))
+
+    async def async_confirm_transfers(self) -> set[str]:
+        """Read the cart once for the batch: the transfers that got there are done."""
+        if self.cart is None or not self._pending:
+            return set()
+        async with self._transfer_lock:
+            pending, self._pending = self._pending, {}
+            # The same product twice in a batch: the last target is the cart's amount.
+            final: dict[int, int] = {}
+            for product_id, target in pending.values():
+                final[product_id] = target
+            confirmed = await self.cart.async_confirm(final)
+            done = {op for op, (product_id, _target) in pending.items() if product_id in confirmed}
+            for op in done:
+                if self._receipts and op in self._receipts:
+                    self._receipts[op]["done"] = True
+            if done:
+                await self._transfers.async_save(self._receipts or {})
+            return done
 
     @property
     def has_prices(self) -> bool:

@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Choose the shop",
-        "description": "Where do you shop? With REMA 1000 you log in and get prices on every item, REMA's recipes and the shopping list in the REMA app. With another shop its offer catalogue is used, and the shopping list is kept in Home Assistant. The shop can be changed later under Reconfigure.",
+        "description": "Choose the shop. REMA 1000 needs a login and sends the groceries to the REMA app. Bilka works with a login (the cart in the BilkaToGo app) or without (prices and a list in Home Assistant). Other shops use their offers and a shopping list in Home Assistant. The shop can be changed under Reconfigure.",
         "data": {
           "store": "Shop"
         },
@@ -12,13 +12,13 @@
         }
       },
       "reauth_confirm": {
-        "title": "Log in to REMA 1000 again",
+        "title": "Sign in again",
         "description": "The login for {email} no longer works. Enter the current password.",
         "data": {
           "password": "Password"
         },
         "data_description": {
-          "password": "The current password for the REMA 1000 account."
+          "password": "The current password for the shop account."
         }
       },
       "reconfigure": {
@@ -28,7 +28,7 @@
           "store": "Shop"
         },
         "data_description": {
-          "store": "REMA 1000 needs a login; other shops don't."
+          "store": "REMA 1000 needs a login. Bilka works with or without a BilkaToGo login."
         }
       },
       "migrate": {
@@ -66,17 +66,50 @@
           "email": "The e-mail you log in to rema1000.dk and the REMA 1000 app with.",
           "password": "Your REMA 1000 password. It is stored in Home Assistant and only sent to REMA 1000."
         }
+      },
+      "bilka": {
+        "title": "Bilka: BilkaToGo login (optional)",
+        "description": "With a login, the meal plan's groceries are sent to the cart in the BilkaToGo app (you order in the app yourself). Use the Salling Group account from the BilkaToGo app; then choose a Bilka store.\n\nLeave both fields empty to use Bilka without a login: Bilka ToGo's prices on every item, and the shopping list is kept in Home Assistant.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        },
+        "data_description": {
+          "email": "Your Salling Group e-mail. Empty: Bilka without a login.",
+          "password": "Kept in Home Assistant and sent only to Salling Group's login service. Empty: Bilka without a login."
+        }
+      },
+      "reconfigure_bilka": {
+        "title": "Bilka: BilkaToGo login (optional)",
+        "description": "With a login, the meal plan's groceries are sent to the cart in the BilkaToGo app (you order in the app yourself). Use the Salling Group account from the BilkaToGo app; then choose a Bilka store.\n\nLeave both fields empty to use Bilka without a login: Bilka ToGo's prices on every item, and the shopping list is kept in Home Assistant.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        },
+        "data_description": {
+          "email": "Your Salling Group e-mail. Empty: Bilka without a login.",
+          "password": "Kept in Home Assistant and sent only to Salling Group's login service. Empty: Bilka without a login."
+        }
+      },
+      "bilka_pickup": {
+        "title": "Choose a Bilka pickup store",
+        "description": "The store's assortment and prices are used in the meal plan and in your BilkaToGo cart. You choose the pickup time in BilkaToGo.\n\n**Note:** Middagsro makes this store the active pickup store in your BilkaToGo app when Home Assistant starts and before it changes the cart. If you chose another store in the app, it is switched back. To shop in another store, change it here under Reconfigure.",
+        "data": {
+          "bilka_pickup": "Bilka pickup store"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Could not reach REMA 1000. Try again later.",
+      "cannot_connect": "Could not connect to the shop. Try again later.",
       "invalid_auth": "Wrong e-mail or password.",
-      "unknown": "Unexpected error. See the log for details."
+      "unknown": "Unexpected error. See the log for details.",
+      "invalid_pickup": "Choose an available Bilka pickup store.",
+      "missing_login": "Fill in both e-mail and password – or leave both empty to use Bilka without a login."
     },
     "abort": {
       "already_configured": "This REMA 1000 account or shop is already set up.",
       "reauth_successful": "Logged in again.",
-      "wrong_account": "The login belongs to a different REMA 1000 account.",
+      "wrong_account": "These credentials belong to another account.",
       "reconfigure_successful": "Changed."
     }
   },

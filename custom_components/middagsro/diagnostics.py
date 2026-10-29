@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from .api import Catalog
 from .coordinator import RemaConfigEntry
 
-TO_REDACT = {CONF_EMAIL, CONF_PASSWORD, "title", "unique_id"}
+TO_REDACT = {CONF_EMAIL, CONF_PASSWORD, "title", "unique_id", "bilka_user_id"}
 
 
 def _catalog(catalog: Catalog | None) -> dict[str, Any] | None:

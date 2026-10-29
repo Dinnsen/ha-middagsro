@@ -59,3 +59,15 @@ async def test_diagnostics_without_data(
     assert result["offers"]["current"] is None
     assert result["latest_plan"] is None
     assert result["planner"]["ai_available"] is False
+
+
+async def test_bilka_account_id_is_redacted(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """Bilka account identifiers must not appear in exported diagnostics."""
+    hass.config_entries.async_update_entry(
+        init_integration, data={**init_integration.data, "bilka_user_id": 987654321}
+    )
+    result = await async_get_config_entry_diagnostics(hass, init_integration)
+    assert result["entry"]["data"]["bilka_user_id"] == "**REDACTED**"
+    assert "987654321" not in json.dumps(result)

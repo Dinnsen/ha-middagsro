@@ -2,6 +2,26 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.9.0] - 2026-10-29
+
+Built on the work of @nagels in #59 – thank you.
+
+### Added
+- **BilkaToGo's cart:** log in to Bilka with the Salling Group account from the BilkaToGo app and choose a Bilka store; assortment and prices follow that store, and the meal plan's groceries are sent to the same cart as in the app (ordering and pickup time stay in BilkaToGo). Products without a sure match are not sent but listed apart, with *Søg manglende varer igen*. Transfers keep receipts, so a repeated tap or a retry after a timeout never adds an item twice. The cart is read once for a whole send, instead of several times for each item. **The login is optional:** with empty fields Bilka works as before (prices on every item, the list in Home Assistant).
+- **The store in the BilkaToGo app:** Middagsro makes the chosen store the active pickup store in the app when Home Assistant starts and before it changes the cart, and the setup says so.
+- **Portions:** normal, 25 % more, 50 % more or double under *Familie og portioner*, for new weekly plans.
+- **Månedens frysermad:** a separate freezer plan with four or five dishes for one cooking day, with its own wishes (*Ønsker til fryserretterne*), portions chosen per dish and one combined shopping list. It doesn't change the week's plan.
+
+### Changed
+- **Tilbud og priser is first on the front page**, above the meal plan.
+- **Settings regrouped:** *AI til madplanen* has its own section (right after *Ugens madplan*), the pantry items are under *Indkøb og basisvarer*, portions under *Familie og portioner*, and clearer names for several fields. *Gem ændringer* is only active when something has changed.
+- **Ingredients become the right products:** chopped and peeled tomatoes ("hakkede/flåede tomater", "tomater, hakket") are always canned, never fresh; home preparation is left out of searches ("finthakket løg" → løg, "presset hvidløg" → hvidløg); fresh or dried herbs as the recipe says; stock is bought as bouillon cubes (and bouillon is no longer in the default pantry); karrypulver, svinemørbrad and oksekød til gryderet find the right product. Recipe water is not on the shopping list.
+- A recipe is scaled to at most 4 times its servings (more only with bigger portions), so a misread serving count can't multiply the shopping.
+- The panel's files get a new cache revision when they change, so a browser never keeps an old panel.
+
+### Fixed
+- A freezer plan that can't be made is logged, and the panel says why in Danish.
+
 ## [2.8.1] - 2026-10-28
 
 ### Fixed

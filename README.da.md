@@ -138,6 +138,10 @@ Fanen **Opskrifter** har tre sider: **Ugens opskrifter** som hidtil, **Opskrifts
 
 <img src="docs/images/rema-recipes.png" alt="REMA 1000's egne opskrifter med tid, pris og hvor mange varer der er på tilbud" width="100%">
 
+### Månedens frysermad
+
+Under knapperne til en ny madplan kan I lave en særskilt **fryserplan** med 4 eller 5 retter til én maddag – med sine egne ønsker (*Ønsker til fryserretterne*), adskilt fra ugens. Åbn planen, og vælg portioner for hver ret, fx 16. Ingredienser og den samlede indkøbsliste regnes om fra opskriftens 4 portioner, uden familiens portionsprocent og faste ugevarer. Ris og pasta til spisedagen er ikke med i fryserindkøbet. Portionsvalget låses, når varerne er sendt. Fryserplaner gemmes for sig og ændrer ikke ugens madplan eller kalenderen.
+
 ### Overrask os
 
 <img src="docs/images/new-plan.png" alt="Ny madplan: første dag, ønsker, dage at springe over, Lav ny madplan og Overrask os" width="40%" align="right">
@@ -270,7 +274,7 @@ Handlingerne hedder nu `middagsro.…` (før `rema1000.…`); ret dem i jeres au
 [![Åbn dit Home Assistant og tilføj Middagsro.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=middagsro)
 
 1. Gå til **Indstillinger → Enheder og tjenester → Tilføj integration**, og vælg **Middagsro**.
-2. Vælg butik. Med **REMA 1000** logger du ind (se nedenfor) og får priser på alle varer, REMA's opskrifter og indkøbslisten i REMA-appen. Vælger du en **anden butik** (Netto, føtex, Lidl, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, SPAR …), skal der ikke logges ind: madplanen bygges på butikkens tilbudsavis, kun tilbudsvarerne har en pris (i Bilka har alle varer deres pris fra Bilka ToGo), og indkøbslisten ligger i Home Assistant (og kan også sendes til en anden to-do-liste, fx Bring!). Opsætningen viser, hvad der kun virker med REMA 1000. Butikken kan skiftes senere under **Omkonfigurér** – madplaner, opskrifter og indstillinger beholdes.
+2. Vælg butik. Med **REMA 1000** logger du ind (se nedenfor) og får priser på alle varer, REMA's opskrifter og indkøbslisten i REMA-appen. Med **Bilka** kan du logge ind på BilkaToGo og sende varerne til kurven i appen (se [nedenfor](#bilka-med-bilkatogo-kurven)) – eller lade være. Vælger du en **anden butik** (Netto, føtex, Lidl, 365discount, MENY, SuperBrugsen, Kvickly, SPAR …), skal der ikke logges ind: madplanen bygges på butikkens tilbudsavis, kun tilbudsvarerne har en pris, og indkøbslisten ligger i Home Assistant (og kan også sendes til en anden to-do-liste, fx Bring!). Opsætningen viser, hvad der kun virker med REMA 1000. Butikken kan skiftes senere under **Omkonfigurér** – madplaner, opskrifter og indstillinger beholdes.
 3. Med REMA 1000: log ind:
 
    | Felt | Beskrivelse |
@@ -281,6 +285,15 @@ Handlingerne hedder nu `middagsro.…` (før `rema1000.…`); ret dem i jeres au
 4. Åbn **Middagsro** i sidebaren, gå til **Indstillinger**, og vælg familiens regler. Tryk så **Lav madplan**.
 
 Integrationen logger selv ind igen, når sessionen udløber. Skifter du adgangskode, beder Home Assistant dig om den nye (**Indstillinger → Enheder og tjenester → Middagsro**). Vil du skifte e-mail eller adgangskode selv, så vælg **⋮ → Omkonfigurér** på integrationen. Du kan tilføje flere REMA 1000-konti. Hver får sine egne entiteter, og handlingerne kan rettes mod en bestemt konto; panelet viser den først tilføjede.
+
+### Bilka med BilkaToGo-kurven
+
+Vælg **Bilka**. Logger du ind med din Salling Group-konto (den fra BilkaToGo-appen) og vælger et Bilka-varehus, følger sortiment og priser varehuset, og **Send til BilkaToGo-kurven** lægger madplanens varer i samme kurv som i appen. Du vælger selv afhentningstid og bestiller i BilkaToGo. Lader du login-felterne være tomme, bruges Bilka uden login: priser på alle varer fra Bilka ToGo og indkøbslisten i Home Assistant.
+
+- **Varehuset i appen:** Middagsro sætter det valgte varehus som aktivt afhentningssted i BilkaToGo-appen, når Home Assistant starter, og før den ændrer i kurven. Har du valgt et andet varehus i appen, bliver det skiftet tilbage. Vil du handle et andet sted, så skift varehus under **⋮ → Omkonfigurér**.
+- Fundne varer sendes til kurven; ingredienser uden et sikkert match bliver i Middagsro og vises for sig, så du kan vælge en vare og sende resten senere. Kurven kan ikke afkrydses som en indkøbsliste.
+- Overførsler har gemte kvitteringer og tjekkes i kurven, så gentagne tryk og forsøg efter timeout ikke lægger samme vare ind to gange. **Genskab seneste kurv** er et bevidst nyt forsøg og kan lægge varerne ind igen.
+- En Bilka-opsætning uden login kan få login under **⋮ → Omkonfigurér → Bilka**; madplaner og opskrifter beholdes. Forbindelsen er uofficiel og kan kræve tilpasning, hvis Bilka ændrer webshoppen.
 
 ## Indstillinger i panelet
 

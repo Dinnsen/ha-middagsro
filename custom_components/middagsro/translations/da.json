@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Vælg butik",
-        "description": "Hvor handler I? Med REMA 1000 logger du ind og får priser på alle varer, REMA's opskrifter og indkøbslisten i REMA-appen. Vælger du en anden butik, bruges dens tilbudsavis, og indkøbslisten ligger i Home Assistant. Butikken kan skiftes senere under Omkonfigurér.",
+        "description": "Vælg indkøbsbutik. REMA 1000 kræver login og sender varerne til REMA-appen. Bilka kan bruges med login (kurven i BilkaToGo-appen) eller uden (priser og en liste i Home Assistant). Andre butikker bruger tilbudsavisen og en indkøbsliste i Home Assistant. Butikken kan ændres via Omkonfigurér.",
         "data": {
           "store": "Butik"
         },
@@ -12,13 +12,13 @@
         }
       },
       "reauth_confirm": {
-        "title": "Log ind på REMA 1000 igen",
+        "title": "Log ind igen",
         "description": "Login for {email} virker ikke længere. Indtast den nuværende adgangskode.",
         "data": {
           "password": "Adgangskode"
         },
         "data_description": {
-          "password": "Den nuværende adgangskode til REMA 1000-kontoen."
+          "password": "Den nuværende adgangskode til butikkens konto."
         }
       },
       "reconfigure": {
@@ -28,7 +28,7 @@
           "store": "Butik"
         },
         "data_description": {
-          "store": "REMA 1000 kræver login; andre butikker gør ikke."
+          "store": "REMA 1000 kræver login. Bilka kan bruges med eller uden BilkaToGo-login."
         }
       },
       "migrate": {
@@ -66,17 +66,50 @@
           "email": "Den e-mail, du logger ind på rema1000.dk og i REMA 1000-appen med.",
           "password": "Din REMA 1000-adgangskode. Den gemmes i Home Assistant og sendes kun til REMA 1000."
         }
+      },
+      "bilka": {
+        "title": "Bilka: BilkaToGo-login (valgfrit)",
+        "description": "Med login sendes madplanens varer til kurven i BilkaToGo-appen (du bestiller selv i appen). Brug din Salling Group-konto fra BilkaToGo-appen; derefter vælger du Bilka-varehus.\n\nLad begge felter være tomme for at bruge Bilka uden login: priser på alle varer fra Bilka ToGo, og indkøbslisten ligger i Home Assistant.",
+        "data": {
+          "email": "E-mail",
+          "password": "Adgangskode"
+        },
+        "data_description": {
+          "email": "Din Salling Group-e-mail. Tom: Bilka uden login.",
+          "password": "Gemmes i Home Assistant og sendes kun til Salling Groups login-tjeneste. Tom: Bilka uden login."
+        }
+      },
+      "reconfigure_bilka": {
+        "title": "Bilka: BilkaToGo-login (valgfrit)",
+        "description": "Med login sendes madplanens varer til kurven i BilkaToGo-appen (du bestiller selv i appen). Brug din Salling Group-konto fra BilkaToGo-appen; derefter vælger du Bilka-varehus.\n\nLad begge felter være tomme for at bruge Bilka uden login: priser på alle varer fra Bilka ToGo, og indkøbslisten ligger i Home Assistant.",
+        "data": {
+          "email": "E-mail",
+          "password": "Adgangskode"
+        },
+        "data_description": {
+          "email": "Din Salling Group-e-mail. Tom: Bilka uden login.",
+          "password": "Gemmes i Home Assistant og sendes kun til Salling Groups login-tjeneste. Tom: Bilka uden login."
+        }
+      },
+      "bilka_pickup": {
+        "title": "Vælg Bilka-varehus",
+        "description": "Varehusets sortiment og priser bruges i madplanen og i din BilkaToGo-kurv. Afhentningstidspunkt vælger du selv i BilkaToGo.\n\n**Bemærk:** Middagsro sætter dette varehus som aktivt afhentningssted i din BilkaToGo-app, når Home Assistant starter, og før den ændrer i kurven. Har du valgt et andet varehus i appen, bliver det skiftet tilbage. Skal du handle i et andet varehus, så skift det her under Omkonfigurér.",
+        "data": {
+          "bilka_pickup": "Bilka-varehus"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Kunne ikke få forbindelse til REMA 1000. Prøv igen senere.",
+      "cannot_connect": "Kunne ikke få forbindelse til butikken. Prøv igen senere.",
       "invalid_auth": "Forkert e-mail eller adgangskode.",
-      "unknown": "Uventet fejl. Se loggen for detaljer."
+      "unknown": "Uventet fejl. Se loggen for detaljer.",
+      "invalid_pickup": "Vælg et tilgængeligt Bilka-varehus.",
+      "missing_login": "Udfyld både e-mail og adgangskode – eller lad begge være tomme for at bruge Bilka uden login."
     },
     "abort": {
       "already_configured": "Denne REMA 1000-konto eller butik er allerede sat op.",
       "reauth_successful": "Logget ind igen.",
-      "wrong_account": "Login hører til en anden REMA 1000-konto.",
+      "wrong_account": "Login hører til en anden konto.",
       "reconfigure_successful": "Ændret. Madplaner, opskrifter og indstillinger er beholdt."
     }
   },

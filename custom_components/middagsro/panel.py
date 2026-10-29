@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 from pathlib import Path
 
 from homeassistant.components import frontend, panel_custom
@@ -20,6 +21,15 @@ WEBCOMPONENT = "middagsro-panel"
 CARDS_MODULE = "middagsro-cards"
 _STATIC_KEY = f"{DOMAIN}_static_registered"
 _CARDS_KEY = f"{DOMAIN}_cards_url"
+
+
+def _frontend_revision() -> str:
+    """Invalidate browser caches when locally installed frontend files change."""
+    folder = Path(__file__).parent / "frontend"
+    digest = hashlib.sha256()
+    for module in (WEBCOMPONENT, CARDS_MODULE):
+        digest.update((folder / f"{module}.js").read_bytes())
+    return digest.hexdigest()[:12]
 
 
 async def async_register_panel(hass: HomeAssistant) -> None:
@@ -40,7 +50,9 @@ async def async_register_panel(hass: HomeAssistant) -> None:
             )
         hass.data[_STATIC_KEY] = True
 
-    version = (await async_get_integration(hass, DOMAIN)).version
+    integration_version = (await async_get_integration(hass, DOMAIN)).version
+    revision = await hass.async_add_executor_job(_frontend_revision)
+    version = f"{integration_version}-{revision}"
     # The dashboard cards, loaded on every dashboard: no resource to add, nothing to install.
     if not hass.data.get(_CARDS_KEY):
         cards_url = f"{STATIC_URL}/{CARDS_MODULE}.js?v={version}"
