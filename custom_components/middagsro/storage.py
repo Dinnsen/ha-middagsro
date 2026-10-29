@@ -102,6 +102,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "mealie_calendar": False,
     # Other chains whose offers are shown (Tjek dealer ids, see chains.py).
     "chains": [],
+    # Build the plan on the other chains' offers too (their items go on each shop's list).
+    "plan_all_chains": False,
     # Tell when something on the watch list is on offer: "" (off), "persistent_notification"
     # (in Home Assistant) or a notify service ("notify.mobile_app_telefon").
     "watch_notify": "",
@@ -206,6 +208,7 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
     settings["nutrition_enabled"] = bool(settings["nutrition_enabled"])
     settings["mealie_recipes"] = bool(settings["mealie_recipes"])
     settings["mealie_calendar"] = bool(settings["mealie_calendar"])
+    settings["plan_all_chains"] = bool(settings["plan_all_chains"])
     settings["chains"] = list(
         dict.fromkeys(c for c in settings["chains"] or [] if isinstance(c, str) and c in CHAINS)
     )
@@ -245,7 +248,7 @@ PLAN_SETTINGS = (
     "must_haves", "min_vegetarian", "max_vegetarian", "leftover_days", "no_leftover_weekdays",
     "fixed_days", "max_cook_minutes_weekday", "pantry", "wishes", "egg_min", "milk_organic",
     "produce_organic", "nutrition_enabled", "protein_pct", "carb_pct", "fat_pct", "kcal_min",
-    "kcal_max",
+    "kcal_max", "chains", "plan_all_chains",
 )  # fmt: skip
 
 

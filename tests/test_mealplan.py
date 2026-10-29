@@ -8,13 +8,14 @@ from datetime import UTC, date, datetime, timedelta
 import json
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.middagsro import mealplan as mp
 from custom_components.middagsro.api import Offer, RemaError
+from custom_components.middagsro.chains import ChainError
 from custom_components.middagsro.const import DOMAIN
 from custom_components.middagsro.storage import clean_settings
 import homeassistant.components.ai_task as ai_task_component  # noqa: F401 - patched in the tests
@@ -1697,3 +1698,128 @@ def test_update_feedback_names_new_days_and_problems() -> None:
     assert "Disse dage er nye og skal have en ret: 2026-10-19." in text
     assert "- For mange restedage" in text
     assert "ingen dage" in mp.update_feedback(base, ["2026-10-20"], [])
+
+
+def test_fixed_day_is_kept_simple() -> None:
+    """The family's own dish on a fixed day is made as they describe it, not finer."""
+    settings = clean_settings(
+        {
+            "fixed_days": [
+                {"weekday": 3, "text": "Spaghetti og kødsovs: en pakke spaghetti, kød, pastasovs"}
+            ],
+            "rules": ["Kun varer, der findes i REMA 1000"],
+        }
+    )
+    plan = make_plan(start="2026-10-12")
+    thursday = next(d for d in plan["days"] if d["date"] == "2026-10-15")
+    assert mp.fixed_day_text(settings, thursday) == (
+        "Spaghetti og kødsovs: en pakke spaghetti, kød, pastasovs"
+    )
+    assert mp.fixed_day_text(settings, plan["days"][0]) is None
+    assert mp.fixed_day_text(settings, {"date": "bad"}) is None
+    recipe = mp.build_recipe_prompt(settings=settings, day=thursday, plan=plan)
+    assert "FAST DAG" in recipe and "PRÆCIS så enkelt" in recipe
+    assert "byg smag" not in recipe
+    assert recipe.index("FAMILIENS FASTE REGLER") < recipe.index("FAST DAG")
+    other = mp.build_recipe_prompt(settings=settings, day=plan["days"][0], plan=plan)
+    assert "FAST DAG" not in other and "byg smag" in other
+    prompt = mp.build_prompt(
+        settings=settings,
+        dates=mp.plan_dates(START, 7),
+        catalog=UPCOMING,
+        offers=OFFERS,
+        favorites_due=[],
+        favorites_optional=[],
+        recent_dishes=[],
+    )
+    assert "Lav den PRÆCIS som familien beskriver den" in prompt
+    assert "Hver regel skal stå som sit eget punkt i checklist" in prompt
+
+
+NETTO_OFFER = {
+    "id": "n-1",
+    "heading": "Hakket oksekød 8-12%",
+    "description": "500 g",
+    "price": 35.0,
+    "pre_price": 50.0,
+    "quantity": "500 g",
+    "valid_from": "2026-10-17T22:00:00+0000",
+    "valid_to": "2026-10-24T21:59:59+0000",
+    "dealer_id": "9ba51",
+}
+OLD_OFFER = {
+    **NETTO_OFFER,
+    "id": "n-0",
+    "heading": "Gammelt tilbud",
+    "valid_to": "2026-10-10T21:59:59+0000",
+}
+
+
+def test_prompt_and_lines_with_other_chains_offers() -> None:
+    """With the plan built across the shops, their offers are in the prompt and a line
+    built on one goes on that shop's list at the offer's price."""
+    chain_offers = [("k0", "9ba51", NETTO_OFFER)]
+    prompt = mp.build_prompt(
+        settings=clean_settings({}),
+        dates=mp.plan_dates(START, 7),
+        catalog=UPCOMING,
+        offers=OFFERS,
+        favorites_due=[],
+        favorites_optional=[],
+        recent_dishes=[],
+        chain_offers=chain_offers,
+    )
+    assert "FAMILIEN HANDLER OGSÅ I NETTO" in prompt
+    assert "TILBUD I NETTO" in prompt
+    assert "k0 | Hakket oksekød 8-12% | 35 kr. (før 50) | 500 g 500 g" in prompt
+    assert "(også en anden butiks, fx k12)" in prompt
+    lines = [
+        {"name": "Hakket oksekød", "offer": "k0", "packages": 2, "cost": 80.0, "product": {"name": "HK. OKSEKØD", "price": 40.0}},
+        {"name": "Æg", "offer": "o1", "packages": 1, "cost": 25.0},
+        {"name": "Løg", "offer": None, "cost": 5.0},
+    ]  # fmt: skip
+    mp.apply_chain_offers(lines, chain_offers)
+    assert lines[0]["buy_at"] == "9ba51" and lines[0]["chain_planned"]
+    assert lines[0]["chain_heading"] == "Hakket oksekød 8-12%" and lines[0]["cost"] == 70.0
+    assert lines[0]["product"]["name"] == "HK. OKSEKØD"  # kept, so it can be moved back
+    assert "buy_at" not in lines[1] and "buy_at" not in lines[2]
+
+
+async def test_plan_built_on_all_chains(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+    ai_task: str,
+) -> None:
+    planner = init_integration.runtime_data.planner
+    store = init_integration.runtime_data.store
+    await store.async_set_settings(
+        {**store.settings, "chains": ["9ba51", "71c90"], "plan_all_chains": True}
+    )
+    dates = mp.plan_dates(START, 7)
+
+    async def offers(dealer_id: str, force: bool = False) -> list[dict[str, Any]]:
+        if dealer_id == "71c90":
+            raise ChainError("Lidl er nede")
+        return [OLD_OFFER, NETTO_OFFER]
+
+    shopping = [{**SHOPPING[0], "offer": "k0"}, SHOPPING[1]]
+    ai = FakeAI(ai_answer(dates, shopping))
+    with patch.object(planner.chains, "async_offers", AsyncMock(side_effect=offers)):
+        await _generate(planner, ai)
+    assert planner.status["state"] == "idle"
+    plan = store.latest_plan
+    assert plan is not None
+    assert "TILBUD I NETTO" in ai.prompts[0] and "Gammelt tilbud" not in ai.prompts[0]
+    assert "TILBUD I LIDL" not in ai.prompts[0]
+    beef = next(line for line in plan["shopping"] if line["name"] == "Hakket oksekød")
+    assert beef["buy_at"] == "9ba51" and beef["chain_price"] == 35.0 and beef["chain_planned"]
+    eggs = next(line for line in plan["shopping"] if line["name"] == "Æg")
+    assert not eggs.get("buy_at")
+    # Off: nothing from the other chains in the prompt.
+    await store.async_set_settings({**store.settings, "plan_all_chains": False})
+    ai = FakeAI(ai_answer(dates, SHOPPING[:2]))
+    with patch.object(planner.chains, "async_offers", AsyncMock(side_effect=offers)) as read:
+        await _generate(planner, ai)
+    assert "TILBUD I NETTO" not in ai.prompts[0]
+    read.assert_not_awaited()

@@ -702,7 +702,7 @@ async def async_move_line(
     elif line.get("chain_only"):
         plan["shopping"].remove(line)
     else:
-        for key in ("buy_at", "chain_price", "chain_heading", "bought"):
+        for key in ("buy_at", "chain_price", "chain_heading", "bought", "chain_planned"):
             line.pop(key, None)
         product = line.get("product") or {}
         line["cost"] = round((product.get("price") or 0) * packages, 2)

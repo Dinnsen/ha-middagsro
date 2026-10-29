@@ -52,6 +52,10 @@ _DIFFERENT_WORDS = {
     "pulver",
     "bouillon",
     "fond",
+    "cupnudler",
+    "kopnudler",
+    "instant",
+    "cup",
 }
 # REMA's categories of ready-made food: not what an ingredient search is after.
 _DISH_CATEGORIES = {
@@ -79,6 +83,8 @@ _HERBS = {
 # First parts of compound words that make it another product (hvidløg is not løg).
 _DIFFERENT_PREFIXES = {
     "hvid", "perle", "hvidløgs", "rød", "forårs", "sukker",
+    # cupnudler and kopnudler are an instant meal, not the noodles for a dish
+    "cup", "kop", "instant",
     # kakaomælk, havremælk, kærnemælk … are not mælk
     "kakao", "chokolade", "kokos", "mandel", "havre", "soja", "kærne",
 }  # fmt: skip
@@ -133,10 +139,78 @@ _TAP_WATER_WORDS = {
 }  # fmt: skip
 
 
+# A recipe's way of writing what to do with it, after a comma: "lime, saften herfra",
+# "chili, hakket", "citrongræs, banket på langs". Not what to buy.
+_PREPARATION_TAIL = {
+    "hakket", "hakkede", "snittet", "snittede", "revet", "revne", "skåret", "skårne", "banket",
+    "strimlet", "fintstrimlet", "strimlede", "presset", "pressede", "pillet", "pillede",
+    "skrællet", "skrællede", "renset", "rensede", "saften", "saft", "skallen", "skal", "smag",
+    "servering", "pynt", "delt", "halveret", "halverede", "udkernet", "udkernede", "kogt",
+    "kogte", "stegt", "ristet", "ristede", "knust", "knuste", "fjernet", "valgfri", "valgfrit",
+    "evt", "eventuelt", "gerne", "frisk", "friske", "tørret", "tørrede", "herfra", "heraf",
+    "tern", "skiver", "strimler", "stykker", "både", "plus", "ekstra", "mere",
+}  # fmt: skip
+# "2 stængler citrongræs", "3 fed hvidløg", "1 bundt persille": the thing comes after.
+_COUNT_WORDS = {
+    "stængel", "stængler", "fed", "kvist", "kviste", "bundt", "bundter", "håndfuld", "håndfulde",
+    "skive", "skiver", "blad", "blade", "nip", "knivspids", "dusk", "duske", "stilk", "stilke",
+}  # fmt: skip
+_FRESH_JUICE = {"citronsaft": "citron", "limesaft": "lime", "appelsinsaft": "appelsin"}
+# Words in a bracket note that make it a note, not part of the name.
+_NOTE_WORDS = {
+    "eller",
+    "efter",
+    "ca",
+    "cirka",
+    "mængde",
+    "kan",
+    "undlades",
+    "som",
+    "fx",
+    "f",
+    "eks",
+}
+
+
+def _strip_recipe_notes(text: str) -> str:
+    """'Lime, saften herfra (eller citron)' -> 'Lime'; '2 stængler citrongræs' -> 'citrongræs'."""
+    name = text
+    # Freshly pressed juice: the fruit is bought.
+    if re.search(r"\bfriskpresse\w*\b", name, flags=re.IGNORECASE):
+        name = re.sub(r"\bfriskpresse\w*\b", "", name, flags=re.IGNORECASE)
+        for juice, fruit in _FRESH_JUICE.items():
+            name = re.sub(rf"\b{juice}\b", fruit, name, flags=re.IGNORECASE)
+
+    def note(match: re.Match[str]) -> str:
+        # "(M)" says the size of the eggs; "(mængde efter smag)" says nothing to buy.
+        words = set(_tokens(match.group(1)))
+        return "" if words & (_PREPARATION_TAIL | _NOTE_WORDS) else match.group(0)
+
+    name = re.sub(r"\s*\(([^)]*)\)", note, name)
+    head, _sep, tail = name.partition(",")
+    tail_words = set(_tokens(tail))
+    if tail_words and not set(_tokens(head)) & _KEEP_PREPARATION and tail_words & _PREPARATION_TAIL:
+        name = head  # "chili, hakket"; "tomater, hakkede" is a can and is kept
+    words = name.split()
+    # "2 stængler citrongræs": the counting word before the thing.
+    while len(words) > 1 and (
+        words[0].rstrip(".").replace(",", ".").replace("½", "").isdigit()
+        or (_tokens(words[0]) and _tokens(words[0])[0] in _COUNT_WORDS)
+    ):
+        if not _tokens(words[0]) and not (
+            len(words) > 2 and _tokens(words[1]) and _tokens(words[1])[0] in _COUNT_WORDS
+        ):
+            break  # "2 tomater": the number stays with the thing
+        words = words[1:]
+    name = " ".join(words)
+    return " ".join(name.split()).strip(" ,;:")
+
+
 def ingredient_name(text: str) -> str:
     """Remove home preparation, preserving the actual kind of product."""
     # A recipe's suggested pasta brand must not exclude equivalent products.
     text = re.sub(r"\brummo(?:[’']s)?\b", "", text, flags=re.IGNORECASE)
+    text = _strip_recipe_notes(text) or text
     name = re.sub(
         r"\b(?:fint?|groft?)(hakket|hakkede|snittet|snittede|revet|revne)\b",
         r"\1",

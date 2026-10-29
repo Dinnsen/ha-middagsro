@@ -181,8 +181,8 @@ const SETTINGS_SECTIONS = (panel) => {
       summary: `${(state.settings.rules || []).length} punkter` },
     { key: "nutrition", title: "Næring", form: true,
       summary: f.nutrition_enabled ? `${f.kcal_min}–${f.kcal_max} kcal · ${f.protein_pct}/${f.carb_pct}/${f.fat_pct} %` : "Slået fra" },
-    { key: "chains", title: "Sammenlign andre butikker", form: true,
-      summary: (f.chains || []).filter((id) => id !== panel._storeId()).length ? f.chains.filter((id) => id !== panel._storeId()).map((id) => panel._chainName(id)).join(", ") : `Kun ${panel._shopName()}` },
+    { key: "chains", title: "Andre butikker", form: true,
+      summary: (f.chains || []).filter((id) => id !== panel._storeId()).length ? `${f.chains.filter((id) => id !== panel._storeId()).map((id) => panel._chainName(id)).join(", ")}${f.plan_all_chains ? " · madplan på tværs" : " · sammenligning"}` : `Kun ${panel._shopName()}` },
     { key: "watch", title: "Overvågning og beskeder", form: true,
       summary: `${(state.watch || []).length} overvåget${f.watch_notify ? " · besked ved tilbud" : " · ingen beskeder"}` },
     { key: "sites", title: "Opskrifter og madsider", form: true,
@@ -2579,7 +2579,7 @@ class Rema1000Panel extends HTMLElement {
             (l) => `<li class="cline ${l.bought ? "bought" : ""}">
               <button class="box" data-action="chain-tick" data-arg="${esc(l.id)}" aria-label="Købt" aria-pressed="${!!l.bought}">${l.bought ? "✓" : ""}</button>
               <div class="what"><b>${esc(l.chain_heading || l.product?.name || l.name)}</b>
-                <span class="muted small">${l.chain_only ? esc(l.note || "") : `I stedet for ${esc(l.product?.name || l.name)} hos ${this._isRema() ? "REMA" : esc(this._shopName())}`}</span></div>
+                <span class="muted small">${l.chain_only ? esc(l.note || "") : l.chain_planned ? `Tilbud i madplanen${l.product?.name && l.product.name !== l.chain_heading ? ` · hos ${this._isRema() ? "REMA" : esc(this._shopName())}: ${esc(l.product.name)}` : ""}` : `I stedet for ${esc(l.product?.name || l.name)} hos ${this._isRema() ? "REMA" : esc(this._shopName())}`}</span></div>
               <span class="cost"><b>${kr(l.cost)}</b></span>
               <span class="ctrl">
                 <span class="stepper">
@@ -4782,9 +4782,9 @@ class Rema1000Panel extends HTMLElement {
         </div>
         <p class="muted small">Fx 40 % protein, 35 % kulhydrat og 25 % fedt og 800–900 kcal. De officielle anbefalinger for voksne er ca. 10–20 % protein, 45–60 % kulhydrat og 25–40 % fedt af energien.</p>
         `),
-      chains: () => card(`<h2 class="flush">Sammenlign priser</h2>
-        <div class="banner info">I handler i ${esc(this._shopName())}. Her vælger I kun butikker til prissammenligning. Selve butikken vælges under Butik.</div>
-        <p class="muted">Vælg de kæder, I også handler i. Deres madtilbud vises på forsiden, og i indkøbslisten og favoritterne står der, når en vare er billigere hos dem denne uge. Madplanen laves stadig med ${esc(this._shopName())}.</p>
+      chains: () => card(`<h2 class="flush">Andre butikker</h2>
+        <div class="banner info">I handler i ${esc(this._shopName())} – selve butikken vælges under Butik. Her vælger I de andre kæder, I også handler i.</div>
+        <p class="muted">Deres madtilbud vises på forsiden, og i indkøbslisten og favoritterne står der, når en vare er billigere hos dem denne uge.</p>
         ${this._storeId() !== "93f13" ? '<p class="muted small">Bilka sammenlignes på <b>alle varer</b>, ikke kun tilbud – med priserne fra Bilka ToGo (webshoppens priser, tæt på butikkens).</p>' : ""}
         ${this._chains
           ? `<div class="chain-pick">${this._chains
@@ -4792,7 +4792,10 @@ class Rema1000Panel extends HTMLElement {
               .map((c) => `<label class="chain-choice"><input type="checkbox" data-list="chains" value="${esc(c.id)}" ${f.chains.includes(c.id) ? "checked" : ""}>${this._chainLogo(c.id)}<span>${esc(c.name)}</span></label>`)
               .join("")}</div>`
           : '<p class="muted"><span class="spinner small"></span> Henter kæderne …</p>'}
-        <p class="muted small">Tilbuddene kommer fra kædernes tilbudsaviser (Tjek/eTilbudsavis). En vare tæller kun som billigere, når det er den samme slags vare i samme størrelse.</p>`),
+        <p class="muted small">Tilbuddene kommer fra kædernes tilbudsaviser (Tjek/eTilbudsavis). En vare tæller kun som billigere, når det er den samme slags vare i samme størrelse.</p>
+        <h3>Madplan på tværs af butikkerne</h3>
+        <label class="check"><input type="checkbox" data-path="plan_all_chains" ${f.plan_all_chains ? "checked" : ""}> Byg madplanen på tilbud fra alle de valgte butikker</label>
+        <p class="muted small">AI'en får tilbuddene fra alle de valgte kæder og vælger ugens bedste på tværs af dem. Varer fra en anden butik kommer på den butiks egen liste under Indkøb (ikke på ${esc(this._listName())}). Slået fra: madplanen bygges kun på ${esc(this._shopName())}${this._isRema() ? "'s" : "s"} tilbud, og de andre butikker bruges til sammenligning.</p>`),
       budget: () => card(`<h2 class="flush">Madbudget</h2>
         <p class="muted">Jeres faste beløb til indkøb pr. måned. Det fordeles på månedens dage (5.000 kr. i oktober er 161 kr. om dagen, 1.129 kr. om ugen). Det, en uge ikke bruger, går videre til de næste uger i samme måned; en ny måned starter forfra den 1.</p>
         <label class="field">Madbudget pr. måned (kr., 0 = slået fra) ${num("monthly_budget", f.monthly_budget, 0, 1000000)}</label>
