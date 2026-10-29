@@ -9,7 +9,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.middagsro import mealplan as mp
 from custom_components.middagsro.storage import clean_settings
-from custom_components.middagsro.words import ingredient_name, is_tap_water
+from custom_components.middagsro.words import (
+    canned_tomato_product,
+    canned_tomatoes,
+    ingredient_name,
+    is_tap_water,
+)
 
 from .conftest import make_plan, make_product
 
@@ -323,3 +328,40 @@ async def test_match_uses_clean_query(init_integration: MockConfigEntry) -> None
         await planner._async_match(line)
     assert search.call_args_list[0].args[0] == "hvidløg"
     assert line["product"]["id"] == 1
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Hakkede tomater", "2 tomater, hakket", "flåede tomater", "Knuste tomater", "hk. tomater"],
+)
+def test_chopped_and_peeled_tomatoes_are_canned(text: str) -> None:
+    assert canned_tomatoes(text)
+    assert mp.line_category(text) == "Kolonial"
+
+
+@pytest.mark.parametrize("text", ["tomater", "pillede tomater", "cherrytomater", "hakket løg"])
+def test_other_tomatoes_are_not_canned(text: str) -> None:
+    assert not canned_tomatoes(text)
+
+
+async def test_canned_tomatoes_never_fresh(init_integration: MockConfigEntry) -> None:
+    """'Hakkede tomater' is a can: fresh tomatoes and other tomato products are left out."""
+    planner = init_integration.runtime_data.planner
+    canned = make_product(1, "HAKKEDE TOMATER", 6, underline="400 G / ITALIEN")
+    carton = make_product(2, "Tomater, hakkede", 7, underline="390 G", category="Konserves")
+    fresh = make_product(3, "Tomater", 15, underline="500 G", department="Frugt & grønt")
+    sundried = make_product(4, "Soltørrede tomater", 25, underline="280 G")
+    plain = make_product(5, "Tomater i dåse", 8, underline="400 G")
+    for text in ("hakkede tomater", "2 tomater, hakket"):
+        line = {"name": text, "search": "hakkede tomater"}
+        found, _ = planner._candidates(line, [canned, carton, fresh, sundried, plain], "tomater")
+        ids = {p.id for p in found}
+        assert 1 in ids and ids <= {1, 2, 5}
+    assert canned_tomato_product("Flåede tomater", "400 G", None, None)
+    assert not canned_tomato_product("Tomater", "500 G", "Frugt og grønt", None)
+    assert not canned_tomato_product("Agurk", "1 STK", None, None)
+    assert not canned_tomato_product("Tomater", "500 G", None, None)  # no sign of a can
+    # Peeled ("pillede") tomatoes are fresh: nothing is filtered.
+    line = {"name": "pillede tomater", "search": "tomater"}
+    found, _ = planner._candidates(line, [fresh], "tomater")
+    assert [p.id for p in found] == [3]

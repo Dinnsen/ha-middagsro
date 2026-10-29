@@ -2,18 +2,25 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
-## Unreleased
+## [2.9.0] - 2026-10-29
+
+Built on the work of @nagels in #59 – thank you.
 
 ### Added
-- Match fresh/dried herbs using recipe descriptors and product shelf categories. Retry plain shelf names for dried herbs, curry powder and bouillon cubes; normalize home-diced meat/vegetables and add guarded pork-fillet/stew-beef searches. Retry unresolved shopping lines without regenerating recipes, changing selected products or sending to the cart.
-- Group settings by everyday planning, shopping/budget, recipes/health and setup. Separate AI setup from weekly choices, place pantry items with shopping, and show unsaved changes immediately while typing. Local frontend changes now update the panel/card cache revision even when the manifest version stays the same.
-- Separate freezer plans with four or five complete dishes for one cooking day. Choose portions for each dish after generation, without the household percentage; recipes and the combined shopping list are recalculated from the original quantities. Rice/pasta served separately are excluded from the batch shopping list. Freezer plans do not replace weekly dinners or calendars.
-- Choose normal portions, 25% more, 50% more or double under Family settings for new meal plans. Food quantities and planned leftovers grow while household members and fixed weekly items remain unchanged.
-- Remove the Rummo brand hint from recipe shopping searches, without excluding Rummo products. Treat stock as a package of bouillon cubes rather than a volume of diluted liquid, and remove bouillon from the default pantry list.
-- Recipe water is omitted from shopping lists while remaining in cooking instructions. Home-preparation words are removed from ingredient searches and shopping names (e.g. finely chopped onion and pressed garlic), while product types such as minced beef, canned chopped tomatoes and dried oregano are preserved.
-- BilkaToGo login with a Salling Group account and explicit selection of a physical Bilka pickup store. Product availability and prices follow the selected store.
-- Transfer matched meal-plan products to the BilkaToGo cart shared with the app. Persistent transfer receipts prevent duplicate plan sends after retries or restarts. Unmatched ingredients stay unsent and are reported separately while matched products are transferred.
-- Reconfigure an existing Bilka entry to add cart login or change pickup store. Existing local Bilka entries remain usable without login. Checkout and pickup-time selection stay in BilkaToGo.
+- **BilkaToGo's cart:** log in to Bilka with the Salling Group account from the BilkaToGo app and choose a Bilka store; assortment and prices follow that store, and the meal plan's groceries are sent to the same cart as in the app (ordering and pickup time stay in BilkaToGo). Products without a sure match are not sent but listed apart, with *Søg manglende varer igen*. Transfers keep receipts, so a repeated tap or a retry after a timeout never adds an item twice. The cart is read once for a whole send, instead of several times for each item. **The login is optional:** with empty fields Bilka works as before (prices on every item, the list in Home Assistant).
+- **The store in the BilkaToGo app:** Middagsro makes the chosen store the active pickup store in the app when Home Assistant starts and before it changes the cart, and the setup says so.
+- **Portions:** normal, 25 % more, 50 % more or double under *Familie og portioner*, for new weekly plans.
+- **Månedens frysermad:** a separate freezer plan with four or five dishes for one cooking day, with its own wishes (*Ønsker til fryserretterne*), portions chosen per dish and one combined shopping list. It doesn't change the week's plan.
+
+### Changed
+- **Tilbud og priser is first on the front page**, above the meal plan.
+- **Settings regrouped:** *AI til madplanen* has its own section (right after *Ugens madplan*), the pantry items are under *Indkøb og basisvarer*, portions under *Familie og portioner*, and clearer names for several fields. *Gem ændringer* is only active when something has changed.
+- **Ingredients become the right products:** chopped and peeled tomatoes ("hakkede/flåede tomater", "tomater, hakket") are always canned, never fresh; home preparation is left out of searches ("finthakket løg" → løg, "presset hvidløg" → hvidløg); fresh or dried herbs as the recipe says; stock is bought as bouillon cubes (and bouillon is no longer in the default pantry); karrypulver, svinemørbrad and oksekød til gryderet find the right product. Recipe water is not on the shopping list.
+- A recipe is scaled to at most 4 times its servings (more only with bigger portions), so a misread serving count can't multiply the shopping.
+- The panel's files get a new cache revision when they change, so a browser never keeps an old panel.
+
+### Fixed
+- A freezer plan that can't be made is logged, and the panel says why in Danish.
 
 ## [2.8.1] - 2026-10-28
 

@@ -138,7 +138,7 @@ const BELL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V
 const clearBtn = (arg) => `<button class="btn small" data-action="clear-field" data-arg="${arg}" aria-label="Ryd søgefeltet">Ryd</button>`;
 
 const SETTING_ICONS = {
-  ai: TAB_ICONS.plan,
+  ai: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3.5l1.9 5.1 5.1 1.9-5.1 1.9L11 17.5l-1.9-5.1L4 10.5l5.1-1.9z"/><path d="M18 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg>',
   plan: TAB_ICONS.plan,
   family: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8.5" cy="8" r="2.8"/><circle cx="16.5" cy="9.5" r="2.2"/><path d="M3.5 19c.4-3.3 2.4-5.3 5-5.3s4.6 2 5 5.3M13.8 15.2c.8-.9 1.7-1.3 2.7-1.3 2 0 3.5 1.6 3.9 4.6"/></svg>',
   dishes: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="6.5"/><circle cx="12" cy="13" r="3"/><path d="M4 4v5M2.8 4v3M5.2 4v3M4 9v11M20 4c-1.6 1.3-2 3.5-2 6h2v10"/></svg>',
@@ -167,6 +167,8 @@ const SETTINGS_SECTIONS = (panel) => {
       summary: shop.rema ? "REMA 1000 · priser på alle varer og REMA-appens liste" : shop.bilka_cart ? `BilkaToGo · ${shop.pickup_name} · kurv i appen` : `${shop.name} · tilbudsavis og liste i Home Assistant` },
     { key: "plan", title: "Ugens madplan", form: true,
       summary: `${f.days} dage fra ${WEEKDAYS[f.start_weekday].toLowerCase()} · ${f.monthly_budget ? "budget efter madbudgettet" : `budget ${f.budget} kr.`}${f.auto_generate ? " · laves automatisk" : ""}` },
+    { key: "ai", title: "AI til madplanen", form: true,
+      summary: state.ai_entities?.find(x => x.entity_id === f.ai_task_entity)?.name || "Home Assistants standard" },
     { key: "budget", title: "Madbudget", form: true,
       summary: f.monthly_budget ? `${kr0(f.monthly_budget)} om måneden${f.budget_notify ? " · besked ved 80 %" : ""}` : "Ikke sat op" },
     { key: "family", title: "Familie og portioner", form: true,
@@ -190,8 +192,6 @@ const SETTINGS_SECTIONS = (panel) => {
     { key: "mealie", title: "Mealie", form: true,
       summary: state.mealie?.available ? (f.mealie_recipes || f.mealie_calendar ? "Slået til" : "Slået fra") : "Ikke sat op" },
     { key: "app", title: "App på hjemmeskærmen", form: false, summary: "Åbn Middagsro som en app på telefonen" },
-    { key: "ai", title: "AI til madplanen", form: true,
-      summary: state.ai_entities?.find(x => x.entity_id === f.ai_task_entity)?.name || "Home Assistants standard" },
   ].map((sec) => ({ ...sec, icon: SETTING_ICONS[sec.key] }));
 };
 
@@ -743,7 +743,10 @@ class Rema1000Panel extends HTMLElement {
       },
       generate: () => this._run(() => this._generate(), GENERATING_MESSAGE),
       "freezer-generate": () => this._run(
-        () => this._ws("middagsro/freezer/generate", { count: Number(arg) }),
+        () => this._ws("middagsro/freezer/generate", {
+          count: Number(arg),
+          note: (this._freezerNote ?? this._state?.freezer_note ?? "").slice(0, 2000),
+        }),
         "Fryserplanen laves. Åbn den nedenfor, når den er klar."
       ),
       "freezer-open": () => this._run(async () => {
@@ -1422,6 +1425,10 @@ class Rema1000Panel extends HTMLElement {
   _onInput(ev) {
     const el = ev.target;
     const ds = el.dataset;
+    if (ds.bind === "freezer-note") {
+      this._freezerNote = el.value;
+      return;
+    }
     if (ds.bind === "freezer-portions") {
       if (ev.type === "change") this._run(async () => {
         this._plan = await this._ws("middagsro/freezer/portions", {
@@ -3436,6 +3443,8 @@ class Rema1000Panel extends HTMLElement {
     return `<section class="freezer-section">
       <h2>Månedens frysermad</h2>
       <p class="muted">Én maddag, flere aftener med nem mad. Lav en separat plan, og vælg bagefter portioner for hver ret.</p>
+      <label class="field">Ønsker til fryserretterne <textarea data-bind="freezer-note" rows="2" maxlength="2000" placeholder="Fx gryderetter med kylling, ingen svampe">${esc(this._freezerNote ?? this._state?.freezer_note ?? "")}</textarea></label>
+      <p class="muted small">Bruges kun til fryserplanen – ugens madplan har sine egne ønsker.</p>
       <div class="row wrap">${[4, 5].map(n => `<button class="btn" data-action="freezer-generate" data-arg="${n}" ${busy ? "disabled" : ""}>${aiLabel(`Lav en plan med ${n} retter`)}</button>`).join("")}</div>
       ${plans.length ? `<h3>Dine fryserplaner</h3><div class="batch-plans">${plans.map(p => `<button class="setting-row" data-action="freezer-open" data-arg="${esc(p.id)}"><span class="setting-text"><b>${esc(p.title)}</b><span class="muted small">${p.dishes?.length || ""} retter · ${kr(p.total)}</span></span><span class="chev" aria-hidden="true">›</span></button>`).join("")}</div>` : '<p class="muted small">Når planen er klar, kan du åbne den her. Den ændrer ikke ugens madplan.</p>'}
     </section>`;
@@ -3475,13 +3484,13 @@ class Rema1000Panel extends HTMLElement {
       .filter(Boolean)
       .join(" · ");
     if (!plan) {
-      return `<div class="card hero">
+      return `${this._chainsCard()}<div class="card hero">
         <img src="${this._img("icon.png")}" class="hero-icon" alt="">
         <h1>Ingen madplan endnu</h1>
         <p>Madplanen laves med AI ud fra ugens tilbud og jeres indstillinger. Tjek indstillingerne først, og tryk så på knappen.</p>
         ${this._generateControls("Lav madplan")}
         <p class="muted">${catLine}</p>
-      </div>${this._chainsCard()}`;
+      </div>`;
     }
     const over = plan.budget && plan.total > plan.budget;
     const today = localToday();
@@ -3526,6 +3535,7 @@ class Rema1000Panel extends HTMLElement {
       .map((c) => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.requirement)}</li>`)
       .join("");
     return `
+      ${this._chainsCard()}
       ${this._olderBanner()}
       ${this._budgetCard(true)}
       <div class="card">
@@ -3567,7 +3577,6 @@ class Rema1000Panel extends HTMLElement {
         </div>
         ${checklist || plan.deviations ? `<details><summary>Krav-tjekliste</summary><ul class="checklist">${checklist}</ul>${plan.deviations ? `<p class="muted">${esc(plan.deviations)}</p>` : ""}</details>` : ""}
       </div>
-      ${this._chainsCard()}
       <div class="card">
         <h2>Det skal AI'en huske</h2>
         <p class="muted small">Faste ønsker til alle madplaner – skriv eller diktér. De kan også rettes under Indstillinger.</p>

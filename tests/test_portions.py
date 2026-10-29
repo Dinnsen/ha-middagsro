@@ -69,3 +69,13 @@ async def test_portions_scale_food_once_not_fixed_items(init_integration: MockCo
         settings=clean_settings({"portion_percent": 200}), day=plan["days"][0], plan=plan
     )
     assert "150 %" in prompt and "ikke skalere dem igen" in prompt
+
+
+def test_weekly_scaling_is_limited() -> None:
+    """A misread serving count can't multiply a weekly plan's shopping (freezer plans
+    scale on their own)."""
+    big = clean_settings({"household": [{"role": "adult"}] * 12})
+    assert mp.recipe_factor(big, {"servings": 1}, {}) == 4.0
+    double = clean_settings({"household": [{"role": "adult"}] * 12, "portion_percent": 200})
+    assert mp.recipe_factor(double, {"servings": 1}, {}) == 8.0
+    assert mp.recipe_factor(double, {"servings": 4}, {}) == pytest.approx(6.0)

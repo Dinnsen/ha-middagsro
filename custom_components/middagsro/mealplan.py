@@ -63,6 +63,8 @@ from .words import (
     _stem,
     _tokens,
     _uses_item,
+    canned_tomato_product,
+    canned_tomatoes,
     herb_form,
     herb_form_matches,
     ingredient_name,
@@ -1345,7 +1347,10 @@ def recipe_factor(settings: dict[str, Any], recipe: dict[str, Any], day: dict[st
         * (2 if day.get("makes_leftovers") else 1)
     )
     servings = recipe.get("servings") or 4
-    return float(max(0.25, min(20.0, portions / servings)))
+    # At most 4 times the recipe (more with bigger portions), so a misread serving
+    # count can't multiply the shopping; freezer plans scale on their own.
+    limit = 4.0 * max(1.0, settings.get("portion_percent", 100) / 100)
+    return float(max(0.25, min(limit, portions / servings)))
 
 
 def recipe_line(ingredient: dict[str, Any], factor: float = 1.0) -> dict[str, Any]:
@@ -1448,6 +1453,8 @@ _CATEGORY_WORDS = {
 
 def line_category(name: str) -> str:
     """A shopping category for an ingredient's name, as the panel groups them."""
+    if canned_tomatoes(name):
+        return "Kolonial"  # chopped/peeled tomatoes are canned, not fresh produce
     words = _tokens(name)
     for category, hints in _CATEGORY_WORDS.items():
         if any(w == h or w.startswith(h) or w.endswith(h) for w in words for h in hints):
@@ -2913,6 +2920,12 @@ class MealPlanner:
         priced = [p for p in products[:limit] if p.price and (require is None or require(p))]
         asked = f"{line.get('name') or ''} {line.get('search') or ''}"
         priced = [p for p in priced if herb_form_matches(asked, p.name, p.department, p.category)]
+        if canned_tomatoes(asked):
+            priced = [
+                p
+                for p in priced
+                if canned_tomato_product(p.name, p.underline, p.department, p.category)
+            ]
         asked_words = set(_tokens(asked))
         if "svinemørbrad" in asked_words:
             priced = [

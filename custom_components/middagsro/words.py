@@ -226,6 +226,34 @@ def is_tap_water(text: str) -> bool:
     return bool(words & {"vand", "postevand"}) and words <= _TAP_WATER_WORDS
 
 
+# Chopped, peeled ("flåede") and crushed tomatoes are always the canned kind, never fresh.
+_TOMATO_WORDS = {"tomat", "tomater"}
+_CANNED_TOMATO_WORDS = {"hakket", "hakkede", "flået", "flåede", "knust", "knuste"}
+_CANNED_WORDS = {"dåse", "dåser", "karton", "tetra", "konserves"}
+_FRESH_SHELF = {"frugt", "grønt", "grøntsager"}
+_NOT_CANNED_TOMATOES = {
+    "soltørrede", "soltørret", "ketchup", "pure", "tomatpure", "passata", "suppe",
+    "sauce", "pesto", "juice", "cherry", "cherrytomater", "snacktomater", "chips",
+}  # fmt: skip
+
+
+def canned_tomatoes(text: str) -> bool:
+    """'Hakkede tomater', '2 tomater, hakket', 'flåede tomater': canned tomatoes."""
+    words = set(_tokens(text))
+    return bool(words & _TOMATO_WORDS) and bool(words & _CANNED_TOMATO_WORDS)
+
+
+def canned_tomato_product(
+    name: str, underline: str | None, department: str | None, category: str | None
+) -> bool:
+    """A can (or carton) of chopped or peeled tomatoes, not fresh ones from the shelf."""
+    words = set(_tokens(f"{name} {underline or ''}"))
+    shelf = set(_tokens(f"{department or ''} {category or ''}"))
+    if not words & _TOMATO_WORDS or words & _NOT_CANNED_TOMATOES or shelf & _FRESH_SHELF:
+        return False
+    return bool(words & (_CANNED_TOMATO_WORDS | _CANNED_WORDS) or shelf & _CANNED_WORDS)
+
+
 def _tokens(text: str) -> list[str]:
     """Lower-case words of a product name, with REMA's abbreviations expanded."""
     words = re.findall(r"[a-zæøå]+", text.lower().translate(_ACCENTS))

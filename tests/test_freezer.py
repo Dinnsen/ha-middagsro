@@ -177,3 +177,55 @@ async def test_background_failure_reported(hass, init_integration, hass_ws_clien
         await planner._task
     assert planner.status["state"] == "error"
     assert not planner.store.freezer_plans
+
+
+async def test_freezer_wishes_are_their_own(hass, init_integration, hass_ws_client, ai_task):
+    """The freezer plan uses its own wishes (kept for next time), not the week's note."""
+    planner = init_integration.runtime_data.planner
+    planner.store.note = "Pizza fredag"
+    client = await hass_ws_client(hass)
+    ask = AsyncMock(return_value=answer())
+    with (
+        patch.object(planner, "_async_ask_ai", ask),
+        patch.object(planner, "_async_price_lines", AsyncMock()),
+    ):
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "middagsro/freezer/generate",
+                "count": 4,
+                "note": "Gryderetter med kylling,\n ingen svampe",
+            }
+        )
+        assert (await client.receive_json())["success"]
+        await planner._task
+        prompt = ask.await_args.args[0]
+        assert "Gryderetter med kylling, ingen svampe" in prompt
+        assert "Pizza fredag" not in prompt
+        assert planner.store.freezer_note == "Gryderetter med kylling, ingen svampe"
+        await client.send_json({"id": 2, "type": "middagsro/state"})
+        assert (await client.receive_json())["result"]["freezer_note"] == planner.store.freezer_note
+        # Without a note the kept wishes are used again.
+        await async_generate(planner, 4)
+        assert "Gryderetter med kylling" in ask.await_args.args[0]
+    stored = RemaPlanStore(hass, init_integration.entry_id)
+    await stored.async_load()
+    assert stored.freezer_note == "Gryderetter med kylling, ingen svampe"
+
+
+@pytest.mark.parametrize(
+    ("error", "level"), [(ValueError("ingen plan"), "WARNING"), (RuntimeError("boom"), "ERROR")]
+)
+async def test_background_failure_logged(
+    hass, init_integration, hass_ws_client, ai_task, caplog, error, level
+):
+    """An expected failure is a warning; an unexpected one is logged with its traceback."""
+    planner = init_integration.runtime_data.planner
+    client = await hass_ws_client(hass)
+    with patch.object(planner, "_async_ask_ai", AsyncMock(side_effect=error)):
+        await client.send_json({"id": 1, "type": "middagsro/freezer/generate", "count": 4})
+        assert (await client.receive_json())["success"]
+        await planner._task
+    record = next(r for r in caplog.records if "freezer plan" in r.getMessage())
+    assert record.levelname == level
+    assert planner.status["state"] == "error"

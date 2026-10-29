@@ -20,6 +20,7 @@ API = "https://api.bilkatogo.dk/api"
 IDENTITY = "https://accounts.eu1.gigya.com"
 _LOGIN_KEY = re.compile(r'NUXT_ENV_GIGYA_API_KEY:"([A-Za-z0-9_-]+)"')
 _LOGIN_HOST = re.compile(r'NUXT_ENV_GIGYA_BASE_URL:"([^"]+)"')
+LOCATION_CHECK = 300  # seconds the active pickup store is trusted before a cart change
 
 
 def cart_items(data: dict[str, Any], store_id: str) -> list[ShoppingListItem]:
@@ -62,6 +63,17 @@ def cart_items(data: dict[str, Any], store_id: str) -> list[ShoppingListItem]:
     return items
 
 
+def _locations(data: dict[str, Any]) -> list[dict[str, str]]:
+    """The physical Bilka stores in an AvailableDeliveryAddresses answer."""
+    return [
+        {"id": str(a["id"]), "name": str(a["name"]), "sid": str(a["sid"]), "zip": str(a["zip"])}
+        for a in data.get("addresses") or []
+        if isinstance(a, dict)
+        and a.get("facility") == 3
+        and all(a.get(key) for key in ("id", "name", "sid", "zip"))
+    ]
+
+
 class BilkaCart:
     """An account's remote cart. Never performs checkout or chooses a time slot."""
 
@@ -87,6 +99,8 @@ class BilkaCart:
         self._login_key: str | None = None
         self._login_lock = asyncio.Lock()
         self._change = asyncio.Lock()
+        self._amounts: dict[int, int] = {}  # the cart as last read or set here
+        self._location_checked = 0.0
 
     async def _json(
         self,
@@ -211,49 +225,62 @@ class BilkaCart:
 
     async def async_locations(self) -> list[dict[str, str]]:
         """Physical Bilka stores only, not private addresses or delivery slots."""
-        data = await self._shop("AvailableDeliveryAddresses", params={"orderByZipcode": 1})
-        return [
-            {"id": str(a["id"]), "name": str(a["name"]), "sid": str(a["sid"]), "zip": str(a["zip"])}
-            for a in data.get("addresses") or []
-            if isinstance(a, dict)
-            and a.get("facility") == 3
-            and all(a.get(key) for key in ("id", "name", "sid", "zip"))
-        ]
+        return _locations(
+            await self._shop("AvailableDeliveryAddresses", params={"orderByZipcode": 1})
+        )
 
-    async def async_select_location(self) -> None:
-        """Apply the user's configured pickup store, without choosing a time."""
-        locations = await self.async_locations()
-        chosen = next((a for a in locations if a["id"] == self.pickup), None)
+    async def async_select_location(self, *, force: bool = True) -> None:
+        """Make the configured store the active pickup store in the BilkaToGo app.
+
+        The configuration warns about this: the cart's prices and assortment are
+        the active store's, so it is set when Home Assistant logs in and checked
+        again (and set back, if it was changed in the app) before changes to the
+        cart. It never chooses a pickup time.
+        """
+        if not force and time.monotonic() - self._location_checked < LOCATION_CHECK:
+            return
+        data = await self._shop("AvailableDeliveryAddresses", params={"orderByZipcode": 1})
+        chosen = next((a for a in _locations(data) if a["id"] == self.pickup), None)
         if chosen is None:
-            raise BilkaError("Choose an available Bilka pickup store in Reconfigure")
-        current = await self._shop("AvailableDeliveryAddresses", params={"orderByZipcode": 1})
-        if str((current.get("activeAddress") or {}).get("id")) != self.pickup:
+            raise BilkaError("Vælg et Bilka-varehus, der findes, under Omkonfigurér")
+        if str((data.get("activeAddress") or {}).get("id")) != self.pickup:
             await self._shop(
                 "SetDeliveryAddress", params={"id": self.pickup, "zipcode": chosen["zip"]}
             )
-        checked = await self._shop("AvailableDeliveryAddresses", params={"orderByZipcode": 1})
-        if str((checked.get("activeAddress") or {}).get("id")) != self.pickup:
-            raise BilkaError("BilkaToGo did not confirm the selected pickup store")
+            checked = await self._shop("AvailableDeliveryAddresses", params={"orderByZipcode": 1})
+            if str((checked.get("activeAddress") or {}).get("id")) != self.pickup:
+                raise BilkaError("BilkaToGo skiftede ikke til det valgte varehus. Prøv igen")
         self.store_id, self.pickup_name = chosen["sid"], chosen["name"]
         self.search.set_store(self.store_id)
+        self._location_checked = time.monotonic()
 
     async def async_list(self) -> ShoppingList:
         """The current cart, excluding checkout services."""
-        location = await self._shop("AvailableDeliveryAddresses", params={"orderByZipcode": 1})
-        if str((location.get("activeAddress") or {}).get("id")) != self.pickup:
-            raise BilkaError("The BilkaToGo pickup store changed; reconfigure before sending")
         data = await self._shop(
             "Cart", params={"without_cache": 1, "extra": "deliveryAddress,deliveryDate"}
         )
         if data.get("uid") != self.user_id:
             raise RemaAuthError("BilkaToGo did not return the account's cart")
-        return ShoppingList(id=1, name="BilkaToGo", items=cart_items(data, self.store_id))
+        items = cart_items(data, self.store_id)
+        self._amounts = {item.id: item.amount for item in items}
+        return ShoppingList(id=1, name="BilkaToGo", items=items)
 
-    async def async_set_amount(self, product_id: int, amount: int) -> None:
-        """Set an absolute quantity; verify uncertain responses instead of adding again."""
+    def amount(self, product_id: int, shopping_list: ShoppingList | None = None) -> int:
+        """How many of a product the cart has, as last read or set here."""
+        if product_id in self._amounts:
+            return self._amounts[product_id]
+        items = shopping_list.items if shopping_list else []
+        return next((i.amount for i in items if i.id == product_id), 0)
+
+    async def async_set_amount(self, product_id: int, amount: int, *, verify: bool = True) -> None:
+        """Set an absolute quantity; verify uncertain responses instead of adding again.
+
+        Without ``verify`` the cart is read once afterwards for all the changes
+        (``async_confirm``), instead of once for each.
+        """
         async with self._change:
-            await self.async_list()  # refuse writes if the app changed the pickup store
-            # A timed-out write may have succeeded; inspect before retrying.
+            await self.async_select_location(force=False)
+            # A timed-out write may have succeeded; the check after it tells.
             with suppress(RemaConnectionError):
                 await self._shop(
                     "ChangeLineCount",
@@ -263,7 +290,16 @@ class BilkaCart:
                         "fullCart": 0,
                     },
                 )
-            shopping = await self.async_list()
-            actual = next((i.amount for i in shopping.items if i.id == product_id), 0)
-            if actual != amount:
-                raise BilkaError("BilkaToGo did not confirm the requested quantity; try again")
+            if not verify:
+                self._amounts[product_id] = amount
+                return
+            if (await self.async_confirm({product_id: amount})) != {product_id}:
+                raise BilkaError("BilkaToGo bekræftede ikke antallet. Prøv igen")
+
+    async def async_confirm(self, targets: dict[int, int]) -> set[int]:
+        """The products whose quantity in the cart is now the wanted one (one read)."""
+        if not targets:
+            return set()
+        shopping = await self.async_list()
+        actual = {item.id: item.amount for item in shopping.items}
+        return {pid for pid, amount in targets.items() if actual.get(pid, 0) == amount}

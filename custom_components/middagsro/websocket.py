@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 import functools
+import logging
 from typing import Any
 
 from homeassistant.components import websocket_api
@@ -77,6 +78,8 @@ from .watch import (
     async_toggle as async_watch_toggle,
     notify_targets,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 ENTRY = vol.Optional("entry_id")
 # One-time notes in the panel: the shop can be chosen (2.7.0).
@@ -157,6 +160,7 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
             p for p in store.plans if p["id"] in shown and p is not latest and p is not current
         ],
         "note": store.note,
+        "freezer_note": store.freezer_note,
         "recipes": [_recipe_summary(r) for r in store.recipes],
         "watch": store.watch,
         "own_favorites": store.own_favorites,
@@ -458,6 +462,7 @@ async def ws_send(
         vol.Required("type"): "middagsro/freezer/generate",
         ENTRY: str,
         vol.Required("count"): vol.In([4, 5]),
+        vol.Optional("note"): vol.All(str, vol.Length(max=2000)),
     }
 )
 @websocket_api.async_response
@@ -475,8 +480,17 @@ async def ws_freezer_generate(
 
     async def generate() -> None:
         try:
-            await async_generate_freezer(planner, msg["count"])
+            await async_generate_freezer(planner, msg["count"], msg.get("note"))
         except Exception as err:  # match the weekly background task's error reporting
+            if isinstance(err, ValueError) or getattr(err, "translation_key", "") in (
+                "ai_no_credit",
+                "ai_busy",
+                "ai_key_failed",
+            ):
+                # The AI service said no, or its answer was not a usable plan.
+                _LOGGER.warning("Could not make a freezer plan: %s", err.__cause__ or err)
+            else:
+                _LOGGER.exception("Could not make a freezer plan")
             planner._set_status("error", await async_danish(hass, err) or err.__class__.__name__)
         else:
             planner._set_status("idle")

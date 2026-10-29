@@ -261,6 +261,7 @@ class BilkaStoreClient(StoreClient):
             hass, 1, f"{DOMAIN}.{entry_id}.bilka_transfers"
         )
         self._receipts: dict[str, Any] | None = None
+        self._pending: dict[str, tuple[int, int]] = {}  # written, not yet confirmed
         self._transfer_lock = asyncio.Lock()
 
     async def async_login(self) -> int:
@@ -309,7 +310,10 @@ class BilkaStoreClient(StoreClient):
             await super().async_delete_items(list_id, item_ids)
             return
         for item_id in item_ids:
-            await self.cart.async_set_amount(item_id, 0)
+            await self.cart.async_set_amount(item_id, 0, verify=False)
+        targets = dict.fromkeys(item_ids, 0)
+        if await self.cart.async_confirm(targets) != set(targets):
+            raise BilkaError("BilkaToGo fjernede ikke alle varer. Prøv igen")
 
     async def async_add_once(
         self,
@@ -320,7 +324,11 @@ class BilkaStoreClient(StoreClient):
         product_id: int | None = None,
         name: str | None = None,
     ) -> None:
-        """Persist the target before writing; a repeated plan send reuses it."""
+        """Persist the target before writing; a repeated plan send reuses it.
+
+        The write is confirmed for the whole batch with ``async_confirm_transfers``
+        (one read of the cart), and only then is the receipt done.
+        """
         if self.cart is None:
             await self.async_add_to_list(
                 shopping_list, amount=amount, product_id=product_id, name=name
@@ -335,8 +343,7 @@ class BilkaStoreClient(StoreClient):
             if receipt and receipt.get("done"):
                 return
             if receipt is None:
-                current = await self.cart.async_list()
-                existing = next((i.amount for i in current.items if i.id == product_id), 0)
+                existing = self.cart.amount(product_id, shopping_list)
                 receipt = {
                     "product_id": product_id,
                     "target": existing + max(1, amount),
@@ -348,9 +355,27 @@ class BilkaStoreClient(StoreClient):
                 raise BilkaError(
                     "Et tidligere forsøg gælder en anden vare; genskab kurven før nyt forsøg"
                 )
-            await self.cart.async_set_amount(product_id, int(receipt["target"]))
-            receipt["done"] = True
-            await self._transfers.async_save(self._receipts)
+            await self.cart.async_set_amount(product_id, int(receipt["target"]), verify=False)
+            self._pending[operation_id] = (product_id, int(receipt["target"]))
+
+    async def async_confirm_transfers(self) -> set[str]:
+        """Read the cart once for the batch: the transfers that got there are done."""
+        if self.cart is None or not self._pending:
+            return set()
+        async with self._transfer_lock:
+            pending, self._pending = self._pending, {}
+            # The same product twice in a batch: the last target is the cart's amount.
+            final: dict[int, int] = {}
+            for product_id, target in pending.values():
+                final[product_id] = target
+            confirmed = await self.cart.async_confirm(final)
+            done = {op for op, (product_id, _target) in pending.items() if product_id in confirmed}
+            for op in done:
+                if self._receipts and op in self._receipts:
+                    self._receipts[op]["done"] = True
+            if done:
+                await self._transfers.async_save(self._receipts or {})
+            return done
 
     @property
     def has_prices(self) -> bool:

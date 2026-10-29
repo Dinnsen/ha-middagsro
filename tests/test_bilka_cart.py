@@ -202,7 +202,6 @@ async def test_physical_stores_only_and_selection(hass: HomeAssistant) -> None:
         AsyncMock(
             side_effect=[
                 data,
-                data,
                 {"eid": -1},
                 {**data, "activeAddress": LOCATION},
             ]
@@ -211,33 +210,72 @@ async def test_physical_stores_only_and_selection(hass: HomeAssistant) -> None:
         await cart.async_select_location()
     assert cart.store_id == "1654" and cart.search.store_id == "1654"
     assert cart.pickup_name == "Bilka Odense"
-    assert shop.call_args_list[2].args == ("SetDeliveryAddress",)
+    assert shop.call_args_list[1].args == ("SetDeliveryAddress",)
+    # Checked a moment ago: a cart change doesn't ask again.
+    with patch.object(cart, "_shop", AsyncMock()) as shop:
+        await cart.async_select_location(force=False)
+    shop.assert_not_awaited()
+    # Already the active store: nothing is changed in the app.
+    with patch.object(
+        cart, "_shop", AsyncMock(return_value={**data, "activeAddress": LOCATION})
+    ) as shop:
+        await cart.async_select_location()
+    assert shop.await_count == 1
+    # The app did not take the store.
+    with (
+        patch.object(cart, "_shop", AsyncMock(side_effect=[data, {"eid": -1}, data])),
+        pytest.raises(BilkaError),
+    ):
+        await cart.async_select_location()
     cart.pickup = "unknown"
     with patch.object(cart, "_shop", AsyncMock(return_value=data)), pytest.raises(BilkaError):
         await cart.async_select_location()
 
 
-async def test_changed_store_blocks_write(hass: HomeAssistant) -> None:
+async def test_store_changed_in_app_is_set_back_before_write(hass: HomeAssistant) -> None:
+    """As the setup warns: a cart change makes the chosen store active again first."""
     cart = client(hass)
-    with (
-        patch.object(cart, "_shop", AsyncMock(return_value={"activeAddress": OTHER})) as shop,
-        pytest.raises(BilkaError),
-    ):
-        await cart.async_set_amount(84120, 2)
-    assert shop.call_count == 1
+    cart.user_id = 42
+    data = {"addresses": [LOCATION, OTHER], "activeAddress": OTHER}
+    with patch.object(
+        cart,
+        "_shop",
+        AsyncMock(
+            side_effect=[
+                data,
+                {"eid": -1},
+                {**data, "activeAddress": LOCATION},
+                {"eid": -1},
+            ]
+        ),
+    ) as shop:
+        await cart.async_set_amount(84120, 2, verify=False)
+    assert [c.args[0] for c in shop.call_args_list] == [
+        "AvailableDeliveryAddresses",
+        "SetDeliveryAddress",
+        "AvailableDeliveryAddresses",
+        "ChangeLineCount",
+    ]
+    assert cart.amount(84120) == 2
 
 
 async def test_cart_and_absolute_quantity(hass: HomeAssistant) -> None:
     cart = client(hass)
     cart.user_id = 42
     cart.store_id = "1654"
-    location = {"activeAddress": LOCATION}
-    with patch.object(cart, "_shop", AsyncMock(side_effect=[location, response()])):
+    with patch.object(cart, "_shop", AsyncMock(side_effect=[response()])):
         shopping = await cart.async_list()
     assert shopping.items[0].amount == 1
+    assert cart.amount(84120) == 1 and cart.amount(1) == 0
+    with (
+        patch.object(cart, "_shop", AsyncMock(return_value={"uid": 7})),
+        pytest.raises(RemaAuthError),
+    ):
+        await cart.async_list()  # another account's cart
     two = ShoppingList(1, "BilkaToGo", [ShoppingListItem(84120, "Letmælk", False, 2, 84120)])
     with (
-        patch.object(cart, "async_list", AsyncMock(side_effect=[shopping, two])),
+        patch.object(cart, "async_select_location", AsyncMock()) as location,
+        patch.object(cart, "async_list", AsyncMock(side_effect=[two])),
         patch.object(
             cart,
             "_shop",
@@ -246,8 +284,10 @@ async def test_cart_and_absolute_quantity(hass: HomeAssistant) -> None:
     ):
         await cart.async_set_amount(84120, 2)
     assert shop.call_args.kwargs["params"] == {"productId": 84120, "count": 2, "fullCart": 0}
+    assert location.await_args.kwargs == {"force": False}
     with (
-        patch.object(cart, "async_list", AsyncMock(side_effect=[shopping, two])),
+        patch.object(cart, "async_select_location", AsyncMock()),
+        patch.object(cart, "async_list", AsyncMock(side_effect=[two])),
         patch.object(
             cart,
             "_shop",
@@ -256,6 +296,7 @@ async def test_cart_and_absolute_quantity(hass: HomeAssistant) -> None:
     ):
         await cart.async_set_amount(84120, 2)  # timed-out write already took effect
     with (
+        patch.object(cart, "async_select_location", AsyncMock()),
         patch.object(cart, "async_list", AsyncMock(return_value=shopping)),
         patch.object(
             cart,
@@ -265,6 +306,9 @@ async def test_cart_and_absolute_quantity(hass: HomeAssistant) -> None:
         pytest.raises(BilkaError),
     ):
         await cart.async_set_amount(84120, 2)  # a success-shaped response is not enough
+    with patch.object(cart, "async_list", AsyncMock()) as read:
+        assert await cart.async_confirm({}) == set()
+    read.assert_not_awaited()
 
 
 async def test_retry_after_reauthentication(hass: HomeAssistant) -> None:
@@ -301,10 +345,62 @@ async def test_transfer_receipt_survives_retry_and_reload(
         await shop.async_add_once(shopping, operation_id="plan:line:0", amount=1, product_id=84120)
     again = BilkaStoreClient(hass, async_get_clientsession(hass), "test", EMAIL, PASSWORD, "21046")
     assert again.cart
-    with patch.object(again.cart, "async_set_amount", AsyncMock()) as write:
+    with (
+        patch.object(again.cart, "async_set_amount", AsyncMock()) as write,
+        patch.object(again.cart, "async_confirm", AsyncMock(return_value={84120})) as confirm,
+    ):
         await again.async_add_once(shopping, operation_id="plan:line:0", amount=1, product_id=84120)
+        assert await again.async_confirm_transfers() == {"plan:line:0"}
         await again.async_add_once(shopping, operation_id="plan:line:0", amount=1, product_id=84120)
-    write.assert_awaited_once_with(84120, 2)
+        assert await again.async_confirm_transfers() == set()  # nothing new to check
+    write.assert_awaited_once_with(84120, 2, verify=False)
+    confirm.assert_awaited_once_with({84120: 2})
+
+
+async def test_same_product_twice_in_one_send(hass: HomeAssistant) -> None:
+    """Two lines with the same product add up; one read of the cart confirms both."""
+    shop = BilkaStoreClient(hass, async_get_clientsession(hass), "two", EMAIL, PASSWORD, "21046")
+    cart = shop.cart
+    assert cart
+    remote = {84120: 1}
+    shopping = ShoppingList(1, "BilkaToGo", [ShoppingListItem(84120, "Mælk", False, 1, 84120)])
+
+    async def write(pid: int, amount: int, *, verify: bool = True) -> None:
+        remote[pid] = amount
+        cart._amounts[pid] = amount
+
+    async def read() -> ShoppingList:
+        return ShoppingList(
+            1, "BilkaToGo", [ShoppingListItem(p, "Vare", False, n, p) for p, n in remote.items()]
+        )
+
+    with (
+        patch.object(shop.cart, "async_set_amount", AsyncMock(side_effect=write)),
+        patch.object(shop.cart, "async_list", AsyncMock(side_effect=read)) as listed,
+    ):
+        await shop.async_add_once(shopping, operation_id="a", amount=1, product_id=84120)
+        await shop.async_add_once(shopping, operation_id="b", amount=2, product_id=84120)
+        assert await shop.async_confirm_transfers() == {"a", "b"}
+    assert remote == {84120: 4}
+    assert listed.await_count == 1
+
+
+async def test_clear_cart_confirms_once(hass: HomeAssistant) -> None:
+    shop = BilkaStoreClient(hass, async_get_clientsession(hass), "clear", EMAIL, PASSWORD, "21046")
+    assert shop.cart
+    with (
+        patch.object(shop.cart, "async_set_amount", AsyncMock()) as write,
+        patch.object(shop.cart, "async_confirm", AsyncMock(return_value={1, 2})) as confirm,
+    ):
+        await shop.async_delete_items(1, [1, 2])
+    assert [c.kwargs for c in write.await_args_list] == [{"verify": False}] * 2
+    confirm.assert_awaited_once_with({1: 0, 2: 0})
+    with (
+        patch.object(shop.cart, "async_set_amount", AsyncMock()),
+        patch.object(shop.cart, "async_confirm", AsyncMock(return_value={1})),
+        pytest.raises(BilkaError),
+    ):
+        await shop.async_delete_items(1, [1, 2])
 
 
 async def test_unmatched_cart_item_rejected(hass: HomeAssistant) -> None:
@@ -413,7 +509,7 @@ async def test_plan_preflight_and_duplicate_send(
         patch.object(
             shop.cart,
             "async_set_amount",
-            AsyncMock(side_effect=lambda pid, n: remote.update({pid: n})),
+            AsyncMock(side_effect=lambda pid, n, verify=True: remote.update({pid: n})),
         ) as write,
     ):
         await data.planner.async_send(plan["id"], "all")
@@ -455,6 +551,13 @@ async def test_old_chain_product_is_rematched_before_transfer(
     async def match(line: dict[str, Any]) -> None:
         line["product"] = {"id": 84120, "name": "Bilka-vare"}
 
+    remote: dict[int, int] = {}
+
+    def read() -> ShoppingList:
+        return ShoppingList(
+            1, "BilkaToGo", [ShoppingListItem(p, "Vare", False, n, p) for p, n in remote.items()]
+        )
+
     with (
         patch.object(data.planner, "_async_match", AsyncMock(side_effect=match)),
         patch.object(
@@ -462,13 +565,82 @@ async def test_old_chain_product_is_rematched_before_transfer(
             "_async_refresh_lines",
             AsyncMock(),
         ),
-        patch.object(shop.cart, "async_list", AsyncMock(return_value=ShoppingList(1, "BilkaToGo"))),
+        patch.object(shop.cart, "async_list", AsyncMock(side_effect=read)),
         patch.object(
             shop.cart,
             "async_set_amount",
-            AsyncMock(),
+            AsyncMock(side_effect=lambda pid, n, verify=True: remote.update({pid: n})),
         ) as write,
     ):
         await data.planner.async_send(plan["id"], "all")
-    write.assert_awaited_once_with(84120, 1)
+    write.assert_awaited_once_with(84120, 1, verify=False)
     assert plan["shopping"][0]["bilka_price_store"] == "1654"
+
+
+async def test_unconfirmed_cart_items_are_not_marked_sent(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """Only what the cart shows after the send counts as sent; the rest can be sent again."""
+    data = init_integration.runtime_data
+    shop = BilkaStoreClient(hass, async_get_clientsession(hass), "part", EMAIL, PASSWORD, "21046")
+    assert shop.cart
+    data.client = data.shopping_list.client = shop
+    sent: list[str] = []
+    items = [
+        {"product_id": 84120, "amount": 1, "transfer_id": "p:1", "name": "Mælk"},
+        {"product_id": 33407, "amount": 1, "transfer_id": "p:2", "name": "Booster"},
+    ]
+    with (
+        patch.object(shop.cart, "async_list", AsyncMock(return_value=ShoppingList(1, "BilkaToGo"))),
+        patch.object(shop.cart, "async_set_amount", AsyncMock()),
+        patch.object(shop.cart, "async_confirm", AsyncMock(return_value={84120})),
+        pytest.raises(BilkaError),
+    ):
+        await data.shopping_list.async_add_items(items, lambda item: sent.append(item["name"]))
+    assert sent == ["Mælk"]
+    with pytest.raises(BilkaError):
+        await data.shopping_list.async_add_items([{"name": "Persille", "amount": 1}])
+
+
+async def test_bilka_without_login(hass: HomeAssistant, mock_panel: Any) -> None:
+    """Empty login fields keep Bilka as before: prices, and the list in Home Assistant."""
+    with patch("custom_components.middagsro.async_setup_entry", AsyncMock(return_value=True)):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_STORE: BILKA_ID}
+        )
+        assert result["step_id"] == "bilka"
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_EMAIL: EMAIL}
+        )
+        assert result["errors"] == {"base": "missing_login"}
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+        assert result["step_id"] == "store"
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] == "create_entry"
+    assert result["data"] == {CONF_STORE: BILKA_ID}
+
+
+async def test_bilka_login_removed_in_reconfigure(hass: HomeAssistant, mock_panel: Any) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=f"store_{BILKA_ID}",
+        data={CONF_STORE: BILKA_ID, CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD, CONF_PICKUP: "1"},
+    )
+    entry.add_to_hass(hass)
+    with patch.object(hass.config_entries, "async_reload", AsyncMock(return_value=True)):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": SOURCE_RECONFIGURE, "entry_id": entry.entry_id}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_STORE: BILKA_ID}
+        )
+        assert result["step_id"] == "reconfigure_bilka"
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_EMAIL: "", CONF_PASSWORD: ""}
+        )
+        assert result["step_id"] == "reconfigure_store"
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data == {CONF_STORE: BILKA_ID}
+    assert entry.unique_id == f"store_{BILKA_ID}"

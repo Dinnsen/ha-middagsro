@@ -251,6 +251,7 @@ class RemaPlanStore:
         self.plans: list[dict[str, Any]] = []
         self.freezer_plans: list[dict[str, Any]] = []
         self.note = ""  # the family's wishes for the next plan only
+        self.freezer_note = ""  # the family's wishes for freezer plans (their own)
         self.recipes: list[dict[str, Any]] = []  # the recipe collection (recipes.py)
         # Every item has a price (REMA 1000); another shop has only its offers'.
         self.prices = True
@@ -273,6 +274,7 @@ class RemaPlanStore:
         self.plans = list(data.get("plans") or [])
         self.freezer_plans = list(data.get("freezer_plans") or [])
         self.note = str(data.get("note") or "")
+        self.freezer_note = str(data.get("freezer_note") or "")[:2000]
         self.recipes = [r for r in data.get("recipes") or [] if isinstance(r, dict) and r.get("id")]
         self.watch = [w for w in data.get("watch") or [] if isinstance(w, dict) and w.get("key")]
         self.own_favorites = [
@@ -303,6 +305,7 @@ class RemaPlanStore:
                 "plans": self.plans,
                 "freezer_plans": self.freezer_plans,
                 "note": self.note,
+                "freezer_note": self.freezer_note,
                 "recipes": self.recipes,
                 "watch": self.watch,
                 "own_favorites": self.own_favorites,

@@ -49,6 +49,17 @@ STORE_SCHEMA = vol.Schema(
         ),
     }
 )
+# BilkaToGo's login is optional: without it, Bilka has prices and a list kept here.
+BILKA_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_EMAIL): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.EMAIL, autocomplete="username")
+        ),
+        vol.Optional(CONF_PASSWORD): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.PASSWORD, autocomplete="current-password")
+        ),
+    }
+)
 REAUTH_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_PASSWORD): TextSelector(
@@ -101,21 +112,34 @@ class RemaConfigFlow(ConfigFlow, domain=DOMAIN):
             session.detach()
 
     async def async_step_bilka(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Log in with the same Salling Group account as the BilkaToGo app."""
+        """Log in with the same Salling Group account as the BilkaToGo app, or not.
+
+        Without a login Bilka still has its prices on every item, and the shopping
+        list is kept in Home Assistant (as before BilkaToGo's cart).
+        """
         errors: dict[str, str] = {}
         entry = self._get_reconfigure_entry() if self._bilka_reconfigure else None
         if user_input is not None:
-            email = user_input[CONF_EMAIL].strip()
-            uid, locations, errors = await self._async_validate_bilka(
-                email, user_input[CONF_PASSWORD]
-            )
+            email = str(user_input.get(CONF_EMAIL) or "").strip()
+            password = str(user_input.get(CONF_PASSWORD) or "")
+            if not email and not password:
+                self._store = BILKA_ID
+                if entry:
+                    return await self.async_step_reconfigure_store()
+                return await self.async_step_store()
+            uid: int | None = None
+            locations: list[dict[str, str]] = []
+            if not email or not password:
+                errors = {"base": "missing_login"}
+            else:
+                uid, locations, errors = await self._async_validate_bilka(email, password)
             if not errors:
                 if entry and entry.data.get("bilka_user_id") not in (None, uid):
                     return self.async_abort(reason="wrong_account")
                 self._bilka_data = {
                     CONF_STORE: BILKA_ID,
                     CONF_EMAIL: email,
-                    CONF_PASSWORD: user_input[CONF_PASSWORD],
+                    CONF_PASSWORD: password,
                     "bilka_user_id": uid,
                 }
                 self._bilka_locations = locations
@@ -123,7 +147,7 @@ class RemaConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="reconfigure_bilka" if entry else "bilka",
             data_schema=self.add_suggested_values_to_schema(
-                USER_SCHEMA,
+                BILKA_SCHEMA,
                 {
                     CONF_EMAIL: (user_input or {}).get(CONF_EMAIL)
                     or (entry.data.get(CONF_EMAIL) if entry else None)

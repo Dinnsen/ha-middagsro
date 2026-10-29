@@ -75,12 +75,21 @@ async def _price(planner: MealPlanner, plan: dict[str, Any]) -> None:
     plan.pop("missing_products", None)
 
 
-async def async_generate(planner: MealPlanner, count: int) -> dict[str, Any]:
-    """Create a batch plan independently of the weekly calendar and household settings."""
+async def async_generate(
+    planner: MealPlanner, count: int, note: str | None = None
+) -> dict[str, Any]:
+    """Create a batch plan independently of the weekly calendar and household settings.
+
+    The wishes are the freezer plan's own (``note``, kept for next time), never the
+    weekly plan's.
+    """
     if count not in (4, 5):
         raise ValueError("Vælg 4 eller 5 fryserretter.")
+    if note is not None:
+        planner.store.freezer_note = " ".join(note.split())[:2000]
+        await planner.store.async_save()
     raw = await planner._async_ask_ai(
-        build_prompt(planner.store.settings, count, planner.store.note), "Fryserplan"
+        build_prompt(planner.store.settings, count, planner.store.freezer_note), "Fryserplan"
     )
     raw_days = raw.get("days")
     if not isinstance(raw_days, list) or len(raw_days) != count:
