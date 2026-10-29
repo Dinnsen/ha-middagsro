@@ -1088,8 +1088,8 @@ def build_prompt(
 
     if chain_offers:
         by_chain: dict[str, list[tuple[str, dict[str, Any]]]] = {}
-        for key, dealer_id, offer in chain_offers:
-            by_chain.setdefault(dealer_id, []).append((key, offer))
+        for key, dealer_id, entry in chain_offers:
+            by_chain.setdefault(dealer_id, []).append((key, entry))
         names = ", ".join(CHAINS.get(d, d) for d in by_chain)
         out += [
             "",
@@ -1103,14 +1103,14 @@ def build_prompt(
             out.append(
                 f"TILBUD I {CHAINS.get(dealer_id, dealer_id).upper()} – id | vare | pris | mængde:"
             )
-            for key, offer in entries:
-                price = offer.get("price")
-                text = f"{price:g} kr." if isinstance(price, (int, float)) else "?"
-                if offer.get("pre_price"):
-                    text += f" (før {offer['pre_price']:g})"
-                desc = str(offer.get("description") or "").split("\n")[0][:60]
-                qty = str(offer.get("quantity") or "")
-                out.append(f"{key} | {offer.get('heading')} | {text} | {qty} {desc}".rstrip())
+            for key, entry in entries:
+                cost = entry.get("price")
+                text = f"{cost:g} kr." if isinstance(cost, (int, float)) else "?"
+                if entry.get("pre_price"):
+                    text += f" (før {entry['pre_price']:g})"
+                desc = str(entry.get("description") or "").split("\n")[0][:60]
+                qty = str(entry.get("quantity") or "")
+                out.append(f"{key} | {entry.get('heading')} | {text} | {qty} {desc}".rstrip())
     out += [
         "",
         "Lav KUN overblikket nu – opskrifterne skrives bagefter. Hold svaret kort og præcist; "

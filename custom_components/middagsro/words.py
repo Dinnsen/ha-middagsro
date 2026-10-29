@@ -147,7 +147,7 @@ _PREPARATION_TAIL = {
     "skrællet", "skrællede", "renset", "rensede", "saften", "saft", "skallen", "skal", "smag",
     "servering", "pynt", "delt", "halveret", "halverede", "udkernet", "udkernede", "kogt",
     "kogte", "stegt", "ristet", "ristede", "knust", "knuste", "fjernet", "valgfri", "valgfrit",
-    "evt", "eventuelt", "gerne", "frisk", "friske", "tørret", "tørrede", "herfra", "heraf",
+    "evt", "eventuelt", "gerne", "herfra", "heraf",
     "tern", "skiver", "strimler", "stykker", "både", "plus", "ekstra", "mere",
 }  # fmt: skip
 # "2 stængler citrongræs", "3 fed hvidløg", "1 bundt persille": the thing comes after.
