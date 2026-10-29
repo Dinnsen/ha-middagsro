@@ -100,7 +100,7 @@ class BilkaCart:
         self._login_lock = asyncio.Lock()
         self._change = asyncio.Lock()
         self._amounts: dict[int, int] = {}  # the cart as last read or set here
-        self._location_checked = 0.0
+        self._location_checked: float | None = None  # monotonic time of the last check
 
     async def _json(
         self,
@@ -237,7 +237,8 @@ class BilkaCart:
         again (and set back, if it was changed in the app) before changes to the
         cart. It never chooses a pickup time.
         """
-        if not force and time.monotonic() - self._location_checked < LOCATION_CHECK:
+        checked_at = self._location_checked
+        if not force and checked_at is not None and time.monotonic() - checked_at < LOCATION_CHECK:
             return
         data = await self._shop("AvailableDeliveryAddresses", params={"orderByZipcode": 1})
         chosen = next((a for a in _locations(data) if a["id"] == self.pickup), None)
