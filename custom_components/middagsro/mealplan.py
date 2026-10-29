@@ -33,7 +33,15 @@ from .bilka import BilkaSearch
 from .budget import plan_budget
 from .chains import ChainOffers
 from .const import DOMAIN
-from .dishes import check_plan, day_wishes, household_portions, is_cooked, same_dish
+from .dishes import (
+    check_plan,
+    day_wishes,
+    fixed_rest_dates,
+    household_portions,
+    is_cooked,
+    is_rest_text,
+    same_dish,
+)
 from .mealie import MealieError, MealieLink
 from .messages import async_danish
 from .recipes import (
@@ -845,13 +853,23 @@ def build_prompt(
     out.append(
         f"- Vegetarretter: mindst {s['min_vegetarian']} og højst {s['max_vegetarian']} i perioden."
     )
-    if s["leftover_days"]:
+    # A fixed leftovers day ("torsdag: rester") is one of the leftover days.
+    rest_fixed = fixed_rest_dates(s, dates)
+    total = max(s["leftover_days"], len(rest_fixed))
+    if total:
+        line = f"- Præcis {total} {'dag er restedag' if total == 1 else 'dage er restedage'} i alt"
+        if rest_fixed:
+            named = ", ".join(f"{WEEKDAYS_DA[d.weekday()]} {d.isoformat()}" for d in rest_fixed)
+            more = total - len(rest_fixed)
+            line += f" – den faste restedag ({named}) tæller med, så der skal " + (
+                f"være {more} restedag{'e' if more > 1 else ''} mere" if more else "ikke være andre"
+            )
         out.append(
-            f"- Præcis {s['leftover_days']} dage er restedage: retten dagen før laves i dobbelt "
-            'portion, og dagen efter spises resten (type "rester", angiv uses_leftovers_from, '
-            "ingen nye ingredienser). Rester må ikke ligge på første dag."
+            line + ". Til en restedag laves retten dagen før i dobbelt portion, og dagen efter "
+            'spises resten (type "rester", angiv uses_leftovers_from, ingen nye ingredienser). '
+            "Rester må ikke ligge på første dag."
         )
-        if banned := no_leftover_weekdays(s):
+        if total > len(rest_fixed) and (banned := no_leftover_weekdays(s)):
             out.append(
                 "- Rester må ALDRIG ligge på: "
                 + ", ".join(WEEKDAYS_DA[w] for w in sorted(banned))
@@ -862,10 +880,17 @@ def build_prompt(
     for fixed in s["fixed_days"]:
         matching = [d for d in dates if d.weekday() == fixed["weekday"]]
         for day in matching:
-            out.append(
-                f"- {WEEKDAYS_DA[day.weekday()]} {day.isoformat()}: {fixed['text']} "
-                '(fast dag – tæller ikke som restedag, type "fast")'
-            )
+            if is_rest_text(fixed["text"]):
+                out.append(
+                    f"- {WEEKDAYS_DA[day.weekday()]} {day.isoformat()}: {fixed['text']} "
+                    '(fast restedag, type "rester": resten af en ret fra en dag før, der laves i '
+                    'dobbelt portion – angiv uses_leftovers_from – eller "Rester fra ugen")'
+                )
+            else:
+                out.append(
+                    f"- {WEEKDAYS_DA[day.weekday()]} {day.isoformat()}: {fixed['text']} "
+                    '(fast dag – tæller ikke som restedag, type "fast")'
+                )
     out.append(
         f"- Mandag til fredag højst {s['max_cook_minutes_weekday']} minutters aktiv tilberedning."
     )
@@ -1716,6 +1741,33 @@ class MealPlanner:
             name=f"{DOMAIN} meal plan",
         )
 
+    @callback
+    def async_start_update(self, plan_id: str) -> None:
+        """Update a plan to the settings as they are now, in the background.
+
+        It starts from the plan the family has: the same first day and skipped
+        days, and as many of its dishes as the new settings allow. The plan is
+        replaced by the updated one. Not once its shopping has been sent (that
+        would buy it twice): then a new plan is made instead.
+        """
+        if self.generating:
+            raise _invalid("already_generating")
+        plan = self.store.get_plan(plan_id)
+        if plan is None or plan.get("kind") == "freezer":
+            raise _invalid("plan_not_found")
+        if plan.get("sent_at") or any(line.get("sent") for line in plan.get("shopping") or []):
+            raise _invalid("plan_already_sent")
+        if not self.ai_available():
+            self._async_create_ai_issue()
+            raise _invalid("no_ai_task")
+        start = date.fromisoformat(plan["start_date"])
+        skip = {d for d in (parse_date(v) for v in plan.get("skipped") or []) if d}
+        self._set_status("generating", "Opdaterer madplanen …")
+        self._task = self.hass.async_create_background_task(
+            self._async_run(start, False, skip, bool(plan.get("surprise")), {}, plan_id),
+            name=f"{DOMAIN} meal plan update",
+        )
+
     async def _async_run(
         self,
         start: date,
@@ -1723,9 +1775,12 @@ class MealPlanner:
         skip: set[date],
         surprise: bool = False,
         picks: dict[str, dict[str, Any]] | None = None,
+        base_id: str | None = None,
     ) -> None:
         try:
-            plan = await self.async_generate(start, skip, surprise=surprise, picks=picks)
+            plan = await self.async_generate(
+                start, skip, surprise=surprise, picks=picks, base_id=base_id
+            )
             if send:
                 await self._async_send_when_ready(plan)
         except Exception as err:
@@ -2146,12 +2201,15 @@ class MealPlanner:
         *,
         surprise: bool = False,
         picks: dict[str, dict[str, Any]] | None = None,
+        base_id: str | None = None,
     ) -> dict[str, Any]:
         """Make, price and store a plan. Returns the plan.
 
         picks: dishes the family chose for a day themselves - the AI plans around
         them, and their own recipe is put on the day afterwards.
+        base_id: update this plan to the settings now instead (it is replaced).
         """
+        base = self.store.get_plan(base_id) if base_id else None
         settings = self.store.settings
         dates = plan_dates(start, settings["days"], skip)
         # Not past the last avis that is out: those days' prices aren't known yet.
@@ -2182,7 +2240,8 @@ class MealPlanner:
         late = late_offers(offers, dates[0])
         recent = self.store.recent_dishes(start, settings["no_repeat_weeks"])
         due, optional = self.store.favorites_due(start, recent)
-        note = self.store.note.strip()
+        # An update keeps the wishes the plan was made with.
+        note = str(base.get("note") or "").strip() if base else self.store.note.strip()
         own = [] if surprise else prompt_recipes(self.store, recent)
         # The family's own recipe for a favourite: the plan uses it as it is.
         links = {
@@ -2212,6 +2271,20 @@ class MealPlanner:
 
         best: dict[str, Any] | None = None
         feedback: str | None = None
+        if base is not None:
+            feedback = update_feedback(
+                base,
+                iso,
+                check_plan(
+                    {**base, "days": [d for d in base.get("days", []) if d["date"] in iso]},
+                    settings,
+                    recent=recent,
+                    due_ids=set() if surprise else {f["id"] for f in due},
+                    note=note,
+                    disliked=disliked,
+                    wishes=wishes,
+                ),
+            )
         for attempt in range(MAX_AI_ROUNDS):
             self._set_status(
                 "generating",
@@ -2339,6 +2412,10 @@ class MealPlanner:
         fit_amounts(best)
         best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
         mark_planned(self.store, best)
+        if base is not None:
+            # The updated plan takes the old one's place (it was never sent).
+            best["updated_from"] = base["id"]
+            await self.store.async_delete_plan(base["id"])
         await self.store.async_add_plan(best)
         self._schedule_refreshes(best)
         await self.async_mealie_sync(best)
@@ -3574,6 +3651,28 @@ def parse_quick_add(text: str) -> tuple[int, str]:
     if glued := re.match(r"^\s*(\d+)\s*[x×*](\S.*)$", text):  # '3xæg'
         return max(1, int(glued.group(1))), glued.group(2).strip()
     return 1, text
+
+
+def update_feedback(base: dict[str, Any], iso: list[str], problems: list[str]) -> str:
+    """What the AI is told when it updates a plan to changed settings."""
+    kept = [d for d in base.get("days", []) if d["date"] in iso]
+    current = "; ".join(
+        f"{d['weekday']} {d['date']}: {d['dish']}"
+        + (" (rester)" if d.get("uses_leftovers_from") or d.get("type") == "rester" else "")
+        for d in kept
+    )
+    new_days = [d for d in iso if d not in {k["date"] for k in kept}]
+    lines = [
+        f"Familien har allerede denne madplan: {current or 'ingen dage'}. De har ændret "
+        "indstillingerne siden. Ret planen til, så den overholder kravene ovenfor: behold så "
+        "mange af retterne som muligt på deres dage, og lav kun de dage om, der skal ændres."
+    ]
+    if new_days:
+        lines.append("Disse dage er nye og skal have en ret: " + ", ".join(new_days) + ".")
+    if problems:
+        lines.append("Det bryder den nuværende plan med de nye indstillinger:")
+        lines.extend(f"- {p}" for p in problems)
+    return "\n".join(lines)
 
 
 def plan_summary(plan: dict[str, Any]) -> dict[str, Any]:

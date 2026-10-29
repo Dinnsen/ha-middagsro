@@ -161,6 +161,8 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
         ],
         "note": store.note,
         "freezer_note": store.freezer_note,
+        # When a setting the plans are made from last changed: "Opdater madplan".
+        "settings_changed": store.settings_changed or None,
         "recipes": [_recipe_summary(r) for r in store.recipes],
         "watch": store.watch,
         "own_favorites": store.own_favorites,
@@ -433,6 +435,20 @@ async def ws_generate(
         surprise=msg["surprise"],
         picks=msg.get("picks"),
     )
+    connection.send_result(msg["id"], planner.status)
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "middagsro/plan/update", ENTRY: str, vol.Required("plan_id"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_plan_update(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Update a plan to the changed settings (in the background, like a new plan)."""
+    planner = _entry(hass, msg).runtime_data.planner
+    planner.async_start_update(msg["plan_id"])
     connection.send_result(msg["id"], planner.status)
 
 
@@ -1582,6 +1598,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_favorite_save,
         ws_favorite_delete,
         ws_generate,
+        ws_plan_update,
         ws_freezer_generate,
         ws_freezer_portions,
         ws_send,

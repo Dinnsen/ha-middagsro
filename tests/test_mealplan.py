@@ -1610,3 +1610,90 @@ async def test_send_keeps_what_got_there(
     await planner.async_send("two")
     await first
     assert mock_client.async_add_to_list.call_count == 3
+
+
+def test_prompt_fixed_leftovers_day_counts() -> None:
+    """Two leftover days with thursday fixed as leftovers: thursday and one more, not three."""
+    settings = clean_settings(
+        {"leftover_days": 2, "fixed_days": [{"weekday": 3, "text": "Rester"}]}
+    )
+    prompt = mp.build_prompt(
+        settings=settings,
+        dates=mp.plan_dates(START, 7),
+        catalog=UPCOMING,
+        offers=OFFERS,
+        favorites_due=[],
+        favorites_optional=[],
+        recent_dishes=[],
+    )
+    assert (
+        "Præcis 2 dage er restedage i alt – den faste restedag (torsdag 2026-10-22) tæller med, "
+        "så der skal være 1 restedag mere"
+    ) in prompt
+    assert "torsdag 2026-10-22: Rester (fast restedag" in prompt
+    assert "tæller ikke som restedag" not in prompt
+    only = mp.build_prompt(
+        settings=clean_settings(
+            {"leftover_days": 1, "fixed_days": [{"weekday": 3, "text": "Rester"}]}
+        ),
+        dates=mp.plan_dates(START, 7),
+        catalog=UPCOMING,
+        offers=OFFERS,
+        favorites_due=[],
+        favorites_optional=[],
+        recent_dishes=[],
+    )
+    assert "Præcis 1 dag er restedag i alt" in only and "så der skal ikke være andre" in only
+
+
+async def test_update_plan_to_changed_settings(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+    ai_task: str,
+    hass_ws_client: Any,
+) -> None:
+    """Opdater madplan: the plan the family has, put right to the settings changed since."""
+    planner = init_integration.runtime_data.planner
+    store = init_integration.runtime_data.store
+    await _generate(planner, FakeAI(ai_answer(mp.plan_dates(START, 7), SHOPPING[:2])))
+    first = store.latest_plan
+    assert first is not None and first["created"]
+    # Only the settings a plan is made from count as a change.
+    await store.async_set_settings({**store.settings, "budget_notify": True})
+    assert not store.settings_changed
+    await store.async_set_settings({**store.settings, "days": 5})
+    changed = store.settings_changed
+    assert changed
+    client = await hass_ws_client(hass)
+    await client.send_json({"id": 1, "type": "middagsro/state"})
+    assert (await client.receive_json())["result"]["settings_changed"] == changed
+
+    ai = FakeAI(ai_answer(mp.plan_dates(START, 5), SHOPPING[:2]))
+    with patch("homeassistant.components.ai_task.async_generate_data", new=ai):
+        await client.send_json({"id": 2, "type": "middagsro/plan/update", "plan_id": first["id"]})
+        assert (await client.receive_json())["success"]
+        await planner._task
+    assert planner.status["state"] == "idle"
+    plan = store.latest_plan
+    assert plan is not None and plan["updated_from"] == first["id"]
+    assert store.get_plan(first["id"]) is None  # replaced, not one more plan
+    assert plan["start_date"] == first["start_date"] and len(plan["days"]) == 5
+    prompt = ai.prompts[0]
+    assert "Familien har allerede denne madplan: søndag 2026-10-18: Tacos" in prompt
+    assert "behold så mange af retterne som muligt" in prompt
+    # Once its list is sent, a plan is not updated: it would be bought twice.
+    plan["shopping"][0]["sent"] = True
+    with pytest.raises(ServiceValidationError):
+        planner.async_start_update(plan["id"])
+    with pytest.raises(ServiceValidationError):
+        planner.async_start_update("unknown")
+
+
+def test_update_feedback_names_new_days_and_problems() -> None:
+    base = {"days": [{"date": "2026-10-18", "weekday": "søndag", "dish": "Tacos"}]}
+    text = mp.update_feedback(base, ["2026-10-18", "2026-10-19"], ["For mange restedage"])
+    assert "søndag 2026-10-18: Tacos" in text
+    assert "Disse dage er nye og skal have en ret: 2026-10-19." in text
+    assert "- For mange restedage" in text
+    assert "ingen dage" in mp.update_feedback(base, ["2026-10-20"], [])

@@ -239,6 +239,21 @@ def is_cooked(day: dict[str, Any]) -> bool:
     )
 
 
+def is_rest_text(text: str) -> bool:
+    """A fixed day that is leftovers ("Rester", "Restedag", "rester fra ugen")."""
+    return "rest" in str(text or "").lower()
+
+
+def fixed_rest_dates(settings: dict[str, Any], dates: list[date]) -> list[date]:
+    """The plan's days that are a fixed leftovers day (they count as leftover days)."""
+    weekdays = {
+        fixed.get("weekday")
+        for fixed in settings.get("fixed_days") or []
+        if is_rest_text(str(fixed.get("text") or ""))
+    }
+    return [d for d in dates if d.weekday() in weekdays]
+
+
 def check_plan(
     plan: dict[str, Any],
     settings: dict[str, Any],
@@ -295,7 +310,7 @@ def check_plan(
         for day in days:
             if date.fromisoformat(day["date"]).weekday() != fixed.get("weekday"):
                 continue
-            if "rest" in text.lower():
+            if is_rest_text(text):
                 rest_days.add(day["date"])
                 if not (day.get("uses_leftovers_from") or _IS_LEFTOVERS.match(day["dish"])):
                     problems.append(
@@ -311,21 +326,24 @@ def check_plan(
                     f'{day["weekday"]} {day["date"]}: skal være "{text}" (fast dag), ikke '
                     f'"{day["dish"]}"'
                 )
+    # A fixed leftovers day is one of the leftover days, not one more.
     leftovers = [
         d
         for d in days
-        if (d.get("uses_leftovers_from") or d.get("type") == "rester")
-        and d.get("type") != "fast"
-        and d["date"] not in rest_days
+        if d["date"] in rest_days
+        or ((d.get("uses_leftovers_from") or d.get("type") == "rester") and d.get("type") != "fast")
     ]
-    wanted = settings.get("leftover_days") or 0
+    wanted = max(settings.get("leftover_days") or 0, len(rest_days))
     if len(days) > 1 and len(leftovers) != wanted:
         problems.append(
             f"Der er {len(leftovers)} restedage, men der skal være præcis {wanted}"
-            + (' (type "rester" med uses_leftovers_from)' if wanted else "")
+            + (" (de faste restedage tæller med)" if rest_days else "")
+            + (' (type "rester" med uses_leftovers_from)' if wanted > len(rest_days) else "")
         )
     banned = {int(w) for w in settings.get("no_leftover_weekdays") or []}
     for day in leftovers:
+        if day["date"] in rest_days:
+            continue  # the family's own fixed leftovers day
         if date.fromisoformat(day["date"]).weekday() in banned:
             problems.append(
                 f"{day['weekday']} {day['date']}: familien vil ikke have rester om "

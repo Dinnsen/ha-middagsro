@@ -321,6 +321,9 @@
     },
     "ai_key_failed": {
       "message": "The AI at {provider} refused the key. Check the AI integration under Settings › Devices & services"
+    },
+    "plan_already_sent": {
+      "message": "The meal plan's shopping list has already been sent, so it can't be updated. Make a new meal plan instead."
     }
   },
   "issues": {

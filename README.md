@@ -38,6 +38,7 @@ The integration adds a **Middagsro panel** to the sidebar. It follows your Home 
 - **Wishes for the plan:** write, for example, what in the fridge must be used before a given day, or which dish you want on a given day. The wishes are used in the next plan only – also when it is made automatically – and then removed.
 - **One plan for the week:** the plan page shows the whole week, from the family's first weekday to the last planned day, as one plan – also when it was made in several goes (a new plan from Wednesday replaces the old one from Wednesday on). When next week's plan is ready, it follows under its own week heading. Days that have passed are dimmed. The calendar and the *dinner today* sensor follow the same rule. The recipes tab always opens on tonight's dish.
 - **The plan is checked, not just asked for.** The AI is not trusted to keep the rules: every plan is checked afterwards – no dish from the last weeks again (the main dish counts: salmon is salmon, whatever the side), nothing the family dislikes, the right number of leftover days from a double portion, the vegetarian count, fixed days, the weekday time limit and the budget. What is wrong is sent back to the AI, up to twice, and the best try is kept. Anything it still couldn't fix is shown on the plan.
+- **Opdater madplan** (update the plan): change the settings after the plan was made (e.g. fewer days or leftover days), and the plan can be updated instead of made from scratch: as many of its dishes as possible are kept, and only what must change is changed. Only before the shopping list is sent.
 - **Your own recipes are used as they are.** When a dinner is one of your favourite dishes and the recipe collection has your recipe for it (a ❤️, or the favourite's own), the plan uses that recipe – its ingredients go on the shopping list in amounts for your household, with the REMA products it names – instead of the AI's own version.
 - A **requirements checklist** shows whether the plan keeps your rules.
 - Turn on **automation** to make next week's plan when the new offers come out – and optionally send it straight to the REMA list.
@@ -314,7 +315,7 @@ The settings apply every time a meal plan is made and are stored per REMA 1000 a
 | **Allergies** (*Allergier*) | The 14 allergens on the EU list (gluten, lactose, milk protein, egg, nuts, peanuts, soy, sesame, celery, mustard, fish, crustaceans, molluscs, lupin, sulphites) – and free text. | – |
 | **Family** (*Familien*) | Adults and children with age and sex, so the amounts fit. | 2 adults, 2 children |
 | **Vegetarian dishes** (*Vegetarretter*) | Minimum and maximum per plan. | 0–1 |
-| **Leftover days** (*Restedage*) | Days with leftovers from the day before. | 2 |
+| **Leftover days** (*Restedage*) | Days with leftovers from the day before. A fixed leftovers day (e.g. Thursday) counts as one of them. | 2 |
 | **Max. minutes on weekdays** | The most time a dish may take Monday–Friday. | 30 |
 | **No repeats** (*Ingen gentagelse*) | Number of weeks before a dish may come back. | 3 |
 | **Fixed days** (*Faste dage*) | E.g. a rye-bread day on Wednesdays. | Thursday: rye bread |
