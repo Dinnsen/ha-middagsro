@@ -365,3 +365,35 @@ async def test_canned_tomatoes_never_fresh(init_integration: MockConfigEntry) ->
     line = {"name": "pillede tomater", "search": "tomater"}
     found, _ = planner._candidates(line, [fresh], "tomater")
     assert [p.id for p in found] == [3]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Citronsaft (friskpresset)", "citron"),
+        ("Rød chili, hakket (mængde efter smag)", "Rød chili"),
+        ("Stængler citrongræs, banket på langs og fintstrimlet", "citrongræs"),
+        ("2 stængler citrongræs", "citrongræs"),
+        ("Lime, saften herfra", "Lime"),
+        ("Purløg (tørret eller frisk)", "Purløg"),
+        ("3 fed hvidløg", "hvidløg"),
+        ("Løg, finthakket", "Løg"),
+        ("Fløde (38%)", "Fløde (38%)"),
+        ("2 tomater, hakket", "2 tomater, hakket"),
+        ("Tomater, hakkede", "Tomater, hakkede"),
+        ("Citronsaft", "Citronsaft"),
+    ],
+)
+def test_recipe_notes_are_not_shopping(text: str, expected: str) -> None:
+    """A recipe's notes ("saften herfra", "(mængde efter smag)") are not part of the name."""
+    assert ingredient_name(text) == expected
+
+
+async def test_instant_noodles_are_not_noodles(init_integration: MockConfigEntry) -> None:
+    planner = init_integration.runtime_data.planner
+    cup = make_product(1, "CUPNUDLER OKSEKØD", 5.88, underline="65 GR.")
+    plain = make_product(2, "NUDLER", 12.0, underline="250 GR.")
+    line = {"name": "Nudler", "search": "nudler", "amount": 320, "unit": "g"}
+    found, penalty = planner._candidates(line, [cup, plain], "nudler")
+    assert {p.id for p in found} == {1, 2}
+    assert penalty[1] > penalty[2] + 4  # the instant meal is the last choice

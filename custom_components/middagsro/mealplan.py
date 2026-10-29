@@ -31,7 +31,7 @@ from .api import (
 )
 from .bilka import BilkaSearch
 from .budget import plan_budget
-from .chains import ChainOffers
+from .chains import CHAINS, ChainError, ChainOffers, runs_on
 from .const import DOMAIN
 from .dishes import (
     check_plan,
@@ -89,6 +89,7 @@ SITE_WORDS = (
     "lam", "laks", "torsk", "fisk", "rejer", "tun", "pølse", "bacon", "skinke", "hakket",
 )  # fmt: skip
 RECIPE_EXTRAS_PER_DAY = 4  # items an AI recipe may add to the list for a dinner
+CHAIN_OFFERS_IN_PROMPT = 240  # other chains' offers the plan may be built on, in all
 WEEKDAYS_DA = ("mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag", "søndag")
 AVOID_DA = {
     "meat": "kød",
@@ -744,6 +745,19 @@ def line_kind(line: dict[str, Any]) -> str | None:
     return None
 
 
+def fixed_day_text(settings: dict[str, Any], day: dict[str, Any]) -> str | None:
+    """What the family fixed for this weekday ("Spaghetti og kødsovs"), if it is such a day."""
+    try:
+        weekday = date.fromisoformat(str(day.get("date"))).weekday()
+    except ValueError:
+        return None
+    for fixed in settings.get("fixed_days") or []:
+        text = str(fixed.get("text") or "").strip()
+        if text and fixed.get("weekday") == weekday and not is_rest_text(text):
+            return text
+    return None
+
+
 def rule_lines(settings: dict[str, Any]) -> list[str]:
     """The family's standing rules ("altid frisk broccoli til laks"), for every prompt."""
     return [f"- {rule}" for rule in settings.get("rules") or []]
@@ -811,9 +825,11 @@ def build_prompt(
     web: list[dict[str, Any]] | None = None,
     shop: str = "REMA 1000",
     prices: bool = True,
+    chain_offers: list[tuple[str, str, dict[str, Any]]] | None = None,
 ) -> str:
     """Build the instructions for the AI (shop: where the family shops; prices: whether
-    every item has a price there, or only the offers)."""
+    every item has a price there, or only the offers; chain_offers: other chains' offers
+    the plan may be built on too, as (id, dealer id, offer))."""
     s = settings
     day_list = ", ".join(f"{WEEKDAYS_DA[d.weekday()]} {d.isoformat()}" for d in dates)
     portions = f"{household_portions(s):g}".replace(".", ",")
@@ -828,6 +844,13 @@ def build_prompt(
         "",
         "KRAV – SKAL OVERHOLDES:",
     ]
+    if s.get("rules"):
+        out.append(
+            "- FAMILIENS FASTE REGLER – gælder forud for alt andet i denne besked, også for "
+            "indkøbslisten og retternes ingredienser. Hver regel skal stå som sit eget punkt i "
+            "checklist med ok: true/false:"
+        )
+        out += [f"  {line}" for line in rule_lines(s)]
     if s.get("portion_percent", 100) != 100:
         out.append(
             "- Beregn shopping og ingredienser til husstandens normale standardportioner. "
@@ -889,7 +912,9 @@ def build_prompt(
             else:
                 out.append(
                     f"- {WEEKDAYS_DA[day.weekday()]} {day.isoformat()}: {fixed['text']} "
-                    '(fast dag – tæller ikke som restedag, type "fast")'
+                    '(fast dag – tæller ikke som restedag, type "fast"). Lav den PRÆCIS som '
+                    "familien beskriver den, ikke finere: kun de varer, beskrivelsen nævner "
+                    "(plus basisvarer), færdige produkter som de er."
                 )
     out.append(
         f"- Mandag til fredag højst {s['max_cook_minutes_weekday']} minutters aktiv tilberedning."
@@ -907,9 +932,6 @@ def build_prompt(
             + "; ".join(recent_dishes)
             + "."
         )
-    if s.get("rules"):
-        out.append("- Familiens faste regler – følg dem altid:")
-        out += [f"  {line}" for line in rule_lines(s)]
     if target := nutrition_target(s):
         out.append(f"- Næring: {target}.")
     if s["budget"] and not prices:
@@ -1064,6 +1086,31 @@ def build_prompt(
                 line += f" | gælder først fra {WEEKDAYS_DA[starts.weekday()]} {starts.isoformat()}"
             out.append(line)
 
+    if chain_offers:
+        by_chain: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+        for key, dealer_id, entry in chain_offers:
+            by_chain.setdefault(dealer_id, []).append((key, entry))
+        names = ", ".join(CHAINS.get(d, d) for d in by_chain)
+        out += [
+            "",
+            f"FAMILIEN HANDLER OGSÅ I {names.upper()}. Byg retterne på disse butikkers tilbud "
+            f"på lige fod med {genitive(shop)}: vælg ugens bedste tilbud på tværs af butikkerne. "
+            "En vare fra en anden butik markeres med dens tilbuds-id (fx k12) og kommer på den "
+            "butiks egen indkøbsliste – så samme vare købes ét sted. Hold antallet af butikker "
+            "pr. uge rimeligt (helst højst 2-3 ud over " + shop + ").",
+        ]
+        for dealer_id, entries in by_chain.items():
+            out.append(
+                f"TILBUD I {CHAINS.get(dealer_id, dealer_id).upper()} – id | vare | pris | mængde:"
+            )
+            for key, entry in entries:
+                cost = entry.get("price")
+                text = f"{cost:g} kr." if isinstance(cost, (int, float)) else "?"
+                if entry.get("pre_price"):
+                    text += f" (før {entry['pre_price']:g})"
+                desc = str(entry.get("description") or "").split("\n")[0][:60]
+                qty = str(entry.get("quantity") or "")
+                out.append(f"{key} | {entry.get('heading')} | {text} | {qty} {desc}".rstrip())
     out += [
         "",
         "Lav KUN overblikket nu – opskrifterne skrives bagefter. Hold svaret kort og præcist; "
@@ -1092,9 +1139,12 @@ def build_prompt(
         "3 pk hakkede tomater; stk kun for løse enkeltvarer, fx 10 stk æg eller 2 stk "
         f"peberfrugt), et søgeord til {genitive(shop)} varesøgning "
         '(1-3 ord, fx "hakket oksekød", "laks", "broccoli"), kategori (Frugt & grønt, Kød, '
-        "Fisk, Mejeri, Brød, Kolonial, Frost eller Andet) og evt. tilbuddets id. Udelad basisvarer.",
+        "Fisk, Mejeri, Brød, Kolonial, Frost eller Andet) og evt. tilbuddets id"
+        + (" (også en anden butiks, fx k12)" if chain_offers else "")
+        + ". Udelad basisvarer.",
         "",
-        "Kontrollér til sidst ALLE krav og udfyld checklist ærligt. Skriv afvigelser i deviations.",
+        "Kontrollér til sidst ALLE krav og udfyld checklist ærligt – familiens faste regler "
+        "hver for sig. Skriv afvigelser i deviations.",
         "",
         "SVARFORMAT: Svar KUN med gyldig JSON uden markdown og uden forklaring, præcis sådan:",
         json.dumps(
@@ -1175,7 +1225,18 @@ def build_recipe_prompt(
     if current.weekday() < 5:
         out.append(f"Højst {s['max_cook_minutes_weekday']} minutters aktiv tilberedning.")
     if s.get("rules"):
-        out += ["Familiens faste regler – følg dem altid:", *rule_lines(s)]
+        out += [
+            "FAMILIENS FASTE REGLER – gælder forud for alt andet i denne besked:",
+            *rule_lines(s),
+        ]
+    fixed = fixed_day_text(s, day)
+    if fixed:
+        out.append(
+            f'FAST DAG: familien har selv bestemt denne dag: "{fixed}". Lav den PRÆCIS så '
+            "enkelt, som det står – ingen ingredienser ud over dem, beskrivelsen nævner (og "
+            "basisvarer), ingen ekstra krydderier, urter eller bouillon. Færdige produkter "
+            "(fx pastasovs på glas) bruges, som de er. Få korte trin."
+        )
     if target := nutrition_target(s):
         out.append(f"Næring: {target}. Juster mængderne, så retten rammer det.")
     if plan.get("note"):
@@ -1222,9 +1283,16 @@ def build_recipe_prompt(
         "",
         "Lav retten, som en dansk familie normalt laver den, med de nemmeste varer: hakkede "
         "tomater på dåse i kødsovs og lasagne, ikke friske tomater, der skal hakkes.",
-        "Den skal smage godt: krydr ordentligt (salt og peber er ikke nok), byg smag med løg, "
-        "hvidløg, krydderurter, bouillon eller tomatpuré, og giv sovsen tid til at simre. "
-        "Brug den kødtype, retten traditionelt laves af (hakkebøffer af oksekød).",
+        *(
+            []
+            if fixed
+            else [
+                "Den skal smage godt: krydr ordentligt (salt og peber er ikke nok), byg smag "
+                "med løg, hvidløg, krydderurter, bouillon eller tomatpuré, og giv sovsen tid "
+                "til at simre. Brug den kødtype, retten traditionelt laves af (hakkebøffer af "
+                "oksekød).",
+            ]
+        ),
         "Skriv til en uerfaren kok: præcise mængder, højst 10 korte trin med minutter, og ét "
         "kort tip, der gør det nemt for børnefamilien.",
         "Krav til opskriften:",
@@ -1569,7 +1637,9 @@ def fit_amounts(plan: dict[str, Any]) -> list[str]:
         wanted = min(wanted, packages * 4)
         if wanted > packages:
             line["packages"] = wanted
-            if product.get("price"):
+            if line.get("buy_at") and line.get("chain_price") is not None:
+                line["cost"] = round(wanted * float(line["chain_price"]), 2)
+            elif product.get("price"):
                 line["cost"] = round(wanted * float(product["price"]), 2)
             changed.append(line["name"])
     if changed:
@@ -1833,6 +1903,28 @@ class MealPlanner:
             translation_key=ISSUE_NO_AI_TASK,
             learn_more_url=AI_TASK_DOCS_URL,
         )
+
+    async def _async_chain_offers(self, dates: list[date]) -> list[tuple[str, str, dict[str, Any]]]:
+        """The family's other chains' offers that run during the plan, as (id, chain, offer).
+
+        At most CHAIN_OFFERS_IN_PROMPT in all, shared between the chains, so the
+        instructions stay readable.
+        """
+        chosen = [d for d in self.store.settings["chains"] if d in CHAINS]
+        if not chosen:
+            return []
+        self._set_status("generating", "Henter de andre butikkers tilbud …")
+        per_chain = max(20, CHAIN_OFFERS_IN_PROMPT // len(chosen))
+        result: list[tuple[str, str, dict[str, Any]]] = []
+        for dealer_id in chosen:
+            try:
+                offers = await self.chains.async_offers(dealer_id)
+            except ChainError as err:
+                _LOGGER.warning("Could not read %s's offers: %s", CHAINS[dealer_id], err)
+                continue
+            running = [o for o in offers if any(runs_on(o, d) for d in dates)][:per_chain]
+            result += [(f"k{len(result) + i}", dealer_id, o) for i, o in enumerate(running)]
+        return result
 
     async def _async_offers(self, start: date) -> tuple[Catalog | None, list[Offer]]:
         current, upcoming = self._get_catalogs()
@@ -2127,6 +2219,7 @@ class MealPlanner:
                 or day.get("recipe_id")
                 or day.get("mealie")
                 or day.get("recipe_error")
+                or fixed_day_text(self.store.settings, day)  # the family's own simple dish
             ):
                 continue
             added = 0
@@ -2238,6 +2331,7 @@ class MealPlanner:
         self._set_status("generating", "Henter ugens tilbud …")
         catalog, offers = await self._async_offers(start)
         late = late_offers(offers, dates[0])
+        chain_offers = await self._async_chain_offers(dates) if settings["plan_all_chains"] else []
         recent = self.store.recent_dishes(start, settings["no_repeat_weeks"])
         due, optional = self.store.favorites_due(start, recent)
         # An update keeps the wishes the plan was made with.
@@ -2313,6 +2407,7 @@ class MealPlanner:
                 web=web,
                 shop=self.shop,
                 prices=self.prices,
+                chain_offers=chain_offers,
             )
             raw = await self._async_ask_ai(prompt, "REMA 1000 madplan")
             self._set_status(
@@ -2322,7 +2417,7 @@ class MealPlanner:
                 else "Laver indkøbslisten med ugens tilbud …",
             )
             plan = await self._async_build_plan(
-                raw, dates, catalog, offers, self.price_time(start), late
+                raw, dates, catalog, offers, self.price_time(start), late, chain_offers
             )
             known = {r["slug"] for r in mealie}
             ours = (
@@ -2487,6 +2582,7 @@ class MealPlanner:
         offers: list[Offer],
         at: datetime | None = None,
         late: dict[int, date] | None = None,
+        chain_offers: list[tuple[str, str, dict[str, Any]]] | None = None,
     ) -> dict[str, Any]:
         settings = self.store.settings
         days = self._clean_days(raw.get("days") or [], dates)
@@ -2518,6 +2614,7 @@ class MealPlanner:
                 }
             )
         await self._async_price_lines(shopping, offers, at, late)
+        apply_chain_offers(shopping, chain_offers or [])
         total = round(sum(line.get("cost") or 0 for line in shopping), 2)
         return {
             "id": uuid.uuid4().hex[:12],
@@ -3651,6 +3748,35 @@ def parse_quick_add(text: str) -> tuple[int, str]:
     if glued := re.match(r"^\s*(\d+)\s*[x×*](\S.*)$", text):  # '3xæg'
         return max(1, int(glued.group(1))), glued.group(2).strip()
     return 1, text
+
+
+def apply_chain_offers(
+    shopping: list[dict[str, Any]], chain_offers: list[tuple[str, str, dict[str, Any]]]
+) -> None:
+    """A line built on another chain's offer goes on that shop's list, at the offer's price.
+
+    The REMA product found for it (if any) stays, so it can be moved back.
+    """
+    by_key = {key: (dealer_id, offer) for key, dealer_id, offer in chain_offers}
+    for line in shopping:
+        entry = by_key.get(str(line.get("offer") or ""))
+        if entry is None:
+            continue
+        dealer_id, offer = entry
+        price = offer.get("price")
+        price = float(price) if isinstance(price, (int, float)) else None
+        packages = int(line.get("packages") or 1)
+        line.update(
+            buy_at=dealer_id,
+            chain_price=price,
+            chain_heading=str(offer.get("heading") or "")[:200],
+            chain_planned=True,  # chosen by the plan, not moved there by the family
+            bought=False,
+            offer_name=str(offer.get("heading") or "")[:200],
+            packages=packages,
+        )
+        if price is not None:
+            line["cost"] = round(price * packages, 2)
 
 
 def update_feedback(base: dict[str, Any], iso: list[str], problems: list[str]) -> str:

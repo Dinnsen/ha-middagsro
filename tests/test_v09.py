@@ -66,7 +66,8 @@ def test_prompts_use_rules_and_nutrition() -> None:
         favorites_optional=[],
         recent_dishes=[],
     )
-    assert "Familiens faste regler" in prompt
+    assert "FAMILIENS FASTE REGLER" in prompt
+    assert prompt.index("FAMILIENS FASTE REGLER") < prompt.index("Vegetarretter")
     assert "- Altid frisk broccoli til laks" in prompt
     assert "800-900 kcal pr. voksenportion" in prompt
     assert "40 % protein, 35 % kulhydrat og 25 % fedt" in prompt

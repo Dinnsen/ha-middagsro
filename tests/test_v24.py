@@ -184,6 +184,11 @@ async def test_recipe_extras(hass: HomeAssistant, init_integration: MockConfigEn
     assert "Gulerod" in sunday["uses"]
     await planner._async_recipe_extras(plan, [], None, None)  # the rest the next time
     assert [line["name"] for line in plan["shopping"][before:]][4:] == ["Rødvin"]
+    # The family's own simple dish on a fixed day gets nothing added.
+    planner.store.settings["fixed_days"] = [{"weekday": 6, "text": "Pizza fra Netto"}]
+    sunday["ingredients"].append({"name": "basilikum", "amount": "1 potte"})
+    await planner._async_recipe_extras(plan, [], None, None)
+    assert "Basilikum" not in [line["name"] for line in plan["shopping"]]
 
 
 # ------------------------------------------------------------------ wishes and settings

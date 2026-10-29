@@ -2,6 +2,17 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.11.0] - 2026-10-29
+
+### Added
+- **A meal plan across the shops:** under *Andre butikker*, *Byg madplanen på tilbud fra alle de valgte butikker* gives the AI every chosen chain's offers (Netto, Lidl, føtex …) next to REMA's, to pick the week's best across them. An item built on another shop's offer goes on that shop's own list under Indkøb at the offer's price (and can be moved back to REMA); the rest is bought at REMA as before. Off by default: then the other shops are for comparison, as until now.
+
+### Changed
+- **Det skal AI'en huske is followed:** the family's standing rules come first in the instructions for the plan and for every recipe, before everything else, and the AI must answer for each rule in the plan's checklist (shown under *Krav-tjekliste*).
+- **A fixed day is made as the family describes it:** "Spaghetti og kødsovs: en pakke spaghetti, kød, pastasovs og ost" gives a recipe with just that – no extra herbs, bouillon or tomato purée, and nothing is added to the shopping list for it.
+- **Recipe notes are not shopping:** "Lime, saften herfra" is lime, "Citronsaft (friskpresset)" is a lemon, "Rød chili, hakket (mængde efter smag)" is red chili, "2 stængler citrongræs" is citrongræs, "Purløg (tørret eller frisk)" is purløg – so they are matched to REMA's products instead of being added as free text.
+- **Cupnudler are not nudler:** instant noodle cups are the last choice for a dish's noodles.
+
 ## [2.10.1] - 2026-10-29
 
 ### Fixed
