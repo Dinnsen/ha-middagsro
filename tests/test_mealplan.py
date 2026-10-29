@@ -1705,13 +1705,13 @@ def test_fixed_day_is_kept_simple() -> None:
     settings = clean_settings(
         {
             "fixed_days": [
-                {"weekday": 3, "text": "Spaghetti og kødsovs: en pakke spaghetti, kød, pastasovs"}
+                {"weekday": 1, "text": "Spaghetti og kødsovs: en pakke spaghetti, kød, pastasovs"}
             ],
             "rules": ["Kun varer, der findes i REMA 1000"],
         }
     )
     plan = make_plan(start="2026-10-12")
-    thursday = next(d for d in plan["days"] if d["date"] == "2026-10-15")
+    thursday = next(d for d in plan["days"] if d["date"] == "2026-10-13")  # a tuesday
     assert mp.fixed_day_text(settings, thursday) == (
         "Spaghetti og kødsovs: en pakke spaghetti, kød, pastasovs"
     )
