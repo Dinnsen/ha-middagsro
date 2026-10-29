@@ -45,6 +45,7 @@ Integrationen lægger et **Middagsro-panel** i sidebaren. Det følger dit Home A
 - **Næringsmål** pr. aftensmad (kcal og fordeling af protein, kulhydrat og fedt), og fanen **Sundhed** med næring, kostrådene og mærker som Nøglehullet.
 - Knapper, der bruger AI, er mærket med ✦.
 - **Planen tjekkes – AI'en er ikke nok.** Hver plan kontrolleres bagefter: ingen ret fra de seneste uger igen (hovedretten tæller: laks er laks, uanset tilbehør), intet familien ikke kan lide, det rigtige antal restedage fra en dobbelt portion, antal vegetarretter, faste dage, tidsgrænsen på hverdage og budgettet. Det, der er galt, sendes tilbage til AI'en op til to gange, og det bedste forsøg beholdes. Det, den stadig ikke kunne, står på planen.
+- **Opdater madplan:** Ændrer I indstillingerne, efter planen er lavet (fx færre dage eller restedage), kan planen opdateres i stedet for at laves forfra. Så beholdes så mange af retterne som muligt, og kun det nødvendige ændres. Det kan kun lade sig gøre, før indkøbslisten er sendt.
 - **Jeres egne opskrifter bruges, som de er.** Når en aftensmad er en af jeres favoritretter, og opskriftsamlingen har jeres opskrift til den (et ❤️ eller favorittens egen), bruger planen den opskrift – dens ingredienser kommer på indkøbslisten i mængder til jeres husstand, med de REMA-varer den nævner – i stedet for AI'ens egen udgave.
 - En **krav-tjekliste** viser, om planen overholder jeres regler.
 - Slå **automatik** til, så laves næste uges plan, når den nye tilbudsavis udkommer – og sendes evt. direkte til REMA-listen.
@@ -314,7 +315,7 @@ Indstillingerne gælder hver gang, en madplan laves, og gemmes pr. REMA 1000-kon
 | **Allergier** | De 14 allergener fra EU's liste (gluten, laktose, mælkeprotein, æg, nødder, jordnødder, soja, sesam, selleri, sennep, fisk, krebsdyr, bløddyr, lupin, sulfitter) – og fritekst. | – |
 | **Familien** | Voksne og børn med alder og køn, så mængderne passer. | 2 voksne, 2 børn |
 | **Vegetarretter** | Mindst og højst antal pr. plan. | 0–1 |
-| **Restedage** | Dage, hvor der spises rester fra dagen før. | 2 |
+| **Restedage** | Dage, hvor der spises rester fra dagen før. En fast dag med rester (fx torsdag) tæller med. | 2 |
 | **Maks. minutter på hverdage** | Den tid, en ret højst må tage mandag–fredag. | 30 |
 | **Ingen gentagelse** | Antal uger, før en ret må komme igen. | 3 |
 | **Faste dage** | Fx *Rugbrødsdag* om onsdagen. | Torsdag: rugbrød |

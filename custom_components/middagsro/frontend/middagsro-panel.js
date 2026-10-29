@@ -338,6 +338,14 @@ class Rema1000Panel extends HTMLElement {
     });
     this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
     this.shadowRoot.addEventListener("change", (ev) => this._onInput(ev));
+    // Folded sections stay as the family left them when the panel redraws.
+    this.shadowRoot.addEventListener("toggle", (ev) => {
+      const key = ev.target?.dataset?.fold;
+      if (!key) return;
+      this._folds ||= new Set();
+      if (ev.target.open) this._folds.add(key);
+      else this._folds.delete(key);
+    }, true);
     this.shadowRoot.addEventListener("touchstart", (ev) => this._onTouchStart(ev), { passive: true });
     this.shadowRoot.addEventListener("touchend", (ev) => this._onTouchEnd(ev), { passive: true });
   }
@@ -546,14 +554,21 @@ class Rema1000Panel extends HTMLElement {
   async _runNow(fn, okMessage) {
     this._busy = true;
     this._renderBusy();
+    let ok = false;
     try {
       await fn();
-      if (okMessage) this._toast = okMessage;
+      ok = true;
+      if (okMessage && typeof okMessage !== "function") this._toast = okMessage;
     } catch (err) {
       this._toast = `Fejl: ${err?.message || err}`;
     } finally {
       this._busy = false;
       await this._load();
+      // A message that depends on the state after the change.
+      if (ok && typeof okMessage === "function") {
+        this._toast = okMessage();
+        this._renderToast();
+      }
       clearTimeout(this._toastTimer);
       this._toastTimer = setTimeout(() => {
         this._toast = null;
@@ -1180,7 +1195,13 @@ class Rema1000Panel extends HTMLElement {
         this._run(async () => {
           await this._ws("middagsro/settings", { settings: this._form });
           this._dirty = false;
-        }, "Indstillingerne er gemt."),
+        }, () => this._canUpdatePlan(this._state?.latest_plan) === "update"
+          ? "Indstillingerne er gemt. Tryk på Opdater madplan under Madplan for at rette ugens plan til."
+          : "Indstillingerne er gemt."),
+      "plan-update": () => this._run(
+        () => this._ws("middagsro/plan/update", { plan_id: arg || this._state?.latest_plan?.id }),
+        "Madplanen opdateres til de nye indstillinger …"
+      ),
       "add-dislike": () => {
         const text = this._newDislike.trim();
         if (!text) return this._say("Skriv en ret først.");
@@ -3406,7 +3427,7 @@ class Rema1000Panel extends HTMLElement {
       .map((iso) => {
         const pick = this._picks[iso];
         const skipped = this._skip.has(iso);
-        return `<div class="pickday ${pick ? "picked" : ""}"><b>${esc(dateLabel(iso))}</b><label class="check skipday"><input type="checkbox" data-bind="skip" value="${iso}" ${skipped ? "checked" : ""}> Spring over</label>
+        return `<div class="pickday ${pick ? "picked" : ""} ${skipped ? "skipped" : ""}"><b>${esc(dateLabel(iso))}</b><label class="check skipday"><input type="checkbox" data-bind="skip" value="${iso}" ${skipped ? "checked" : ""}> Spring over</label>
           ${skipped ? "" : pick
             ? `<span class="pick-chip"><button class="link" data-action="pick-open" data-arg="${iso}" title="Skift retten">${esc(pick.dish)}</button><button class="icon-btn" data-action="pick-remove" data-arg="${iso}" aria-label="Fjern ${esc(pick.dish)}">${CLOSE_ICON}</button></span>`
             : `<button class="btn small pick-btn" data-action="pick-open" data-arg="${iso}" title="Vælg selv retten til ${esc(dateLabel(iso).toLowerCase())}">Vælg ret</button>`}</div>`;
@@ -3427,21 +3448,36 @@ class Rema1000Panel extends HTMLElement {
       <button class="btn" data-action="note-open">${note ? "Ret ønsker til madplanen" : "Ønsker til madplanen"}</button>
       ${note ? `<p class="muted small note-preview">Bruges i næste madplan: ${esc(note)}</p>` : ""}
     </div>
-    ${skip ? `<h3>Tilpas dagene</h3><p class="muted small">AI'en vælger retterne. Du kan selv vælge en ret eller springe en dag over.</p><div class="skipdays">${skip}</div>` : ""}
+    ${skip ? (() => {
+      const dates = this._planDates();
+      const tailored = dates.filter((iso) => this._skip.has(iso) || this._picks[iso]).length;
+      const open = tailored || this._folds?.has("days");
+      return `<details class="fold" data-fold="days" ${open ? "open" : ""}><summary>Tilpas dagene${tailored ? ` <span class="badge">${tailored} ${tailored === 1 ? "dag" : "dage"}</span>` : ""}</summary>
+        <p class="muted small">AI'en vælger retterne. Du kan selv vælge en ret eller springe en dag over.</p><div class="skipdays">${skip}</div></details>`;
+    })() : ""}
     <div class="row wrap skipgo">
       <button class="btn primary" data-action="generate" ${generating || this._busy ? "disabled" : ""}>
         ${generating ? "Laves …" : aiLabel(label)}
       </button>
       <button class="btn surprise" data-action="surprise" ${generating || this._busy ? "disabled" : ""}
         title="Retter I aldrig har fået – fra andre køkkener og med overraskende smage">${SURPRISE_ICON}Overrask os</button>
-    </div>${this._freezerControls()}`;
+    </div>`;
   }
 
-  _freezerControls() {
+  // Månedens frysermad, folded away under the weekly plan.
+  _freezerCard() {
+    const count = (this._state?.freezer_plans || []).length;
+    return `<details class="card fold freezer-card" data-fold="freezer" ${this._folds?.has("freezer") ? "open" : ""}>
+      <summary><span class="fold-title">Månedens frysermad</span>${count ? ` <span class="badge">${count} ${count === 1 ? "plan" : "planer"}</span>` : ""}</summary>
+      ${this._freezerControls(false)}
+    </details>`;
+  }
+
+  _freezerControls(heading = true) {
     const busy = this._busy || this._state?.status?.state === "generating";
     const plans = this._state?.freezer_plans || [];
-    return `<section class="freezer-section">
-      <h2>Månedens frysermad</h2>
+    return `<section class="freezer-section ${heading ? "" : "flat"}">
+      ${heading ? "<h2>Månedens frysermad</h2>" : ""}
       <p class="muted">Én maddag, flere aftener med nem mad. Lav en separat plan, og vælg bagefter portioner for hver ret.</p>
       <label class="field">Ønsker til fryserretterne <textarea data-bind="freezer-note" rows="2" maxlength="2000" placeholder="Fx gryderetter med kylling, ingen svampe">${esc(this._freezerNote ?? this._state?.freezer_note ?? "")}</textarea></label>
       <p class="muted small">Bruges kun til fryserplanen – ugens madplan har sine egne ønsker.</p>
@@ -3490,7 +3526,7 @@ class Rema1000Panel extends HTMLElement {
         <p>Madplanen laves med AI ud fra ugens tilbud og jeres indstillinger. Tjek indstillingerne først, og tryk så på knappen.</p>
         ${this._generateControls("Lav madplan")}
         <p class="muted">${catLine}</p>
-      </div>`;
+      </div>${this._freezerCard()}`;
     }
     const over = plan.budget && plan.total > plan.budget;
     const today = localToday();
@@ -3537,6 +3573,7 @@ class Rema1000Panel extends HTMLElement {
     return `
       ${this._chainsCard()}
       ${this._olderBanner()}
+      ${this._updateBanner(plan)}
       ${this._budgetCard(true)}
       <div class="card">
         <div class="row between wrap">
@@ -3586,7 +3623,7 @@ class Rema1000Panel extends HTMLElement {
         <h2>Ny madplan</h2>
         ${this._generateControls()}
         <p class="muted">${catLine}</p>
-      </div>`;
+      </div>${this._freezerCard()}`;
   }
 
   // Which plan and date the chosen recipe day belongs to; a new plan or a new
@@ -3805,6 +3842,24 @@ class Rema1000Panel extends HTMLElement {
       } else this._say(`Fejl: ${err?.message || err}`);
       this._render();
     }
+  }
+
+  // Can the plan be updated to settings changed after it was made?
+  // "update", "sent" (too late: its list is sent) or "" (nothing changed).
+  _canUpdatePlan(plan) {
+    const changed = this._state?.settings_changed;
+    if (!changed || !plan?.created || plan.kind === "freezer") return "";
+    if (new Date(changed) <= new Date(plan.created) || plan.end_date < localToday()) return "";
+    return plan.sent_at || (plan.shopping || []).some((line) => line.sent) ? "sent" : "update";
+  }
+
+  _updateBanner(plan) {
+    const can = this._viewingLatest ? this._canUpdatePlan(plan) : "";
+    if (!can) return "";
+    if (can === "sent") return `<div class="banner info">Indstillingerne er ændret, efter madplanen blev lavet. Indkøbslisten er sendt, så lav en ny madplan for at bruge ændringerne.</div>`;
+    const busy = this._busy || this._state?.status?.state === "generating";
+    return `<div class="banner info update-banner"><span>Indstillingerne er ændret, efter madplanen blev lavet. Opdatér den, så beholdes så mange retter som muligt, og kun det nødvendige ændres.</span>
+      <button class="btn primary small" data-action="plan-update" data-arg="${esc(plan.id)}" ${busy ? "disabled" : ""}>${aiLabel("Opdater madplan")}</button></div>`;
   }
 
   _olderBanner() {
@@ -4648,7 +4703,7 @@ class Rema1000Panel extends HTMLElement {
           <label class="field">Tid til madlavning på hverdage (min.) ${num("max_cook_minutes_weekday", f.max_cook_minutes_weekday, 5, 300)}</label>
           <label class="field">Vent med at gentage retter (uger) ${num("no_repeat_weeks", f.no_repeat_weeks, 0, 52)}</label>
         </div>
-        <p class="muted small">Til en restedag laves der ekstra mad dagen før. Det er adskilt fra månedens fryserretter.</p>
+        <p class="muted small">Til en restedag laves der ekstra mad dagen før. En fast dag med rester (fx torsdag under Faste dage) tæller med i antallet. Det er adskilt fra månedens fryserretter.</p>
         <h3>Ingen rester disse dage</h3>
         <div class="checks">${WEEKDAYS.map((d, i) => check("no_leftover_weekdays", String(i), { [String(i)]: d })).join("")}</div>
         <h3>Faste dage</h3>
@@ -4873,7 +4928,7 @@ const STYLE = `
   * { box-sizing: border-box; }
   a { color: var(--rema-accent); overflow-wrap: anywhere; }
   .skiphead { margin: 14px 0 6px; }
-  .skipdays { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 12px; }
+  .skipdays { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
   .skipgo { margin-top: 12px; }
   #content.from-right { animation: rema-from-right .2s ease-out; }
   #content.from-left { animation: rema-from-left .2s ease-out; }
@@ -4927,7 +4982,7 @@ const STYLE = `
   .scan-row { margin-top: 8px; align-items: center; gap: 10px; }
   .scan-btn { display: inline-flex; align-items: center; gap: 6px; }
   .scan-btn .ico { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; }
-  .pickday { display: flex; align-items: flex-start; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--divider-color); border-radius: 12px; }
+  .pickday { display: flex; align-items: flex-start; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--divider-color); border-radius: 10px; }
   .pickday .pick-btn { padding: 6px 12px; font-size: 14px; }
   .pick-chip { display: inline-flex; align-items: center; gap: 2px; background: var(--rema-tint); border-radius: 999px; padding: 0 2px 0 10px; font-size: 13px; }
   .pick-chip .icon-btn { width: 24px; height: 24px; }
@@ -5123,6 +5178,12 @@ const STYLE = `
   .settings-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
   .settings-head h1 { margin: 0; }
   .freezer-section { border-top: 1px solid var(--divider-color); margin-top: 24px; padding-top: 8px; text-align: left; }
+  .freezer-section.flat { border-top: 0; margin-top: 4px; padding-top: 0; }
+  details.fold > summary { cursor: pointer; font-weight: 600; padding: 6px 0; list-style-position: inside; }
+  details.fold[open] > summary { margin-bottom: 6px; }
+  .freezer-card > summary .fold-title { font-size: 18px; font-weight: 700; }
+  .pickday.skipped { opacity: .6; }
+  .update-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
   .batch-plans .setting-row { grid-template-columns: 1fr auto; padding: 14px 8px; }
   .batch-steps { display: flex; flex-wrap: wrap; gap: 12px 28px; padding: 12px 12px 12px 32px; background: var(--rema-subtle); border-radius: 12px; color: var(--secondary-text-color); }
   .batch-steps [aria-current] { color: var(--rema-accent); font-weight: 700; }

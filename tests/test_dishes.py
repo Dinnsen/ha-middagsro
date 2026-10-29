@@ -134,10 +134,10 @@ def test_check_plan() -> None:
     plan["days"][0]["type"] = plan["days"][2]["type"] = "vegetar"
     problems = ds.check_plan(plan, settings, recent=[], due_ids=set())
     assert "2 vegetarretter; der må højst være 1" in problems
-    # Fixed days: thursday is leftovers (and doesn't count as a leftover day), saturday pizza.
+    # Fixed days: thursday is leftovers (one of the two leftover days), saturday pizza.
     fixed = {
         **settings,
-        "leftover_days": 1,
+        "leftover_days": 2,
         "fixed_days": [
             {"weekday": 3, "text": "Rester"},
             {"weekday": 5, "text": "Pizza fra Netto"},
@@ -147,6 +147,21 @@ def test_check_plan() -> None:
     plan["days"][4]["type"] = "rester"
     problems = ds.check_plan(plan, fixed, recent=[], due_ids=set())
     assert not any("restedage" in p for p in problems)
+    # Two leftover days with thursday fixed: monday and thursday, not a third one.
+    problems = ds.check_plan(plan, {**fixed, "leftover_days": 1}, recent=[], due_ids=set())
+    assert "Der er 2 restedage, men der skal være præcis 1 (de faste restedage tæller med)" in (
+        problems
+    )
+    # Fewer leftover days than fixed ones: the fixed day is still leftovers.
+    plan["days"][1].update(type="normal", uses_leftovers_from=None, dish="Tacos")
+    problems = ds.check_plan(plan, {**fixed, "leftover_days": 0}, recent=[], due_ids=set())
+    assert not any("restedage" in p for p in problems)
+    # The family's fixed leftovers day may be on a day they otherwise keep free of leftovers.
+    problems = ds.check_plan(
+        plan, {**fixed, "leftover_days": 1, "no_leftover_weekdays": ["3"]}, recent=[], due_ids=set()
+    )
+    assert not any("vil ikke have rester" in p for p in problems)
+    plan["days"][1].update(type="rester", uses_leftovers_from="2026-10-25", dish="Rester af laks")
     assert (
         'lørdag 2026-10-31: skal være "Pizza fra Netto" (fast dag), ikke "Fiskefrikadeller"'
         in problems

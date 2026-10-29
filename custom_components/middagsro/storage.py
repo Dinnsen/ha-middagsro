@@ -238,6 +238,17 @@ def plan_period(plan: dict[str, Any]) -> tuple[str, str]:
     return start, plan.get("end_date", "")
 
 
+# The settings a plan is made from: changing one of them offers to update the plan.
+PLAN_SETTINGS = (
+    "days", "budget", "monthly_budget", "organic", "organic_max_extra_pct", "avoid",
+    "avoid_other", "allergies", "allergies_other", "household", "portion_percent",
+    "must_haves", "min_vegetarian", "max_vegetarian", "leftover_days", "no_leftover_weekdays",
+    "fixed_days", "max_cook_minutes_weekday", "pantry", "wishes", "egg_min", "milk_organic",
+    "produce_organic", "nutrition_enabled", "protein_pct", "carb_pct", "fat_pct", "kcal_min",
+    "kcal_max",
+)  # fmt: skip
+
+
 class RemaPlanStore:
     """Persist settings, favourites and plan history for one account."""
 
@@ -252,6 +263,8 @@ class RemaPlanStore:
         self.freezer_plans: list[dict[str, Any]] = []
         self.note = ""  # the family's wishes for the next plan only
         self.freezer_note = ""  # the family's wishes for freezer plans (their own)
+        # When a setting a plan is made from last changed (ISO time), or "".
+        self.settings_changed = ""
         self.recipes: list[dict[str, Any]] = []  # the recipe collection (recipes.py)
         # Every item has a price (REMA 1000); another shop has only its offers'.
         self.prices = True
@@ -275,6 +288,7 @@ class RemaPlanStore:
         self.freezer_plans = list(data.get("freezer_plans") or [])
         self.note = str(data.get("note") or "")
         self.freezer_note = str(data.get("freezer_note") or "")[:2000]
+        self.settings_changed = str(data.get("settings_changed") or "")
         self.recipes = [r for r in data.get("recipes") or [] if isinstance(r, dict) and r.get("id")]
         self.watch = [w for w in data.get("watch") or [] if isinstance(w, dict) and w.get("key")]
         self.own_favorites = [
@@ -306,6 +320,7 @@ class RemaPlanStore:
                 "freezer_plans": self.freezer_plans,
                 "note": self.note,
                 "freezer_note": self.freezer_note,
+                "settings_changed": self.settings_changed,
                 "recipes": self.recipes,
                 "watch": self.watch,
                 "own_favorites": self.own_favorites,
@@ -326,7 +341,10 @@ class RemaPlanStore:
         """
         before = self.settings.get("monthly_budget")
         since = self.settings.get("budget_since")
+        old = {key: self.settings.get(key) for key in PLAN_SETTINGS}
         self.settings = clean_settings(raw)
+        if old != {key: self.settings.get(key) for key in PLAN_SETTINGS}:
+            self.settings_changed = dt_util.now().isoformat()
         if self.settings["monthly_budget"] and not before:
             since = dt_util.now().date().isoformat()
         self.settings["budget_since"] = since if self.settings["monthly_budget"] else None

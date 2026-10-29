@@ -2,6 +2,15 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.10.0] - 2026-10-29
+
+### Added
+- **Opdater madplan:** when a setting the plan is made from changes after the plan was made (days, leftover days, fixed days, household, budget, what to avoid …), the plan shows *Opdater madplan*. It starts from the plan you have – same first day and skipped days – keeps as many dishes as possible on their days and changes only what the new settings need; the updated plan takes the old one's place. Not once the shopping list has been sent (then a new plan is the way). After saving such a setting, the panel says so.
+
+### Changed
+- **A fixed leftovers day counts as a leftover day:** with 2 leftover days and *Rester* fixed on Thursdays, the plan has Thursday and one more leftover day – not three. The AI is told so, and the plan's check counts it the same way (so a plan with Thursday as its only leftover day no longer fails "0 restedage"). A fixed leftovers day may also be on a day otherwise kept free of leftovers.
+- **Ny madplan takes less room:** *Tilpas dagene* (skip a day or choose its dish) is folded away until you open it – it stays open while days are tailored – and *Månedens frysermad* is its own folded card below.
+
 ## [2.9.0] - 2026-10-29
 
 Built on the work of @nagels in #59 – thank you.

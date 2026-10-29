@@ -321,6 +321,9 @@
     },
     "ai_key_failed": {
       "message": "AI'en hos {provider} afviste nøglen. Tjek AI-integrationen under Indstillinger › Enheder og tjenester"
+    },
+    "plan_already_sent": {
+      "message": "Madplanens indkøbsliste er allerede sendt, så den kan ikke opdateres. Lav en ny madplan i stedet."
     }
   },
   "issues": {
