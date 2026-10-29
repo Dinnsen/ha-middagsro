@@ -16,6 +16,7 @@ from yarl import URL
 
 from custom_components.middagsro import api
 from custom_components.middagsro.api import (
+    NO_LIST,
     Catalog,
     Offer,
     Product,
@@ -23,6 +24,7 @@ from custom_components.middagsro.api import (
     RemaAuthError,
     RemaClient,
     RemaConnectionError,
+    RemaNoListError,
     ShoppingList,
     ShoppingListItem,
     split_amount,
@@ -766,3 +768,18 @@ async def test_get_nutrition() -> None:
     calls = len(session.calls)
     assert await client.async_get_nutrition([440095, 1]) == {440095: {"kcal": 224.0}}
     assert len(session.calls) == calls  # cached
+
+
+async def test_account_without_shopping_lists() -> None:
+    """A new REMA account has no list until one is made in the app: setup still works."""
+    client, session = await logged_in()
+    lists = f"{API}/v3/users/4242/shopping-lists"
+    session.on("GET", lists, FakeResponse(data={"data": []}))
+    empty = await client.async_get_primary_list()
+    assert (empty.id, empty.items) == (NO_LIST, [])
+    with pytest.raises(RemaNoListError, match="Opret en i REMA 1000-appen"):
+        await client.async_add_to_list(empty, name="Mælk")
+    # Made in the app later: it is found at the next look.
+    session.on("GET", lists, FakeResponse(data={"data": [{"id": 3}]}))
+    session.on("GET", f"{API}/v2/shoppinglists/3", FakeResponse(data={"id": 3, "items": []}))
+    assert (await client.async_get_primary_list()).id == 3

@@ -87,6 +87,18 @@ class RemaApiError(RemaError):
         self.status = status
 
 
+class RemaNoListError(RemaApiError):
+    """The REMA 1000 account has no shopping list yet (none made in the app)."""
+
+
+# A list id for an account without lists: the list is empty, nothing can be added.
+NO_LIST = 0
+NO_LIST_MESSAGE = (
+    "Din REMA 1000-konto har ingen indkøbsliste endnu. Opret en i REMA 1000-appen, "
+    "så bruger Middagsro den"
+)
+
+
 # --------------------------------------------------------------------- models
 
 
@@ -821,7 +833,7 @@ class RemaClient:
             return self._primary_list[1]
         lists = [entry for entry in await self.async_get_lists() if isinstance(entry, dict)]
         if not lists:
-            raise RemaApiError("The account has no shopping lists")
+            raise RemaNoListError("The account has no shopping lists")
         chosen = next((entry for entry in lists if entry.get("is_primary")), lists[0])
         try:
             list_id = int(chosen["id"])
@@ -854,11 +866,17 @@ class RemaClient:
         app), the lists are read again.
         """
         try:
-            return await self.async_get_list(await self.async_get_primary_list_id())
-        except RemaApiError as err:
-            if err.status not in (403, 404) or self._primary_list is None:
-                raise
-            return await self.async_get_list(await self.async_get_primary_list_id(force=True))
+            try:
+                return await self.async_get_list(await self.async_get_primary_list_id())
+            except RemaApiError as err:
+                if err.status not in (403, 404) or self._primary_list is None:
+                    raise
+                return await self.async_get_list(await self.async_get_primary_list_id(force=True))
+        except RemaNoListError:
+            # A new account has no list until one is made in the app: an empty list,
+            # so the rest of Middagsro works (and the list is looked for again later).
+            self._primary_list = None
+            return ShoppingList(id=NO_LIST, name="", items=[])
 
     async def async_create_item(
         self,
@@ -869,6 +887,8 @@ class RemaClient:
         name: str | None = None,
     ) -> dict[str, Any]:
         """Add a product (by id) or a free-text item to a list."""
+        if list_id == NO_LIST:
+            raise RemaNoListError(NO_LIST_MESSAGE)
         payload: dict[str, Any] = {"amount": amount, "store_id": STORE_ID}
         if product_id:
             payload["store_item_id"] = product_id
