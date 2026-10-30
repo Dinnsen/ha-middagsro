@@ -22,6 +22,7 @@ from homeassistant.util import dt as dt_util
 
 from .api import Offer, RemaError
 from .dishes import matches_any
+from .matching import noon
 from .mealie import MealieError
 from .mealplan import (
     ALLERGY_DA,
@@ -36,7 +37,6 @@ from .mealplan import (
     late_offers,
     line_packages,
     line_spec,
-    noon,
     nutrition_target,
     plan_total,
     rule_lines,
