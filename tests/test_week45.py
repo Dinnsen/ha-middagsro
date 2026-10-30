@@ -177,3 +177,40 @@ async def test_bilka_for_what_rema_has_no_sure_product(
     planner.bilka.async_search.reset_mock()
     await planner._async_bilka_fallback({"shopping": [dict(lines["b"])]})
     assert not planner.bilka.async_search.called
+
+
+async def test_find_items_again(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """Find varer igen: unsent items are matched again; the family's own stay."""
+    from .conftest import make_plan  # noqa: PLC0415
+
+    mock_client.async_search_products.side_effect = _search
+    store = init_integration.runtime_data.store
+    planner = init_integration.runtime_data.planner
+    plan = make_plan("w45", start="2026-11-01")
+    yellow = {"id": 306351, "name": "GUL/ORANGE PEBER", "price": 9}
+    plan["shopping"] = [
+        {"id": "p1", "name": "Rød peber", "amount": 1, "unit": "stk", "search": "peber",
+         "category": "Frugt & grønt", "key": "peber", "product": yellow, "packages": 1,
+         "cost": 9, "confidence": "high"},
+        {"id": "p2", "name": "Rød peberfrugt", "amount": 2, "unit": "stk", "search": "peber",
+         "category": "Frugt & grønt", "key": "peberfrugt", "product": yellow, "packages": 2,
+         "cost": 18, "confidence": "high"},
+        {"id": "own", "name": "Kvark", "amount": 640, "unit": "g", "search": "kvark",
+         "category": "Mejeri", "product_id": 21930, "confidence": "high", "packages": 2,
+         "cost": 35.9, "product": {"id": 21930, "name": "FRAICHE 9%", "price": 17.95}},
+        {"id": "sent", "name": "Salat", "amount": 1, "unit": "stk", "search": "salat",
+         "category": "Frugt & grønt", "sent": "2026-10-31T10:00:00", "packages": 1,
+         "cost": 12, "product": {"id": 306215, "name": "ICEBERG SALAT", "price": 12}},
+    ]  # fmt: skip
+    await store.async_add_plan(plan)
+    result = await planner.async_rematch_all("w45")
+    lines = {line["id"]: line for line in result["shopping"]}
+    assert "p2" not in lines  # red pepper and red peberfrugt are one line now
+    assert lines["p1"]["amount"] == 3
+    assert lines["p1"]["product"]["name"] == "ØKO. PEBER"
+    assert lines["p1"]["confidence"] == "medium"
+    assert lines["own"]["product"]["name"] == "FRAICHE 9%"  # the family's choice stays
+    assert lines["sent"]["product"]["name"] == "ICEBERG SALAT"  # in the app already
+    assert result["total"] == round(lines["p1"]["cost"] + 35.9 + 12, 2)

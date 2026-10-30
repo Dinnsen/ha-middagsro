@@ -1401,6 +1401,11 @@ class Rema1000Panel extends HTMLElement {
         this._run(() => this._ws("middagsro/mealie/sync", { plan_id: this._plan.id }), "Ugen er sat i Mealie-kalenderen."),
       "swap-pick": () => this._swapPick(Number(arg)),
       "pantry-open": () => this._pantryOpen(),
+      "plan-rematch": () =>
+        this._editPlan(
+          () => this._ws("middagsro/plan/rematch", { plan_id: this._plan.id }),
+          "Varerne er fundet igen. Jeres egne valg er beholdt, og usikre varer står øverst."
+        ),
       "plan-refresh": () =>
         this._editPlan(
           () => this._ws("middagsro/plan/refresh", { plan_id: this._plan.id }),
@@ -4168,6 +4173,8 @@ class Rema1000Panel extends HTMLElement {
         </div>
         <details class="shopping-tools"><summary>Flere muligheder</summary><div class="row wrap">
           <button class="btn small" data-action="pantry-open">Basisvarer i madplanen</button>
+          ${this._hasPrices() ? `<button class="btn small" data-action="plan-rematch" ${this._busy ? "disabled" : ""}
+            title="Alle varer, der ikke er sendt, findes igen med de nyeste regler. Retterne og jeres egne valg bliver.">Find varer igen</button>` : ""}
           <button class="btn small" data-action="plan-refresh" ${this._busy ? "disabled" : ""}>Opdatér tilbudspriser</button>
           ${!missingProducts.length && this._hasPrices() && plan.shopping.some(line => !line.product && !line.sent && !line.product_id && !line.added && !line.buy_at) ? `<button class="btn small" data-action="rematch-missing" ${this._busy ? "disabled" : ""}>Søg manglende varer igen</button>` : ""}
         </div></details>

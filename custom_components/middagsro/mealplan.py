@@ -3280,17 +3280,9 @@ class MealPlanner:
         semaphore = asyncio.Semaphore(SEARCH_CONCURRENCY)
 
         async def match(line: dict[str, Any]) -> None:
-            day = line["buy_from"]
             offer = by_id.get(str(line.get("offer") or ""))
             async with semaphore:
-                await self._async_match(line, noon(date.fromisoformat(day)) if day else at, offer)
-                if day and offer is not None and not self._bought_on_offer(line, offer):
-                    # The dish was built on a thursday offer, but the product chosen
-                    # isn't it (the family's organic eggs, not the avis's skrabeæg):
-                    # bought and priced on the shopping day like the rest.
-                    line["buy_from"] = None
-                    await self._async_match(line, at, offer)
-            self._avis_price(line, offer)
+                await self._async_match_on_day(line, at, offer)
 
         await asyncio.gather(*(match(line) for line in shopping))
 
@@ -3987,6 +3979,80 @@ class MealPlanner:
                 if free:
                     relevant = free
         return relevant
+
+    async def _async_match_on_day(
+        self, line: dict[str, Any], at: datetime | None, offer: Offer | None
+    ) -> None:
+        """Match a line on the day it is bought: a thursday offer's line on thursday."""
+        day = line.get("buy_from")
+        await self._async_match(line, noon(date.fromisoformat(day)) if day else at, offer)
+        if day and offer is not None and not self._bought_on_offer(line, offer):
+            # The dish was built on a thursday offer, but the product chosen isn't it
+            # (the family's organic eggs, not the avis's skrabeæg): bought and
+            # priced on the shopping day like the rest.
+            line["buy_from"] = None
+            await self._async_match(line, at, offer)
+        self._avis_price(line, offer)
+
+    async def async_rematch_all(self, plan_id: str) -> dict[str, Any]:
+        """Find every unsent item of a plan again, with the matching as it is now.
+
+        The dishes stay. What the family chose, kept, left out or moved to another
+        shop stays too; the rest is read again from its words (one line per
+        thing), matched, priced and, when still not sure, looked for in Bilka.
+        """
+        async with self._send_lock:
+            plan = self.store.get_plan(plan_id)
+            if plan is None:
+                raise _invalid("plan_not_found")
+            fixed = ("sent", "must_have", "added", "product_id", "buy_at", "reviewed", "skipped")
+            todo = [
+                line
+                for line in plan["shopping"]
+                if not any(line.get(key) for key in fixed) and not line.get("chain_only")
+            ]
+            for line in todo:
+                line.pop("key", None)  # read again by today's catalogue
+                line["search"] = ingredient_name(str(line.get("search") or line["name"]))
+                apply_spec(line)
+            kept = merge_lines(todo, plan.get("days") or [])
+            gone = {id(line) for line in todo} - {id(line) for line in kept}
+            plan["shopping"] = [line for line in plan["shopping"] if id(line) not in gone]
+            offers = await self._async_plan_offers(plan, kept)
+            at = self.price_time(date.fromisoformat(plan["start_date"]))
+            semaphore = asyncio.Semaphore(SEARCH_CONCURRENCY)
+
+            async def match(line: dict[str, Any]) -> None:
+                async with semaphore:
+                    await self._async_match_on_day(line, at, offers.get(line.get("offer_name")))
+
+            await asyncio.gather(*(match(line) for line in kept))
+            await self._async_ai_choices(plan)
+            await self._async_bilka_fallback(plan)
+            plan["total"] = plan_total(plan["shopping"])
+            plan["over_budget"] = bool(plan.get("budget")) and plan["total"] > plan["budget"]
+            plan["rematched_at"] = dt_util.utcnow().isoformat()
+            await self.store.async_save()
+            self._notify()
+            return plan
+
+    async def _async_plan_offers(
+        self, plan: dict[str, Any], lines: list[dict[str, Any]]
+    ) -> dict[str, Offer]:
+        """The avis offers the lines are built on, by heading, with their products."""
+        catalog_id = (plan.get("catalog") or {}).get("id")
+        wanted = {line["offer_name"] for line in lines if line.get("offer_name")}
+        if not catalog_id or not wanted:
+            return {}
+        try:
+            offers = await self.client.async_get_offers(catalog_id)
+            found = await self.client.async_get_offer_products(
+                [o for o in offers if o.heading in wanted]
+            )
+        except RemaError as err:
+            _LOGGER.debug("The plan's offers could not be read: %s", err)
+            return {}
+        return {offer.heading: offer for offer in found}
 
     @staticmethod
     def _bought_on_offer(line: dict[str, Any], offer: Offer) -> bool:

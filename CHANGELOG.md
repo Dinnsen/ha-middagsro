@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.12.0b3] - 2026-10-30
+
+### Added
+- **Find varer igen** under *Indkøb → Flere muligheder*: every item of the plan that isn't sent is read again from its words and matched with the rules as they are now – same dishes, one line per thing, and what isn't sure is looked for in Bilka. What you chose, kept, left out or moved to another shop stays as it is. So a plan made with an older version gets the newest fixes without making a new plan.
+
 ## [2.12.0b2] - 2026-10-30
 
 Beta: fixes from a real week-45 plan made with 2.12.0b1.

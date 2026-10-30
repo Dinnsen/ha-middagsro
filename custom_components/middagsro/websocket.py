@@ -799,6 +799,20 @@ async def ws_plan_refresh(
 
 
 @websocket_api.websocket_command(
+    {vol.Required("type"): "middagsro/plan/rematch", ENTRY: str, vol.Required("plan_id"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_plan_rematch(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Find every unsent item of the plan again with the matching as it is now."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await planner.async_rematch_all(msg["plan_id"])
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
     {
         vol.Required("type"): "middagsro/plan/remove",
         ENTRY: str,
@@ -1647,6 +1661,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_mealie_recipes,
         ws_plan_line,
         ws_plan_review,
+        ws_plan_rematch,
         ws_health,
         ws_nutrition,
         ws_mealie_save,
