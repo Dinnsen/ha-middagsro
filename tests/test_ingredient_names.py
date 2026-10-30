@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.middagsro import mealplan as mp
+from custom_components.middagsro import matching, mealplan as mp
 from custom_components.middagsro.storage import clean_settings
 from custom_components.middagsro.words import (
     canned_tomato_product,
@@ -96,7 +96,7 @@ def test_clean_shopping_names_and_matching() -> None:
         {"name": "finthakket løg", "search": "løg finthakket", "amount": 2, "unit": "stk"}
     )
     assert line and (line["name"], line["search"], line["amount"]) == ("løg", "løg", 2)
-    assert mp.search_queries({"search": "presset hvidløg", "name": "Hvidløg, presset"}) == [
+    assert matching.search_queries({"search": "presset hvidløg", "name": "Hvidløg, presset"}) == [
         "hvidløg"
     ]
     assert mp._names_match({"name": "Løg", "search": "løg"}, {"name": "finthakket løg"})
@@ -170,7 +170,7 @@ async def test_herb_form_from_bilka_shelf(init_integration, herb):
         (f"Frisk {herb}", [2, 3]),
     ]:
         line = mp.MealPlanner._clean_line({"name": label})
-        assert herb in [q.lower() for q in mp.search_queries(line)]
+        assert herb in [q.lower() for q in matching.search_queries(line)]
         found, _ = planner._candidates(line, [dried, fresh, cut, frozen, unknown], herb)
         assert [p.id for p in found] == expected
     line = mp.MealPlanner._clean_line({"name": f"Tørret {herb}"})

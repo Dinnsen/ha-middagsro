@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.middagsro import mealplan as mp
+from custom_components.middagsro import matching, mealplan as mp
 from custom_components.middagsro.api import Offer, Product
 from custom_components.middagsro.bilka import BILKA_ID
 from custom_components.middagsro.ingredients import lookup, variety_conflict, variety_missing
@@ -91,10 +91,10 @@ def test_avis_pieces() -> None:
     """8 pølser are one 330 g avis pack (16 are two), not eight packs."""
     sausages = _offer("Langelænder pølser", "330 g", price=20)
     piece = lookup("pølser").piece_g  # type: ignore[union-attr]
-    assert mp.avis_packages(8, "stk", sausages, piece) == 1
-    assert mp.avis_packages(16, "stk", sausages, piece) == 2
-    assert mp.avis_packages(8, "stk", sausages) == 8  # nothing known of a piece
-    assert mp.avis_packages(660, "g", sausages, piece) == 2
+    assert matching.avis_packages(8, "stk", sausages, piece) == 1
+    assert matching.avis_packages(16, "stk", sausages, piece) == 2
+    assert matching.avis_packages(8, "stk", sausages) == 8  # nothing known of a piece
+    assert matching.avis_packages(660, "g", sausages, piece) == 2
 
 
 async def test_week45_lines(
@@ -160,7 +160,7 @@ async def test_bilka_for_what_rema_has_no_sure_product(
              "product": {"id": 1, "name": "LØG", "price": 8}, "confidence": "high", "cost": 8},
         ]
     }  # fmt: skip
-    await planner._async_bilka_fallback(plan)
+    await planner._async_next_shops(plan)
     lines = {line["id"]: line for line in plan["shopping"]}
     assert lines["a"]["buy_at"] == BILKA_ID
     assert lines["a"]["chain_price"] == 14.95
@@ -175,7 +175,7 @@ async def test_bilka_for_what_rema_has_no_sure_product(
     # Without Bilka among the shops, nothing is searched.
     await store.async_set_settings({"chains": []})
     planner.bilka.async_search.reset_mock()
-    await planner._async_bilka_fallback({"shopping": [dict(lines["b"])]})
+    await planner._async_next_shops({"shopping": [dict(lines["b"])]})
     assert not planner.bilka.async_search.called
 
 

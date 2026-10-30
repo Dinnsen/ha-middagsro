@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from custom_components.middagsro import mealplan as mp
+from custom_components.middagsro import amounts, matching, mealplan as mp
 from custom_components.middagsro.ingredients import (
     CANNED,
     FISH,
@@ -224,22 +224,22 @@ def test_merge_lines_adds_up_the_same_thing() -> None:
 def test_add_amounts() -> None:
     """Grams to grams, pieces to pieces, pieces to grams by weight, else the bigger."""
     line: dict[str, Any] = {"amount": 200, "unit": "g"}
-    mp.add_amounts(line, {"amount": 3, "unit": "dl"})
+    amounts.add_amounts(line, {"amount": 3, "unit": "dl"})
     assert (line["amount"], line["unit"]) == (200, "g")  # unlike: the weight stands
     line = {"amount": 2, "unit": "pk"}
-    mp.add_amounts(line, {"amount": 300, "unit": "ml"})
+    amounts.add_amounts(line, {"amount": 300, "unit": "ml"})
     assert (line["amount"], line["unit"]) == (300, "ml")
     line = {"amount": 2, "unit": "stk"}
-    mp.add_amounts(line, {"amount": 3, "unit": "pk"})
+    amounts.add_amounts(line, {"amount": 3, "unit": "pk"})
     assert line["amount"] == 3
     line = {"amount": 1.5, "unit": "stk"}
-    mp.add_amounts(line, {"amount": 1, "unit": "stk"}, piece_g=100)
+    amounts.add_amounts(line, {"amount": 1, "unit": "stk"}, piece_g=100)
     assert (line["amount"], line["unit"]) == (3, "stk")
     line = {"amount": 155, "unit": "g"}
-    mp.add_amounts(line, {"amount": 1, "unit": "stk"}, piece_g=100)
+    amounts.add_amounts(line, {"amount": 1, "unit": "stk"}, piece_g=100)
     assert (line["amount"], line["unit"]) == (260, "g")
     line = {"amount": None, "unit": None}
-    mp.add_amounts(line, {"amount": 2, "unit": "stk"})
+    amounts.add_amounts(line, {"amount": 2, "unit": "stk"})
     assert line["amount"] == 2
 
 
@@ -288,8 +288,8 @@ def test_fit_amounts_counts_pieces_by_weight() -> None:
 
 def test_called_by_another_name() -> None:
     """ "GRANA PADANO" is parmesan to the catalogue; "KYLLINGEBRYSTFILET" is not kylling."""
-    assert mp._called(spec_for("Parmesan"), "GRANA PADANO")
-    assert mp._called(spec_for("Fiskefilet"), "RØDSPÆTTEFILETER")
-    assert mp._called(spec_for("Vaniljeis"), "VANILLA  IS")
-    assert not mp._called(spec_for("Hel kylling"), "KYLLINGEBRYSTFILET")
-    assert not mp._called(spec_for("Ukendt ting"), "UKENDT TING")
+    assert matching._called(spec_for("Parmesan"), "GRANA PADANO")
+    assert matching._called(spec_for("Fiskefilet"), "RØDSPÆTTEFILETER")
+    assert matching._called(spec_for("Vaniljeis"), "VANILLA  IS")
+    assert not matching._called(spec_for("Hel kylling"), "KYLLINGEBRYSTFILET")
+    assert not matching._called(spec_for("Ukendt ting"), "UKENDT TING")

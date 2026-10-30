@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.middagsro import mealplan as mp, structures
+from custom_components.middagsro import amounts, mealplan as mp, structures
+from custom_components.middagsro.api import RemaError
+from custom_components.middagsro.bilka import BILKA_ID
 from custom_components.middagsro.ingredients import CATALOG, catalogue_entry, words_are
+from custom_components.middagsro.shops import next_shops
 from custom_components.middagsro.storage import clean_settings
 from homeassistant.core import HomeAssistant
 
@@ -104,25 +107,25 @@ def test_needs_in_every_unit() -> None:
     """A thing written as 300 g and as 1 pk is both; each is counted in packages."""
     beef = make_product(1, "HAKKET OKSEKØD", 40, underline="500 GR.")
     line: dict[str, Any] = {"name": "Hakket oksekød", "amount": 300, "unit": "g"}
-    mp.add_amounts(line, {"amount": 1, "unit": "pk"})
+    amounts.add_amounts(line, {"amount": 1, "unit": "pk"})
     assert line["amount"] == 300
     assert line["need"] == {"g": 300, "pack": 1}
-    assert mp.base_need(line) == {"g": 300, "pack": 1}
+    assert amounts.base_need(line) == {"g": 300, "pack": 1}
     assert mp.line_packages(line, beef) == 2  # 0.6 + 1 packs
     assert mp.packages_needed(300, "g", beef) == 1
 
     # Pieces to grams when the catalogue knows a piece: one unit, no need kept.
     onions: dict[str, Any] = {"name": "Løg", "amount": 2, "unit": "stk"}
-    mp.add_amounts(onions, {"amount": 200, "unit": "g"}, 100)
+    amounts.add_amounts(onions, {"amount": 200, "unit": "g"}, 100)
     assert onions == {"name": "Løg", "amount": 400, "unit": "g"}
 
     # Something counted that a bag doesn't say: the bag still covers it.
     pita: dict[str, Any] = {"name": "Pitabrød", "amount": 2, "unit": "stk"}
-    mp.add_amounts(pita, {"amount": 1, "unit": "pk"})
+    amounts.add_amounts(pita, {"amount": 1, "unit": "pk"})
     assert mp.line_packages(pita, make_product(2, "PITA", 15, underline="375 GR.")) == 1
     assert mp.packages_needed(None, None, beef, need={"stk": 2}) == 1
-    assert mp.base_need({"name": "Salt"}) == {}
-    assert mp.base_need({"name": "x", "amount": 2, "unit": "spande"}) == {}
+    assert amounts.base_need({"name": "Salt"}) == {}
+    assert amounts.base_need({"name": "x", "amount": 2, "unit": "spande"}) == {}
 
 
 def test_grams_of_something_sold_per_piece() -> None:
@@ -131,3 +134,31 @@ def test_grams_of_something_sold_per_piece() -> None:
     assert mp.packages_needed(600, "g", squash, 300) == 2
     assert mp.packages_needed(500, "g", squash, 400) == 1
     assert mp.packages_needed(600, "g", squash) == 1  # what one weighs is unknown
+
+
+async def test_next_shops(hass: HomeAssistant, init_integration: MockConfigEntry) -> None:
+    """The next shops are asked in turn; a shop that can't be reached changes nothing."""
+    store = init_integration.runtime_data.store
+    await store.async_set_settings({"chains": [BILKA_ID]})
+    planner = init_integration.runtime_data.planner
+    assert [shop.name for shop in next_shops(planner)] == ["Bilka"]
+    planner.bilka = MagicMock(async_search=AsyncMock(side_effect=RemaError("nede")))
+    unsure = {"id": "a", "name": "Galangarod", "search": "galangarod", "amount": 1,
+              "unit": "stk", "product": None, "confidence": "low", "note": "Ingen sikker vare"}  # fmt: skip
+    plan: dict[str, Any] = {"shopping": [dict(unsure)]}
+    await planner._async_next_shops(plan)
+    assert plan["shopping"][0]["note"] == "Ingen sikker vare"
+
+    planner.bilka = MagicMock(async_search=AsyncMock(return_value=[]))
+    guess = {"name": "Kaffirblade", "search": "kaffirblade", "amount": 1, "unit": "stk",
+             "product": {"id": 9, "name": "LAURBÆRBLADE", "price": 10}, "confidence": "low"}  # fmt: skip
+    plan = {"shopping": [{**guess, "note": "Måske"}, {**guess, "note": None}]}
+    await planner._async_next_shops(plan)
+    assert [line["note"] for line in plan["shopping"]] == [
+        "Måske (heller ikke sikker i Bilka)",
+        "Heller ikke sikker i Bilka – tjek den",
+    ]
+    await planner._async_next_shops({"shopping": []})  # nothing to look for
+
+    planner.client.has_prices = False  # another shop than REMA: no searches
+    assert next_shops(planner) == []

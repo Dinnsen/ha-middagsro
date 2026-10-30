@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.middagsro import dishes as ds, mealplan as mp, recipes as rc
+from custom_components.middagsro import dishes as ds, matching, mealplan as mp, recipes as rc
 from homeassistant.core import HomeAssistant
 
 from .conftest import make_plan, make_product
@@ -329,9 +329,9 @@ async def test_recipe_lines_and_product_kinds(
     pizza = make_product(2, "KEBAB PIZZA", 20.0, underline="484 GR.", department="Frost",
                          category="Pizza")  # fmt: skip
     line = {"name": "Kebab", "search": "kebab", "amount": 500, "unit": "g", "category": "Frost"}
-    assert mp.kind_penalty(line, pizza, ["kebab"]) == 5.0
-    assert mp.kind_penalty(line, kebab, ["kebab"]) == 0.0
-    assert mp.kind_penalty({"name": "Pizza", "search": "pizza"}, pizza, ["pizza"]) == 0.0
+    assert matching.kind_penalty(line, pizza, ["kebab"]) == 5.0
+    assert matching.kind_penalty(line, kebab, ["kebab"]) == 0.0
+    assert matching.kind_penalty({"name": "Pizza", "search": "pizza"}, pizza, ["pizza"]) == 0.0
     candidates, _penalty = planner._candidates(line, [pizza, kebab], "kebab")
     assert [p.id for p in candidates] == [kebab.id]  # the pizza shelf is never the kebab
     fresh = make_product(3, "BROCCOLI", 12.0, underline="1 STK.", department="Frugt & grønt")
@@ -339,11 +339,19 @@ async def test_recipe_lines_and_product_kinds(
                           is_organic=True)  # fmt: skip
     produce = {"name": "Broccoli", "search": "broccoli", "amount": 2, "unit": "stk",
                "category": "Frugt & grønt"}  # fmt: skip
-    assert mp.kind_penalty(produce, frozen, ["broccoli"]) == 5.0
-    assert mp.kind_penalty(produce, fresh, ["broccoli"]) == 0.0
-    assert mp.kind_penalty({**produce, "search": "frossen broccoli"}, fresh, ["broccoli"]) == 5.0
-    assert mp.kind_penalty({**produce, "search": "frossen broccoli"}, frozen, ["broccoli"]) == 0.0
-    assert mp.kind_penalty({"name": "Frisk spinat", "search": "spinat"}, frozen, ["spinat"]) == 5.0
+    assert matching.kind_penalty(produce, frozen, ["broccoli"]) == 5.0
+    assert matching.kind_penalty(produce, fresh, ["broccoli"]) == 0.0
+    assert (
+        matching.kind_penalty({**produce, "search": "frossen broccoli"}, fresh, ["broccoli"]) == 5.0
+    )
+    assert (
+        matching.kind_penalty({**produce, "search": "frossen broccoli"}, frozen, ["broccoli"])
+        == 0.0
+    )
+    assert (
+        matching.kind_penalty({"name": "Frisk spinat", "search": "spinat"}, frozen, ["spinat"])
+        == 5.0
+    )
 
     # ... but the pizza costs five times as much in the choice, so the kebab is chosen.
     mock_client.async_search_products.side_effect = None
@@ -537,9 +545,12 @@ def test_amounts_follow_the_recipes() -> None:
 
 def test_compound_search_words() -> None:
     """ "Cæsardressing" finds REMA's "CÆSAR DRESSING"."""
-    assert mp.name_fit(["cæsardressing"], "CÆSAR DRESSING") == (1, 1.15)
-    assert mp.name_fit(["cæsardressing"], "ITALIANO DRESSING")[0] == 0
-    assert "cæsar dressing" in mp.search_queries(
+    assert matching.name_fit(["cæsardressing"], "CÆSAR DRESSING") == (1, 1.15)
+    assert matching.name_fit(["cæsardressing"], "ITALIANO DRESSING")[0] == 0
+    assert "cæsar dressing" in matching.search_queries(
         {"search": "Cæsardressing", "name": "Cæsardressing"}
     )
-    assert mp.search_queries({"search": "pesto", "name": "Grøn pesto"}) == ["pesto", "Grøn pesto"]
+    assert matching.search_queries({"search": "pesto", "name": "Grøn pesto"}) == [
+        "pesto",
+        "Grøn pesto",
+    ]

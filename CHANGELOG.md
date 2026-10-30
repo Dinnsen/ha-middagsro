@@ -2,6 +2,22 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.13.0b1] - 2026-10-30
+
+Beta: a new core for finding products – measured, shared and in its own modules.
+
+### Added
+- **Gem som testsag** under *Indkøb → Flere muligheder*: downloads the plan's items you kept or chose (and the ones you left out), with everything REMA answered, as a file for the tests (`tests/corpus/cases/`). The tests match them again by name and report how many get the right product. Only ingredient names and product numbers are in it.
+- **Measured matching:** every test run counts the right products, the *sure but wrong* ones (bought without asking – must be 0), the unsure and wrong, the not found and the wrong counts, with the shared table and by name alone; the numbers are on the CI run's page.
+- **A shared product table** (`data/links.json`): ingredient names and the REMA products they are, seeded from the test corpus. A name in it gets its product straight away (after your own choice and the offers), still by your organic and egg rules; a product you said no to is never taken.
+- **Del jeres valg** opens GitHub with your chosen products (ingredient and product number, nothing about you) as an issue, so they can go into the shared table for everyone.
+- **The AI names the catalogue entry:** each shopping item may come with a key from the ingredient catalogue. For words the catalogue doesn't know ("vårløg") the key decides what is searched for, and the item is marked *Tjek* unless its words say the same.
+
+### Changed
+- **Amounts in base units:** an item written as "300 g" in one recipe and "1 pk" in another keeps both, and the packages are counted from both (two packs, not one). Grams of something sold per piece are counted in pieces (600 g squash: two).
+- **Another shop for what REMA isn't sure of** is now a step of its own that can take more shops than Bilka (`shops.py`).
+- The matching moved out of `mealplan.py` into `amounts.py`, `matching.py` and `matcher.py`.
+
 ## [2.12.0b3] - 2026-10-30
 
 ### Added

@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
-from custom_components.middagsro import mealplan as mp
+from custom_components.middagsro import matching, mealplan as mp
 from custom_components.middagsro.api import Offer, RemaError
 from custom_components.middagsro.chains import ChainError
 from custom_components.middagsro.const import DOMAIN
@@ -69,17 +69,17 @@ def test_units_and_packages() -> None:
 
 def test_words() -> None:
     """Search terms and how well a name fits."""
-    assert mp.search_queries({"search": "kyllingefars", "name": "Kyllingefars"}) == [
+    assert matching.search_queries({"search": "kyllingefars", "name": "Kyllingefars"}) == [
         "kyllingefars",
         "hakket kylling",
     ]
-    assert mp.name_fit(["løg"], "LØG") == (1, 1.0)
-    matched, penalty = mp.name_fit(["løg"], "HVIDLØG")
+    assert matching.name_fit(["løg"], "LØG") == (1, 1.0)
+    matched, penalty = matching.name_fit(["løg"], "HVIDLØG")
     assert matched == 1
     assert penalty > 5
-    assert mp.name_fit(["laks"], "RØGET LAKSEPÅLÆG")[1] > 5
-    assert mp.name_fit(["kartofler"], "SØDE KARTOFLER")[1] > 5
-    assert mp.name_fit(["laks"], "BROCCOLI") == (0, 1.15)
+    assert matching.name_fit(["laks"], "RØGET LAKSEPÅLÆG")[1] > 5
+    assert matching.name_fit(["kartofler"], "SØDE KARTOFLER")[1] > 5
+    assert matching.name_fit(["laks"], "BROCCOLI") == (0, 1.15)
 
 
 def test_extract_json() -> None:
@@ -95,15 +95,15 @@ def test_extract_json() -> None:
 
 def test_kinds() -> None:
     """Eggs, milk and fruit & vegetables are recognised."""
-    assert mp.egg_level(make_product(1, "FRILANDSÆG", 30)) == 1
-    assert mp.egg_level(make_product(1, "ØKO. ÆG", 30)) == 2
-    assert mp.egg_level(make_product(1, "SKRABEÆG", 30)) == 0
-    assert mp.line_kind({"search": "æg"}) == "egg"
-    assert mp.line_kind({"search": "pålæg"}) is None
-    assert mp.line_kind({"search": "letmælk"}) == "milk"
-    assert mp.line_kind({"search": "havremælk"}) is None
-    assert mp.line_kind({"search": "chokolademælk"}) is None
-    assert mp.line_kind({"search": "gulerødder", "category": "Frugt & grønt"}) == "produce"
+    assert matching.egg_level(make_product(1, "FRILANDSÆG", 30)) == 1
+    assert matching.egg_level(make_product(1, "ØKO. ÆG", 30)) == 2
+    assert matching.egg_level(make_product(1, "SKRABEÆG", 30)) == 0
+    assert matching.line_kind({"search": "æg"}) == "egg"
+    assert matching.line_kind({"search": "pålæg"}) is None
+    assert matching.line_kind({"search": "letmælk"}) == "milk"
+    assert matching.line_kind({"search": "havremælk"}) is None
+    assert matching.line_kind({"search": "chokolademælk"}) is None
+    assert matching.line_kind({"search": "gulerødder", "category": "Frugt & grønt"}) == "produce"
 
 
 @pytest.mark.parametrize(
@@ -735,19 +735,19 @@ def test_avis_match(
     name: str, underline: str, organic: bool, heading: str, description: str | None, fits: bool
 ) -> None:
     """Only the very product an avis offer is for gets its price."""
-    assert mp.avis_match(name, underline, organic, _offer(heading, description)) is fits
+    assert matching.avis_match(name, underline, organic, _offer(heading, description)) is fits
 
 
 def test_offer_query_and_short_words() -> None:
     """The offer's own part is searched for; 'æg' is not 'æggestand'."""
     heading = "REMA 1000 salami, leverpostej eller Taga serrano"
-    assert mp.offer_query(_offer(heading), "Leverpostej") == "leverpostej"
-    assert mp.offer_query(_offer("REMA 1000 Laksefilet"), "Laks") == "Laksefilet"
-    assert mp.name_fit(["æg"], "ÆGGESTAND")[0] == 0
-    assert mp.name_fit(["æg"], "SKRABEÆG")[0] == 1
-    assert mp.name_fit(["laks"], "LAKSEFILET")[0] == 1
-    assert mp.name_fit(["laks"], "VARMRØGET LAKS")[1] > 5
-    assert mp.name_fit(["laks"], "GRAVAD LAKS")[1] > 5
+    assert matching.offer_query(_offer(heading), "Leverpostej") == "leverpostej"
+    assert matching.offer_query(_offer("REMA 1000 Laksefilet"), "Laks") == "Laksefilet"
+    assert matching.name_fit(["æg"], "ÆGGESTAND")[0] == 0
+    assert matching.name_fit(["æg"], "SKRABEÆG")[0] == 1
+    assert matching.name_fit(["laks"], "LAKSEFILET")[0] == 1
+    assert matching.name_fit(["laks"], "VARMRØGET LAKS")[1] > 5
+    assert matching.name_fit(["laks"], "GRAVAD LAKS")[1] > 5
 
 
 async def test_offer_line_gets_the_offer_product(
@@ -1437,12 +1437,12 @@ async def test_avis_item_rema_does_not_have_yet(
 
 def test_avis_packages() -> None:
     """How many of an avis item cover an amount."""
-    assert mp.avis_packages(None, None, LAKS) == 1
-    assert mp.avis_packages(1, "bundt", LAKS) == 1
-    assert mp.avis_packages(3, "pk", LAKS) == 3
-    assert mp.avis_packages(1.2, "kg", LAKS) == 2
-    assert mp.avis_packages(1, "l", LAKS) == 1  # no size of that kind
-    assert mp.avis_packages(3, "stk", LAKS) == 3
+    assert matching.avis_packages(None, None, LAKS) == 1
+    assert matching.avis_packages(1, "bundt", LAKS) == 1
+    assert matching.avis_packages(3, "pk", LAKS) == 3
+    assert matching.avis_packages(1.2, "kg", LAKS) == 2
+    assert matching.avis_packages(1, "l", LAKS) == 1  # no size of that kind
+    assert matching.avis_packages(3, "stk", LAKS) == 3
 
 
 async def test_avis_item_sent_as_rema_product(

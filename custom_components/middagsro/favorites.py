@@ -17,7 +17,7 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .api import DANISH_TIME, Catalog, Offer, Product, RemaClient, RemaError, parse_time
-from .mealplan import avis_match, unlinked_match
+from .matching import avis_match, unlinked_match
 
 _LOGGER = logging.getLogger(__name__)
 
