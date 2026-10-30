@@ -2,6 +2,31 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.12.0b1] - 2026-10-30
+
+Beta: the matching of ingredients to REMA's products rebuilt. Please check the shopping list of a new plan closely and report what is wrong.
+
+### Added
+- **Usikre varer – a check before the list is sent:** when Middagsro is not sure a product is the right one for an ingredient, the line is marked *Tjek* or *Usikker* on the shopping list, with the other products it could be. A yellow box at the top lists them: keep the product, choose another, search for one, or leave the line out. The new setting **Indstillinger → Indkøb → Usikre varer** decides what a send does with lines nobody has looked at: wait for the check (default – an automatic send at 02:00 goes without them), send them as chosen, or leave them out.
+- **Middagsro remembers your choices:** a product you keep, choose or put on a line yourself is the one that ingredient gets in the next plans (marked *Jeres valg*); a product you leave out is never taken for that ingredient again. *Glem valget* on the line undoes it.
+- **An ingredient catalogue:** some 250 common ingredients with how they are searched, what one piece weighs (so "2 løg" from a kilo bag is one bag, not two, and "3 fed hvidløg" one bulb), whether they are fresh, canned or dried, and the words that make a product something else ("skalotteløg" is not løg, "stødt chili" is not fresh chili, "indbagt laks" is not laks).
+- **REMA's own shelf decides what a product is:** department and category gate every search result, so cup noodles can never be nudler, a can of pepper strips never a fresh peberfrugt, grill skewers never food – and a line only gets a ready meal, a snack or a drink when it asks for one (a Friday frysepizza).
+- **Allergies and avoided foods are checked:** every dish of a plan, every AI recipe and every item a recipe adds are checked against word lists for what the family can't eat; the AI is asked to put a dish or recipe right, and an extra item with a conflict is never added. (Gluten and lactose are left to the product choice, which prefers GLUTENFRI and LAKTOSEFRI products.)
+- **Structured answers from the AI:** AI Task is given the shape of the plan, the recipe and the product choice, so the answer is valid JSON with the right keys. After the list is priced, one question to the AI picks among the products found for the uncertain lines.
+- A corpus of REMA's real search results (164 lines, among them every error of a real week-45 plan) guards the matching in the tests.
+
+### Changed
+- **One line per thing:** the plan's "Løg", "Løg, i både" and "Stort løg" become one line with the amounts added up; the same for a web recipe's second onion.
+- **Recipe text is not shopping:** a heading ("Dej:", "Fyld:"), the tin ("Tærteform"), water and remarks ("Server med ris", "Kan erstattes med skyr") never reach the list; "Evt. chili" is chili.
+- **The usual size, not the cheapest package:** "2 dåser kokosmælk" is two normal cans, not mini cans of light coconut milk; a "vej selv" loose item is not chosen over a bag; "kokosmælk light" is only chosen when asked for. A percent asked for is kept ("creme fraiche 18%" is not the 38%). Frozen meat, poultry or fish only when clearly cheaper than fresh.
+- **The avis offers shown to the AI** are food for dinner the family can eat: no household goods, sweets or drinks, nothing they avoid or are allergic to. Vegan and vegetarian households get the rule spelled out. The AI's checklist is only for the family's own rules – the other rules are checked by Middagsro – and the corrections from a previous try come last in the instructions, where the model weighs them most.
+- A plan is checked against the rules before its list is priced (a worse try costs no searches), REMA's answers are kept for the rounds of one generation, and if the AI fails on a later round the best try so far is the plan. The budget feedback separates the fixed weekly items the AI can't change.
+- A fixed day at a restaurant is no longer a leftovers day.
+
+### Fixed
+- Many wrong products from a real plan: cupnudler for "oksekød i strimler", pepper strips in a can for peberfrugt, soybeans for soja, bearnaise for fishsauce, ground chili for fresh chili, skalotteløg for løg, a date bar for peanuts, onions bought three times, 3 forårsløg as 3 bunches, a tart scaled by four, 1 kg chicken breast counted as 2 pieces, mini cans of light coconut milk.
+- A recipe link's redirects are followed one hop at a time, each address checked, so a page can't lead to the home network.
+
 ## [2.11.0] - 2026-10-29
 
 ### Added
