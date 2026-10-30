@@ -102,8 +102,8 @@ async def test_send_modes(
     with pytest.raises(ServiceValidationError):
         await planner.async_send("one")  # parsley still waits
     plan["shopping"][1]["reviewed"] = True
-    await planner.async_send("one")
-    assert [line["id"] for line in plan["shopping"] if line.get("sent")] == ["pasta"]
+    await planner.async_send("one")  # the checked parsley goes too
+    assert [line["id"] for line in plan["shopping"] if line.get("sent")] == ["parsley", "pasta"]
     assert plan["total"] == 9.0  # the skipped beef does not count
 
 

@@ -170,9 +170,12 @@ def product_kinds(
     by_department = _match_rules(department, _DEPARTMENT_RULES) if department else None
     if by_department and NONFOOD in by_department:
         return frozenset({NONFOOD})
+    if kinds is None and by_department and by_department <= NEVER_KINDS:
+        kinds = by_department  # the sweets or drinks aisle says enough on its own
     if kinds is None:
-        kinds = by_department
-    if kinds is None:
+        # No category: the department alone is too coarse to rule food out
+        # (a shop's "Kolonial" holds both pasta and the odd fresh garlic).
+        return None
         return None
     words = set(_tokens(f"{name} {underline or ''}"))
     if kinds & {SAUCE, STOCK, READY}:
@@ -771,8 +774,12 @@ def other_thing(spec: Spec, product_name: str) -> bool:
     for word in spec.entry.not_words:
         if any(w == word or w.startswith(word) or w.endswith(word) for w in words):
             # Unless the line asked for it ("stødt chili" is a spice line, not fresh,
-            # "kokosmælk light" is the light one).
-            if word in _tokens(spec.key) or word in spec.query.lower() or word in spec.asked:
+            # "kokosmælk light" is the light one, "løg rødt" the red ones).
+            if (
+                word in _tokens(spec.key)
+                or word in spec.query.lower()
+                or any(asked.startswith(word) for asked in spec.asked)
+            ):
                 continue
             return True
     return False

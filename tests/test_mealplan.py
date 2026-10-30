@@ -586,7 +586,7 @@ async def test_plan_priced_on_its_first_day(
 
 def test_late_offers_in_prompt() -> None:
     """Offers that start thursday: left out, or marked with their first day."""
-    coffee = Offer(id="o-3", heading="Kaffe", description=None, price=39, pre_price=None,
+    coffee = Offer(id="o-3", heading="Kyllingelår", description=None, price=39, pre_price=None,
                    quantity=None, valid_from="2026-10-21T22:00:00+0000",
                    valid_to="2026-10-24T21:59:59+0000")  # fmt: skip
     offers = [*OFFERS, coffee]
@@ -603,10 +603,10 @@ def test_late_offers_in_prompt() -> None:
         "late": late,
     }
     once = mp.build_prompt(settings=clean_settings({}), **kwargs)
-    assert "Kaffe" not in once
+    assert "Kyllingelår" not in once
     assert "gælder først fra" not in once
     twice = mp.build_prompt(settings=clean_settings({"shop_late_week": True}), **kwargs)
-    assert "o2 | Kaffe | 39 kr. | | gælder først fra torsdag 2026-10-22" in twice
+    assert "o2 | Kyllingelår | 39 kr. | | gælder først fra torsdag 2026-10-22" in twice
     assert "må KUN bruges i retter på eller efter den dag" in twice
 
 

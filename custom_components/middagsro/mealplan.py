@@ -1598,7 +1598,12 @@ def apply_spec(line: dict[str, Any], spec: Spec | None = None) -> bool:
     if spec.skip:
         return False
     line["key"] = spec.key
-    if spec.entry is not None and not line.get("product_id") and not line.get("must_have"):
+    if (
+        spec.entry is not None
+        and not line.get("product_id")
+        and not line.get("must_have")
+        and not line.get("stock_cubes")
+    ):
         line["search"] = spec.query
     if spec.count_word and line.get("amount") and (line.get("unit") or "stk") in ("stk", "pk"):
         line["amount"] = max(1, math.ceil(float(line["amount"]) / spec.per_package))
@@ -1651,7 +1656,7 @@ def recipe_line(ingredient: dict[str, Any], factor: float = 1.0) -> dict[str, An
         line.update(
             name=query[:1].upper() + query[1:], search=query, amount=1, unit="pk", stock_cubes=True
         )
-    if not apply_spec(line, spec_for(raw, line["search"], line["category"])):
+    if not apply_spec(line, spec_for(raw, str(line["search"]), str(line["category"]))):
         return None
     return line
 
@@ -2900,7 +2905,7 @@ class MealPlanner:
             for line in plan["shopping"]
             if needs_review(line) and line.get("alternatives") and not line.get("product_id")
         ]
-        if not unsure or not self.ai_available:
+        if not unsure or not self.ai_available():
             return
         options: dict[str, dict[int, dict[str, Any]]] = {}
         rows: list[str] = []
@@ -3260,7 +3265,7 @@ class MealPlanner:
                 unit="pk",
                 stock_cubes=True,
             )
-        if not apply_spec(line, spec_for(raw, line["search"], line["category"])):
+        if not apply_spec(line, spec_for(raw, str(line["search"]), str(line["category"]))):
             return None
         return line
 

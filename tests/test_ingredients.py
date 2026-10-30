@@ -15,6 +15,7 @@ from custom_components.middagsro.ingredients import (
     NONFOOD,
     POULTRY,
     READY,
+    SNACK,
     SPICE,
     STOCK,
     VEG,
@@ -115,7 +116,8 @@ def test_product_kinds_from_the_shops_categories() -> None:
     )
     assert product_kinds(None, None, "X") is None
     assert product_kinds("Noget nyt", None, "X") is None
-    assert product_kinds("Køl", None, "X") is not None
+    assert product_kinds("Køl", None, "X") is None  # a department alone says too little
+    assert product_kinds("Slik", None, "X") == frozenset({SNACK})
 
 
 def test_allowed_gates_on_kind_and_form() -> None:

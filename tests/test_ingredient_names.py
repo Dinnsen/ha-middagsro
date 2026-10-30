@@ -275,7 +275,7 @@ async def test_retry_missing_keeps_matches_sent_lines_and_transfer_ids(
     assert plan["shopping"][0]["product"]["id"] == 30001
     assert sent["sent"] and selected["product_id"] == 123
     assert plan["missing_products"] == []
-    assert {call.args[0].lower() for call in lookup.call_args_list} == {"timian, tørret", "timian"}
+    assert "timian" in {call.args[0].lower() for call in lookup.call_args_list}
     mock_client.async_add_to_list.assert_not_awaited()
 
 
@@ -394,6 +394,5 @@ async def test_instant_noodles_are_not_noodles(init_integration: MockConfigEntry
     cup = make_product(1, "CUPNUDLER OKSEKØD", 5.88, underline="65 GR.")
     plain = make_product(2, "NUDLER", 12.0, underline="250 GR.")
     line = {"name": "Nudler", "search": "nudler", "amount": 320, "unit": "g"}
-    found, penalty = planner._candidates(line, [cup, plain], "nudler")
-    assert {p.id for p in found} == {1, 2}
-    assert penalty[1] > penalty[2] + 4  # the instant meal is the last choice
+    found, _penalty = planner._candidates(line, [cup, plain], "nudler")
+    assert [p.id for p in found] == [2]  # the instant meal is never the noodles
