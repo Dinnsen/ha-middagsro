@@ -1752,7 +1752,7 @@ def fit_amounts(plan: dict[str, Any]) -> list[str]:
                 line["cost"] = round(wanted * float(product["price"]), 2)
             changed.append(line["name"])
     if changed:
-        plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
+        plan["total"] = plan_total(plan["shopping"])
     return changed
 
 
@@ -1826,6 +1826,24 @@ def merge_lines(
                     uses.append(new)
             day["uses"] = uses
     return merged
+
+
+def needs_review(line: dict[str, Any]) -> bool:
+    """Should the family look at this line before it is sent: the match is not
+    sure, and nobody has confirmed, changed or left it out yet."""
+    return (
+        line.get("confidence") in ("medium", "low")
+        and not line.get("reviewed")
+        and not line.get("must_have")
+        and not line.get("added")
+        and not line.get("sent")
+        and not line.get("skipped")
+    )
+
+
+def plan_total(shopping: list[dict[str, Any]]) -> float:
+    """What the list costs: every line with a price, except those the family left out."""
+    return round(sum(line.get("cost") or 0 for line in shopping if not line.get("skipped")), 2)
 
 
 def own_shopping(plan: dict[str, Any], day: dict[str, Any]) -> list[dict[str, Any]]:
@@ -2382,7 +2400,7 @@ class MealPlanner:
             ]
         if new_lines:
             await self._async_price_lines(new_lines, offers, at, late)
-        plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
+        plan["total"] = plan_total(plan["shopping"])
 
     async def _async_recipe_extras(
         self,
@@ -2431,7 +2449,7 @@ class MealPlanner:
                 added += 1
         if new_lines:
             await self._async_price_lines(new_lines, offers, at, late)
-            plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
+            plan["total"] = plan_total(plan["shopping"])
 
     async def _async_add_recipes(self, plan: dict[str, Any]) -> None:
         """Write all recipes, a few at a time."""
@@ -2809,7 +2827,7 @@ class MealPlanner:
             )
         await self._async_price_lines(shopping, offers, at, late)
         apply_chain_offers(shopping, chain_offers or [])
-        total = round(sum(line.get("cost") or 0 for line in shopping), 2)
+        total = plan_total(shopping)
         return {
             "id": uuid.uuid4().hex[:12],
             "created": dt_util.now().isoformat(),
@@ -2981,8 +2999,8 @@ class MealPlanner:
         and ``alternatives`` to choose from when it isn't high).
         """
         line.update(product=None, avis_item=None, packages=1, cost=None, note=None)
-        line.pop("price_source", None)
-        line.pop("alternatives", None)
+        for key in ("price_source", "alternatives", "reviewed", "remembered"):
+            line.pop(key, None)
         line["confidence"] = "high"
         if not line.get("product_id"):
             line["search"] = ingredient_name(line["search"])
@@ -3626,21 +3644,27 @@ class MealPlanner:
         }
 
     async def async_send(
-        self, plan_id: str | None = None, part: str = "main", line_id: str | None = None
+        self,
+        plan_id: str | None = None,
+        part: str = "main",
+        line_id: str | None = None,
+        strict: bool = True,
     ) -> dict[str, Any]:
         """Put a plan's shopping list on the primary REMA list.
 
         part: "main" (bought on the shopping day), "late" (the items for later
         in the week, e.g. thursday offers) or "all". line_id: just that line.
+        strict: with the setting "review", refuse while uncertain lines wait
+        to be looked at (a send nobody is watching goes without them instead).
 
         One send at a time. Each line is marked sent the moment its item is on
         the REMA list, so if REMA fails halfway, the next send only sends the rest.
         """
         async with self._send_lock:
-            return await self._async_send(plan_id, part, line_id)
+            return await self._async_send(plan_id, part, line_id, strict)
 
     async def _async_send(
-        self, plan_id: str | None, part: str, line_id: str | None = None
+        self, plan_id: str | None, part: str, line_id: str | None = None, strict: bool = True
     ) -> dict[str, Any]:
         plan = self.store.get_plan(plan_id) if plan_id else self.store.latest_plan
         if plan is None:
@@ -3661,6 +3685,17 @@ class MealPlanner:
         ]
         if line_id and not lines:
             raise _invalid("line_not_found")
+        lines = [line for line in lines if not line.get("skipped") or line_id]
+        if not line_id:
+            # The lines the family should look at first: by their setting, the
+            # send waits for that, or goes without them.
+            unsure = [line for line in lines if needs_review(line)]
+            mode = self.store.settings["uncertain_items"]
+            if unsure and mode == "review" and strict:
+                count = f"{len(unsure)} vare" if len(unsure) == 1 else f"{len(unsure)} varer"
+                raise _invalid("review_needed", count=count)
+            if unsure and mode in ("review", "skip"):
+                lines = [line for line in lines if line not in unsure]
         cart = getattr(self.client, "cart", None)
         if cart is not None and plan.get("bilka_rematch"):
             for line in lines:
@@ -3680,7 +3715,7 @@ class MealPlanner:
         except RemaError as err:
             _LOGGER.debug("Could not look at the offers again before sending: %s", err)
         await asyncio.gather(*(self._async_resolve_avis_item(line) for line in lines))
-        plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
+        plan["total"] = plan_total(plan["shopping"])
         missing: list[dict[str, Any]] = []
         if cart is not None:
             missing = [
@@ -3867,7 +3902,8 @@ class MealPlanner:
                 raise _invalid("plan_not_found")
             for line in plan["shopping"]:
                 if any(
-                    line.get(key) for key in ("product", "sent", "product_id", "added", "buy_at")
+                    line.get(key)
+                    for key in ("product", "sent", "product_id", "added", "buy_at", "skipped")
                 ):
                     continue
                 candidate = dict(line)
@@ -3875,7 +3911,7 @@ class MealPlanner:
                 candidate["search"] = ingredient_name(line["search"])
                 await self._async_match(candidate)
                 line.update(candidate)
-            plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
+            plan["total"] = plan_total(plan["shopping"])
             missing = {
                 line["id"]
                 for line in plan["shopping"]
@@ -3922,7 +3958,7 @@ class MealPlanner:
             self._avis_price(line, offer)
 
         await asyncio.gather(*(refresh(line) for line in due))
-        plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
+        plan["total"] = plan_total(plan["shopping"])
         plan["refreshed_at"] = now.isoformat()
 
     @callback
@@ -3960,7 +3996,7 @@ class MealPlanner:
         now = dt_util.utcnow()
         main_at = prices_from(date.fromisoformat(plan["start_date"]))
         if main_at <= now:
-            await self.async_send(plan["id"], "main")
+            await self.async_send(plan["id"], "main", strict=False)
         else:
             plan["send_at"] = main_at.isoformat()
             self._schedule_send(plan, "send_at")
@@ -4017,7 +4053,7 @@ class MealPlanner:
         if self.store.get_plan(plan_id) is None:
             return
         try:
-            await self.async_send(plan_id, part)
+            await self.async_send(plan_id, part, strict=False)
         except (HomeAssistantError, RemaError) as err:
             _LOGGER.warning("Could not send the meal plan to REMA automatically: %s", err)
 

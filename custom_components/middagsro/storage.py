@@ -387,6 +387,20 @@ class RemaPlanStore:
                 del self.choices[stale]
         await self.async_save()
 
+    async def async_reject_product(self, key: str, shop: str, product_id: int) -> None:
+        """The family left a line out: that product is not what the ingredient is."""
+        if not key:
+            return
+        choice = self.choices.setdefault(self._choice_key(key, shop), {})
+        rejected = [i for i in choice.get("rejected") or [] if i != product_id]
+        rejected.append(product_id)
+        choice["rejected"] = rejected[-10:]
+        if choice.get("product_id") == product_id:
+            choice.pop("product_id", None)
+            choice.pop("name", None)
+        choice["at"] = dt_util.now().isoformat()
+        await self.async_save()
+
     async def async_forget_choice(self, key: str, shop: str) -> None:
         """The family no longer wants a product remembered for an ingredient."""
         if self.choices.pop(self._choice_key(key, shop), None) is not None:
