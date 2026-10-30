@@ -1,0 +1,1780 @@
+[
+ {
+  "name": "Oksekød (i strimler)",
+  "amount": 320,
+  "unit": "g",
+  "search": "oksekød (i strimler)",
+  "category": "Kød",
+  "expect": "none",
+  "packages": 1
+ },
+ {
+  "name": "Rød peberfrugt",
+  "amount": 2,
+  "unit": "stk",
+  "search": "peberfrugt",
+  "category": "Frugt & grønt",
+  "expect": [
+   306353
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Soja",
+  "amount": 1,
+  "unit": "fl",
+  "search": "soja",
+  "category": "Kolonial",
+  "expect": [
+   120053
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Fishsauce",
+  "amount": 1,
+  "unit": "fl",
+  "search": "fishsauce",
+  "category": "Kolonial",
+  "expect": [
+   120051
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Rød chili, hakket (mængde efter smag)",
+  "amount": 1,
+  "unit": "stk",
+  "search": "rød chili, hakket",
+  "category": "Frugt & grønt",
+  "expect": [
+   306386
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Løg, i både",
+  "amount": 1,
+  "unit": "stk",
+  "search": "løg, i både",
+  "category": "Frugt & grønt",
+  "expect": [
+   306960,
+   306967
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Stort løg",
+  "amount": 2,
+  "unit": "stk",
+  "search": "stort løg",
+  "category": "Frugt & grønt",
+  "expect": [
+   306960,
+   306967
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Saltede peanuts, hakkede",
+  "amount": 20,
+  "unit": "g",
+  "search": "saltede peanuts, hakkede",
+  "category": "Kolonial",
+  "expect": [
+   79082
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Nudler",
+  "amount": 260,
+  "unit": "g",
+  "search": "nudler",
+  "category": "Kolonial",
+  "expect": [
+   96652
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Stængler forårsløg",
+  "amount": 3,
+  "unit": "stk",
+  "search": "stængler forårsløg",
+  "category": "Frugt & grønt",
+  "expect": [
+   306450
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Hakkede tomater",
+  "amount": 2,
+  "unit": "dåse",
+  "search": "hakkede tomater",
+  "category": "Kolonial",
+  "expect": [
+   108341,
+   110328
+  ],
+  "packages": 2
+ },
+ {
+  "name": "2 tomater, hakket",
+  "amount": 2,
+  "unit": "stk",
+  "search": "tomater",
+  "category": "Frugt & grønt",
+  "expect": [
+   108341,
+   110328
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Tomater",
+  "amount": 4,
+  "unit": "stk",
+  "search": "tomater",
+  "category": "Frugt & grønt",
+  "expect": [
+   306175
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Citronsaft (friskpresset)",
+  "search": "citronsaft (friskpresset)",
+  "category": "Frugt & grønt",
+  "expect": [
+   304566
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Lime, saften herfra",
+  "amount": 1,
+  "unit": "stk",
+  "search": "lime, saften herfra",
+  "category": "Frugt & grønt",
+  "expect": [
+   305658
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Kyllingebryst",
+  "amount": 1,
+  "unit": "kg",
+  "search": "kyllingebryst",
+  "category": "Kød",
+  "expect": [
+   405005
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Kokosmælk",
+  "amount": 2,
+  "unit": "dåse",
+  "search": "kokosmælk",
+  "category": "Kolonial",
+  "expect": [
+   120171
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Grøntsagsbouillon",
+  "amount": 0.75,
+  "unit": "l",
+  "search": "grøntsagsbouillon",
+  "category": "Kolonial",
+  "expect": [
+   100369
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Hakket oksekød",
+  "amount": 500,
+  "unit": "g",
+  "search": "hakket oksekød",
+  "category": "Kød",
+  "expect": [
+   400176
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Hakket kylling",
+  "amount": 400,
+  "unit": "g",
+  "search": "hakket kylling",
+  "category": "Kød",
+  "expect": [
+   404900
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Laks",
+  "amount": 600,
+  "unit": "g",
+  "search": "laks",
+  "category": "Fisk",
+  "expect": [
+   440092
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Æg",
+  "amount": 10,
+  "unit": "stk",
+  "search": "æg",
+  "category": "Mejeri",
+  "expect": [
+   224233
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Karrypulver",
+  "amount": 2,
+  "unit": "tsk",
+  "search": "karry",
+  "category": "Kolonial",
+  "expect": [
+   90909
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Frisk timian",
+  "amount": 1,
+  "unit": "bundt",
+  "search": "timian",
+  "category": "Frugt & grønt",
+  "expect": [
+   306794
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Tørret timian",
+  "amount": 1,
+  "unit": "tsk",
+  "search": "timian",
+  "category": "Kolonial",
+  "expect": [
+   90481
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Grønne bønner",
+  "amount": 300,
+  "unit": "g",
+  "search": "grønne bønner",
+  "category": "Frugt & grønt",
+  "expect": [
+   306830
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Spidskål, fintstrimlet",
+  "amount": 1,
+  "unit": "stk",
+  "search": "spidskål",
+  "category": "Frugt & grønt",
+  "expect": [
+   306650
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Kyllinge pølser i skiver",
+  "amount": 1,
+  "unit": "pk",
+  "search": "kyllinge pølser",
+  "category": "Kød",
+  "expect": [
+   410963
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Bacon (ca. 14-16 skiver)",
+  "amount": 2,
+  "unit": "pk",
+  "search": "bacon",
+  "category": "Kød",
+  "expect": [
+   410873
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Chorizopølse i skiver",
+  "amount": 160,
+  "unit": "g",
+  "search": "chorizo",
+  "category": "Kød",
+  "expect": [
+   411305
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Stegt kalkunkød i mindre tern",
+  "amount": 480,
+  "unit": "g",
+  "search": "kalkun",
+  "category": "Kød",
+  "expect": "none",
+  "packages": 1
+ },
+ {
+  "name": "Pasta",
+  "amount": 500,
+  "unit": "g",
+  "search": "pasta",
+  "category": "Kolonial",
+  "expect": [
+   90312
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Ris",
+  "amount": 300,
+  "unit": "g",
+  "search": "ris",
+  "category": "Kolonial",
+  "expect": [
+   98311
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Mel",
+  "amount": 100,
+  "unit": "g",
+  "search": "mel",
+  "category": "Kolonial",
+  "expect": [
+   90166
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Honning",
+  "amount": 1,
+  "unit": "spsk",
+  "search": "honning",
+  "category": "Kolonial",
+  "expect": [
+   106819
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Kvark",
+  "amount": 1,
+  "unit": "bæger",
+  "search": "kvark",
+  "category": "Mejeri",
+  "expect": "none",
+  "packages": 1
+ },
+ {
+  "name": "Revet ost",
+  "amount": 100,
+  "unit": "g",
+  "search": "revet ost",
+  "category": "Mejeri",
+  "expect": [
+   455405
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Smør",
+  "amount": 50,
+  "unit": "g",
+  "search": "smør",
+  "category": "Mejeri",
+  "expect": [
+   25751
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Ingefær",
+  "amount": 1,
+  "unit": "stk",
+  "search": "ingefær",
+  "category": "Frugt & grønt",
+  "expect": [
+   306880
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Hvidløg",
+  "amount": 3,
+  "unit": "fed",
+  "search": "hvidløg",
+  "category": "Frugt & grønt",
+  "expect": [
+   306950
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Piskefløde",
+  "amount": 2,
+  "unit": "dl",
+  "search": "fløde",
+  "category": "Mejeri",
+  "expect": [
+   21863
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Squash",
+  "amount": 1,
+  "unit": "stk",
+  "search": "squash",
+  "category": "Frugt & grønt",
+  "expect": [
+   306824
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Majs",
+  "amount": 1,
+  "unit": "dåse",
+  "search": "majs",
+  "category": "Kolonial",
+  "expect": [
+   100425,
+   101898
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Frosne ærter",
+  "amount": 200,
+  "unit": "g",
+  "search": "ærter",
+  "category": "Frost",
+  "expect": [
+   40686,
+   40804
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Kartofler",
+  "amount": 1,
+  "unit": "kg",
+  "search": "kartofler",
+  "category": "Frugt & grønt",
+  "expect": [
+   306988
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Gulerødder",
+  "amount": 3,
+  "unit": "stk",
+  "search": "gulerødder",
+  "category": "Frugt & grønt",
+  "expect": [
+   306520
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Kokosmælk",
+  "amount": 2,
+  "unit": "dåse",
+  "search": "kokosmælk",
+  "category": "Kolonial",
+  "expect": [
+   120171
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Kokosmælk",
+  "amount": 1,
+  "unit": "pk",
+  "search": "kokosmælk",
+  "category": "Kolonial",
+  "expect": [
+   120171
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Kokosmælk",
+  "amount": 400,
+  "unit": "ml",
+  "search": "kokosmælk",
+  "category": "Kolonial",
+  "expect": [
+   120171
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Kokosmælk light",
+  "amount": 1,
+  "unit": "pk",
+  "search": "kokosmælk light",
+  "category": "Kolonial",
+  "expect": [
+   120170
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Løg",
+  "amount": 560,
+  "unit": "g",
+  "search": "løg",
+  "category": "Frugt & grønt",
+  "expect": [
+   306960,
+   306967
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Løg",
+  "amount": 2,
+  "unit": "stk",
+  "search": "løg",
+  "category": "Frugt & grønt",
+  "expect": [
+   306960,
+   306967
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Gulerødder",
+  "amount": 3,
+  "unit": "stk",
+  "search": "gulerødder",
+  "category": "Frugt & grønt",
+  "expect": [
+   306520
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Kartofler",
+  "amount": 1,
+  "unit": "kg",
+  "search": "kartofler",
+  "category": "Frugt & grønt",
+  "expect": [
+   306988
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Kartofler",
+  "amount": 8,
+  "unit": "stk",
+  "search": "kartofler",
+  "category": "Frugt & grønt",
+  "expect": [
+   306988
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Hvidløg",
+  "amount": 3,
+  "unit": "fed",
+  "search": "hvidløg",
+  "category": "Frugt & grønt",
+  "expect": [
+   306950
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Smør",
+  "amount": 50,
+  "unit": "g",
+  "search": "smør",
+  "category": "Mejeri",
+  "expect": [
+   25751
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Æg",
+  "amount": 4,
+  "unit": "stk",
+  "search": "æg",
+  "category": "Mejeri",
+  "expect": [
+   224242
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Kyllingebryst",
+  "amount": 1,
+  "unit": "kg",
+  "search": "kyllingebryst",
+  "category": "Kød",
+  "expect": [
+   405005
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Kyllingebryst",
+  "amount": 2,
+  "unit": "stk",
+  "search": "kyllingebryst",
+  "category": "Kød",
+  "expect": [
+   404997
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Peberfrugt",
+  "amount": 2,
+  "unit": "stk",
+  "search": "peberfrugt",
+  "category": "Frugt & grønt",
+  "expect": [
+   306353
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Agurk",
+  "amount": 1,
+  "unit": "stk",
+  "search": "agurk",
+  "category": "Frugt & grønt",
+  "expect": [
+   306008
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Avocado",
+  "amount": 2,
+  "unit": "stk",
+  "search": "avocado",
+  "category": "Frugt & grønt",
+  "expect": [
+   305405
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Frisk basilikum",
+  "amount": 1,
+  "unit": "bundt",
+  "search": "basilikum",
+  "category": "Frugt & grønt",
+  "expect": [
+   306783
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Blomkål",
+  "amount": 1,
+  "unit": "stk",
+  "search": "blomkål",
+  "category": "Frugt & grønt",
+  "expect": [
+   306258,
+   306272
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Boller",
+  "amount": 4,
+  "unit": "stk",
+  "search": "boller",
+  "category": "Brød",
+  "expect": [
+   61248
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Broccoli",
+  "amount": 1,
+  "unit": "stk",
+  "search": "broccoli",
+  "category": "Frugt & grønt",
+  "expect": [
+   306300,
+   306325
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Bulgur",
+  "amount": 300,
+  "unit": "g",
+  "search": "bulgur",
+  "category": "Kolonial",
+  "expect": [
+   92350
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Champignon",
+  "amount": 250,
+  "unit": "g",
+  "search": "champignon",
+  "category": "Frugt & grønt",
+  "expect": [
+   306700
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Cherrytomater",
+  "amount": 250,
+  "unit": "g",
+  "search": "cherrytomater",
+  "category": "Frugt & grønt",
+  "expect": [
+   306178
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Chiliflager",
+  "amount": 1,
+  "unit": "tsk",
+  "search": "chiliflager",
+  "category": "Kolonial",
+  "expect": [
+   90910
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Citron",
+  "amount": 1,
+  "unit": "stk",
+  "search": "citron",
+  "category": "Frugt & grønt",
+  "expect": [
+   304566
+  ],
+  "packages": 1
+ },
+ {
+  "name": "2 stængler citrongræs",
+  "amount": 2,
+  "unit": "stk",
+  "search": "citrongræs",
+  "category": "Frugt & grønt",
+  "expect": "none",
+  "packages": 1
+ },
+ {
+  "name": "Couscous",
+  "amount": 300,
+  "unit": "g",
+  "search": "couscous",
+  "category": "Kolonial",
+  "expect": [
+   91395
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Creme fraiche 18%",
+  "amount": 2,
+  "unit": "dl",
+  "search": "creme fraiche",
+  "category": "Mejeri",
+  "expect": [
+   21519,
+   23418
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Dej:",
+  "search": "dej",
+  "category": "Andet",
+  "expect": "skip",
+  "packages": 0
+ },
+ {
+  "name": "Tærtedej",
+  "amount": 1,
+  "unit": "pk",
+  "search": "tærtedej",
+  "category": "Køl",
+  "expect": [
+   412380
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Frisk dild",
+  "amount": 1,
+  "unit": "bundt",
+  "search": "dild",
+  "category": "Frugt & grønt",
+  "expect": [
+   306706
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Eddike",
+  "amount": 1,
+  "unit": "spsk",
+  "search": "eddike",
+  "category": "Kolonial",
+  "expect": [
+   100847
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Entrecote",
+  "amount": 4,
+  "unit": "stk",
+  "search": "entrecote",
+  "category": "Kød",
+  "expect": "none",
+  "packages": 1
+ },
+ {
+  "name": "Feta",
+  "amount": 150,
+  "unit": "g",
+  "search": "feta",
+  "category": "Mejeri",
+  "expect": [
+   450013
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Fiskefilet",
+  "amount": 600,
+  "unit": "g",
+  "search": "fiskefilet",
+  "category": "Fisk",
+  "expect": [
+   43005
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Flåede tomater",
+  "amount": 1,
+  "unit": "dåse",
+  "search": "flåede tomater",
+  "category": "Kolonial",
+  "expect": [
+   110329
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Frossen spinat",
+  "amount": 400,
+  "unit": "g",
+  "search": "spinat",
+  "category": "Frost",
+  "expect": [
+   40661
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Frisk spinat",
+  "amount": 200,
+  "unit": "g",
+  "search": "spinat",
+  "category": "Frugt & grønt",
+  "expect": [
+   306439
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Spinat",
+  "amount": 200,
+  "unit": "g",
+  "search": "spinat",
+  "category": "Frugt & grønt",
+  "expect": [
+   306439
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Gurkemeje",
+  "amount": 1,
+  "unit": "tsk",
+  "search": "gurkemeje",
+  "category": "Kolonial",
+  "expect": [
+   90126
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Hakket svinekød",
+  "amount": 500,
+  "unit": "g",
+  "search": "hakket svinekød",
+  "category": "Kød",
+  "expect": [
+   400546
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Havregryn",
+  "amount": 1,
+  "unit": "dl",
+  "search": "havregryn",
+  "category": "Kolonial",
+  "expect": [
+   180122
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Hel kylling",
+  "amount": 1,
+  "unit": "stk",
+  "search": "hel kylling",
+  "category": "Kød",
+  "expect": [
+   404969
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Hvidkål",
+  "amount": 0.5,
+  "unit": "stk",
+  "search": "hvidkål",
+  "category": "Frugt & grønt",
+  "expect": [
+   306503
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Hytteost",
+  "amount": 1,
+  "unit": "bæger",
+  "search": "hytteost",
+  "category": "Mejeri",
+  "expect": [
+   28825
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Hønsebouillon",
+  "amount": 1,
+  "unit": "l",
+  "search": "hønsebouillon",
+  "category": "Kolonial",
+  "expect": [
+   100353
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Hønsebouillonterninger",
+  "amount": 2,
+  "unit": "stk",
+  "search": "hønsebouillon",
+  "category": "Kolonial",
+  "expect": [
+   100353
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Kanel",
+  "amount": 1,
+  "unit": "tsk",
+  "search": "kanel",
+  "category": "Kolonial",
+  "expect": [
+   90927
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Rød karrypasta",
+  "amount": 2,
+  "unit": "spsk",
+  "search": "karrypasta",
+  "category": "Kolonial",
+  "expect": [
+   100831
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Ketchup",
+  "amount": 1,
+  "unit": "spsk",
+  "search": "ketchup",
+  "category": "Kolonial",
+  "expect": [
+   110848
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Kidneybønner",
+  "amount": 1,
+  "unit": "dåse",
+  "search": "kidneybønner",
+  "category": "Kolonial",
+  "expect": [
+   100098
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Kikærter",
+  "amount": 1,
+  "unit": "dåse",
+  "search": "kikærter",
+  "category": "Kolonial",
+  "expect": [
+   100042
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Frisk koriander",
+  "amount": 1,
+  "unit": "bundt",
+  "search": "koriander",
+  "category": "Frugt & grønt",
+  "expect": [
+   306786
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Stødt koriander",
+  "amount": 1,
+  "unit": "tsk",
+  "search": "koriander",
+  "category": "Kolonial",
+  "expect": [
+   90127
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Kyllingelår",
+  "amount": 8,
+  "unit": "stk",
+  "search": "kyllingelår",
+  "category": "Kød",
+  "expect": [
+   250055
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Kødboller",
+  "amount": 500,
+  "unit": "g",
+  "search": "kødboller",
+  "category": "Kød",
+  "expect": [
+   41168
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Lasagneplader",
+  "amount": 1,
+  "unit": "pk",
+  "search": "lasagneplader",
+  "category": "Kolonial",
+  "expect": [
+   90357
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Letmælk",
+  "amount": 1,
+  "unit": "l",
+  "search": "letmælk",
+  "category": "Mejeri",
+  "expect": [
+   20494
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Sødmælk",
+  "amount": 5,
+  "unit": "dl",
+  "search": "sødmælk",
+  "category": "Mejeri",
+  "expect": [
+   20302
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Mælk",
+  "amount": 2,
+  "unit": "dl",
+  "search": "mælk",
+  "category": "Mejeri",
+  "expect": [
+   20758
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Røde linser",
+  "amount": 200,
+  "unit": "g",
+  "search": "linser",
+  "category": "Kolonial",
+  "expect": [
+   91398
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Madlavningsfløde",
+  "amount": 2.5,
+  "unit": "dl",
+  "search": "madlavningsfløde",
+  "category": "Mejeri",
+  "expect": [
+   21878
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Mandler",
+  "amount": 50,
+  "unit": "g",
+  "search": "mandler",
+  "category": "Kolonial",
+  "expect": [
+   70112
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Mayonnaise",
+  "amount": 2,
+  "unit": "spsk",
+  "search": "mayonnaise",
+  "category": "Kolonial",
+  "expect": [
+   460113
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Mozzarella",
+  "amount": 1,
+  "unit": "stk",
+  "search": "mozzarella",
+  "category": "Mejeri",
+  "expect": [
+   452016
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Nakkekoteletter",
+  "amount": 4,
+  "unit": "stk",
+  "search": "nakkekoteletter",
+  "category": "Kød",
+  "expect": [
+   401030
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Oksebouillon",
+  "amount": 5,
+  "unit": "dl",
+  "search": "oksebouillon",
+  "category": "Kolonial",
+  "expect": [
+   100375
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Oksekød i tern",
+  "amount": 600,
+  "unit": "g",
+  "search": "oksekød",
+  "category": "Kød",
+  "expect": "none",
+  "packages": 1
+ },
+ {
+  "name": "Olivenolie",
+  "amount": 2,
+  "unit": "spsk",
+  "search": "olivenolie",
+  "category": "Kolonial",
+  "expect": [
+   118421
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Tørret oregano",
+  "amount": 1,
+  "unit": "tsk",
+  "search": "oregano",
+  "category": "Kolonial",
+  "expect": [
+   90140,
+   90925
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Ost",
+  "amount": 200,
+  "unit": "g",
+  "search": "ost",
+  "category": "Mejeri",
+  "expect": [
+   451106
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Paprika",
+  "amount": 1,
+  "unit": "tsk",
+  "search": "paprika",
+  "category": "Kolonial",
+  "expect": [
+   90293
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Parmesan",
+  "amount": 50,
+  "unit": "g",
+  "search": "parmesan",
+  "category": "Mejeri",
+  "expect": [
+   455418
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Passata",
+  "amount": 500,
+  "unit": "g",
+  "search": "passata",
+  "category": "Kolonial",
+  "expect": [
+   120192
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Sort peber",
+  "amount": 1,
+  "unit": "tsk",
+  "search": "peber",
+  "category": "Kolonial",
+  "expect": [
+   90930
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Frisk persille",
+  "amount": 1,
+  "unit": "bundt",
+  "search": "persille",
+  "category": "Frugt & grønt",
+  "expect": [
+   306712
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Grøn pesto",
+  "amount": 1,
+  "unit": "glas",
+  "search": "pesto",
+  "category": "Kolonial",
+  "expect": [
+   108649
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Pitabrød",
+  "amount": 8,
+  "unit": "stk",
+  "search": "pitabrød",
+  "category": "Brød",
+  "expect": [
+   46340
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Porre",
+  "amount": 1,
+  "unit": "stk",
+  "search": "porre",
+  "category": "Frugt & grønt",
+  "expect": [
+   306600
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Purløg",
+  "amount": 1,
+  "unit": "bundt",
+  "search": "purløg",
+  "category": "Frugt & grønt",
+  "expect": [
+   306708
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Pølser",
+  "amount": 8,
+  "unit": "stk",
+  "search": "pølser",
+  "category": "Kød",
+  "expect": [
+   410963
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Rejer",
+  "amount": 300,
+  "unit": "g",
+  "search": "rejer",
+  "category": "Fisk",
+  "expect": [
+   43250
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Risnudler",
+  "amount": 250,
+  "unit": "g",
+  "search": "risnudler",
+  "category": "Kolonial",
+  "expect": [
+   90511
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Frisk rosmarin",
+  "amount": 2,
+  "unit": "kviste",
+  "search": "rosmarin",
+  "category": "Frugt & grønt",
+  "expect": [
+   306793
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Rugbrød",
+  "amount": 1,
+  "unit": "pk",
+  "search": "rugbrød",
+  "category": "Brød",
+  "expect": [
+   61206
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Rødløg",
+  "amount": 1,
+  "unit": "stk",
+  "search": "rødløg",
+  "category": "Frugt & grønt",
+  "expect": [
+   306958
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Salat",
+  "amount": 1,
+  "unit": "stk",
+  "search": "salat",
+  "category": "Frugt & grønt",
+  "expect": [
+   306215
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Sennep",
+  "amount": 1,
+  "unit": "spsk",
+  "search": "sennep",
+  "category": "Kolonial",
+  "expect": [
+   110129
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Sesamolie",
+  "amount": 1,
+  "unit": "spsk",
+  "search": "sesamolie",
+  "category": "Kolonial",
+  "expect": [
+   120062
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Skinke i tern",
+  "amount": 200,
+  "unit": "g",
+  "search": "skinke",
+  "category": "Kød",
+  "expect": [
+   410813
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Skyr naturel",
+  "amount": 500,
+  "unit": "g",
+  "search": "skyr",
+  "category": "Mejeri",
+  "expect": [
+   23401
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Sojasauce",
+  "amount": 3,
+  "unit": "spsk",
+  "search": "sojasauce",
+  "category": "Kolonial",
+  "expect": [
+   120053
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Spaghetti",
+  "amount": 500,
+  "unit": "g",
+  "search": "spaghetti",
+  "category": "Kolonial",
+  "expect": [
+   90377
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Spidskommen",
+  "amount": 1,
+  "unit": "tsk",
+  "search": "spidskommen",
+  "category": "Kolonial",
+  "expect": [
+   90039
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Sukker",
+  "amount": 2,
+  "unit": "spsk",
+  "search": "sukker",
+  "category": "Kolonial",
+  "expect": [
+   90119
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Svinekoteletter",
+  "amount": 4,
+  "unit": "stk",
+  "search": "svinekoteletter",
+  "category": "Kød",
+  "expect": "none",
+  "packages": 1
+ },
+ {
+  "name": "Svinemørbrad",
+  "amount": 1,
+  "unit": "stk",
+  "search": "svinemørbrad",
+  "category": "Kød",
+  "expect": "none",
+  "packages": 1
+ },
+ {
+  "name": "Søde kartofler",
+  "amount": 800,
+  "unit": "g",
+  "search": "søde kartofler",
+  "category": "Frugt & grønt",
+  "expect": [
+   306997
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Tomatpuré",
+  "amount": 2,
+  "unit": "spsk",
+  "search": "tomatpuré",
+  "category": "Kolonial",
+  "expect": [
+   110064
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Torsk",
+  "amount": 600,
+  "unit": "g",
+  "search": "torsk",
+  "category": "Fisk",
+  "expect": [
+   440059
+  ],
+  "packages": 3
+ },
+ {
+  "name": "Tortillas",
+  "amount": 8,
+  "unit": "stk",
+  "search": "tortilla",
+  "category": "Brød",
+  "expect": [
+   102802
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Tun på dåse",
+  "amount": 2,
+  "unit": "dåse",
+  "search": "tun",
+  "category": "Kolonial",
+  "expect": [
+   30018
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Tærteform",
+  "amount": 1,
+  "unit": "stk",
+  "search": "tærteform",
+  "category": "Andet",
+  "expect": "skip",
+  "packages": 0
+ },
+ {
+  "name": "Yoghurt naturel",
+  "amount": 2,
+  "unit": "dl",
+  "search": "yoghurt",
+  "category": "Mejeri",
+  "expect": [
+   22218
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Lasagne",
+  "amount": 1,
+  "unit": "pk",
+  "search": "lasagne",
+  "category": "Kolonial",
+  "expect": [
+   90357
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Vaniljeis",
+  "amount": 1,
+  "unit": "l",
+  "search": "is",
+  "category": "Frost",
+  "expect": [
+   260516
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Pizza",
+  "amount": 2,
+  "unit": "stk",
+  "search": "pizza",
+  "category": "Frost",
+  "expect": [
+   43840
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Sojabønner",
+  "amount": 200,
+  "unit": "g",
+  "search": "sojabønner",
+  "category": "Frost",
+  "expect": [
+   40798
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Skalotteløg",
+  "amount": 2,
+  "unit": "stk",
+  "search": "skalotteløg",
+  "category": "Frugt & grønt",
+  "expect": [
+   306977
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Stødt chili",
+  "amount": 1,
+  "unit": "tsk",
+  "search": "chili",
+  "category": "Kolonial",
+  "expect": [
+   90910
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Daddelbar",
+  "amount": 1,
+  "unit": "stk",
+  "search": "daddelbar",
+  "category": "Kolonial",
+  "expect": "none",
+  "packages": 1
+ },
+ {
+  "name": "Fyld:",
+  "search": "fyld",
+  "category": "Andet",
+  "expect": "skip",
+  "packages": 0
+ },
+ {
+  "name": "Vand",
+  "amount": 2,
+  "unit": "dl",
+  "search": "vand",
+  "category": "Andet",
+  "expect": "skip",
+  "packages": 0
+ },
+ {
+  "name": "Server med ris",
+  "search": "ris",
+  "category": "Andet",
+  "expect": "skip",
+  "packages": 0
+ },
+ {
+  "name": "Salt og peber",
+  "search": "salt og peber",
+  "category": "Kolonial",
+  "expect": [
+   90930
+  ],
+  "packages": 1
+ },
+ {
+  "name": "Røget laks",
+  "amount": 200,
+  "unit": "g",
+  "search": "laks",
+  "category": "Fisk",
+  "expect": [
+   412418
+  ],
+  "packages": 2
+ },
+ {
+  "name": "Laksefilet",
+  "amount": 4,
+  "unit": "stk",
+  "search": "laks",
+  "category": "Fisk",
+  "expect": [
+   440047
+  ],
+  "packages": 1
+ }
+]

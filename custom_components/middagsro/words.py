@@ -56,6 +56,21 @@ _DIFFERENT_WORDS = {
     "kopnudler",
     "instant",
     "cup",
+    "bbq",
+    "indbagt",
+    "fyldt",
+    "fyldte",
+    # the lighter or smaller variant, unless asked for
+    "light",
+    "mini",
+    # another part or state of the animal: fish cakes, roe, liver, shrimps in brine
+    "fars",
+    "rogn",
+    "lever",
+    "lage",
+    # "vej selv": loose, weighed by the customer (a bag is what the list means)
+    "vej",
+    "selv",
 }
 # REMA's categories of ready-made food: not what an ingredient search is after.
 _DISH_CATEGORIES = {
@@ -82,7 +97,7 @@ _HERBS = {
 }
 # First parts of compound words that make it another product (hvidløg is not løg).
 _DIFFERENT_PREFIXES = {
-    "hvid", "perle", "hvidløgs", "rød", "forårs", "sukker",
+    "hvid", "perle", "hvidløgs", "rød", "forårs", "sukker", "baby",
     # cupnudler and kopnudler are an instant meal, not the noodles for a dish
     "cup", "kop", "instant",
     # kakaomælk, havremælk, kærnemælk … are not mælk

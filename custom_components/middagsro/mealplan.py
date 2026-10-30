@@ -42,6 +42,7 @@ from .dishes import (
     is_rest_text,
     same_dish,
 )
+from .ingredients import FISH, MEAT, POULTRY, Spec, allowed, other_thing, qualifier_only, spec_for
 from .mealie import MealieError, MealieLink
 from .messages import async_danish
 from .recipes import (
@@ -316,21 +317,52 @@ def package_size(underline: str | None) -> tuple[str, float] | None:
     return None
 
 
-def packages_needed(amount: float | None, unit: str | None, product: Product) -> int:
-    """How many packages of a product cover an amount."""
-    if not amount or amount <= 0:
-        return 1
-    need = to_base(amount, unit)
+def packages_needed(
+    amount: float | None, unit: str | None, product: Product, piece_g: int | None = None
+) -> int:
+    """How many packages of a product cover an amount.
+
+    ``piece_g``: what one piece of the thing weighs, so "4 løg" of a 750 g bag is
+    one bag, and "2 stk" of something sold loose is two.
+    """
+    need = to_base(amount, unit) if amount and amount > 0 else None
     if need is None:
         return 1
-    if need[0] == "pack":  # cans, packs, bags: one package each
-        return max(1, min(20, math.ceil(need[1])))
     size = package_size(product.underline)
-    if size and need[0] == size[0] and size[1] > 0:
-        return max(1, min(20, math.ceil(need[1] / size[1] - 0.05)))
-    if need[0] == "stk" and size is None:
-        return max(1, min(20, math.ceil(need[1])))  # loose items sold per piece
-    return 1  # e.g. 8 pitabrød from one 375 g bag
+    count = 1.0
+    if need[0] == "pack":  # cans, packs, bags: one package each
+        count = need[1]
+    elif size and need[0] == size[0] and size[1] > 0:
+        count = need[1] / size[1] - 0.05
+    elif need[0] == "stk" and (per_package := pieces_per_package(size, piece_g)):
+        count = need[1] / per_package - 0.05
+    elif need[0] == "stk" and size is None:
+        count = need[1]  # loose items sold per piece
+    # else e.g. 8 pitabrød from one 375 g bag
+    return max(1, min(20, math.ceil(count)))
+
+
+def pieces_per_package(size: tuple[str, float] | None, piece_g: int | None) -> float | None:
+    """How many of a thing a package holds, from its weight and what one weighs:
+    eight onions in a kilo bag, one chicken in a 1.1 kg chicken (a little lighter
+    or heavier than the catalogue's guess is still one), a sixth of a lettuce in
+    a 50 g box of shoots. None when either weight is unknown."""
+    if not size or size[0] != "g" or size[1] <= 0 or not piece_g:
+        return None
+    ratio = size[1] / piece_g
+    return ratio if ratio < 0.5 else max(1, int(ratio + 0.25))
+
+
+def _alternative(product: Product) -> dict[str, Any]:
+    """A product the family may choose instead, as the panel shows it."""
+    return {
+        "id": product.id,
+        "name": product.name,
+        "underline": product.underline,
+        "price": product.price,
+        "is_organic": product.is_organic,
+        "image": product.image,
+    }
 
 
 def avis_packages(amount: float | None, unit: str | None, offer: Offer) -> int:
@@ -581,7 +613,9 @@ def search_queries(line: dict[str, Any]) -> list[str]:
     return unique
 
 
-def name_fit(search_words: list[str], product_name: str) -> tuple[int, float]:
+def name_fit(
+    search_words: list[str], product_name: str, neutral: tuple[str, ...] = ()
+) -> tuple[int, float]:
     """How well a product name fits the searched words.
 
     Returns (number of searched words found, price penalty factor). Danish
@@ -619,7 +653,11 @@ def name_fit(search_words: list[str], product_name: str) -> tuple[int, float]:
         different = parts & (_DIFFERENT_WORDS | _DIFFERENT_PREFIXES)
         penalty += 5.0 if different else 0.15
     for token in name:
-        if token in _NEUTRAL_WORDS or any(word in token or token in word for word in search_words):
+        if (
+            token in _NEUTRAL_WORDS
+            or token in neutral
+            or any(word in token or token in word for word in search_words)
+        ):
             continue
         is_other = token in _DIFFERENT_WORDS or any(
             token.endswith(d) for d in _DIFFERENT_WORDS if len(d) > 4
@@ -646,6 +684,24 @@ _DESCRIBING = frozenset({
 })  # fmt: skip
 
 
+def _called(spec: Spec, product_name: str) -> bool:
+    """Is the product called by one of the catalogue's names for the thing
+    ("GRANA PADANO" for parmesan, "RØDSPÆTTEFILETER" for fiskefilet)?"""
+    if spec.entry is None:
+        return False
+    tokens = _tokens(product_name)
+    for name in (spec.entry.key, *spec.entry.aliases):
+        words = [w for w in _tokens(name) if len(w) > 1 and w not in _NEUTRAL_WORDS]
+        if len(name) > 3 and words and all(_is_word(w, tokens) for w in words):
+            return True
+    return False
+
+
+def _is_word(word: str, tokens: list[str]) -> bool:
+    """Is the word one of the tokens, allowing a plural ending ("rødspættefileter")?"""
+    return any(t == word or (t.startswith(word) and len(t) - len(word) <= 2) for t in tokens)
+
+
 def head_word(query: str) -> str | None:
     """The word a search is about: the last one before "med", "uden", "til" …
 
@@ -666,18 +722,29 @@ def head_word(query: str) -> str | None:
     return words[-1] if words else None
 
 
-def kind_penalty(line: dict[str, Any], product: Product, words: list[str]) -> float:
+def kind_penalty(
+    line: dict[str, Any],
+    product: Product,
+    words: list[str],
+    trusted: bool = False,
+    spec: Spec | None = None,
+) -> float:
     """Extra cost for a product that is another kind of thing than the line asks for.
 
     A dish made of it (kebab pizza, a chicken wrap) is not the ingredient, frozen
     is not fresh (and the other way round), and fruit and vegetables are fresh
-    unless the line says frozen.
+    unless the line says frozen. ``trusted``: the catalogue already allowed the
+    product's category (peanuts are on the snack shelf), so that is no mark against it.
     """
     asked = set(_tokens(f"{line.get('search') or ''} {line.get('name') or ''}"))
     category = set(_tokens(product.category or ""))
     penalty = 0.0
-    if category & _DISH_CATEGORIES and not any(
-        w in category or any(c.startswith(w) for c in category) for w in words
+    if "vej selv" in (product.underline or "").lower().replace('"', ""):
+        penalty += 5.0  # loose, weighed by the customer: a bag is what a list means
+    if (
+        not trusted
+        and category & _DISH_CATEGORIES
+        and not any(w in category or any(c.startswith(w) for c in category) for w in words)
     ):
         penalty += 5.0
     name = set(_tokens(product.name))
@@ -686,7 +753,12 @@ def kind_penalty(line: dict[str, Any], product: Product, words: list[str]) -> fl
     wants_fresh = bool(asked & _FRESH_WORDS) or (line_kind(line) == "produce" and not wants_frozen)
     if (frozen and wants_fresh) or (not frozen and wants_frozen):
         penalty += 5.0
+    elif frozen and not wants_frozen and spec is not None and spec.kinds & _FRESH_FIRST:
+        penalty += 0.5  # frozen meat or fish only when it is clearly cheaper
     return penalty
+
+
+_FRESH_FIRST = frozenset({MEAT, POULTRY, FISH})
 
 
 def extract_json(data: Any) -> dict[str, Any]:
@@ -1440,20 +1512,48 @@ def recipe_factor(settings: dict[str, Any], recipe: dict[str, Any], day: dict[st
         * (2 if day.get("makes_leftovers") else 1)
     )
     servings = recipe.get("servings") or 4
+    if servings < 2:
+        servings = 4  # "1 tærte" is not one serving: unknown, so a normal recipe's four
     # At most 4 times the recipe (more with bigger portions), so a misread serving
     # count can't multiply the shopping; freezer plans scale on their own.
     limit = 4.0 * max(1.0, settings.get("portion_percent", 100) / 100)
     return float(max(0.25, min(limit, portions / servings)))
 
 
-def recipe_line(ingredient: dict[str, Any], factor: float = 1.0) -> dict[str, Any]:
+def line_spec(line: dict[str, Any]) -> Spec:
+    """What a shopping line asks for (the catalogue's view of its words)."""
+    return spec_for(str(line.get("name") or ""), line.get("search"), line.get("category"))
+
+
+def apply_spec(line: dict[str, Any], spec: Spec | None = None) -> bool:
+    """Read what a line is and write it on the line: its key (to merge lines and
+    remember choices), the search term the shop knows, and parts of a package
+    counted as one ("3 fed hvidløg" is one bulb). False: not a thing to buy (a
+    recipe's heading, its equipment, water). ``spec``: read from the words as
+    first written, when the line's name has been cleaned since."""
+    if spec is None:
+        spec = line_spec(line)
+    if spec.skip:
+        return False
+    line["key"] = spec.key
+    if spec.entry is not None and not line.get("product_id") and not line.get("must_have"):
+        line["search"] = spec.query
+    if spec.count_word and line.get("amount") and (line.get("unit") or "stk") in ("stk", "pk"):
+        line["amount"] = max(1, math.ceil(float(line["amount"]) / spec.per_package))
+        line["unit"] = "pk"
+    return True
+
+
+def recipe_line(ingredient: dict[str, Any], factor: float = 1.0) -> dict[str, Any] | None:
     """A shopping line for a recipe's ingredient ("600 g laksefilet"), scaled.
 
     Grams and millilitres are scaled and rounded up to tens; pieces and packages
     rounded up to whole ones. A spoonful or a clove is one package, whatever the
-    scale. Without an amount it is one package.
+    scale. Without an amount it is one package. None for what is not bought: a
+    heading in the recipe ("Dej:"), its equipment, water.
     """
-    name = ingredient_name(str(ingredient.get("name") or ""))
+    raw = str(ingredient.get("name") or "")
+    name = ingredient_name(raw)
     amount: float | None = None
     unit: str | None = None
     if parsed := parse_amount(str(ingredient.get("amount") or "")):
@@ -1489,6 +1589,8 @@ def recipe_line(ingredient: dict[str, Any], factor: float = 1.0) -> dict[str, An
         line.update(
             name=query[:1].upper() + query[1:], search=query, amount=1, unit="pk", stock_cubes=True
         )
+    if not apply_spec(line, spec_for(raw, line["search"], line["category"])):
+        return None
     return line
 
 
@@ -1564,6 +1666,9 @@ def _names_match(line: dict[str, Any], ingredient: dict[str, Any]) -> bool:
     wanted = _name_words(ingredient_name(ingredient.get("name") or ""))
     if not wanted:
         return False
+    # The same thing by the catalogue ("stort løg", "løg, i både" and "strimlet løg").
+    if line.get("key") and line["key"] == spec_for(str(ingredient.get("name") or "")).key:
+        return True
     product = line.get("product") or {}
     have = (
         _name_words(ingredient_name(line["name"]))
@@ -1621,6 +1726,10 @@ def fit_amounts(plan: dict[str, Any]) -> list[str]:
         product = line.get("product") or {}
         size = package_size(product.get("underline")) if product else None
         packages = int(line.get("packages") or 1)
+        per_package = pieces_per_package(size, line_spec(line).piece_g)
+        if "stk" in needs and per_package and size:
+            # "2 løg" from a bag sold by weight: a bag holds eight, so one bag.
+            needs["g"] = needs.get("g", 0) + needs.pop("stk") / per_package * size[1]
         if size and size[0] in needs and size[1] > 0:
             wanted = math.ceil(needs[size[0]] / size[1] - 0.05)
         elif product and "stk" in needs and (size is None or size[1] >= 300):
@@ -1645,6 +1754,78 @@ def fit_amounts(plan: dict[str, Any]) -> list[str]:
     if changed:
         plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
     return changed
+
+
+def add_amounts(line: dict[str, Any], other: dict[str, Any], piece_g: int | None = None) -> None:
+    """Add another line's amount to a line: grams to grams, pieces to pieces, and
+    pieces to grams when the catalogue knows what one weighs. Unlike units: the
+    weight stands, or the bigger count."""
+    mine = to_base(float(line["amount"]), line.get("unit")) if line.get("amount") else None
+    theirs = to_base(float(other["amount"]), other.get("unit")) if other.get("amount") else None
+    if mine is None or theirs is None:
+        line["amount"] = max(float(line.get("amount") or 1), float(other.get("amount") or 1))
+        return
+    units = {"g": "g", "ml": "ml", "stk": "stk", "pack": "pk"}
+    if mine[0] == theirs[0]:
+        line["amount"], line["unit"] = mine[1] + theirs[1], units[mine[0]]
+    elif piece_g and {mine[0], theirs[0]} == {"g", "stk"}:
+        grams = (mine[1] if mine[0] == "g" else mine[1] * piece_g) + (
+            theirs[1] if theirs[0] == "g" else theirs[1] * piece_g
+        )
+        line["amount"], line["unit"] = grams, "g"
+    elif theirs[0] in ("g", "ml") and mine[0] not in ("g", "ml"):
+        line["amount"], line["unit"] = theirs[1], units[theirs[0]]
+    elif mine[0] not in ("g", "ml"):
+        line["amount"] = max(mine[1], theirs[1])
+    if line.get("unit") in ("g", "ml") and float(line["amount"]) > 10:
+        line["amount"] = math.ceil(float(line["amount"]) / 10) * 10
+    if line.get("unit") in ("stk", "pk"):
+        line["amount"] = math.ceil(float(line["amount"]))
+
+
+def merge_lines(
+    shopping: list[dict[str, Any]],
+    days: list[dict[str, Any]],
+    original: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """One line per thing: the overview's "Løg" and "Løg, i både" are bought together.
+
+    Lines the catalogue reads as the same thing (the same key) are added up on
+    the first of them, which keeps an offer any of them had; the dishes' lists
+    of what they use are renamed to it (``original``: the names the AI wrote,
+    lower-cased, to the cleaned names the lines got). Basic items the family
+    keeps and lines bought as a particular product stay as they are.
+    """
+    first: dict[str, dict[str, Any]] = {}
+    renamed: dict[str, str] = dict(original or {})
+    merged: list[dict[str, Any]] = []
+    for line in shopping:
+        key = str(line.get("key") or "")
+        if not key or line.get("must_have") or line.get("product_id") or line.get("stock_cubes"):
+            merged.append(line)
+            continue
+        kept = first.get(key)
+        if kept is None:
+            first[key] = line
+            merged.append(line)
+            continue
+        add_amounts(kept, line, line_spec(kept).piece_g)
+        if line.get("offer") and not kept.get("offer"):
+            kept["offer"] = line["offer"]
+        if line["name"] != kept["name"]:
+            for raw, clean in list(renamed.items()):
+                if clean == line["name"]:
+                    renamed[raw] = kept["name"]
+            renamed[line["name"].lower()] = kept["name"]
+    if renamed:
+        for day in days:
+            uses: list[str] = []
+            for name in day.get("uses") or []:
+                new = renamed.get(str(name).lower(), name)
+                if new not in uses:
+                    uses.append(new)
+            day["uses"] = uses
+    return merged
 
 
 def own_shopping(plan: dict[str, Any], day: dict[str, Any]) -> list[dict[str, Any]]:
@@ -2171,11 +2352,15 @@ class MealPlanner:
                 )
                 if line is None:
                     line = recipe_line(ingredient, factor)
+                    if line is None:
+                        continue  # a heading, equipment or water: nothing to buy
                     plan["shopping"].append(line)
                     new_lines.append(line)
                 elif line.get("recipe") and line["name"] not in uses:
                     # Another recipe day made this line: this day needs its share too.
                     more = recipe_line(ingredient, factor)
+                    if more is None:
+                        continue
                     if more.get("stock_cubes") and line.get("stock_cubes"):
                         line["amount"] = max(line.get("amount") or 1, more["amount"])
                     elif more["unit"] == line["unit"]:
@@ -2238,6 +2423,8 @@ class MealPlanner:
                 ):
                     continue
                 line = recipe_line(ingredient)
+                if line is None:
+                    continue
                 plan["shopping"].append(line)
                 new_lines.append(line)
                 day.setdefault("uses", []).append(line["name"])
@@ -2586,9 +2773,16 @@ class MealPlanner:
     ) -> dict[str, Any]:
         settings = self.store.settings
         days = self._clean_days(raw.get("days") or [], dates)
-        shopping = [
-            line for line in (self._clean_line(item) for item in raw.get("shopping") or []) if line
-        ]
+        cleaned = [(item, self._clean_line(item)) for item in raw.get("shopping") or []]
+        shopping = merge_lines(
+            [line for _item, line in cleaned if line],
+            days,
+            {
+                str(item.get("name") or "").strip().lower(): line["name"]
+                for item, line in cleaned
+                if line and isinstance(item, dict)
+            },
+        )
         factor = settings.get("portion_percent", 100) / 100
         if factor != 1:
             for line in shopping:
@@ -2742,10 +2936,10 @@ class MealPlanner:
     def _clean_line(item: Any) -> dict[str, Any] | None:
         if not isinstance(item, dict) or not item.get("name"):
             return None
-        name = str(item["name"]).strip()[:200]
-        if is_tap_water(name):
+        raw = str(item["name"]).strip()[:200]
+        if is_tap_water(raw):
             return None
-        name = ingredient_name(name)
+        name = ingredient_name(raw)
         if not name:
             return None
         line = {
@@ -2766,6 +2960,8 @@ class MealPlanner:
                 unit="pk",
                 stock_cubes=True,
             )
+        if not apply_spec(line, spec_for(raw, line["search"], line["category"])):
+            return None
         return line
 
     async def _async_search(self, query: str, at: datetime | None) -> list[Product]:
@@ -2777,12 +2973,30 @@ class MealPlanner:
     async def _async_match(
         self, line: dict[str, Any], at: datetime | None = None, offer: Offer | None = None
     ) -> None:
-        """Pick a REMA product for a shopping line and price it (now, or at a time)."""
+        """Pick a REMA product for a shopping line and price it (now, or at a time).
+
+        A product the family chose for this ingredient before is taken first,
+        without a search; otherwise the best by name, kind and price, with how
+        sure that is written on the line (``confidence``: high, medium or low,
+        and ``alternatives`` to choose from when it isn't high).
+        """
         line.update(product=None, avis_item=None, packages=1, cost=None, note=None)
         line.pop("price_source", None)
+        line.pop("alternatives", None)
+        line["confidence"] = "high"
         if not line.get("product_id"):
             line["search"] = ingredient_name(line["search"])
+            if "key" not in line:
+                apply_spec(line)
         try:
+            if (
+                not line.get("product_id")
+                and not line.get("must_have")
+                and offer is None
+                and self.prices
+                and await self._async_match_remembered(line, at)
+            ):
+                return
             products = await self._async_search(line["search"], at)
             if not line.get("product_id") and not line.get("must_have"):
                 await self._async_match_by_name(line, products, at, offer)
@@ -2821,6 +3035,27 @@ class MealPlanner:
             elif self.prices:
                 line["note"] = "Ingen vare fundet – tilføjes som fritekst"
             return
+
+    async def _async_match_remembered(self, line: dict[str, Any], at: datetime | None) -> bool:
+        """The product the family chose for this ingredient before, if it is still sold."""
+        choice = self.store.choice_for(str(line.get("key") or ""), self.shop)
+        if not choice:
+            return False
+        try:
+            products = await self.client.async_get_products([int(choice["product_id"])], at)
+        except (RemaError, TypeError, ValueError):
+            return False
+        product = next((p for p in products if p.price), None)
+        if product is None:
+            return False
+        spec = line_spec(line)
+        self._apply(
+            line, product, packages_needed(line["amount"], line.get("unit"), product, spec.piece_g)
+        )
+        line["confidence"] = "high"
+        line["note"] = "Jeres valg fra en tidligere madplan"
+        line["remembered"] = True
+        return True
 
     def _requirement(
         self, line: dict[str, Any]
@@ -2950,8 +3185,21 @@ class MealPlanner:
                 if getattr(self.client, "cart", None) is not None
                 else "Ingen sikker vare fundet – tilføjes som fritekst"
             )
+            line["confidence"] = "low"
+            # What it could be: products of the right kind, even if not by that name.
+            spec = line_spec(line)
+            possible = [
+                p
+                for p in first
+                if p.price
+                and allowed(spec, p.department, p.category, p.name, p.underline) is not False
+                and not other_thing(spec, p.name)
+            ]
+            line["alternatives"] = [_alternative(p) for p in possible[:4]]
             return
+        spec = line_spec(line)
         need = to_base(line["amount"], line.get("unit")) if line.get("amount") else None
+        size_penalty: dict[int, float] = {}
         if need and need[0] in ("g", "ml"):
             # 3 kg potatoes: only products whose size can be counted in kg,
             # not one sweet potato sold per piece.
@@ -2959,9 +3207,21 @@ class MealPlanner:
                 p for p in candidates if (size := package_size(p.underline)) and size[0] == need[0]
             ]
             candidates = comparable or candidates
+        elif need is None or need[0] == "pack" or not spec.piece_g:
+            # "2 dåser kokosmælk": the usual size on the shelf, not a mini can
+            # because it is the cheapest package.
+            sizes = sorted(size for p in candidates if (size := package_size(p.underline)))
+            if len(sizes) > 1 and len({size[0] for size in sizes}) == 1:
+                usual = sizes[len(sizes) // 2][1]
+                for p in candidates:
+                    size = package_size(p.underline)
+                    if size and size[1] < usual * 0.6:
+                        size_penalty[p.id] = 5.0
 
         def package_cost(product: Product) -> float:
-            return packages_needed(line["amount"], line.get("unit"), product) * (product.price or 0)
+            return packages_needed(line["amount"], line.get("unit"), product, spec.piece_g) * (
+                product.price or 0
+            )
 
         cost = package_cost
 
@@ -2969,7 +3229,7 @@ class MealPlanner:
             # Same cost: an offer beats the normal price, and more beats less.
             size = package_size(product.underline)
             return (
-                cost(product) * penalty.get(product.id, 1.0),
+                cost(product) * (penalty.get(product.id, 1.0) + size_penalty.get(product.id, 0)),
                 not product.is_advertised,
                 -(size[1] if size else 0),
             )
@@ -3011,9 +3271,38 @@ class MealPlanner:
             limit = cost(cheapest) * (1 + settings["organic_max_extra_pct"] / 100)
             if cost(best_organic) <= limit + 0.001:
                 chosen = best_organic
-        self._apply(line, chosen, packages_needed(line["amount"], line.get("unit"), chosen))
+        self._apply(
+            line, chosen, packages_needed(line["amount"], line.get("unit"), chosen, spec.piece_g)
+        )
         if note:
             line["note"] = note
+        # How sure the choice is, and what else it could have been.
+        strong = False
+        for query in (line["search"], line["name"]):
+            words = [w for w in _tokens(query) if len(w) > 1 and w not in _NEUTRAL_WORDS]
+            head = head_word(query)
+            found, _ = name_fit(words, chosen.name) if words else (0, 1.0)
+            if bool(words) and (
+                found == len(words)
+                or bool(head and head in _tokens(chosen.name))
+                or _called(spec, chosen.name)
+            ):
+                strong = True
+        known_kind = allowed(
+            spec, chosen.department, chosen.category, chosen.name, chosen.underline
+        )
+        fit_penalty = penalty.get(chosen.id, 1.0)
+        if "vej selv" in (chosen.underline or "").lower().replace('"', ""):
+            fit_penalty -= 5.0  # the only way the shop sells it, then; not a doubt
+        if fit_penalty >= 5 or note:
+            line["confidence"] = "low"
+        elif not strong or (known_kind is None and spec.entry is None) or fit_penalty >= 2:
+            line["confidence"] = "medium"
+        else:
+            line["confidence"] = "high"
+        others = sorted((p for p in candidates if p.id != chosen.id), key=fit)[:4]
+        if line["confidence"] != "high" or (others[:1] and penalty.get(others[0].id, 1.0) < 1.5):
+            line["alternatives"] = [_alternative(p) for p in others]
 
     async def _async_offered(
         self, offer: Offer | None, at: datetime | None
@@ -3093,6 +3382,28 @@ class MealPlanner:
         """
         priced = [p for p in products[:limit] if p.price and (require is None or require(p))]
         asked = f"{line.get('name') or ''} {line.get('search') or ''}"
+        # The shop's own category first: a product of another kind than the line
+        # asks for is out (cup noodles for noodles, a can of pepper strips for a
+        # fresh pepper, ground chili for a fresh one), and so is a product the
+        # family said no to for this ingredient, or one the catalogue knows is
+        # another thing ("skalotteløg" for løg).
+        spec = line_spec(line)
+        rejected = self.store.rejected_products(spec.key, self.shop)
+        trusted: set[int] = set()
+        kept: list[Product] = []
+        for p in priced:
+            if p.id in rejected or other_thing(spec, p.name):
+                continue
+            fits_kind = allowed(spec, p.department, p.category, p.name, p.underline)
+            if fits_kind is False:
+                continue
+            if fits_kind and spec.entry is not None:
+                trusted.add(p.id)
+            kept.append(p)
+        priced = kept
+        # Words the line itself uses are no mark against a product ("light" when
+        # the line says light), nor are the words the catalogue allows for the thing.
+        neutral = (*(spec.entry.ok_words if spec.entry is not None else ()), *spec.asked)
         priced = [p for p in priced if herb_form_matches(asked, p.name, p.department, p.category)]
         if canned_tomatoes(asked):
             priced = [
@@ -3147,10 +3458,28 @@ class MealPlanner:
         words = [w for w in _tokens(query) if len(w) > 1 and w not in _NEUTRAL_WORDS]
         if not words:
             return [], {}
-        fits = {p.id: name_fit(words, p.name) for p in priced}
-        penalty = {p.id: fits[p.id][1] + kind_penalty(line, p, words) for p in priced}
+        fits = {p.id: name_fit(words, p.name, neutral) for p in priced}
+        # Called by another of the catalogue's names for the thing ("GRANA PADANO"
+        # for parmesan, "RØDSPÆTTEFILETER" for fiskefilet): as good as the word itself.
+        called = {p.id for p in priced if _called(spec, p.name)}
+        penalty = {
+            p.id: fits[p.id][1] + kind_penalty(line, p, words, p.id in trusted, spec)
+            for p in priced
+        }
+        if wanted_pct := _percents(asked):
+            # "Creme fraiche 18%": the fat content asked for, when the shelf states one.
+            for p in priced:
+                has = _percents(f"{p.name} {p.underline or ''}")
+                if has and not has & wanted_pct:
+                    penalty[p.id] += 5.0
 
         head = head_word(query)
+        if head:
+            # The thing itself beats a product that only has the word as a qualifier
+            # ("DADDELBAR, PEANUTS" for peanuts, "BOLLER I KARRY" for karry).
+            for p in priced:
+                if qualifier_only(p.name, head):
+                    penalty[p.id] += 5.0
         if offer is not None:
             # The AI built the dish on this avis offer: only the product it is
             # for, and only if that is also what the line asks for - the thing
@@ -3166,31 +3495,39 @@ class MealPlanner:
             return (self._free_from(fitting), penalty) if fitting else ([], penalty)
 
         best = max(fit[0] for fit in fits.values())
-        relevant = [p for p in priced if best and fits[p.id][0] == best]
+        relevant = [p for p in priced if (best and fits[p.id][0] == best) or p.id in called]
         if best < len(words) and head:
             # Only some of the words fit: the one the thing is (the last before
             # "med", "uden" ...) must be among them - "grønne bønner" is never
             # "grønne druer", but "laksefilet med skind" may be "LAKSEFILET".
-            relevant = [p for p in relevant if name_fit([head], p.name)[0]]
+            relevant = [p for p in relevant if p.id in called or name_fit([head], p.name)[0]]
         if not relevant or (line.get("prefer") == "relevance" and best < len(words)):
             # Nothing is called what we searched for. Typed by a person: every
             # word must fit, or "kage til Anna" could become anything with "ana"
             # in it. Free text is the safe answer.
             return [], penalty
         # "Laksefilet" searched as "laks": products that are what the line is
-        # called beat the rest (salmon fillet, not salmon in pastry).
+        # called (or what the catalogue calls it) beat the rest (salmon fillet,
+        # not salmon in pastry; vanilla ice cream, not the cheapest ice).
         named = [
             w for w in _tokens(line.get("name") or "") if len(w) > 1 and w not in _NEUTRAL_WORDS
         ]
-        if named and named != words:
-            full = {p.id for p in relevant if name_fit(named, p.name)[0] == len(named)}
-            if full:
-                for p in relevant:
-                    if p.id not in full:
-                        penalty[p.id] = penalty.get(p.id, 1.0) + 5.0
-        # Stay in the department of the best-fitting product (fish, not cold cuts).
+        full = {
+            p.id
+            for p in relevant
+            if named and named != words and name_fit(named, p.name)[0] == len(named)
+        }
+        if not full:
+            full = called or {p.id for p in relevant if fits[p.id][0] == len(words)}
+        if full and len(full) < len(relevant):
+            for p in relevant:
+                if p.id not in full:
+                    penalty[p.id] = penalty.get(p.id, 1.0) + 5.0
+        # Stay in the department of the best-fitting product (fish, not cold
+        # cuts), unless the catalogue vouches for the product's kind (the
+        # freezer's chicken legs are chicken legs).
         anchor = min(relevant, key=lambda p: penalty.get(p.id, 1.0)).department
-        relevant = [p for p in relevant if p.department == anchor] or relevant
+        relevant = [p for p in relevant if p.department == anchor or p.id in trusted] or relevant
         return self._free_from(relevant), penalty
 
     def _free_from(self, relevant: list[Product]) -> list[Product]:

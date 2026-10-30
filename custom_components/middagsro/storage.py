@@ -104,6 +104,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "chains": [],
     # Build the plan on the other chains' offers too (their items go on each shop's list).
     "plan_all_chains": False,
+    # A shopping line whose product is not certain: "review" (shown for a check before
+    # the list is sent), "send" (sent as the best guess, marked) or "skip" (left out).
+    "uncertain_items": "review",
     # Tell when something on the watch list is on offer: "" (off), "persistent_notification"
     # (in Home Assistant) or a notify service ("notify.mobile_app_telefon").
     "watch_notify": "",
@@ -209,6 +212,8 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
     settings["mealie_recipes"] = bool(settings["mealie_recipes"])
     settings["mealie_calendar"] = bool(settings["mealie_calendar"])
     settings["plan_all_chains"] = bool(settings["plan_all_chains"])
+    if settings["uncertain_items"] not in ("review", "send", "skip"):
+        settings["uncertain_items"] = "review"
     settings["chains"] = list(
         dict.fromkeys(c for c in settings["chains"] or [] if isinstance(c, str) and c in CHAINS)
     )
@@ -268,6 +273,9 @@ class RemaPlanStore:
         self.freezer_note = ""  # the family's wishes for freezer plans (their own)
         # When a setting a plan is made from last changed (ISO time), or "".
         self.settings_changed = ""
+        # The family's own product choices: "<shop>|<ingredient key>" -> the product they
+        # chose (used before searching) and the products they said no to.
+        self.choices: dict[str, dict[str, Any]] = {}
         self.recipes: list[dict[str, Any]] = []  # the recipe collection (recipes.py)
         # Every item has a price (REMA 1000); another shop has only its offers'.
         self.prices = True
@@ -292,6 +300,11 @@ class RemaPlanStore:
         self.note = str(data.get("note") or "")
         self.freezer_note = str(data.get("freezer_note") or "")[:2000]
         self.settings_changed = str(data.get("settings_changed") or "")
+        self.choices = {
+            str(key): value
+            for key, value in (data.get("choices") or {}).items()
+            if isinstance(value, dict)
+        }
         self.recipes = [r for r in data.get("recipes") or [] if isinstance(r, dict) and r.get("id")]
         self.watch = [w for w in data.get("watch") or [] if isinstance(w, dict) and w.get("key")]
         self.own_favorites = [
@@ -324,6 +337,7 @@ class RemaPlanStore:
                 "note": self.note,
                 "freezer_note": self.freezer_note,
                 "settings_changed": self.settings_changed,
+                "choices": self.choices,
                 "recipes": self.recipes,
                 "watch": self.watch,
                 "own_favorites": self.own_favorites,
@@ -333,6 +347,50 @@ class RemaPlanStore:
                 "seen": self.seen,
             }
         )
+
+    # ------------------------------------------------------------- the family's choices
+
+    @staticmethod
+    def _choice_key(key: str, shop: str) -> str:
+        return f"{shop}|{key.strip().lower()}"
+
+    def choice_for(self, key: str, shop: str) -> dict[str, Any] | None:
+        """The product the family chose for an ingredient before, if any."""
+        choice = self.choices.get(self._choice_key(key, shop))
+        return choice if choice and choice.get("product_id") else None
+
+    def rejected_products(self, key: str, shop: str) -> set[int]:
+        """The products the family said no to for an ingredient."""
+        choice = self.choices.get(self._choice_key(key, shop)) or {}
+        return {int(i) for i in choice.get("rejected") or [] if isinstance(i, int)}
+
+    async def async_remember_choice(
+        self, key: str, shop: str, product_id: int, name: str, instead_of: int | None = None
+    ) -> None:
+        """The family chose a product for an ingredient: use it next time, not the
+        one it replaced."""
+        if not key:
+            return
+        choice = self.choices.setdefault(self._choice_key(key, shop), {})
+        rejected = [i for i in choice.get("rejected") or [] if i != product_id]
+        if instead_of and instead_of != product_id and instead_of not in rejected:
+            rejected.append(instead_of)
+        choice.update(
+            product_id=product_id,
+            name=name[:120],
+            rejected=rejected[-10:],
+            at=dt_util.now().isoformat(),
+        )
+        if len(self.choices) > 1000:
+            oldest = sorted(self.choices, key=lambda k: str(self.choices[k].get("at") or ""))
+            for stale in oldest[: len(self.choices) - 1000]:
+                del self.choices[stale]
+        await self.async_save()
+
+    async def async_forget_choice(self, key: str, shop: str) -> None:
+        """The family no longer wants a product remembered for an ingredient."""
+        if self.choices.pop(self._choice_key(key, shop), None) is not None:
+            await self.async_save()
 
     # ------------------------------------------------------------- settings
 
