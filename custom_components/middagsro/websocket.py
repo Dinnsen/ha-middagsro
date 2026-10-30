@@ -1646,6 +1646,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_sites_recipe,
         ws_mealie_recipes,
         ws_plan_line,
+        ws_plan_review,
         ws_health,
         ws_nutrition,
         ws_mealie_save,

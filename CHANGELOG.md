@@ -2,6 +2,21 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.12.0b2] - 2026-10-30
+
+Beta: fixes from a real week-45 plan made with 2.12.0b1.
+
+### Added
+- **Bilka for what REMA has no sure product for:** with Bilka among *Andre butikker*, a line Middagsro isn't sure of in REMA (galangarod, romainesalat …) is looked for in Bilka ToGo by the same rules. A sure match goes on Bilka's list under Indkøb at Bilka's price (and can be moved back); a line Bilka isn't sure of either stays among *Usikre varer*.
+
+### Fixed
+- **Behold, Udelad, Behold alle and Glem valget did nothing but show an error:** the panel's command for them was never registered in Home Assistant ("Unknown command").
+- **Æg in the Thursday basket without being on offer:** a dish built on Thursday's skrabeæg offer, with the family's organic eggs chosen, put the eggs in the Thursday basket at the normal price. Only the offer's own product waits for its day; the rest is bought and priced on the shopping day.
+- **A colour or sort the line names is kept:** "rød peberfrugt" is never GUL/ORANGE PEBER and "romainesalat" never icebergsalat or hjertesalat; a product that doesn't say it is the red one (ØKO. PEBER) is marked for a check.
+- **An offer's product must be what the line is called:** "Mini-baguettes" searched as "brød" no longer gets the Schulstad offer's sødmælksbrød (baguettes and flutes are their own thing in the catalogue).
+- **"8 pølser" of an avis pack** were 8 packs; they are counted by what a sausage weighs. "Rød peber" and "rød peberfrugt" are one line.
+- **A recipe's instructions are not the name:** "Kaffirblade, fjern stilken i midten og striml bladene fint" is searched as kaffirblade.
+
 ## [2.12.0b1] - 2026-10-30
 
 Beta: the matching of ingredients to REMA's products rebuilt. Please check the shopping list of a new plan closely and report what is wrong.

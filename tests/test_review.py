@@ -213,3 +213,46 @@ async def test_uncertain_items_setting(
         assert store.settings["uncertain_items"] == value
     await store.async_set_settings({"uncertain_items": "whatever"})
     assert store.settings["uncertain_items"] == "review"
+
+
+async def test_review_over_websocket(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    hass_ws_client: Any,
+) -> None:
+    """The panel's Behold and Udelad reach the plan (the command is registered)."""
+    store = init_integration.runtime_data.store
+    plan = _unsure_plan("ws")
+    await store.async_add_plan(plan)
+    client = await hass_ws_client(hass)
+    await client.send_json(
+        {"id": 1, "type": "middagsro/plan/review", "plan_id": "ws", "line_id": "pasta",
+         "action": "keep", "product_id": None}
+    )  # fmt: skip
+    answer = await client.receive_json()
+    assert answer["success"], answer
+    pasta = next(line for line in answer["result"]["shopping"] if line["id"] == "pasta")
+    assert pasta["reviewed"] and pasta["product_id"] == 60002
+    await client.send_json(
+        {"id": 2, "type": "middagsro/plan/review", "plan_id": "ws", "line_id": "parsley",
+         "action": "skip"}
+    )  # fmt: skip
+    answer = await client.receive_json()
+    assert answer["success"], answer
+    parsley = next(line for line in answer["result"]["shopping"] if line["id"] == "parsley")
+    assert parsley["skipped"]
+
+
+def test_every_websocket_command_is_registered(hass: HomeAssistant) -> None:
+    """A ws_ handler that is never registered answers "Unknown command" in the panel."""
+    import inspect  # noqa: PLC0415
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from custom_components.middagsro import websocket as ws  # noqa: PLC0415
+
+    handlers = {name: f for name, f in inspect.getmembers(ws) if name.startswith("ws_")}
+    with patch.object(ws.websocket_api, "async_register_command") as register:
+        ws.async_register_websocket(hass)
+    registered = [call.args[1] for call in register.call_args_list]
+    missing = [name for name, f in handlers.items() if not any(f is r for r in registered)]
+    assert missing == []

@@ -279,7 +279,9 @@ _ENTRIES: tuple[Entry, ...] = (
     _e("tomater", VEG, "tomat", "friske tomater", piece_g=100, fresh=True,
        not_words=("hakkede", "flåede", "puré", "pure", "ketchup", "suppe", "soltørrede", "passata", "sauce", "pesto", "chips")),
     _e("cherrytomater", VEG, "cherry tomater", "små tomater", "blommetomater", piece_g=15, fresh=True),
-    _e("peberfrugt", VEG, "rød peberfrugt", "grøn peberfrugt", "gul peberfrugt", "peberfrugter", "peber frugt", query="peber", piece_g=180, fresh=True,
+    _e("peberfrugt", VEG, "rød peberfrugt", "grøn peberfrugt", "gul peberfrugt", "peberfrugter", "peber frugt",
+       "rød peber", "røde peber", "grøn peber", "grønne peber", "gul peber", "gule peber", "orange peber",
+       query="peber", piece_g=180, fresh=True,
        not_words=("strimler", "grillede", "syltede", "pulver", "snack", "fyldte")),
     _e("squash", VEG, "zucchini", "courgette", piece_g=300, fresh=True),
     _e("aubergine", VEG, piece_g=350, fresh=True),
@@ -360,7 +362,8 @@ _ENTRIES: tuple[Entry, ...] = (
     _e("muslinger", FISH, "blåmuslinger"),
     _e("fiskefrikadeller", (FISH, READY)),
     # --- sausage, bacon, cold cuts
-    _e("pølser", SAUSAGE, "pølse", "kyllingepølser", "kyllinge pølser", "frankfurter", "hotdogpølser", "grillpølser", "wienerpølser", "bratwurst"),
+    _e("pølser", SAUSAGE, "pølse", "kyllingepølser", "kyllinge pølser", "frankfurter", "hotdogpølser", "grillpølser", "wienerpølser", "bratwurst",
+       "ostepølser", "oste pølser", piece_g=35),
     _e("chorizo", (SAUSAGE, COLD_CUTS), "chorizopølse", "chorizo pølse"),
     _e("salami", (SAUSAGE, COLD_CUTS)),
     _e("bacon", BACON, "bacon i skiver", "bacon i tern", "baconstykker", "baconskiver"),
@@ -393,7 +396,9 @@ _ENTRIES: tuple[Entry, ...] = (
     _e("æg", EGG, "skrabeæg", "frilandsæg", "økologiske æg", "store æg", "æg str. m", not_words=("pasta", "nudler", "kage", "salat", "flødekage", "ægge", "sandwich")),
     # --- bread
     _e("rugbrød", BREAD, "rugbrødsskiver"),
-    _e("brød", BREAD, "franskbrød", "flutes", "baguette", "toastbrød", "surdejsbrød"),
+    _e("brød", BREAD, "franskbrød", "toastbrød", "surdejsbrød"),
+    _e("baguette", BREAD, "baguetter", "baguettes", "mini baguettes", "minibaguettes", "minibaguetter", "flutes", "flute",
+       "petit pain", "petits pains", query="baguette", not_words=("hvidløg", "pizza")),
     _e("boller", BREAD, "burgerboller", "briocheboller", "grovboller", not_words=("kød", "fiske", "fars", "karry", "lakrids")),
     _e("pitabrød", BREAD, "pita", "fladbrød"),
     _e("tortilla", BREAD, "tortillas", "tortillabrød", "wraps", "madpandekager", not_words=("chips", "dip")),
@@ -760,6 +765,43 @@ def allowed(
     if FROZEN in kinds and FROZEN not in spec.kinds and spec.form in ("fresh", "canned", "dried"):
         return False
     return bool(kinds & spec.kinds)
+
+
+# Words that pick one kind of a thing: a line that names one is not another
+# ("rød peberfrugt" is not GUL/ORANGE PEBER, "romainesalat" not ICEBERG SALAT).
+# The first word of each tuple is how the kind is told apart in a name.
+_VARIETIES: tuple[tuple[tuple[str, ...], ...], ...] = (
+    (("rød", "røde", "rødt"), ("gul", "gule", "gult"), ("grøn", "grønne", "grønt"), ("orange",)),
+    (("romaine",), ("iceberg",), ("hjerte",), ("feld",), ("rucola",), ("lollo",), ("frisee",)),
+)
+
+
+def _varieties(text: str) -> set[tuple[int, int]]:
+    """The kinds a text names, as (group, kind); a compound word counts by its start
+    ("romainesalat", "hjertesalat")."""
+    found: set[tuple[int, int]] = set()
+    for word in _tokens(text):
+        for g, group in enumerate(_VARIETIES):
+            for k, kind in enumerate(group):
+                if word in kind or (g > 0 and word.startswith(kind[0])):
+                    found.add((g, k))
+    return found
+
+
+def variety_conflict(asked: str, product_name: str) -> bool:
+    """Does the product name another kind than the line asks for (yellow for red)?"""
+    wanted = _varieties(asked)
+    if not wanted:
+        return False
+    has = _varieties(product_name)
+    groups = {g for g, _ in wanted}
+    return any(g in groups and (g, k) not in wanted for g, k in has) and not wanted & has
+
+
+def variety_missing(asked: str, product_name: str) -> bool:
+    """The line asks for a kind the product doesn't say it is ("ØKO. PEBER" for red)."""
+    wanted = _varieties(asked)
+    return bool(wanted) and not wanted & _varieties(product_name)
 
 
 def other_thing(spec: Spec, product_name: str) -> bool:

@@ -618,11 +618,16 @@ async def test_late_offer_bought_on_its_day(
 ) -> None:
     """With late-week shopping, a thursday offer is bought and priced on thursday."""
     store = init_integration.runtime_data.store
-    await store.async_set_settings({**SETTINGS, "shop_late_week": True, "must_haves": []})
+    await store.async_set_settings(
+        {**SETTINGS, "shop_late_week": True, "must_haves": [], "egg_min": "organic"}
+    )
     coffee = Offer(id="o-3", heading="Kaffe", description=None, price=39, pre_price=None,
                    quantity=None, valid_from="2026-10-21T22:00:00+0000",
                    valid_to="2026-10-24T21:59:59+0000")  # fmt: skip
-    mock_client.async_get_offers.return_value = [*OFFERS, coffee]
+    eggs = Offer(id="o-4", heading="Skrabeæg M/L", description="10 stk.", price=20,
+                 pre_price=None, quantity="10 stk.", valid_from="2026-10-21T22:00:00+0000",
+                 valid_to="2026-10-24T21:59:59+0000")  # fmt: skip
+    mock_client.async_get_offers.return_value = [*OFFERS, coffee, eggs]
     seen: dict[str, datetime | None] = {}
 
     async def search(query: str, limit: int = 24, at: datetime | None = None) -> list[Any]:
@@ -633,6 +638,7 @@ async def test_late_offer_bought_on_its_day(
     shopping = [
         SHOPPING[0],
         {"name": "Kaffe", "amount": 1, "unit": "pk", "search": "kaffe", "offer": "o2"},
+        {"name": "Æg", "amount": 10, "unit": "stk", "search": "æg", "offer": "o3"},
     ]
     planner = init_integration.runtime_data.planner
     await _generate(planner, FakeAI(ai_answer(mp.plan_dates(START, 7), shopping)))
@@ -640,6 +646,9 @@ async def test_late_offer_bought_on_its_day(
     assert plan is not None
     lines = {line["name"]: line for line in plan["shopping"]}
     assert lines["Kaffe"]["buy_from"] == "2026-10-22"
+    # The family's organic eggs are not the thursday offer on skrabeæg: shopping day.
+    assert lines["Æg"]["product"]["name"] == "ØKOLOGISKE ÆG"
+    assert lines["Æg"]["buy_from"] is None
     assert lines["Hakket oksekød"]["buy_from"] is None
     assert seen["kaffe"] == datetime(2026, 10, 22, 10, tzinfo=UTC)
     assert seen["hakket oksekød"] == datetime(2026, 10, 18, 10, tzinfo=UTC)
