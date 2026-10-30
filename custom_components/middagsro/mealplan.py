@@ -44,11 +44,13 @@ from .dishes import (
     same_dish,
 )
 from .ingredients import (
+    CATALOG,
     FISH,
     MEAT,
     POULTRY,
     Spec,
     allowed,
+    catalogue_entry,
     other_thing,
     qualifier_only,
     spec_for,
@@ -332,28 +334,66 @@ def package_size(underline: str | None) -> tuple[str, float] | None:
 
 
 def packages_needed(
-    amount: float | None, unit: str | None, product: Product, piece_g: int | None = None
+    amount: float | None,
+    unit: str | None,
+    product: Product,
+    piece_g: int | None = None,
+    need: dict[str, float] | None = None,
 ) -> int:
     """How many packages of a product cover an amount.
 
     ``piece_g``: what one piece of the thing weighs, so "4 løg" of a 750 g bag is
-    one bag, and "2 stk" of something sold loose is two.
+    one bag, "2 stk" of something sold loose is two, and 600 g of a squash sold
+    per piece is two. ``need``: the line's needs in each base unit, when its
+    recipes wrote it in more than one ("300 g" and "1 pk"); each is counted in
+    packages and they are added up, so nothing a recipe asked for is lost.
     """
-    need = to_base(amount, unit) if amount and amount > 0 else None
-    if need is None:
-        return 1
+    parts = dict(need or {})
+    if not parts:
+        base = to_base(amount, unit) if amount and amount > 0 else None
+        if base is None:
+            return 1
+        parts = {base[0]: base[1]}
     size = package_size(product.underline)
-    count = 1.0
-    if need[0] == "pack":  # cans, packs, bags: one package each
-        count = need[1]
-    elif size and need[0] == size[0] and size[1] > 0:
-        count = need[1] / size[1] - 0.05
-    elif need[0] == "stk" and (per_package := pieces_per_package(size, piece_g)):
-        count = need[1] / per_package - 0.05
-    elif need[0] == "stk" and size is None:
-        count = need[1]  # loose items sold per piece
-    # else e.g. 8 pitabrød from one 375 g bag
-    return max(1, min(20, math.ceil(count)))
+    count = 0.0
+    # Sizes are rounded: 1.02 kilo of a kilo bag is one bag; and a piece weighs about
+    # what the catalogue says: 500 g broccoli is one head of 400 g.
+    slack = 0.0
+    known = False
+    for part, quantity in parts.items():
+        if quantity <= 0:
+            continue
+        if part == "pack":  # cans, packs, bags: one package each
+            count += quantity
+        elif size and part == size[0] and size[1] > 0:
+            count, slack = count + quantity / size[1], max(slack, 0.05)
+        elif part == "stk" and (per_package := pieces_per_package(size, piece_g)):
+            count, slack = count + quantity / per_package, max(slack, 0.05)
+        elif part == "stk" and size is None:
+            count += quantity  # loose items sold per piece
+        elif part == "g" and piece_g and size and size[0] == "stk" and size[1] > 0:
+            count, slack = count + quantity / piece_g / size[1], 0.3
+        else:
+            continue  # e.g. 8 pitabrød from one 375 g bag
+        known = True
+    if not known:
+        return 1
+    return max(1, min(20, math.ceil(count - slack)))
+
+
+def line_packages(line: dict[str, Any], product: Product, piece_g: int | None = None) -> int:
+    """How many packages of a product a shopping line needs (its ``need`` too)."""
+    return packages_needed(
+        line.get("amount"), line.get("unit"), product, piece_g, line.get("need") or None
+    )
+
+
+def base_need(line: dict[str, Any]) -> dict[str, float]:
+    """A line's needs in base units: {"g": 300, "pack": 1}; empty without an amount."""
+    if line.get("need"):
+        return {str(k): float(v) for k, v in line["need"].items()}
+    base = to_base(float(line["amount"]), line.get("unit")) if line.get("amount") else None
+    return {base[0]: base[1]} if base else {}
 
 
 def pieces_per_package(size: tuple[str, float] | None, piece_g: int | None) -> float | None:
@@ -1277,9 +1317,11 @@ def build_prompt(
         "3 pk hakkede tomater; stk kun for løse enkeltvarer, fx 10 stk æg eller 2 stk "
         f"peberfrugt), et søgeord til {genitive(shop)} varesøgning "
         '(1-3 ord, fx "hakket oksekød", "laks", "broccoli"), kategori (Frugt & grønt, Kød, '
-        "Fisk, Mejeri, Brød, Kolonial, Frost eller Andet) og evt. tilbuddets id"
+        "Fisk, Mejeri, Brød, Kolonial, Frost eller Andet), evt. tilbuddets id"
         + (" (også en anden butiks, fx k12)" if chain_offers else "")
-        + ". Udelad basisvarer.",
+        + " og varenøglen (key): den af varenøglerne herunder, varen ER – ikke en, der ligner "
+        "(kaffirblade er ikke laurbærblade) – ellers null. Udelad basisvarer.",
+        "Varenøgler: " + ", ".join(sorted(CATALOG)) + ".",
         "",
         (
             "checklist: kun familiens faste regler, én pr. punkt, ærligt. De øvrige krav "
@@ -1319,6 +1361,7 @@ def build_prompt(
                         "search": "laks",
                         "category": "Fisk",
                         "offer": "o12",
+                        "key": "laks",
                     }
                 ],
                 "checklist": [{"requirement": "Fredag er altid pizzadag", "ok": True}],
@@ -1604,7 +1647,9 @@ def recipe_factor(settings: dict[str, Any], recipe: dict[str, Any], day: dict[st
 
 def line_spec(line: dict[str, Any]) -> Spec:
     """What a shopping line asks for (the catalogue's view of its words)."""
-    return spec_for(str(line.get("name") or ""), line.get("search"), line.get("category"))
+    return spec_for(
+        str(line.get("name") or ""), line.get("search"), line.get("category"), line.get("catalog")
+    )
 
 
 def apply_spec(line: dict[str, Any], spec: Spec | None = None) -> bool:
@@ -1847,6 +1892,14 @@ def add_amounts(line: dict[str, Any], other: dict[str, Any], piece_g: int | None
     """Add another line's amount to a line: grams to grams, pieces to pieces, and
     pieces to grams when the catalogue knows what one weighs. Unlike units: the
     weight stands, or the bigger count."""
+    needs = base_need(line)
+    for part, quantity in base_need(other).items():
+        needs[part] = needs.get(part, 0) + quantity
+    if piece_g and {"g", "stk"} <= needs.keys():
+        needs["g"] += needs.pop("stk") * piece_g
+    # Written in more than one unit: every need is kept for counting packages.
+    if len(needs) > 1:
+        line["need"] = {part: round(quantity, 2) for part, quantity in needs.items()}
     mine = to_base(float(line["amount"]), line.get("unit")) if line.get("amount") else None
     theirs = to_base(float(other["amount"]), other.get("unit")) if other.get("amount") else None
     if mine is None or theirs is None:
@@ -2957,7 +3010,7 @@ class MealPlanner:
                 )
                 return
             spec = line_spec(line)
-            packages = packages_needed(line.get("amount"), line.get("unit"), product, spec.piece_g)
+            packages = line_packages(line, product, spec.piece_g)
             line.update(
                 buy_at=BILKA_ID,
                 chain_price=product.price,
@@ -2998,7 +3051,7 @@ class MealPlanner:
             return None
 
         def cost(p: Product) -> float:
-            count = packages_needed(line.get("amount"), line.get("unit"), p, spec.piece_g)
+            count = line_packages(line, p, spec.piece_g)
             return count * (p.price or 0) * penalty.get(p.id, 1.0)
 
         return min(sure, key=cost)
@@ -3094,7 +3147,7 @@ class MealPlanner:
             self._apply(
                 line,
                 product,
-                packages_needed(line["amount"], line.get("unit"), product, spec.piece_g),
+                line_packages(line, product, spec.piece_g),
             )
             line["confidence"] = "medium"
             line["note"] = "AI'en valgte denne blandt mulighederne – tjek den"
@@ -3371,8 +3424,15 @@ class MealPlanner:
                 unit="pk",
                 stock_cubes=True,
             )
-        if not apply_spec(line, spec_for(raw, str(line["search"]), str(line["category"]))):
+        spec = spec_for(raw, str(line["search"]), str(line["category"]), item.get("key"))
+        if not apply_spec(line, spec):
             return None
+        if spec.entry is not None and spec.entry is catalogue_entry(item.get("key")):
+            # The AI's catalogue key, kept for matching the line again; and whether
+            # only the AI says so (the search term is the key's from now on).
+            line["catalog"] = spec.entry.key
+            if spec.guessed:
+                line["guessed"] = True
         return line
 
     async def _async_search(self, query: str, at: datetime | None) -> list[Product]:
@@ -3470,9 +3530,7 @@ class MealPlanner:
         if product is None:
             return False
         spec = line_spec(line)
-        self._apply(
-            line, product, packages_needed(line["amount"], line.get("unit"), product, spec.piece_g)
-        )
+        self._apply(line, product, line_packages(line, product, spec.piece_g))
         line["confidence"] = "high"
         line["note"] = "Jeres valg fra en tidligere madplan"
         line["remembered"] = True
@@ -3503,9 +3561,7 @@ class MealPlanner:
             return False
         chosen, _, _ = self._choose(line, candidates, {})
         spec = line_spec(line)
-        self._apply(
-            line, chosen, packages_needed(line["amount"], line.get("unit"), chosen, spec.piece_g)
-        )
+        self._apply(line, chosen, line_packages(line, chosen, spec.piece_g))
         line["confidence"] = "high"
         line["linked"] = True
         return True
@@ -3652,9 +3708,7 @@ class MealPlanner:
             return
         spec = line_spec(line)
         chosen, fit, candidates = self._choose(line, candidates, penalty)
-        self._apply(
-            line, chosen, packages_needed(line["amount"], line.get("unit"), chosen, spec.piece_g)
-        )
+        self._apply(line, chosen, line_packages(line, chosen, spec.piece_g))
         if note:
             line["note"] = note
         # How sure the choice is, and what else it could have been.
@@ -3682,6 +3736,7 @@ class MealPlanner:
             or (known_kind is None and spec.entry is None)
             or fit_penalty >= 2
             or variety_missing(line.get("name") or "", chosen.name)
+            or bool(line.get("guessed"))
         ):
             line["confidence"] = "medium"
         else:
@@ -3718,9 +3773,7 @@ class MealPlanner:
                         size_penalty[p.id] = 5.0
 
         def package_cost(product: Product) -> float:
-            return packages_needed(line["amount"], line.get("unit"), product, spec.piece_g) * (
-                product.price or 0
-            )
+            return line_packages(line, product, spec.piece_g) * (product.price or 0)
 
         cost = package_cost
 

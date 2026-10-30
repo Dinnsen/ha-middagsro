@@ -60,6 +60,8 @@ def plan_structure(lib: Any) -> Any:
         lib.Required("search"): str,
         lib.Required("category"): str,
         lib.Optional("offer"): lib.Any(str, None),
+        # The catalogue entry the AI says the item is (ingredients.py), or None.
+        lib.Optional("key"): lib.Any(str, None),
     }
     return lib.Schema(
         {

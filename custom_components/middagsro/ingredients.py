@@ -265,7 +265,7 @@ _ENTRIES: tuple[Entry, ...] = (
     _e("gulerødder", VEG, "gulerod", "gulerødder", piece_g=90, fresh=True, not_words=("juice", "saft", "chips")),
     _e("kartofler", VEG, "kartoffel", "bagekartofler", "små kartofler", "nye kartofler", "skrællekartofler", piece_g=110, fresh=True,
        not_words=("chips", "mos", "pulver", "søde", "salat")),
-    _e("søde kartofler", VEG, "sød kartoffel", "batat", piece_g=300, fresh=True),
+    _e("søde kartofler", VEG, "sød kartoffel", "batat", piece_g=400, fresh=True),
     _e("broccoli", VEG, piece_g=400, fresh=True),
     _e("blomkål", VEG, piece_g=800, fresh=True),
     _e("spidskål", VEG, piece_g=700, fresh=True),
@@ -647,10 +647,31 @@ class Spec:
     per_package: int = 1
     explicit: frozenset[str] = field(default_factory=frozenset)  # kinds the words themselves say
     asked: frozenset[str] = field(default_factory=frozenset)  # the line's own words
+    guessed: bool = False  # the entry is the AI's key, not what the words say
 
 
-def spec_for(name: str, search: str | None = None, category: str | None = None) -> Spec:
-    """Read a line ("3 fed hvidløg, pressede", search "hvidløg", category "Frugt & grønt")."""
+def catalogue_entry(key: Any) -> Entry | None:
+    """The catalogue entry the AI says a line is (its ``key``), if there is one."""
+    return CATALOG.get(_normal(str(key or ""))) if key else None
+
+
+def words_are(entry: Entry, words: set[str] | list[str] | frozenset[str]) -> bool:
+    """Do a line's own words say it is the entry: one of them is a word of the entry
+    or ends with one ("hjertesalat": salat)? Not for an AI's nearest guess for
+    something the catalogue doesn't know ("vårløg": forårsløg, maybe right)."""
+    known = {w for text in (entry.key, entry.query or "", *entry.aliases) for w in _tokens(text)}
+    head = _tokens(entry.key)[-1:]
+    return any(
+        word in known or bool(head and len(head[0]) > 3 and word.endswith(head[0]))
+        for word in words
+    )
+
+
+def spec_for(
+    name: str, search: str | None = None, category: str | None = None, key: str | None = None
+) -> Spec:
+    """Read a line ("3 fed hvidløg, pressede", search "hvidløg", category "Frugt & grønt");
+    ``key``: the catalogue entry the AI says it is, for words the catalogue doesn't know."""
     raw = str(name or "")
     if _HEADING.match(raw):
         return Spec(key=_normal(raw), kinds=frozenset(), form="any", skip="heading")
@@ -668,6 +689,11 @@ def spec_for(name: str, search: str | None = None, category: str | None = None) 
     if words and (words[0] in _EQUIPMENT or _head(cleaned) in _EQUIPMENT):
         return Spec(key=_normal(cleaned), kinds=frozenset(), form="any", skip="equipment")
     entry = lookup(cleaned) or (lookup(search) if search else None)
+    guessed = False
+    if entry is None and (entry := catalogue_entry(key)) is not None:
+        # Words the catalogue doesn't know: the AI's key says what to search for, and
+        # unless the words say so too, the family is asked about the product.
+        guessed = not words_are(entry, all_words)
     # The form the words say, which beats the catalogue's usual form.
     explicit: set[str] = set()
     form = "any"
@@ -726,6 +752,7 @@ def spec_for(name: str, search: str | None = None, category: str | None = None) 
         per_package=per_package,
         explicit=frozenset(explicit),
         asked=frozenset(all_words),
+        guessed=guessed,
     )
 
 

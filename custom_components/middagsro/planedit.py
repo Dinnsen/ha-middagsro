@@ -34,10 +34,10 @@ from .mealplan import (
     _tokens,
     fit_amounts,
     late_offers,
+    line_packages,
     line_spec,
     noon,
     nutrition_target,
-    packages_needed,
     plan_total,
     rule_lines,
     to_base,
@@ -956,7 +956,7 @@ async def async_edit_line(
         product = products[0]
         spec = line_spec(line)
         count = packages or (
-            packages_needed(line.get("amount"), line.get("unit"), product, spec.piece_g)
+            line_packages(line, product, spec.piece_g)
             if not line.get("added")
             else int(line.get("packages") or 1)
         )
