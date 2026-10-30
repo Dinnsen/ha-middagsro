@@ -37,6 +37,7 @@ from .dishes import (
     check_plan,
     day_wishes,
     fixed_rest_dates,
+    food_conflicts,
     household_portions,
     is_cooked,
     is_rest_text,
@@ -1417,11 +1418,20 @@ _VAGUE_INGREDIENTS = {
 }
 
 
-def recipe_problems(raw: Any) -> list[str]:
+def recipe_problems(raw: Any, settings: dict[str, Any] | None = None) -> list[str]:
     """What is wrong with an AI recipe, in words the AI can act on (empty: nothing)."""
     if not isinstance(raw, dict):
         return ["Svaret var ikke en opskrift."]
     problems: list[str] = []
+    if settings:
+        names = [
+            str(i.get("name") or "") for i in raw.get("ingredients") or [] if isinstance(i, dict)
+        ]
+        for ingredient, rule in food_conflicts(names, settings):
+            problems.append(
+                f"Opskriften bruger {ingredient}, men familien har {rule}: lav den uden, "
+                "med noget andet i stedet."
+            )
     vague = [
         str(i.get("name"))
         for i in raw.get("ingredients") or []
@@ -2268,7 +2278,7 @@ class MealPlanner:
             _LOGGER.warning("Could not write the recipe for %s: %s", day["date"], err)
             day["recipe_error"] = str(err)
             return
-        if problems := recipe_problems(raw):
+        if problems := recipe_problems(raw, self.store.settings):
             # Once more with what was wrong; the better of the two is kept.
             fix = "\n".join(f"- {p}" for p in problems)
             try:
@@ -2278,7 +2288,7 @@ class MealPlanner:
             except HomeAssistantError as err:
                 _LOGGER.debug("Could not have the recipe for %s put right: %s", day["date"], err)
             else:
-                if len(recipe_problems(again)) < len(problems):
+                if len(recipe_problems(again, self.store.settings)) < len(problems):
                     raw = again
         cleaned = self._clean_days(
             [{**raw, "date": day["date"]}], [date.fromisoformat(day["date"])]
@@ -2433,6 +2443,8 @@ class MealPlanner:
                 head = head_word(name)
                 if not head or added >= RECIPE_EXTRAS_PER_DAY:
                     continue
+                if food_conflicts([name], self.store.settings):
+                    continue  # the AI slipped: not bought for the family
                 if any(_uses_item(item, name) or _uses_item(item, head) for item in pantry):
                     continue
                 if any(
