@@ -176,7 +176,6 @@ def product_kinds(
         # No category: the department alone is too coarse to rule food out
         # (a shop's "Kolonial" holds both pasta and the odd fresh garlic).
         return None
-        return None
     words = set(_tokens(f"{name} {underline or ''}"))
     if kinds & {SAUCE, STOCK, READY}:
         if any(w.endswith(("bouillon", "bouillonterninger", "fond")) for w in words):

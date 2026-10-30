@@ -297,7 +297,7 @@ async def test_recipe_lines_and_product_kinds(
     line = mp.recipe_line({"name": "laksefilet", "amount": "1,2 kg"}, 0.4)
     assert line.pop("id")
     assert line == {
-        "name": "Laksefilet", "amount": 480, "unit": "g", "search": "laksefilet",
+        "name": "Laksefilet", "amount": 480, "unit": "g", "search": "laks", "key": "laks",
         "category": "Fisk", "offer": None, "must_have": False, "product_id": None, "recipe": True,
     }  # fmt: skip
     assert mp.recipe_line({"name": "fløde", "amount": "2,5 dl"}, 1.0)["amount"] == 250
