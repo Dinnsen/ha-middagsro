@@ -179,7 +179,7 @@ def test_prompt_with_every_rule() -> None:
         "økologiske æg",
         "Mælk skal være økologisk",
         "Frugt og grønt skal være økologisk",
-        "VIGTIGT fra sidste forsøg: For dyrt",
+        "RETTELSER FRA SIDSTE FORSØG – det vigtigste: For dyrt",
         "[f1] Lasagne",
         "[f2] Laks (kun på tilbud)",
         "Faste ugevarer",
@@ -1790,7 +1790,43 @@ def test_fixed_day_is_kept_simple() -> None:
         recent_dishes=[],
     )
     assert "Lav den PRÆCIS som familien beskriver den" in prompt
-    assert "Hver regel skal stå som sit eget punkt i checklist" in prompt
+    assert "skriv hver regel som sit eget punkt i checklist" in prompt
+    assert "checklist: kun familiens faste regler" in prompt
+
+
+def test_prompt_offers_only_dinner_the_family_can_eat() -> None:
+    """Household goods, sweets and what the family avoids are left out of the offers."""
+    offers = [
+        *OFFERS,
+        Offer(id="o-3", heading="Toiletpapir", description=None, price=30.0, pre_price=None,
+              quantity=None, valid_from=None, valid_to=None),
+        Offer(id="o-4", heading="Svinekoteletter", description="1 kg", price=50.0, pre_price=None,
+              quantity=None, valid_from=None, valid_to=None),
+        Offer(id="o-5", heading="Rejer", description="300 g", price=40.0, pre_price=None,
+              quantity=None, valid_from=None, valid_to=None),
+    ]  # fmt: skip
+    settings = clean_settings({"avoid": ["pork", "animal_products"], "allergies": ["shellfish"]})
+    prompt = mp.build_prompt(
+        settings=settings, dates=mp.plan_dates(START, 7), catalog=UPCOMING, offers=offers,
+        favorites_due=[], favorites_optional=[], recent_dishes=[],
+    )  # fmt: skip
+    assert "o1 | Broccoli" in prompt
+    assert "Toiletpapir" not in prompt
+    assert "Svinekoteletter" not in prompt
+    assert "Rejer" not in prompt
+    assert "o0 | Hakket oksekød" not in prompt  # vegan: no meat offers either
+    assert "Alle retter er veganske" in prompt
+    assert "hverken i retterne, som tilbehør eller på indkøbslisten" in prompt
+    assert mp.dinner_offer("Kyllingelår", "1 kg", clean_settings({})) is True
+    assert mp.dinner_offer("Vaskemiddel", None, clean_settings({})) is False
+    assert mp.dinner_offer("Vin", None, clean_settings({})) is False
+    assert mp.dinner_offer("Vindruer", None, clean_settings({})) is True
+    vegetarian = mp.build_prompt(
+        settings=clean_settings({"avoid": ["meat"]}), dates=mp.plan_dates(START, 7),
+        catalog=UPCOMING, offers=offers, favorites_due=[], favorites_optional=[], recent_dishes=[],
+    )  # fmt: skip
+    assert "Alle retter er vegetariske" in vegetarian
+    assert "o0 | Hakket oksekød" not in vegetarian
 
 
 NETTO_OFFER = {

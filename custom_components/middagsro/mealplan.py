@@ -62,6 +62,7 @@ from .rema_recipes import RemaRecipes
 from .sites import RecipeSites
 from .storage import RemaPlanStore
 from .store_client import genitive, store_name
+from .structures import choices_structure, plan_structure, recipe_structure, schema_library
 from .words import (
     _DIFFERENT_PREFIXES,
     _DIFFERENT_WORDS,
@@ -352,6 +353,13 @@ def pieces_per_package(size: tuple[str, float] | None, piece_g: int | None) -> f
         return None
     ratio = size[1] / piece_g
     return ratio if ratio < 0.5 else max(1, int(ratio + 0.25))
+
+
+def _alternative_from(item: dict[str, Any]) -> dict[str, Any]:
+    """An alternative from a line's product dict (the one that was chosen before)."""
+    return {
+        key: item.get(key) for key in ("id", "name", "underline", "price", "is_organic", "image")
+    }
 
 
 def _alternative(product: Product) -> dict[str, Any]:
@@ -866,14 +874,34 @@ def _household_lines(settings: dict[str, Any]) -> list[str]:
     lines = []
     for member in settings["household"]:
         role = "Voksen" if member["role"] == "adult" else "Barn"
-        sex = {"male": "dreng/mand", "female": "pige/kvinde"}.get(member["sex"], "")
-        lines.append(f"- {role}, {member['age']} år{', ' + sex if sex else ''}")
+        lines.append(f"- {role}, {member['age']} år")
     return lines or ["- 2 voksne"]
 
 
 def no_leftover_weekdays(settings: dict[str, Any]) -> set[int]:
     """The weekdays (0 = monday) the family never wants leftovers on."""
     return {int(w) for w in settings.get("no_leftover_weekdays") or []}
+
+
+# Offers that are never dinner: the avis's household goods, sweets and drinks.
+_NOT_DINNER = re.compile(
+    r"\b(vaske|opvask|toilet|køkkenrulle|shampoo|tandpasta|tandbørst|bleer|deo|barber|servietter|"
+    r"skraldepos|bagepapir|alufolie|rengøring|wc|skyllemiddel|stearinlys|batteri|hundemad|kattemad|"
+    r"foder|blomster|planter|slik|chokolade|lakrids|vingummi|chips|snacks|sodavand|cola|øl|vin\b|"
+    r"spiritus|cigaret|tobak|is\b|flødeis|kage|kiks|småkager|kaffe|te\b|juice|saft|energidrik|"
+    r"vitamin|kosttilskud|legetøj|tøj|sokker|strømper|undertøj|pande\b|gryde|knive|glas\b|krus|"
+    r"tallerken|lyskæde|julepynt|påskepynt)",
+    re.IGNORECASE,
+)
+
+
+def dinner_offer(heading: str, description: str | None, settings: dict[str, Any]) -> bool:
+    """Is an avis offer worth showing the AI: food for dinner, and nothing the
+    family can't eat (a pork offer is no use to a family that avoids pork)."""
+    text = f"{heading} {(description or '').split(chr(10))[0]}"
+    if _NOT_DINNER.search(heading):
+        return False
+    return not food_conflicts([text], settings)
 
 
 def build_prompt(
@@ -920,8 +948,8 @@ def build_prompt(
     if s.get("rules"):
         out.append(
             "- FAMILIENS FASTE REGLER – gælder forud for alt andet i denne besked, også for "
-            "indkøbslisten og retternes ingredienser. Hver regel skal stå som sit eget punkt i "
-            "checklist med ok: true/false:"
+            "indkøbslisten og retternes ingredienser. Gå dem igennem én for én til sidst, og "
+            "skriv hver regel som sit eget punkt i checklist med ok: true/false:"
         )
         out += [f"  {line}" for line in rule_lines(s)]
     if s.get("portion_percent", 100) != 100:
@@ -945,7 +973,20 @@ def build_prompt(
     if s["avoid_other"].strip():
         avoid.append(s["avoid_other"].strip())
     if avoid:
-        out.append(f"- Undgå helt: {', '.join(avoid)}.")
+        out.append(
+            f"- Undgå helt: {', '.join(avoid)} – hverken i retterne, som tilbehør eller på "
+            "indkøbslisten."
+        )
+    if "animal_products" in s["avoid"]:
+        out.append(
+            "- Alle retter er veganske: intet kød, fisk, skaldyr, æg, mejeri (mælk, fløde, smør, "
+            "ost) eller honning. Brug plantebaserede varer i stedet."
+        )
+    elif "meat" in s["avoid"]:
+        out.append(
+            "- Alle retter er vegetariske (fisk er heller ikke kød, så fisk kun hvis det ikke "
+            "undgås): ingen kødvarer på indkøbslisten."
+        )
     out.append(
         f"- Vegetarretter: mindst {s['min_vegetarian']} og højst {s['max_vegetarian']} i perioden."
     )
@@ -1052,9 +1093,6 @@ def build_prompt(
                 for day, dish in sorted(wishes.items())
             )
         )
-    if feedback:
-        out.append(f"- VIGTIGT fra sidste forsøg: {feedback}")
-
     out += ["", "ØNSKER:"]
     if surprise:
         out.append(
@@ -1152,6 +1190,8 @@ def build_prompt(
             starts = late.get(idx)
             if starts and not s["shop_late_week"]:
                 continue  # the family shops once, before this offer starts
+            if not dinner_offer(offer.heading, offer.description, s):
+                continue  # not food for dinner, or something the family can't eat
             price = f"{offer.price:g} kr." if offer.price is not None else "?"
             if offer.pre_price:
                 price += f" (før {offer.pre_price:g})"
@@ -1180,6 +1220,8 @@ def build_prompt(
                 f"TILBUD I {CHAINS.get(dealer_id, dealer_id).upper()} – id | vare | pris | mængde:"
             )
             for key, entry in entries:
+                if not dinner_offer(str(entry.get("heading") or ""), entry.get("description"), s):
+                    continue
                 cost = entry.get("price")
                 text = f"{cost:g} kr." if isinstance(cost, (int, float)) else "?"
                 if entry.get("pre_price"):
@@ -1219,9 +1261,15 @@ def build_prompt(
         + (" (også en anden butiks, fx k12)" if chain_offers else "")
         + ". Udelad basisvarer.",
         "",
-        "Kontrollér til sidst ALLE krav og udfyld checklist ærligt – familiens faste regler "
-        "hver for sig. Skriv afvigelser i deviations.",
+        (
+            "checklist: kun familiens faste regler, én pr. punkt, ærligt. De øvrige krav "
+            "kontrolleres automatisk. Skriv afvigelser i deviations."
+            if s.get("rules")
+            else "checklist kan være tom – kravene kontrolleres automatisk. Skriv afvigelser i "
+            "deviations."
+        ),
         "",
+        *([f"RETTELSER FRA SIDSTE FORSØG – det vigtigste: {feedback}", ""] if feedback else []),
         "SVARFORMAT: Svar KUN med gyldig JSON uden markdown og uden forklaring, præcis sådan:",
         json.dumps(
             {
@@ -1231,7 +1279,7 @@ def build_prompt(
                     {
                         "date": dates[0].isoformat(),
                         "dish": "Ovnbagt laks med spinatpasta, pesto og broccoli",
-                        "type": "normal | vegetar | rester | fast",
+                        "type": "normal",
                         "favorite_id": None,
                         "uses_leftovers_from": None,
                         "makes_leftovers": False,
@@ -1253,11 +1301,12 @@ def build_prompt(
                         "offer": "o12",
                     }
                 ],
-                "checklist": [{"requirement": "Højst 1 vegetarret", "ok": True}],
+                "checklist": [{"requirement": "Fredag er altid pizzadag", "ok": True}],
                 "deviations": "",
             },
             ensure_ascii=False,
         ),
+        "type er normal, vegetar, rester eller fast. "
         f"days skal have præcis {len(dates)} elementer i datoorden.",
     ]
     return "\n".join(out)
@@ -2171,8 +2220,14 @@ class MealPlanner:
         return bool(self.hass.states.async_entity_ids("ai_task"))
 
     async def _async_ask_ai(
-        self, prompt: str, task_name: str, attachments: list[dict[str, Any]] | None = None
+        self,
+        prompt: str,
+        task_name: str,
+        attachments: list[dict[str, Any]] | None = None,
+        structure: Any | None = None,
     ) -> dict[str, Any]:
+        """Ask the AI and get its answer as JSON (``structure``: the shape the answer
+        must have, when the AI Task entity can be told; a conversation agent can't)."""
         from homeassistant.components.ai_task import async_generate_data  # noqa: PLC0415
 
         entity_id = self._ai_entity()
@@ -2180,21 +2235,32 @@ class MealPlanner:
         async def ask(instructions: str) -> Any:
             if entity_id and entity_id.startswith(f"{AGENT_DOMAIN}."):
                 return await self._async_ask_agent(entity_id, instructions)
-            try:
-                result = await async_generate_data(
-                    self.hass,
-                    task_name=task_name,
-                    entity_id=entity_id,
-                    instructions=instructions,
-                    attachments=attachments,
-                )
-            except HomeAssistantError as err:
-                if "MAX_TOKENS" in str(err).upper():
-                    raise _failed("ai_answer_too_long", error=str(err)) from err
-                if (problem := ai_problem(err, self._ai_name(entity_id))) is not None:
-                    raise problem from err
-                raise
-            return result.data
+            shapes: list[Any] = [structure, None] if structure is not None else [None]
+            for shape in shapes:
+                try:
+                    result = await async_generate_data(
+                        self.hass,
+                        task_name=task_name,
+                        entity_id=entity_id,
+                        instructions=instructions,
+                        attachments=attachments,
+                        structure=shape,
+                    )
+                except HomeAssistantError as err:
+                    if shape is not None and re.search(
+                        r"schema|structure|response_format|json_schema", str(err), re.IGNORECASE
+                    ):
+                        _LOGGER.debug(
+                            "%s can't take a structure (%s); asking freely", entity_id, err
+                        )
+                        continue  # once more without the shape
+                    if "MAX_TOKENS" in str(err).upper():
+                        raise _failed("ai_answer_too_long", error=str(err)) from err
+                    if (problem := ai_problem(err, self._ai_name(entity_id))) is not None:
+                        raise problem from err
+                    raise
+                return result.data
+            raise AssertionError("unreachable")  # pragma: no cover
 
         try:
             return extract_json(await ask(prompt))
@@ -2277,8 +2343,9 @@ class MealPlanner:
             return
         prompt = build_recipe_prompt(settings=self.store.settings, day=day, plan=plan)
         task = f"REMA 1000 opskrift {day['date']}"
+        shape = recipe_structure(schema_library())
         try:
-            raw = await self._async_ask_ai(prompt, task)
+            raw = await self._async_ask_ai(prompt, task, structure=shape)
         except HomeAssistantError as err:
             _LOGGER.warning("Could not write the recipe for %s: %s", day["date"], err)
             day["recipe_error"] = str(err)
@@ -2288,7 +2355,9 @@ class MealPlanner:
             fix = "\n".join(f"- {p}" for p in problems)
             try:
                 again = await self._async_ask_ai(
-                    f"{prompt}\n\nDin første opskrift havde fejl – ret dem:\n{fix}", task
+                    f"{prompt}\n\nDin første opskrift havde fejl – ret dem:\n{fix}",
+                    task,
+                    structure=shape,
                 )
             except HomeAssistantError as err:
                 _LOGGER.debug("Could not have the recipe for %s put right: %s", day["date"], err)
@@ -2637,6 +2706,7 @@ class MealPlanner:
         await self._async_add_recipes(best)
         await self._async_recipe_extras(best, offers, self.price_time(start), late)
         fit_amounts(best)
+        await self._async_ai_choices(best)
         best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
         mark_planned(self.store, best)
         if base is not None:
@@ -2718,7 +2788,9 @@ class MealPlanner:
                 chain_offers=chain_offers,
             )
             try:
-                raw = await self._async_ask_ai(prompt, "REMA 1000 madplan")
+                raw = await self._async_ask_ai(
+                    prompt, "REMA 1000 madplan", structure=plan_structure(schema_library())
+                )
             except HomeAssistantError as err:
                 if best is None:
                     raise
@@ -2783,10 +2855,26 @@ class MealPlanner:
                     key=lambda line: line["cost"],
                     reverse=True,
                 )[:6]
+                fixed_cost = sum(
+                    float(line.get("cost") or 0)
+                    for line in plan["shopping"]
+                    if line.get("must_have")
+                )
                 lines.append(
                     f"- Indkøbslisten kostede {plan['total']:.0f} kr., men budgettet er "
-                    f"{settings['budget']} kr. Dyreste varer: "
-                    + ", ".join(f"{line['name']} ({line['cost']:.0f} kr.)" for line in expensive)
+                    f"{settings['budget']} kr."
+                    + (
+                        f" Heraf er {fixed_cost:.0f} kr. faste ugevarer, som du ikke kan ændre, "
+                        f"så retternes varer må højst koste {settings['budget'] - fixed_cost:.0f} kr."
+                        if fixed_cost
+                        else ""
+                    )
+                    + " Dyreste varer: "
+                    + ", ".join(
+                        f"{line['name']} ({line['cost']:.0f} kr.)"
+                        for line in expensive
+                        if not line.get("must_have")
+                    )
                     + ". Vælg billigere retter og flere tilbudsvarer."
                 )
             previous = "; ".join(
@@ -2801,6 +2889,108 @@ class MealPlanner:
             )
         assert best is not None
         return best
+
+    async def _async_ai_choices(self, plan: dict[str, Any]) -> None:
+        """One question to the AI about the lines the matcher is not sure of: which
+        of the products found is the ingredient, or none of them. Its pick is a
+        better first choice for the family's check; the line stays marked for it.
+        """
+        unsure = [
+            line
+            for line in plan["shopping"]
+            if needs_review(line) and line.get("alternatives") and not line.get("product_id")
+        ]
+        if not unsure or not self.ai_available:
+            return
+        options: dict[str, dict[int, dict[str, Any]]] = {}
+        rows: list[str] = []
+        for line in unsure:
+            found = [line["product"]] if line.get("product") else []
+            found += [a for a in line["alternatives"] if a["id"] not in {p["id"] for p in found}]
+            options[line["id"]] = {int(p["id"]): p for p in found[:6]}
+            need = (
+                f" ({line['amount']:g} {line['unit']})"
+                if line.get("amount") and line.get("unit") and line["unit"] != "pk"
+                else ""
+            )
+            rows.append(
+                f"{line['id']} | {line['name']}{need} | "
+                + "; ".join(
+                    f"{pid}: {p['name']}"
+                    + (
+                        f" ({str(p['underline']).split('/')[0].strip()})"
+                        if p.get("underline")
+                        else ""
+                    )
+                    for pid, p in options[line["id"]].items()
+                )
+            )
+        prompt = "\n".join(
+            [
+                "Du hjælper en dansk familie med indkøb i REMA 1000. For hver ingrediens fra deres "
+                "madplan står de varer, butikkens søgning fandt. Vælg den vare, der ER ingrediensen "
+                "til en ret: den rigtige slags (fersk kød, ikke pålæg; frisk peberfrugt, ikke "
+                "strimler på dåse; nudler, ikke cupnudler; almindelig størrelse), ikke en "
+                "færdigret, en sauce eller noget med smag af ingrediensen. Er ingen af varerne "
+                "ingrediensen, så svar null for den. Svar for alle linjer.",
+                "",
+                "linje-id | ingrediens | varer (vare-id: navn (størrelse)):",
+                *rows,
+                "",
+                "SVARFORMAT: kun gyldig JSON, præcis sådan:",
+                json.dumps(
+                    {"choices": [{"line": unsure[0]["id"], "product": None}]}, ensure_ascii=False
+                ),
+            ]
+        )
+        try:
+            raw = await self._async_ask_ai(
+                prompt, "REMA 1000 varevalg", structure=choices_structure(schema_library())
+            )
+        except HomeAssistantError as err:
+            _LOGGER.debug("The AI could not help choose products: %s", err)
+            return
+        picks = {
+            str(c.get("line")): c.get("product")
+            for c in raw.get("choices") or []
+            if isinstance(c, dict)
+        }
+        by_id = {line["id"]: line for line in unsure}
+        for line_id, pick in picks.items():
+            line = by_id.get(line_id)
+            if line is None:
+                continue
+            current = (line.get("product") or {}).get("id")
+            if pick is None or not isinstance(pick, int):
+                if current is not None:
+                    line["confidence"] = "low"
+                    line["note"] = "AI'en mener ikke, nogen af varerne passer – tjek den"
+                continue
+            if pick not in options[line_id] or pick == current:
+                if pick == current and line.get("confidence") == "low":
+                    line["confidence"] = "medium"
+                continue
+            try:
+                products = await self.client.async_get_products([pick])
+            except RemaError:
+                continue
+            product = next((p for p in products if p.id == pick and p.price), None)
+            if product is None:
+                continue
+            spec = line_spec(line)
+            self._apply(
+                line,
+                product,
+                packages_needed(line["amount"], line.get("unit"), product, spec.piece_g),
+            )
+            line["confidence"] = "medium"
+            line["note"] = "AI'en valgte denne blandt mulighederne – tjek den"
+            line["alternatives"] = [a for a in line["alternatives"] if a["id"] != pick] + (
+                [_alternative_from(options[line_id][current])]
+                if current in options[line_id]
+                else []
+            )
+        plan["total"] = plan_total(plan["shopping"])
 
     async def _async_site_recipes(
         self, site_ids: list[str], offers: list[Offer]
