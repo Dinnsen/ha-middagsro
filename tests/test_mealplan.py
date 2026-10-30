@@ -179,7 +179,7 @@ def test_prompt_with_every_rule() -> None:
         "økologiske æg",
         "Mælk skal være økologisk",
         "Frugt og grønt skal være økologisk",
-        "VIGTIGT fra sidste forsøg: For dyrt",
+        "RETTELSER FRA SIDSTE FORSØG – det vigtigste: For dyrt",
         "[f1] Lasagne",
         "[f2] Laks (kun på tilbud)",
         "Faste ugevarer",
@@ -586,7 +586,7 @@ async def test_plan_priced_on_its_first_day(
 
 def test_late_offers_in_prompt() -> None:
     """Offers that start thursday: left out, or marked with their first day."""
-    coffee = Offer(id="o-3", heading="Kaffe", description=None, price=39, pre_price=None,
+    coffee = Offer(id="o-3", heading="Kyllingelår", description=None, price=39, pre_price=None,
                    quantity=None, valid_from="2026-10-21T22:00:00+0000",
                    valid_to="2026-10-24T21:59:59+0000")  # fmt: skip
     offers = [*OFFERS, coffee]
@@ -603,10 +603,10 @@ def test_late_offers_in_prompt() -> None:
         "late": late,
     }
     once = mp.build_prompt(settings=clean_settings({}), **kwargs)
-    assert "Kaffe" not in once
+    assert "Kyllingelår" not in once
     assert "gælder først fra" not in once
     twice = mp.build_prompt(settings=clean_settings({"shop_late_week": True}), **kwargs)
-    assert "o2 | Kaffe | 39 kr. | | gælder først fra torsdag 2026-10-22" in twice
+    assert "o2 | Kyllingelår | 39 kr. | | gælder først fra torsdag 2026-10-22" in twice
     assert "må KUN bruges i retter på eller efter den dag" in twice
 
 
@@ -618,11 +618,16 @@ async def test_late_offer_bought_on_its_day(
 ) -> None:
     """With late-week shopping, a thursday offer is bought and priced on thursday."""
     store = init_integration.runtime_data.store
-    await store.async_set_settings({**SETTINGS, "shop_late_week": True, "must_haves": []})
+    await store.async_set_settings(
+        {**SETTINGS, "shop_late_week": True, "must_haves": [], "egg_min": "organic"}
+    )
     coffee = Offer(id="o-3", heading="Kaffe", description=None, price=39, pre_price=None,
                    quantity=None, valid_from="2026-10-21T22:00:00+0000",
                    valid_to="2026-10-24T21:59:59+0000")  # fmt: skip
-    mock_client.async_get_offers.return_value = [*OFFERS, coffee]
+    eggs = Offer(id="o-4", heading="Skrabeæg M/L", description="10 stk.", price=20,
+                 pre_price=None, quantity="10 stk.", valid_from="2026-10-21T22:00:00+0000",
+                 valid_to="2026-10-24T21:59:59+0000")  # fmt: skip
+    mock_client.async_get_offers.return_value = [*OFFERS, coffee, eggs]
     seen: dict[str, datetime | None] = {}
 
     async def search(query: str, limit: int = 24, at: datetime | None = None) -> list[Any]:
@@ -633,6 +638,7 @@ async def test_late_offer_bought_on_its_day(
     shopping = [
         SHOPPING[0],
         {"name": "Kaffe", "amount": 1, "unit": "pk", "search": "kaffe", "offer": "o2"},
+        {"name": "Æg", "amount": 10, "unit": "stk", "search": "æg", "offer": "o3"},
     ]
     planner = init_integration.runtime_data.planner
     await _generate(planner, FakeAI(ai_answer(mp.plan_dates(START, 7), shopping)))
@@ -640,6 +646,9 @@ async def test_late_offer_bought_on_its_day(
     assert plan is not None
     lines = {line["name"]: line for line in plan["shopping"]}
     assert lines["Kaffe"]["buy_from"] == "2026-10-22"
+    # The family's organic eggs are not the thursday offer on skrabeæg: shopping day.
+    assert lines["Æg"]["product"]["name"] == "ØKOLOGISKE ÆG"
+    assert lines["Æg"]["buy_from"] is None
     assert lines["Hakket oksekød"]["buy_from"] is None
     assert seen["kaffe"] == datetime(2026, 10, 22, 10, tzinfo=UTC)
     assert seen["hakket oksekød"] == datetime(2026, 10, 18, 10, tzinfo=UTC)
@@ -936,6 +945,63 @@ async def test_generate_keeps_cheapest_when_still_over(
     assert plan["total"] == 8
     assert plan["over_budget"] is True
     assert plan["days"][0]["recipe_error"] == "busy"
+
+
+async def test_generate_keeps_the_best_try_when_the_ai_fails_later(
+    hass: HomeAssistant, init_integration: MockConfigEntry, ai_task: str
+) -> None:
+    """The first try is over budget; the AI then fails: the first try is the plan."""
+    store = init_integration.runtime_data.store
+    await store.async_set_settings({**SETTINGS, "budget": 5, "must_haves": []})
+    planner = init_integration.runtime_data.planner
+    dates = mp.plan_dates(START, 7)
+    ai = FakeAI(
+        ai_answer(dates, SHOPPING[4:5]),
+        HomeAssistantError("busy"),
+        recipe={**RECIPE, "ingredients": []},
+    )
+    await _generate(planner, ai)
+    assert planner.status["state"] == "idle"
+    plan = store.latest_plan
+    assert plan is not None
+    assert plan["total"] == 8
+    assert plan["over_budget"] is True
+    assert len(ai.prompts) == 2
+
+
+async def test_generate_prices_only_what_may_be_best(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock, ai_task: str
+) -> None:
+    """A try that breaks more rules than the best so far is not priced, just corrected."""
+    store = init_integration.runtime_data.store
+    await store.async_set_settings({**SETTINGS, "must_haves": []})
+    planner = init_integration.runtime_data.planner
+    dates = mp.plan_dates(START, 7)
+    once = ("Tacos", "Tacos", "Risotto", "Pandekager", "Omelet", "Falafel", "Gullasch")
+    twice = ("Tacos", "Tacos", "Risotto", "Risotto", "Omelet", "Falafel", "Gullasch")
+    ai = FakeAI(
+        ai_answer(dates, SHOPPING[4:5], once),
+        ai_answer(dates, SHOPPING[:4], twice),
+        recipe={**RECIPE, "ingredients": []},
+    )
+    searched: list[str] = []
+    original = mock_client.async_search_products.side_effect
+
+    async def counting(query: str, limit: int = 15, **kwargs: Any) -> Any:
+        searched.append(query.lower())
+        return await original(query, limit)
+
+    mock_client.async_search_products.side_effect = counting
+    await _generate(planner, ai)
+    assert len(ai.prompts) == 3
+    plan = store.latest_plan
+    assert plan is not None
+    # The first try (one repeat) is kept over the later ones (two repeats) ...
+    assert [d["dish"] for d in plan["days"]][:2] == ["Tacos", "Tacos"]
+    assert plan["total"] == 8
+    # ... and their minced beef, eggs, milk and spaghetti were never searched for.
+    assert not {"hakket oksekød", "æg", "letmælk"} & set(searched)
+    assert "er samme ret som" in ai.prompts[1]
 
 
 async def test_generate_errors(
@@ -1733,7 +1799,43 @@ def test_fixed_day_is_kept_simple() -> None:
         recent_dishes=[],
     )
     assert "Lav den PRÆCIS som familien beskriver den" in prompt
-    assert "Hver regel skal stå som sit eget punkt i checklist" in prompt
+    assert "skriv hver regel som sit eget punkt i checklist" in prompt
+    assert "checklist: kun familiens faste regler" in prompt
+
+
+def test_prompt_offers_only_dinner_the_family_can_eat() -> None:
+    """Household goods, sweets and what the family avoids are left out of the offers."""
+    offers = [
+        *OFFERS,
+        Offer(id="o-3", heading="Toiletpapir", description=None, price=30.0, pre_price=None,
+              quantity=None, valid_from=None, valid_to=None),
+        Offer(id="o-4", heading="Svinekoteletter", description="1 kg", price=50.0, pre_price=None,
+              quantity=None, valid_from=None, valid_to=None),
+        Offer(id="o-5", heading="Rejer", description="300 g", price=40.0, pre_price=None,
+              quantity=None, valid_from=None, valid_to=None),
+    ]  # fmt: skip
+    settings = clean_settings({"avoid": ["pork", "animal_products"], "allergies": ["shellfish"]})
+    prompt = mp.build_prompt(
+        settings=settings, dates=mp.plan_dates(START, 7), catalog=UPCOMING, offers=offers,
+        favorites_due=[], favorites_optional=[], recent_dishes=[],
+    )  # fmt: skip
+    assert "o1 | Broccoli" in prompt
+    assert "Toiletpapir" not in prompt
+    assert "Svinekoteletter" not in prompt
+    assert "Rejer" not in prompt
+    assert "o0 | Hakket oksekød" not in prompt  # vegan: no meat offers either
+    assert "Alle retter er veganske" in prompt
+    assert "hverken i retterne, som tilbehør eller på indkøbslisten" in prompt
+    assert mp.dinner_offer("Kyllingelår", "1 kg", clean_settings({})) is True
+    assert mp.dinner_offer("Vaskemiddel", None, clean_settings({})) is False
+    assert mp.dinner_offer("Vin", None, clean_settings({})) is False
+    assert mp.dinner_offer("Vindruer", None, clean_settings({})) is True
+    vegetarian = mp.build_prompt(
+        settings=clean_settings({"avoid": ["meat"]}), dates=mp.plan_dates(START, 7),
+        catalog=UPCOMING, offers=offers, favorites_due=[], favorites_optional=[], recent_dishes=[],
+    )  # fmt: skip
+    assert "Alle retter er vegetariske" in vegetarian
+    assert "o0 | Hakket oksekød" not in vegetarian
 
 
 NETTO_OFFER = {

@@ -324,6 +324,15 @@
     },
     "plan_already_sent": {
       "message": "The meal plan's shopping list has already been sent, so it can't be updated. Make a new meal plan instead."
+    },
+    "review_needed": {
+      "message": "{count} must be checked before the list is sent – see the yellow box at the top of the shopping list."
+    },
+    "product_required": {
+      "message": "Choose a product first."
+    },
+    "unknown_action": {
+      "message": "Unknown action: {action}"
     }
   },
   "issues": {

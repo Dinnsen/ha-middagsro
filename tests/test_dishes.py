@@ -297,7 +297,7 @@ async def test_recipe_lines_and_product_kinds(
     line = mp.recipe_line({"name": "laksefilet", "amount": "1,2 kg"}, 0.4)
     assert line.pop("id")
     assert line == {
-        "name": "Laksefilet", "amount": 480, "unit": "g", "search": "laksefilet",
+        "name": "Laksefilet", "amount": 480, "unit": "g", "search": "laks", "key": "laks",
         "category": "Fisk", "offer": None, "must_have": False, "product_id": None, "recipe": True,
     }  # fmt: skip
     assert mp.recipe_line({"name": "fløde", "amount": "2,5 dl"}, 1.0)["amount"] == 250
@@ -333,7 +333,7 @@ async def test_recipe_lines_and_product_kinds(
     assert mp.kind_penalty(line, kebab, ["kebab"]) == 0.0
     assert mp.kind_penalty({"name": "Pizza", "search": "pizza"}, pizza, ["pizza"]) == 0.0
     candidates, _penalty = planner._candidates(line, [pizza, kebab], "kebab")
-    assert [p.id for p in candidates] == [pizza.id, kebab.id]  # both fit by name ...
+    assert [p.id for p in candidates] == [kebab.id]  # the pizza shelf is never the kebab
     fresh = make_product(3, "BROCCOLI", 12.0, underline="1 STK.", department="Frugt & grønt")
     frozen = make_product(4, "BROCCOLI", 10.0, underline="400 GR. / ØKO.", department="Frost",
                           is_organic=True)  # fmt: skip

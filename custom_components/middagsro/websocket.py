@@ -50,6 +50,7 @@ from .planedit import (
     async_edit_line,
     async_move_day,
     async_remove_line,
+    async_review_line,
     async_swap_dish,
     async_swap_options,
     cooked_day,
@@ -798,6 +799,20 @@ async def ws_plan_refresh(
 
 
 @websocket_api.websocket_command(
+    {vol.Required("type"): "middagsro/plan/rematch", ENTRY: str, vol.Required("plan_id"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_plan_rematch(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Find every unsent item of the plan again with the matching as it is now."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await planner.async_rematch_all(msg["plan_id"])
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
     {
         vol.Required("type"): "middagsro/plan/remove",
         ENTRY: str,
@@ -881,6 +896,29 @@ async def ws_plan_line(
         delete=msg["delete"],
         packages=msg.get("packages"),
         product_id=msg.get("product_id"),
+    )
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/plan/review",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("line_id"): str,
+        vol.Required("action"): vol.In(["keep", "choose", "skip", "unskip", "forget"]),
+        vol.Optional("product_id"): vol.Any(int, None),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_plan_review(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The family's answer to an uncertain shopping line."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_review_line(
+        planner, msg["plan_id"], msg["line_id"], msg["action"], msg.get("product_id")
     )
     connection.send_result(msg["id"], plan)
 
@@ -1622,6 +1660,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_sites_recipe,
         ws_mealie_recipes,
         ws_plan_line,
+        ws_plan_review,
+        ws_plan_rematch,
         ws_health,
         ws_nutrition,
         ws_mealie_save,

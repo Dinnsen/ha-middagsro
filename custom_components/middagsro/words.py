@@ -56,6 +56,21 @@ _DIFFERENT_WORDS = {
     "kopnudler",
     "instant",
     "cup",
+    "bbq",
+    "indbagt",
+    "fyldt",
+    "fyldte",
+    # the lighter or smaller variant, unless asked for
+    "light",
+    "mini",
+    # another part or state of the animal: fish cakes, roe, liver, shrimps in brine
+    "fars",
+    "rogn",
+    "lever",
+    "lage",
+    # "vej selv": loose, weighed by the customer (a bag is what the list means)
+    "vej",
+    "selv",
 }
 # REMA's categories of ready-made food: not what an ingredient search is after.
 _DISH_CATEGORIES = {
@@ -82,7 +97,7 @@ _HERBS = {
 }
 # First parts of compound words that make it another product (hvidløg is not løg).
 _DIFFERENT_PREFIXES = {
-    "hvid", "perle", "hvidløgs", "rød", "forårs", "sukker",
+    "hvid", "perle", "hvidløgs", "rød", "forårs", "sukker", "baby",
     # cupnudler and kopnudler are an instant meal, not the noodles for a dish
     "cup", "kop", "instant",
     # kakaomælk, havremælk, kærnemælk … are not mælk
@@ -149,6 +164,10 @@ _PREPARATION_TAIL = {
     "kogte", "stegt", "ristet", "ristede", "knust", "knuste", "fjernet", "valgfri", "valgfrit",
     "evt", "eventuelt", "gerne", "herfra", "heraf",
     "tern", "skiver", "strimler", "stykker", "både", "plus", "ekstra", "mere",
+    # What to do with it, as the recipe says it: "kaffirblade, fjern stilken og striml bladene".
+    "fjern", "fjernes", "striml", "strimles", "skær", "skæres", "skræl", "skrælles", "hak",
+    "hakkes", "riv", "rives", "pil", "pilles", "skyl", "skylles", "knus", "knuses", "fint",
+    "groft", "stilken", "stilkene", "kernerne", "midten",
 }  # fmt: skip
 # "2 stængler citrongræs", "3 fed hvidløg", "1 bundt persille": the thing comes after.
 _COUNT_WORDS = {

@@ -89,6 +89,12 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          # A beta (2.12.0b1, 2.12.0rc1) is a pre-release: HACS only offers it to
+          # those who ask for betas, and it is never "latest".
+          case "$version" in
+            *[abr]*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
 
       - name: All checks passed
         id: checks
@@ -152,8 +158,9 @@ jobs:
           import json, os, re
           def key(text):
               return tuple(int(part) for part in re.findall(r"\d+", text)[:3])
+          betas = {tag for tag in json.load(open("tags.json")) if re.search(r"\d[abr]", tag)}
           version = key(os.environ["VERSION"])
-          newer = [tag for tag in json.load(open("tags.json")) if key(tag) > version]
+          newer = [tag for tag in json.load(open("tags.json")) if tag not in betas and key(tag) > version]
           with open(os.environ["GITHUB_OUTPUT"], "a") as out:
               out.write(f"latest={'false' if newer else 'true'}\n")
           PY
@@ -165,18 +172,24 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
           SHA: ${{ steps.commit.outputs.sha }}
           LATEST: ${{ steps.latest.outputs.latest }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG was published meanwhile; nothing to do."
             exit 0
           fi
+          extra=""
+          if [ "$PRERELEASE" = "true" ]; then
+            extra="--prerelease"
+            LATEST=false
+          fi
           # HACS installs from this zip (hacs.json: zip_release), so GitHub counts the downloads.
           (cd custom_components/middagsro && zip -r -X -q "$GITHUB_WORKSPACE/middagsro.zip" . -x '*__pycache__*')
           unzip -l middagsro.zip | grep -q " manifest.json$"
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            gh release create "$TAG" middagsro.zip --title "$TAG" --notes-file release-notes.md --verify-tag --latest="$LATEST"
+            gh release create "$TAG" middagsro.zip --title "$TAG" --notes-file release-notes.md --verify-tag --latest="$LATEST" $extra
           else
-            gh release create "$TAG" middagsro.zip --title "$TAG" --notes-file release-notes.md --target "$SHA" --latest="$LATEST"
+            gh release create "$TAG" middagsro.zip --title "$TAG" --notes-file release-notes.md --target "$SHA" --latest="$LATEST" $extra
           fi
           echo "Published $TAG."
 

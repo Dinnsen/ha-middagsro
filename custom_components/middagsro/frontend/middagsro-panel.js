@@ -1329,6 +1329,24 @@ class Rema1000Panel extends HTMLElement {
         );
       },
       "line-menu": () => this._openLine(arg),
+      "review-keep": () => this._reviewAction(arg, "keep", null, "Varen beholdes – og huskes til næste gang."),
+      "review-skip": () => this._reviewAction(arg, "skip", null, "Varen er udeladt fra listen."),
+      "review-unskip": () => this._reviewAction(arg, "unskip", null, "Varen er med på listen igen."),
+      "review-forget": () => this._reviewAction(arg, "forget", null, "Valget er glemt – varen findes på ny næste gang."),
+      "review-choose": () => {
+        const [lineId, productId] = arg.split("|");
+        const line = this._plan?.shopping.find((l) => l.id === lineId);
+        const alt = line?.alternatives?.find((a) => String(a.id) === productId);
+        this._reviewAction(lineId, "choose", Number(productId), `${alt?.name || "Varen"} er sat på listen i stedet – og huskes til næste gang.`);
+      },
+      "review-keep-all": () => this._run(async () => {
+        const planId = this._plan?.id;
+        const unsure = (this._plan?.shopping || []).filter((l) => this._needsReview(l) && l.product);
+        for (const line of unsure) {
+          await this._ws("middagsro/plan/review", { plan_id: planId, line_id: line.id, action: "keep", product_id: null });
+        }
+        if (!this._viewingLatest && this._plan) this._plan = await this._ws("middagsro/plan", { plan_id: planId });
+      }, "Varerne beholdes – og huskes til næste gang."),
       "line-count": () => {
         const m = this._modal;
         if (!m) return;
@@ -1383,6 +1401,11 @@ class Rema1000Panel extends HTMLElement {
         this._run(() => this._ws("middagsro/mealie/sync", { plan_id: this._plan.id }), "Ugen er sat i Mealie-kalenderen."),
       "swap-pick": () => this._swapPick(Number(arg)),
       "pantry-open": () => this._pantryOpen(),
+      "plan-rematch": () =>
+        this._editPlan(
+          () => this._ws("middagsro/plan/rematch", { plan_id: this._plan.id }),
+          "Varerne er fundet igen. Jeres egne valg er beholdt, og usikre varer står øverst."
+        ),
       "plan-refresh": () =>
         this._editPlan(
           () => this._ws("middagsro/plan/refresh", { plan_id: this._plan.id }),
@@ -2148,6 +2171,19 @@ class Rema1000Panel extends HTMLElement {
                 .map(([k, label, unit]) => `<tr><td>${label}</td><td>${String(m.nutrition[k]).replace(".", ",")}${unit}</td></tr>`)
                 .join("")}</table></details>`
           : ""}
+        ${line.skipped ? `<div class="banner info">Varen er udeladt fra listen. <button class="btn small" data-action="review-unskip" data-arg="${esc(line.id)}" ${busy ? "disabled" : ""}>Tag den med igen</button></div>` : ""}
+        ${this._needsReview(line) ? `<div class="banner warn"><div>Middagsro er ikke sikker på, at det er den rigtige vare${line.note ? ` (${esc(line.note)})` : ""}.
+          <div class="row wrap">${p ? `<button class="btn small primary" data-action="review-keep" data-arg="${esc(line.id)}" ${busy ? "disabled" : ""}>✓ Behold varen</button>` : ""}
+          <button class="btn small" data-action="review-skip" data-arg="${esc(line.id)}" ${busy ? "disabled" : ""}>Udelad varen</button></div></div></div>` : ""}
+        ${line.remembered ? `<p class="muted small">Den vare I valgte til ingrediensen sidst. <button class="btn small" data-action="review-forget" data-arg="${esc(line.id)}" ${busy ? "disabled" : ""}>Glem valget</button></p>` : ""}
+        ${(line.alternatives || []).filter((a) => !p || a.id !== p.id).length ? `<h2 class="small-h">Andre muligheder</h2>
+        <div class="results">${(line.alternatives || [])
+          .filter((a) => !p || a.id !== p.id)
+          .map((a) => `<button class="result" data-action="review-choose" data-arg="${esc(line.id)}|${a.id}" ${busy ? "disabled" : ""}>
+              ${a.image ? `<img src="${esc(a.image)}" alt="">` : ""}
+              <span><b>${esc(a.name)}</b><span class="muted">${esc(a.underline || "")}${a.price != null ? ` · ${kr(a.price)}` : ""}</span></span>
+              ${a.is_organic ? '<span class="badge eco">Øko</span>' : ""}<span class="add">Vælg</span></button>`)
+          .join("")}</div>` : ""}
         ${this._hasPrices() ? `<h2 class="small-h">Skift til en anden vare</h2>
         <div class="row wrap">
           <input class="grow" type="search" data-bind="linesearch" value="${esc(m.query)}" placeholder="Søg i ${esc(this._shopName())}">
@@ -3969,6 +4005,59 @@ class Rema1000Panel extends HTMLElement {
       </div>`;
   }
 
+  _needsReview(line) {
+    return ["medium", "low"].includes(line.confidence) && !line.reviewed && !line.must_have && !line.added && !line.sent && !line.skipped;
+  }
+
+  // The lines Middagsro is not sure about: what was chosen, what else it could be, and
+  // the family's answer (keep, choose another, leave it out).
+  _reviewHtml(plan, lines) {
+    const unsure = lines.filter((line) => this._needsReview(line));
+    if (!unsure.length) return "";
+    const mode = this._state?.settings?.uncertain_items || "review";
+    const busy = this._busy ? "disabled" : "";
+    const items = unsure
+      .map((line) => {
+        const p = line.product;
+        const need = line.amount && line.unit && line.unit !== "pk" ? ` (${esc(`${line.amount} ${line.unit}`)})` : "";
+        const alternatives = (line.alternatives || [])
+          .filter((a) => !p || a.id !== p.id)
+          .slice(0, 4)
+          .map(
+            (a) => `<button class="alt" data-action="review-choose" data-arg="${esc(line.id)}|${a.id}" ${busy} title="${esc(a.underline || "")}">
+              ${a.image ? `<img src="${esc(a.image)}" alt="" loading="lazy">` : ""}<span><b>${esc(a.name)}</b><span class="muted">${esc((a.underline || "").split("/")[0].trim())}${a.price != null ? ` · ${kr(a.price)}` : ""}</span></span></button>`
+          )
+          .join("");
+        return `<li class="review-line">
+          <div class="review-what"><b>${esc(line.name)}</b>${need}
+            <span class="muted">→ ${p ? `${esc(p.name)}${p.underline ? ` (${esc(p.underline.split("/")[0].trim())})` : ""}${line.packages > 1 ? ` × ${line.packages}` : ""}` : "ingen sikker vare fundet"}</span></div>
+          ${alternatives ? `<div class="alts">${alternatives}</div>` : ""}
+          <div class="row wrap review-actions">
+            ${p ? `<button class="btn small primary" data-action="review-keep" data-arg="${esc(line.id)}" ${busy}>✓ Behold</button>` : ""}
+            <button class="btn small" data-action="line-menu" data-arg="${esc(line.id)}" ${busy}>Søg anden vare</button>
+            <button class="btn small" data-action="review-skip" data-arg="${esc(line.id)}" ${busy}>Udelad</button>
+          </div>
+        </li>`;
+      })
+      .join("");
+    return `<div class="banner warn review-banner"><div>
+      <b>${unsure.length} ${unsure.length === 1 ? "vare bør tjekkes" : "varer bør tjekkes"}</b> – Middagsro er ikke sikker på, at det er den rigtige vare til ingrediensen.
+      ${mode === "review" ? "Listen sendes, når de er tjekket." : mode === "skip" ? "De sendes ikke med, medmindre I beholder eller vælger en vare." : "De sendes som valgt, hvis I ikke retter dem."}
+      Jeres valg huskes til næste madplan.
+      <ul class="review">${items}</ul>
+      ${unsure.length > 1 && unsure.some((l) => l.product) ? `<button class="btn small" data-action="review-keep-all" ${busy}>Behold alle som valgt</button>` : ""}
+    </div></div>`;
+  }
+
+  _reviewAction(lineId, action, productId, okMessage) {
+    const planId = this._plan?.id;
+    if (!planId) return;
+    return this._editPlan(
+      () => this._ws("middagsro/plan/review", { plan_id: planId, line_id: lineId, action, product_id: productId ?? null }),
+      okMessage
+    );
+  }
+
   _shoppingView() {
     const plan = this._plan;
     const rema = this._state.rema_list;
@@ -3980,7 +4069,7 @@ class Rema1000Panel extends HTMLElement {
       const lateLines = plan.shopping.filter((line) => line.buy_from && !line.buy_at && !line.sent);
       const mainLines = plan.shopping.filter((line) => !line.buy_from && !line.buy_at && !line.sent);
       mainLines.forEach((line) => (groups[line.category || "Andet"] ||= []).push(line));
-      const basketTotal = mainLines.reduce((sum, line) => sum + (line.cost || 0), 0);
+      const basketTotal = mainLines.reduce((sum, line) => sum + (line.skipped ? 0 : line.cost || 0), 0);
       const sentCount = plan.shopping.filter((line) => line.sent).length;
       const missingProducts = (plan.missing_products || []).filter((item) =>
         plan.shopping.some((line) => line.id === item.id && !line.sent && !line.product && !line.buy_at));
@@ -3999,12 +4088,14 @@ class Rema1000Panel extends HTMLElement {
               const badges = [
                 p?.is_advertised || p?.is_campaign ? '<span class="badge offer">Tilbud</span>' : "",
                 p?.is_organic ? '<span class="badge eco">Øko</span>' : "",
+                line.skipped ? '<span class="badge skipped">Udeladt</span>' : this._needsReview(line) ? `<span class="badge doubt">${line.confidence === "low" ? "Tjek" : "Usikker"}</span>` : "",
+                line.remembered ? '<span class="badge remembered" title="Den vare I valgte til ingrediensen sidst">Jeres valg</span>' : "",
                 line.must_have ? '<span class="badge">Fast vare</span>' : "",
                 line.buy_from ? `<span class="badge from">Købes ${esc(dayShort(line.buy_from))}</span>` : "",
                 line.price_source === "avis" ? '<span class="badge">Avispris</span>' : "",
               ].join("");
               const need = line.amount && line.unit && line.unit !== "pk" ? `${line.amount} ${line.unit}` : "";
-              return `<li class="line tappable ${this._isRema() && line.id ? "has-send" : ""}" data-action="line-menu" data-arg="${esc(line.id || "")}">
+              return `<li class="line tappable ${this._isRema() && line.id ? "has-send" : ""} ${line.skipped ? "is-skipped" : ""}" data-action="line-menu" data-arg="${esc(line.id || "")}">
                 ${p?.image ? `<img src="${esc(p.image)}" alt="" loading="lazy">` : '<span class="noimg">?</span>'}
                 <div class="what">
                   <span class="title"><b>${esc(p ? p.name : line.name)}</b> ${badges}</span>
@@ -4064,6 +4155,7 @@ class Rema1000Panel extends HTMLElement {
         ${missingProducts.length ? `<div class="banner warn"><div><b>${missingProducts.length} ${missingProducts.length === 1 ? "vare mangler" : "varer mangler"} et match</b>
           <ul>${missingProducts.map((item) => `<li>${esc(item.name)}${item.amount && item.unit ? ` (${esc(item.amount)} ${esc(item.unit)})` : ""}</li>`).join("")}</ul>
           <p>Disse varer er ikke sendt. Vælg selv et produkt til dem, der mangler, eller prøv søgningen igen.</p><button class="btn small" data-action="rematch-missing" ${this._busy ? "disabled" : ""}>Søg manglende varer igen</button></div></div>` : ""}
+        ${this._reviewHtml(plan, mainLines)}
         ${mainLines.length ? '<p class="muted small">Tryk på en vare for at rette antal, skifte den ud eller slette den.</p>' : '<p class="muted">Kurven er tom. Søg en vare frem nedenfor for at tilføje den.</p>'}
         ${Object.entries(basketSavings)
           .map(
@@ -4081,6 +4173,8 @@ class Rema1000Panel extends HTMLElement {
         </div>
         <details class="shopping-tools"><summary>Flere muligheder</summary><div class="row wrap">
           <button class="btn small" data-action="pantry-open">Basisvarer i madplanen</button>
+          ${this._hasPrices() ? `<button class="btn small" data-action="plan-rematch" ${this._busy ? "disabled" : ""}
+            title="Alle varer, der ikke er sendt, findes igen med de nyeste regler. Retterne og jeres egne valg bliver.">Find varer igen</button>` : ""}
           <button class="btn small" data-action="plan-refresh" ${this._busy ? "disabled" : ""}>Opdatér tilbudspriser</button>
           ${!missingProducts.length && this._hasPrices() && plan.shopping.some(line => !line.product && !line.sent && !line.product_id && !line.added && !line.buy_at) ? `<button class="btn small" data-action="rematch-missing" ${this._busy ? "disabled" : ""}>Søg manglende varer igen</button>` : ""}
         </div></details>
@@ -4737,6 +4831,13 @@ class Rema1000Panel extends HTMLElement {
             .join("")}
         </div>
         ${f.organic === "prefer" ? `<label class="field inline">Højst så mange % dyrere end den billigste ${num("organic_max_extra_pct", f.organic_max_extra_pct, 0, 500)}</label>` : ""}
+        `) + card(`        <h2 class="flush">Usikre varer</h2>
+        <p class="muted small">Når Middagsro ikke er sikker på, at en vare er den rigtige til en ingrediens (fx "oksekød i strimler"), markeres den med <span class="badge doubt">Tjek</span> på indkøbslisten med andre muligheder at vælge imellem. Jeres valg huskes til næste madplan.</p>
+        <div class="row wrap">
+          ${[["review", "Vis dem til tjek, før listen sendes"], ["send", "Send dem som valgt"], ["skip", "Udelad dem fra listen"]]
+            .map(([v, l]) => `<label class="check"><input type="radio" name="uncertain_items" data-path="uncertain_items" value="${v}" ${(f.uncertain_items || "review") === v ? "checked" : ""}> ${l}</label>`)
+            .join("")}
+        </div>
 
         <h2>Krav til varer</h2>
         <p class="muted small">Gælder uanset pris. Findes der ingen vare, der opfylder kravet, vælges den billigste med en note.</p>
@@ -5256,6 +5357,20 @@ const STYLE = `
   .badge.offer { background: var(--rema-sale); color: var(--rema-on-sale); }
   .badge.eco, .badge.sent { background: var(--rema-ok); color: var(--rema-on-accent); }
   .badge.from { background: var(--info-color, #039be5); color: #fff; }
+  .badge.doubt { background: var(--rema-warn); color: #000; }
+  .badge.skipped { background: var(--secondary-text-color); color: var(--rema-on-accent); }
+  .badge.remembered { background: var(--rema-accent); color: var(--rema-on-accent); }
+  .line.is-skipped .what, .line.is-skipped .cost { opacity: 0.55; text-decoration: line-through; }
+  .review { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 10px; }
+  .review-line { background: var(--card-background-color, #fff); border-radius: 10px; padding: 10px 12px; }
+  .review-what { display: flex; flex-direction: column; gap: 2px; }
+  .alts { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+  .alt { display: flex; gap: 8px; align-items: center; text-align: left; background: var(--rema-subtle); border: 1px solid transparent;
+    border-radius: 10px; padding: 6px 10px; cursor: pointer; color: var(--primary-text-color); font-size: 13px; max-width: 100%; }
+  .alt:hover { border-color: var(--rema-accent); }
+  .alt img { width: 32px; height: 32px; object-fit: contain; border-radius: 6px; background: #fff; }
+  .alt span { display: flex; flex-direction: column; min-width: 0; } .alt b { font-size: 13px; }
+  .review-actions { margin-top: 4px; }
   .prod .avis { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .badge.draft { background: var(--rema-accent); color: var(--rema-on-accent); }
   details { margin-top: 14px; } summary { cursor: pointer; color: var(--secondary-text-color); }

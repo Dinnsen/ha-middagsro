@@ -227,6 +227,124 @@ def household_portions(settings: dict[str, Any]) -> float:
     return round(total, 1) or 2.0
 
 
+# ------------------------------------------------------------------ what the family can't eat
+
+# Words in an ingredient's name that mean it has the allergen, or is what the
+# family avoids; a word a product name starts with (or is) counts, so "fløde"
+# is in "piskefløde" and "ost" in "flødeost". The "unless" words say the name
+# is something else after all ("kokosmælk" is no milk, "risnudler" no wheat).
+_FOOD_WORDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "gluten": (
+        ("mel", "hvede", "pasta", "spaghetti", "penne", "lasagne", "nudler", "brød", "boller", "bulgur",
+         "couscous", "rasp", "panko", "tortilla", "wrap", "pita", "kiks", "øl", "byg", "rug", "seitan",
+         "havregryn", "sojasauce", "soja", "durum", "semulje", "croutoner", "tærtedej", "butterdej"),
+        ("glutenfri", "ris", "glas", "boghvede", "majs", "kikærte", "mandel", "kartoffel", "tamari", "sojabønne"),
+    ),
+    "lactose": (
+        ("mælk", "fløde", "smør", "ost", "yoghurt", "skyr", "creme fraiche", "cremefraiche", "fraiche", "kvark",
+         "hytteost", "parmesan", "mozzarella", "feta", "is", "ymer", "kærnemælk", "flødeis", "chokolade"),
+        ("laktosefri", "mælkefri", "kokos", "havre", "mandel", "soja", "ris", "plante", "veganske", "vegansk", "mørk"),
+    ),
+    "milk": (
+        ("mælk", "fløde", "smør", "ost", "yoghurt", "skyr", "creme fraiche", "cremefraiche", "fraiche", "kvark",
+         "hytteost", "parmesan", "mozzarella", "feta", "is", "ymer", "kærnemælk", "flødeis", "chokolade", "valle",
+         "kasein", "laktosefri"),
+        ("mælkefri", "kokos", "havre", "mandel", "soja", "ris", "plante", "veganske", "vegansk", "mørk"),
+    ),
+    "egg": (("æg", "mayonnaise", "mayo", "remoulade", "bearnaise", "hollandaise", "aioli"), ("æggefri", "vegansk")),
+    "nuts": (
+        ("nødder", "nød", "mandel", "mandler", "hasselnød", "valnød", "cashew", "pistacie", "pekan", "marcipan",
+         "nougat", "pesto", "nutella", "nøddesmør"),
+        ("muskat", "kokos", "jordnød", "peanut"),
+    ),
+    "peanuts": (("peanut", "jordnød", "satay"), ()),
+    "soy": (("soja", "soya", "tofu", "edamame", "miso", "tempeh", "teriyaki", "hoisin"), ()),
+    "sesame": (("sesam", "tahin", "hummus"), ()),
+    "celery": (("selleri", "bladselleri", "knoldselleri"), ()),
+    "mustard": (("sennep", "dijon"), ()),
+    "fish": (
+        ("fisk", "laks", "torsk", "tun", "sej", "rødspætte", "makrel", "sild", "fiskesauce", "ansjos", "kuller",
+         "hoki", "ørred", "worcestershire", "fiskefrikadeller"),
+        (),
+    ),
+    "shellfish": (("rejer", "reje", "krebs", "hummer", "krabbe", "jomfruhummer", "scampi", "skaldyr"), ()),
+    "molluscs": (("muslinger", "musling", "østers", "blæksprutte", "calamari", "snegle"), ()),
+    "lupin": (("lupin",), ()),
+    "meat": (
+        ("kød", "okse", "svin", "gris", "kylling", "kalkun", "lam", "bacon", "pølse", "skinke", "fars", "bøf",
+         "kotelet", "mørbrad", "and", "flæsk", "frikadeller", "kebab", "pepperoni", "salami", "chorizo", "medister",
+         "spareribs", "nakke", "culotte", "entrecote", "roastbeef", "leverpostej", "kødboller", "hakkebøf"),
+        ("vegetar", "vegansk", "plante", "kødfri", "sojakød"),
+    ),
+    "pork": (
+        ("svin", "gris", "bacon", "skinke", "flæsk", "medister", "spareribs", "nakke", "svinekød", "pølse",
+         "kotelet", "mørbrad", "pepperoni", "salami", "chorizo", "leverpostej"),
+        ("okse", "kylling", "kalkun", "lamme", "kalve"),
+    ),
+    "beef": (("okse", "bøf", "oksekød", "hakkebøf", "entrecote", "culotte", "roastbeef", "kalv"), ("svine", "kyllinge")),
+    "spicy": (("chili", "jalapeño", "jalapeno", "sriracha", "cayenne", "sambal", "harissa", "stærk", "peberfrugt"), ("sød", "sweet")),
+}  # fmt: skip
+_FOOD_WORDS["animal_products"] = (
+    _FOOD_WORDS["meat"][0] + _FOOD_WORDS["fish"][0] + _FOOD_WORDS["shellfish"][0] + _FOOD_WORDS["egg"][0]
+    + _FOOD_WORDS["milk"][0] + ("honning", "gelatine", "husblas"),
+    ("vegansk", "plante", "kokos", "havre", "mandel", "soja", "ris", "mælkefri", "æggefri"),
+)  # fmt: skip
+_FOOD_WORDS["spicy"] = (_FOOD_WORDS["spicy"][0], ("sød", "sweet", "mild", "peberfrugt"))
+_FOOD_LABELS = {
+    "gluten": "allergi over for gluten", "lactose": "laktoseintolerans", "milk": "mælkeallergi",
+    "egg": "ægallergi", "nuts": "nøddeallergi", "peanuts": "jordnøddeallergi", "soy": "sojaallergi",
+    "sesame": "sesamallergi", "celery": "selleriallergi", "mustard": "sennepsallergi",
+    "fish": "fiskeallergi", "shellfish": "skaldyrsallergi", "molluscs": "allergi over for bløddyr",
+    "lupin": "lupinallergi", "meat": "ikke kød", "pork": "ikke svinekød", "beef": "ikke oksekød",
+    "animal_products": "vegansk mad", "spicy": "ikke stærk mad",
+}  # fmt: skip
+
+
+def _has_food_word(name: str, words: tuple[str, ...], unless: tuple[str, ...]) -> str | None:
+    """The word of the list that the name has (as a word or the end of one), unless
+    a word says the thing is something else."""
+    low = name.lower()
+    tokens = _tokens(name)
+    if any(u in low for u in unless):
+        return None
+    for word in words:
+        if " " in word:
+            if word in low:
+                return word
+            continue
+        for token in tokens:
+            if token == word or (
+                len(word) > 2 and (token.endswith(word) or token.startswith(word))
+            ):
+                return word
+    return None
+
+
+# Gluten and lactose have a free-from version of most things (REMA's GLUTENFRI
+# and LAKTOSEFRI products are preferred when the list is priced), so pasta or
+# milk in a dish is not a conflict for them; a milk-protein allergy is.
+_FREE_FROM_HANDLED = {"gluten", "lactose"}
+
+
+def food_conflicts(names: list[str], settings: dict[str, Any]) -> list[tuple[str, str]]:
+    """The ingredients the family can't have, with the rule each breaks:
+    ("fløde", "mælkeallergi"). Allergies first, then what they avoid."""
+    rules = [
+        ("allergy", a) for a in settings.get("allergies") or [] if a not in _FREE_FROM_HANDLED
+    ] + [("avoid", a) for a in settings.get("avoid") or []]
+    found: list[tuple[str, str]] = []
+    for name in names:
+        for _kind, key in rules:
+            lists = _FOOD_WORDS.get(key)
+            if (
+                lists
+                and _has_food_word(name, lists[0], lists[1])
+                and (name, _FOOD_LABELS[key]) not in found
+            ):
+                found.append((name, _FOOD_LABELS[key]))
+    return found
+
+
 # ------------------------------------------------------------------ checking a plan
 
 
@@ -239,9 +357,13 @@ def is_cooked(day: dict[str, Any]) -> bool:
     )
 
 
+_REST_WORD = re.compile(r"\brest(?:er|erne|e|edag|emad|e-?dag|e-?aften)?\b", re.IGNORECASE)
+
+
 def is_rest_text(text: str) -> bool:
-    """A fixed day that is leftovers ("Rester", "Restedag", "rester fra ugen")."""
-    return "rest" in str(text or "").lower()
+    """A fixed day that is leftovers ("Rester", "Restedag", "rester fra ugen"),
+    not a day at a restaurant."""
+    return bool(_REST_WORD.search(str(text or "")))
 
 
 def fixed_rest_dates(settings: dict[str, Any], dates: list[date]) -> list[date]:
@@ -356,6 +478,22 @@ def check_plan(
             problems.append(
                 f"{day['weekday']} {day['date']}: rester af {source}, men den dag laver ikke "
                 "dobbelt portion (makes_leftovers)"
+            )
+    # What the family can't eat: in no dish, and on no line of the list.
+    lines_by_name = {
+        str(line.get("name") or "").lower(): line for line in plan.get("shopping") or []
+    }
+    for day in cooked:
+        names = [str(i.get("name") or "") for i in day.get("ingredients") or []]
+        names += [
+            name
+            for name in day.get("uses") or []
+            if name.lower() in lines_by_name and name not in names
+        ]
+        for ingredient, rule in food_conflicts(names, settings):
+            problems.append(
+                f'{day["weekday"]} {day["date"]}: "{day["dish"]}" bruger {ingredient}, men '
+                f"familien har {rule} – lav retten uden, eller vælg en anden ret"
             )
     vegetarian = sum(1 for d in cooked if d.get("type") == "vegetar")
     low, high = settings.get("min_vegetarian") or 0, settings.get("max_vegetarian") or 0

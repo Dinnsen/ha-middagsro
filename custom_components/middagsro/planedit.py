@@ -34,9 +34,11 @@ from .mealplan import (
     _tokens,
     fit_amounts,
     late_offers,
+    line_spec,
     noon,
     nutrition_target,
     packages_needed,
+    plan_total,
     rule_lines,
     to_base,
 )
@@ -88,7 +90,7 @@ def cooked_day(plan: dict[str, Any], day: dict[str, Any]) -> dict[str, Any]:
 
 def update_total(plan: dict[str, Any]) -> None:
     """The plan's price after a change, and whether it is over budget."""
-    plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
+    plan["total"] = plan_total(plan["shopping"])
     budget = plan.get("budget")
     plan["over_budget"] = bool(budget) and plan["total"] > budget
 
@@ -864,6 +866,59 @@ async def async_move_day(
 # ------------------------------------------------------------------ lines
 
 
+async def async_review_line(
+    planner: MealPlanner,
+    plan_id: str,
+    line_id: str,
+    action: str,
+    product_id: int | None = None,
+) -> dict[str, Any]:
+    """The family's answer to an uncertain line: keep the product (and use it for
+    this ingredient from now on), choose another, leave the line out (and not
+    take that product for the ingredient again), take it back in, or forget
+    the choice remembered for the ingredient."""
+    if action == "choose":
+        if product_id is None:
+            raise _invalid("product_required")
+        return await async_edit_line(planner, plan_id, line_id, product_id=product_id)
+    plan = planner.store.get_plan(plan_id)
+    if plan is None:
+        raise _invalid("plan_not_found")
+    line = next((item for item in plan["shopping"] if item.get("id") == line_id), None)
+    if line is None:
+        raise _invalid("line_not_found")
+    key = line.get("key") or line_spec(line).key
+    product = line.get("product") or {}
+    if action == "keep":
+        line["reviewed"] = True
+        line.pop("skipped", None)
+        if product.get("id") and not line.get("must_have") and not line.get("added"):
+            line["product_id"] = product["id"]  # chosen: not matched again at 02:00
+            await planner.store.async_remember_choice(
+                key, planner.shop, int(product["id"]), str(product.get("name") or line["name"])
+            )
+    elif action == "skip":
+        line["reviewed"] = True
+        line["skipped"] = True
+        if product.get("id"):
+            await planner.store.async_reject_product(key, planner.shop, int(product["id"]))
+    elif action == "unskip":
+        line.pop("skipped", None)
+        line.pop("reviewed", None)
+    elif action == "forget":
+        await planner.store.async_forget_choice(key, planner.shop)
+        line.pop("remembered", None)
+        line.pop("reviewed", None)
+        if line.get("note") == "Jeres valg fra en tidligere madplan":
+            line["note"] = None
+    else:
+        raise _invalid("unknown_action", action=action)
+    update_total(plan)
+    await planner.store.async_save()
+    planner._notify()
+    return plan
+
+
 async def async_edit_line(
     planner: MealPlanner,
     plan_id: str,
@@ -899,14 +954,23 @@ async def async_edit_line(
         if not products:
             raise _invalid("product_not_found")
         product = products[0]
+        spec = line_spec(line)
         count = packages or (
-            packages_needed(line.get("amount"), line.get("unit"), product)
+            packages_needed(line.get("amount"), line.get("unit"), product, spec.piece_g)
             if not line.get("added")
             else int(line.get("packages") or 1)
         )
+        previous = (line.get("product") or {}).get("id")
         planner._apply(line, product, max(1, min(99, count)))
-        line.update(product_id=product.id, avis_item=None, note=None)
-        line.pop("price_source", None)
+        line.update(product_id=product.id, avis_item=None, note=None, confidence="high")
+        for key in ("price_source", "alternatives", "skipped"):
+            line.pop(key, None)
+        line["reviewed"] = True
+        # Chosen by hand: the product the family wants for this ingredient from now on.
+        if not line.get("must_have") and not line.get("added"):
+            await planner.store.async_remember_choice(
+                line.get("key") or spec.key, planner.shop, product.id, product.name, previous
+            )
     elif packages is not None:
         count = max(1, min(99, packages))
         line["packages"] = count
