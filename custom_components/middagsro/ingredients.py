@@ -124,7 +124,7 @@ _CATEGORY_RULES: tuple[tuple[tuple[str, ...], frozenset[str]], ...] = (
 )  # fmt: skip
 
 _DEPARTMENT_RULES: tuple[tuple[tuple[str, ...], frozenset[str]], ...] = (
-    (("husholdning", "personlig", "pleje", "baby", "kiosk", "dyr", "blomster"), frozenset({NONFOOD})),
+    (("husholdning", "personlig", "pleje", "baby", "kiosk", "dyr", "blomster", "tobak", "apotek"), frozenset({NONFOOD})),
     (("slik", "snack", "chips"), frozenset({SNACK})),
     (("drikke",), frozenset({DRINK})),
     (("frugt", "grønt"), frozenset({VEG, FRUIT, HERB})),

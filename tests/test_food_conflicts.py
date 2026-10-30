@@ -16,7 +16,7 @@ from .conftest import make_plan
 
 def test_food_conflicts_words() -> None:
     """The words that mean an allergen or an avoided food, and the ones that don't."""
-    settings = {"allergies": ["milk", "nuts", "gluten"], "avoid": ["pork", "spicy"]}
+    settings = {"allergies": ["milk", "nuts", "gluten", "lactose"], "avoid": ["pork", "spicy"]}
 
     def rules(name: str) -> list[str]:
         return [rule for _name, rule in food_conflicts([name], settings)]
@@ -28,7 +28,8 @@ def test_food_conflicts_words() -> None:
     assert rules("Mandler") == ["nøddeallergi"]
     assert rules("Muskatnød") == []
     assert rules("Peanuts") == []
-    assert rules("Pasta") == ["allergi over for gluten"]
+    # Gluten and lactose: the list gets the free-from products, so no conflict here.
+    assert rules("Pasta") == []
     assert rules("Risnudler") == []
     assert rules("Glutenfri pasta") == []
     assert rules("Bacon") == ["ikke svinekød"]

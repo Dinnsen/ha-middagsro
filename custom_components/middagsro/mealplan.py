@@ -992,7 +992,10 @@ def build_prompt(
     out.append(
         f"- Mandag til fredag højst {s['max_cook_minutes_weekday']} minutters aktiv tilberedning."
     )
-    if dislikes := [*s["disliked_dishes"], *(disliked or [])]:
+    dislikes = list(
+        dict.fromkeys(d.strip() for d in [*s["disliked_dishes"], *(disliked or [])] if d.strip())
+    )
+    if dislikes:
         out.append(
             "- Familien kan ikke lide disse retter – brug dem ALDRIG, heller ikke varianter af dem: "
             + "; ".join(dislikes)
@@ -1913,6 +1916,8 @@ class MealPlanner:
         self.bilka: BilkaSearch = getattr(client, "bilka", None) or BilkaSearch(hass)
         # Automatic sends waiting for REMA's prices: (plan id, key) -> cancel.
         self._sends: dict[tuple[str, str], Callable[[], None]] = {}
+        # While a plan is made: what REMA answered, so the rounds don't search twice.
+        self._search_cache: dict[tuple[str, str], list[Product]] | None = None
 
     # ------------------------------------------------------------- status
 
@@ -2580,7 +2585,6 @@ class MealPlanner:
             except MealieError as err:
                 _LOGGER.warning("Could not read the recipes in Mealie: %s", err)
 
-        best: dict[str, Any] | None = None
         feedback: str | None = None
         if base is not None:
             feedback = update_feedback(
@@ -2596,105 +2600,16 @@ class MealPlanner:
                     wishes=wishes,
                 ),
             )
-        for attempt in range(MAX_AI_ROUNDS):
-            self._set_status(
-                "generating",
-                "AI'en laver madplanen …"
-                if attempt == 0
-                else f"Planen brød et krav – AI'en retter den ({attempt + 1}/{MAX_AI_ROUNDS}) …",
-            )
-            prompt = build_prompt(
-                settings=settings,
-                dates=dates,
-                catalog=catalog,
-                offers=offers,
-                favorites_due=due,
-                favorites_optional=optional,
-                recent_dishes=recent,
-                feedback=feedback,
-                skipped=skipped,
-                note=note or None,
-                late=late,
-                mealie=mealie,
-                own=own,
-                disliked=disliked,
-                surprise=surprise,
-                favorite_recipes=links,
-                wishes=wishes,
-                web=web,
-                shop=self.shop,
-                prices=self.prices,
-                chain_offers=chain_offers,
-            )
-            raw = await self._async_ask_ai(prompt, "REMA 1000 madplan")
-            self._set_status(
-                "generating",
-                f"Finder varer og priser i {self.shop} …"
-                if self.prices
-                else "Laver indkøbslisten med ugens tilbud …",
-            )
-            plan = await self._async_build_plan(
-                raw, dates, catalog, offers, self.price_time(start), late, chain_offers
-            )
-            known = {r["slug"] for r in mealie}
-            ours = (
-                {r["id"] for r in own} | {r["id"] for r in links.values()} | {r["id"] for r in web}
-            )
-            for day in plan["days"]:
-                if day.get("mealie") not in known:
-                    day["mealie"] = None  # not one of the family's recipes
-                if day.get("recipe_id") not in ours:
-                    day["recipe_id"] = None
-            if not surprise:  # a surprise is not one of the family's own dishes
-                link_favorites(plan, [*due, *optional], links, self.store)
-            # The AI is not trusted to keep the rules: the plan is checked, and the
-            # AI is told what to put right. The best of the tries is kept.
-            problems = check_plan(
-                plan,
-                settings,
-                recent=recent,
-                due_ids=set() if surprise else {f["id"] for f in due},
-                note=note,
-                disliked=disliked,
-                wishes=wishes,
-            )
-            # Without prices (another shop than REMA) the total is only the offers.
-            budget = settings["budget"] if self.prices else 0
-            over = max(0.0, plan["total"] - budget) if budget else 0.0
-            plan["problems"] = problems
-            if best is None or (len(problems), over, plan["total"]) < (
-                len(best["problems"]),
-                max(0.0, best["total"] - budget) if budget else 0.0,
-                best["total"],
-            ):
-                best = plan
-            if not problems and not over:
-                break
-            lines = [f"- {p}" for p in problems]
-            if over:
-                expensive = sorted(
-                    (line for line in plan["shopping"] if line.get("cost")),
-                    key=lambda line: line["cost"],
-                    reverse=True,
-                )[:6]
-                lines.append(
-                    f"- Indkøbslisten kostede {plan['total']:.0f} kr., men budgettet er "
-                    f"{settings['budget']} kr. Dyreste varer: "
-                    + ", ".join(f"{line['name']} ({line['cost']:.0f} kr.)" for line in expensive)
-                    + ". Vælg billigere retter og flere tilbudsvarer."
-                )
-            previous = "; ".join(
-                f"{d['weekday']} {d['date']}: {d['dish']}"
-                + (" (rester)" if d.get("uses_leftovers_from") else "")
-                for d in plan["days"]
-            )
-            feedback = (
-                f"Dit forrige forslag var: {previous}. Det brød disse krav – lav KUN de dage om, "
-                "der nævnes her, og behold de øvrige dage og deres varer uændret:\n"
-                + "\n".join(lines)
-            )
-
-        assert best is not None
+        self._search_cache = {}
+        try:
+            best = await self._async_generate_rounds(
+                settings=settings, dates=dates, catalog=catalog, offers=offers, due=due,
+                optional=optional, recent=recent, feedback=feedback, skipped=skipped, note=note,
+                late=late, mealie=mealie, own=own, disliked=disliked, surprise=surprise,
+                links=links, wishes=wishes, web=web, chain_offers=chain_offers, start=start,
+            )  # fmt: skip
+        finally:
+            self._search_cache = None
         ir.async_delete_issue(self.hass, DOMAIN, ISSUE_NO_AI_TASK)
         # A recipe from the sites that the AI chose goes in the collection, as the family's.
         # One the family already has (and may have changed) is used as it is.
@@ -2737,6 +2652,154 @@ class MealPlanner:
         if picks:
             best = await self._async_put_picks(best, picks)
         self._notify()
+        return best
+
+    async def _async_generate_rounds(
+        self,
+        *,
+        settings: dict[str, Any],
+        dates: list[date],
+        catalog: Catalog | None,
+        offers: list[Offer],
+        due: list[dict[str, Any]],
+        optional: list[dict[str, Any]],
+        recent: list[str],
+        feedback: str | None,
+        skipped: list[date],
+        note: str,
+        late: dict[int, date],
+        mealie: list[dict[str, Any]],
+        own: list[dict[str, Any]],
+        disliked: list[str],
+        surprise: bool,
+        links: dict[str, dict[str, Any]],
+        wishes: dict[str, str],
+        web: list[dict[str, Any]],
+        chain_offers: list[tuple[str, str, dict[str, Any]]],
+        start: date,
+    ) -> dict[str, Any]:
+        """Ask the AI for a plan, check it, and ask again with what was wrong, up to
+        MAX_AI_ROUNDS times. The best try is returned (fewest broken rules, then
+        least over budget, then cheapest).
+
+        The rules are checked before the list is priced, so a try that breaks
+        more rules than the best so far costs no searches; and if the AI fails
+        on a later round, the best so far stands.
+        """
+        best: dict[str, Any] | None = None
+        for attempt in range(MAX_AI_ROUNDS):
+            self._set_status(
+                "generating",
+                "AI'en laver madplanen …"
+                if attempt == 0
+                else f"Planen brød et krav – AI'en retter den ({attempt + 1}/{MAX_AI_ROUNDS}) …",
+            )
+            prompt = build_prompt(
+                settings=settings,
+                dates=dates,
+                catalog=catalog,
+                offers=offers,
+                favorites_due=due,
+                favorites_optional=optional,
+                recent_dishes=recent,
+                feedback=feedback,
+                skipped=skipped,
+                note=note or None,
+                late=late,
+                mealie=mealie,
+                own=own,
+                disliked=disliked,
+                surprise=surprise,
+                favorite_recipes=links,
+                wishes=wishes,
+                web=web,
+                shop=self.shop,
+                prices=self.prices,
+                chain_offers=chain_offers,
+            )
+            try:
+                raw = await self._async_ask_ai(prompt, "REMA 1000 madplan")
+            except HomeAssistantError as err:
+                if best is None:
+                    raise
+                _LOGGER.warning(
+                    "The AI could not put the plan right (%s); keeping the best try", err
+                )
+                break
+            plan = await self._async_build_plan(
+                raw, dates, catalog, offers, self.price_time(start), late, chain_offers, price=False
+            )
+            known = {r["slug"] for r in mealie}
+            ours = (
+                {r["id"] for r in own} | {r["id"] for r in links.values()} | {r["id"] for r in web}
+            )
+            for day in plan["days"]:
+                if day.get("mealie") not in known:
+                    day["mealie"] = None  # not one of the family's recipes
+                if day.get("recipe_id") not in ours:
+                    day["recipe_id"] = None
+            if not surprise:  # a surprise is not one of the family's own dishes
+                link_favorites(plan, [*due, *optional], links, self.store)
+            # The AI is not trusted to keep the rules: the plan is checked, and the
+            # AI is told what to put right. The best of the tries is kept.
+            problems = check_plan(
+                plan,
+                settings,
+                recent=recent,
+                due_ids=set() if surprise else {f["id"] for f in due},
+                note=note,
+                disliked=disliked,
+                wishes=wishes,
+            )
+            plan["problems"] = problems
+            if best is not None and len(problems) > len(best["problems"]):
+                # Worse than what we have: not worth pricing, just tell the AI.
+                over = 0.0
+            else:
+                self._set_status(
+                    "generating",
+                    f"Finder varer og priser i {self.shop} …"
+                    if self.prices
+                    else "Laver indkøbslisten med ugens tilbud …",
+                )
+                await self._async_price_plan(
+                    plan, offers, self.price_time(start), late, chain_offers
+                )
+                # Without prices (another shop than REMA) the total is only the offers.
+                budget = settings["budget"] if self.prices else 0
+                over = max(0.0, plan["total"] - budget) if budget else 0.0
+                if best is None or (len(problems), over, plan["total"]) < (
+                    len(best["problems"]),
+                    max(0.0, best["total"] - budget) if budget else 0.0,
+                    best["total"],
+                ):
+                    best = plan
+                if not problems and not over:
+                    break
+            lines = [f"- {p}" for p in problems]
+            if over:
+                expensive = sorted(
+                    (line for line in plan["shopping"] if line.get("cost")),
+                    key=lambda line: line["cost"],
+                    reverse=True,
+                )[:6]
+                lines.append(
+                    f"- Indkøbslisten kostede {plan['total']:.0f} kr., men budgettet er "
+                    f"{settings['budget']} kr. Dyreste varer: "
+                    + ", ".join(f"{line['name']} ({line['cost']:.0f} kr.)" for line in expensive)
+                    + ". Vælg billigere retter og flere tilbudsvarer."
+                )
+            previous = "; ".join(
+                f"{d['weekday']} {d['date']}: {d['dish']}"
+                + (" (rester)" if d.get("uses_leftovers_from") else "")
+                for d in plan["days"]
+            )
+            feedback = (
+                f"Dit forrige forslag var: {previous}. Det brød disse krav – lav KUN de dage om, "
+                "der nævnes her, og behold de øvrige dage og deres varer uændret:\n"
+                + "\n".join(lines)
+            )
+        assert best is not None
         return best
 
     async def _async_site_recipes(
@@ -2800,7 +2863,11 @@ class MealPlanner:
         at: datetime | None = None,
         late: dict[int, date] | None = None,
         chain_offers: list[tuple[str, str, dict[str, Any]]] | None = None,
+        price: bool = True,
     ) -> dict[str, Any]:
+        """The plan from the AI's answer: its days and shopping lines, cleaned,
+        merged and (unless ``price`` is False, for a plan that is checked first)
+        with REMA's products and prices on the lines."""
         settings = self.store.settings
         days = self._clean_days(raw.get("days") or [], dates)
         cleaned = [(item, self._clean_line(item)) for item in raw.get("shopping") or []]
@@ -2837,10 +2904,7 @@ class MealPlanner:
                     "product_id": item.get("product_id"),
                 }
             )
-        await self._async_price_lines(shopping, offers, at, late)
-        apply_chain_offers(shopping, chain_offers or [])
-        total = plan_total(shopping)
-        return {
+        plan = {
             "id": uuid.uuid4().hex[:12],
             "created": dt_util.now().isoformat(),
             "start_date": dates[0].isoformat(),
@@ -2859,11 +2923,27 @@ class MealPlanner:
                 if isinstance(c, dict)
             ],
             "deviations": str(raw.get("deviations") or "")[:2000],
-            "total": total,
+            "total": 0.0,
             "budget": settings["budget"],
             "catalog": {"id": catalog.id, "label": catalog.label} if catalog else None,
             "ai_entity": self._ai_entity(),
         }
+        if price:
+            await self._async_price_plan(plan, offers, at, late, chain_offers)
+        return plan
+
+    async def _async_price_plan(
+        self,
+        plan: dict[str, Any],
+        offers: list[Offer],
+        at: datetime | None,
+        late: dict[int, date] | None,
+        chain_offers: list[tuple[str, str, dict[str, Any]]] | None,
+    ) -> None:
+        """Put REMA's products and prices on a plan's lines, and the other chains' offers."""
+        await self._async_price_lines(plan["shopping"], offers, at, late)
+        apply_chain_offers(plan["shopping"], chain_offers or [])
+        plan["total"] = plan_total(plan["shopping"])
 
     async def _async_price_lines(
         self,
@@ -2996,9 +3076,16 @@ class MealPlanner:
 
     async def _async_search(self, query: str, at: datetime | None) -> list[Product]:
         """Search REMA, priced now or (at) when the plan is bought."""
+        key = (query.lower(), at.isoformat() if at else "")
+        if self._search_cache is not None and key in self._search_cache:
+            return self._search_cache[key]
         if at is None:
-            return await self.client.async_search_products(query, 15)
-        return await self.client.async_search_products(query, 15, at=at)
+            products = await self.client.async_search_products(query, 15)
+        else:
+            products = await self.client.async_search_products(query, 15, at=at)
+        if self._search_cache is not None:
+            self._search_cache[key] = products
+        return products
 
     async def _async_match(
         self, line: dict[str, Any], at: datetime | None = None, offer: Offer | None = None

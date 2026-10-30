@@ -25,7 +25,7 @@ import re
 import socket
 import tempfile
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 import uuid
 
 import aiohttp
@@ -621,17 +621,26 @@ def page_session(hass: HomeAssistant) -> aiohttp.ClientSession:
 
 
 async def async_fetch_page(hass: HomeAssistant, url: str) -> str:
-    """Read a recipe page."""
+    """Read a recipe page.
+
+    Redirects are followed one at a time, each checked like the first address,
+    so a page can't send us to Home Assistant itself or the home network.
+    """
     url = _check_url(url)
-    await _check_public(hass, urlparse(url).hostname or "")
     session = page_session(hass)
     try:
-        async with session.get(
-            url, headers=HEADERS, timeout=TIMEOUT, allow_redirects=True, max_redirects=5
-        ) as resp:
-            if resp.status >= 400:
-                raise _invalid("recipe_link_failed", error=f"HTTP {resp.status}")
-            return await async_read_body(resp, PAGE_LIMIT)
+        for _hop in range(6):
+            await _check_public(hass, urlparse(url).hostname or "")
+            async with session.get(
+                url, headers=HEADERS, timeout=TIMEOUT, allow_redirects=False
+            ) as resp:
+                if resp.status in (301, 302, 303, 307, 308) and resp.headers.get("Location"):
+                    url = _check_url(urljoin(url, resp.headers["Location"]))
+                    continue
+                if resp.status >= 400:
+                    raise _invalid("recipe_link_failed", error=f"HTTP {resp.status}")
+                return await async_read_body(resp, PAGE_LIMIT)
+        raise _invalid("recipe_link_failed", error="for mange omdirigeringer")
     except (aiohttp.ClientError, TimeoutError) as err:
         raise _invalid("recipe_link_failed", error=str(err) or err.__class__.__name__) from err
 

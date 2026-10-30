@@ -320,12 +320,18 @@ def _has_food_word(name: str, words: tuple[str, ...], unless: tuple[str, ...]) -
     return None
 
 
+# Gluten and lactose have a free-from version of most things (REMA's GLUTENFRI
+# and LAKTOSEFRI products are preferred when the list is priced), so pasta or
+# milk in a dish is not a conflict for them; a milk-protein allergy is.
+_FREE_FROM_HANDLED = {"gluten", "lactose"}
+
+
 def food_conflicts(names: list[str], settings: dict[str, Any]) -> list[tuple[str, str]]:
     """The ingredients the family can't have, with the rule each breaks:
     ("fløde", "mælkeallergi"). Allergies first, then what they avoid."""
-    rules = [("allergy", a) for a in settings.get("allergies") or []] + [
-        ("avoid", a) for a in settings.get("avoid") or []
-    ]
+    rules = [
+        ("allergy", a) for a in settings.get("allergies") or [] if a not in _FREE_FROM_HANDLED
+    ] + [("avoid", a) for a in settings.get("avoid") or []]
     found: list[tuple[str, str]] = []
     for name in names:
         for _kind, key in rules:
@@ -351,9 +357,13 @@ def is_cooked(day: dict[str, Any]) -> bool:
     )
 
 
+_REST_WORD = re.compile(r"\brest(?:er|erne|e|edag|emad|e-?dag|e-?aften)?\b", re.IGNORECASE)
+
+
 def is_rest_text(text: str) -> bool:
-    """A fixed day that is leftovers ("Rester", "Restedag", "rester fra ugen")."""
-    return "rest" in str(text or "").lower()
+    """A fixed day that is leftovers ("Rester", "Restedag", "rester fra ugen"),
+    not a day at a restaurant."""
+    return bool(_REST_WORD.search(str(text or "")))
 
 
 def fixed_rest_dates(settings: dict[str, Any], dates: list[date]) -> list[date]:

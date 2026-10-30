@@ -938,6 +938,63 @@ async def test_generate_keeps_cheapest_when_still_over(
     assert plan["days"][0]["recipe_error"] == "busy"
 
 
+async def test_generate_keeps_the_best_try_when_the_ai_fails_later(
+    hass: HomeAssistant, init_integration: MockConfigEntry, ai_task: str
+) -> None:
+    """The first try is over budget; the AI then fails: the first try is the plan."""
+    store = init_integration.runtime_data.store
+    await store.async_set_settings({**SETTINGS, "budget": 5, "must_haves": []})
+    planner = init_integration.runtime_data.planner
+    dates = mp.plan_dates(START, 7)
+    ai = FakeAI(
+        ai_answer(dates, SHOPPING[4:5]),
+        HomeAssistantError("busy"),
+        recipe={**RECIPE, "ingredients": []},
+    )
+    await _generate(planner, ai)
+    assert planner.status["state"] == "idle"
+    plan = store.latest_plan
+    assert plan is not None
+    assert plan["total"] == 8
+    assert plan["over_budget"] is True
+    assert len(ai.prompts) == 2
+
+
+async def test_generate_prices_only_what_may_be_best(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock, ai_task: str
+) -> None:
+    """A try that breaks more rules than the best so far is not priced, just corrected."""
+    store = init_integration.runtime_data.store
+    await store.async_set_settings({**SETTINGS, "must_haves": []})
+    planner = init_integration.runtime_data.planner
+    dates = mp.plan_dates(START, 7)
+    once = ("Tacos", "Tacos", "Risotto", "Pandekager", "Omelet", "Falafel", "Gullasch")
+    twice = ("Tacos", "Tacos", "Risotto", "Risotto", "Omelet", "Falafel", "Gullasch")
+    ai = FakeAI(
+        ai_answer(dates, SHOPPING[4:5], once),
+        ai_answer(dates, SHOPPING[:4], twice),
+        recipe={**RECIPE, "ingredients": []},
+    )
+    searched: list[str] = []
+    original = mock_client.async_search_products.side_effect
+
+    async def counting(query: str, limit: int = 15, **kwargs: Any) -> Any:
+        searched.append(query.lower())
+        return await original(query, limit)
+
+    mock_client.async_search_products.side_effect = counting
+    await _generate(planner, ai)
+    assert len(ai.prompts) == 3
+    plan = store.latest_plan
+    assert plan is not None
+    # The first try (one repeat) is kept over the later ones (two repeats) ...
+    assert [d["dish"] for d in plan["days"]][:2] == ["Tacos", "Tacos"]
+    assert plan["total"] == 8
+    # ... and their minced beef, eggs, milk and spaghetti were never searched for.
+    assert not {"hakket oksekød", "æg", "letmælk"} & set(searched)
+    assert "er samme ret som" in ai.prompts[1]
+
+
 async def test_generate_errors(
     hass: HomeAssistant, init_integration: MockConfigEntry, ai_task: str
 ) -> None:

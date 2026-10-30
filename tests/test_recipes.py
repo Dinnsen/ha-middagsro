@@ -262,6 +262,37 @@ async def test_links(
             await rc.async_import(planner, "https://opskrift.dk/tom")
 
 
+async def test_links_follow_checked_redirects(
+    hass: HomeAssistant, init_integration: MockConfigEntry, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A redirect is followed, but every address on the way is checked; loops stop."""
+    aioclient_mock.get("https://opskrift.dk/gammel", status=301, headers={"Location": "/karry"})
+    aioclient_mock.get("https://opskrift.dk/karry", text=PAGE)
+    aioclient_mock.get(
+        "https://opskrift.dk/loop", status=302, headers={"Location": "https://opskrift.dk/loop"}
+    )
+    aioclient_mock.get(
+        "https://opskrift.dk/hjem", status=302, headers={"Location": "http://192.168.1.10/admin"}
+    )
+    checked: list[str] = []
+
+    async def public(hass: HomeAssistant, host: str) -> None:
+        checked.append(host)
+        if host.startswith("192."):
+            raise rc._invalid("recipe_bad_link")
+
+    with patch.object(rc, "_check_public", new=public):
+        assert "Kylling i karry" in await rc.async_fetch_page(hass, "https://opskrift.dk/gammel")
+        assert checked == ["opskrift.dk", "opskrift.dk"]
+        with pytest.raises(ServiceValidationError) as err:
+            await rc.async_fetch_page(hass, "https://opskrift.dk/loop")
+        assert err.value.translation_placeholders == {"error": "for mange omdirigeringer"}
+        with pytest.raises(ServiceValidationError) as err:
+            await rc.async_fetch_page(hass, "https://opskrift.dk/hjem")
+        assert err.value.translation_key == "recipe_bad_link"
+        assert checked[-1] == "192.168.1.10"
+
+
 async def test_only_pages_on_the_internet(hass: HomeAssistant) -> None:
     """Home Assistant itself and the home network can't be read through a link."""
 
