@@ -55,6 +55,7 @@ from .ingredients import (
     variety_conflict,
     variety_missing,
 )
+from .links import linked_ids
 from .mealie import MealieError, MealieLink
 from .messages import async_danish
 from .recipes import (
@@ -3398,7 +3399,7 @@ class MealPlanner:
         and ``alternatives`` to choose from when it isn't high).
         """
         line.update(product=None, avis_item=None, packages=1, cost=None, note=None)
-        for key in ("price_source", "alternatives", "reviewed", "remembered"):
+        for key in ("price_source", "alternatives", "reviewed", "remembered", "linked"):
             line.pop(key, None)
         line["confidence"] = "high"
         if not line.get("product_id"):
@@ -3411,7 +3412,10 @@ class MealPlanner:
                 and not line.get("must_have")
                 and offer is None
                 and self.prices
-                and await self._async_match_remembered(line, at)
+                and (
+                    await self._async_match_remembered(line, at)
+                    or await self._async_match_linked(line, at)
+                )
             ):
                 return
             products = await self._async_search(line["search"], at)
@@ -3472,6 +3476,38 @@ class MealPlanner:
         line["confidence"] = "high"
         line["note"] = "Jeres valg fra en tidligere madplan"
         line["remembered"] = True
+        return True
+
+    async def _async_match_linked(self, line: dict[str, Any], at: datetime | None) -> bool:
+        """The product the shared table says the line is (links.py), when it is sold
+        and meets the family's rules; the family's organic rule picks among them."""
+        ids = linked_ids(self.shop, str(line.get("name") or ""))
+        if not ids:
+            return False
+        try:
+            products = await self.client.async_get_products(list(ids), at)
+        except RemaError:
+            return False
+        requirement = self._requirement(line)
+        rejected = self.store.rejected_products(str(line.get("key") or ""), self.shop)
+        name = str(line.get("name") or "")
+        candidates = [
+            p
+            for p in products
+            if p.price
+            and p.id not in rejected
+            and (requirement is None or requirement[0](p))
+            and not variety_conflict(name, p.name)
+        ]
+        if not candidates:
+            return False
+        chosen, _, _ = self._choose(line, candidates, {})
+        spec = line_spec(line)
+        self._apply(
+            line, chosen, packages_needed(line["amount"], line.get("unit"), chosen, spec.piece_g)
+        )
+        line["confidence"] = "high"
+        line["linked"] = True
         return True
 
     def _requirement(
@@ -3615,6 +3651,52 @@ class MealPlanner:
             line["alternatives"] = [_alternative(p) for p in possible[:4]]
             return
         spec = line_spec(line)
+        chosen, fit, candidates = self._choose(line, candidates, penalty)
+        self._apply(
+            line, chosen, packages_needed(line["amount"], line.get("unit"), chosen, spec.piece_g)
+        )
+        if note:
+            line["note"] = note
+        # How sure the choice is, and what else it could have been.
+        strong = False
+        for query in (line["search"], line["name"]):
+            words = [w for w in _tokens(query) if len(w) > 1 and w not in _NEUTRAL_WORDS]
+            head = head_word(query)
+            found, _ = name_fit(words, chosen.name) if words else (0, 1.0)
+            if bool(words) and (
+                found == len(words)
+                or bool(head and head in _tokens(chosen.name))
+                or _called(spec, chosen.name)
+            ):
+                strong = True
+        known_kind = allowed(
+            spec, chosen.department, chosen.category, chosen.name, chosen.underline
+        )
+        fit_penalty = penalty.get(chosen.id, 1.0)
+        if "vej selv" in (chosen.underline or "").lower().replace('"', ""):
+            fit_penalty -= 5.0  # the only way the shop sells it, then; not a doubt
+        if fit_penalty >= 5 or note:
+            line["confidence"] = "low"
+        elif (
+            not strong
+            or (known_kind is None and spec.entry is None)
+            or fit_penalty >= 2
+            or variety_missing(line.get("name") or "", chosen.name)
+        ):
+            line["confidence"] = "medium"
+        else:
+            line["confidence"] = "high"
+        others = sorted((p for p in candidates if p.id != chosen.id), key=fit)[:4]
+        if line["confidence"] != "high" or (others[:1] and penalty.get(others[0].id, 1.0) < 1.5):
+            line["alternatives"] = [_alternative(p) for p in others]
+
+    def _choose(
+        self, line: dict[str, Any], candidates: list[Product], penalty: dict[int, float]
+    ) -> tuple[Product, Callable[[Product], tuple[float, bool, float]], list[Product]]:
+        """The best of the products that fit a line, by price for what it needs and
+        the family's organic rule; how each one fits, to order the others; and the
+        products still in the running (sizes that can be compared)."""
+        spec = line_spec(line)
         need = to_base(line["amount"], line.get("unit")) if line.get("amount") else None
         size_penalty: dict[int, float] = {}
         if need and need[0] in ("g", "ml"):
@@ -3688,43 +3770,7 @@ class MealPlanner:
             limit = cost(cheapest) * (1 + settings["organic_max_extra_pct"] / 100)
             if cost(best_organic) <= limit + 0.001:
                 chosen = best_organic
-        self._apply(
-            line, chosen, packages_needed(line["amount"], line.get("unit"), chosen, spec.piece_g)
-        )
-        if note:
-            line["note"] = note
-        # How sure the choice is, and what else it could have been.
-        strong = False
-        for query in (line["search"], line["name"]):
-            words = [w for w in _tokens(query) if len(w) > 1 and w not in _NEUTRAL_WORDS]
-            head = head_word(query)
-            found, _ = name_fit(words, chosen.name) if words else (0, 1.0)
-            if bool(words) and (
-                found == len(words)
-                or bool(head and head in _tokens(chosen.name))
-                or _called(spec, chosen.name)
-            ):
-                strong = True
-        known_kind = allowed(
-            spec, chosen.department, chosen.category, chosen.name, chosen.underline
-        )
-        fit_penalty = penalty.get(chosen.id, 1.0)
-        if "vej selv" in (chosen.underline or "").lower().replace('"', ""):
-            fit_penalty -= 5.0  # the only way the shop sells it, then; not a doubt
-        if fit_penalty >= 5 or note:
-            line["confidence"] = "low"
-        elif (
-            not strong
-            or (known_kind is None and spec.entry is None)
-            or fit_penalty >= 2
-            or variety_missing(line.get("name") or "", chosen.name)
-        ):
-            line["confidence"] = "medium"
-        else:
-            line["confidence"] = "high"
-        others = sorted((p for p in candidates if p.id != chosen.id), key=fit)[:4]
-        if line["confidence"] != "high" or (others[:1] and penalty.get(others[0].id, 1.0) < 1.5):
-            line["alternatives"] = [_alternative(p) for p in others]
+        return chosen, fit, candidates
 
     async def _async_offered(
         self, offer: Offer | None, at: datetime | None

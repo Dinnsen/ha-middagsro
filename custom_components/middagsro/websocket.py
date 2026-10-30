@@ -39,6 +39,7 @@ from .const import DOMAIN
 from .coordinator import RemaConfigEntry
 from .freezer import async_generate as async_generate_freezer, async_portions
 from .health import plan_health
+from .links import family_links, share_url
 from .mealie import MealieError
 from .mealplan import ai_choices, parse_date, plan_summary, signal_plans_updated
 from .messages import async_danish
@@ -67,6 +68,7 @@ from .recipes import (
     async_scan,
     find_recipe,
 )
+from .record import async_record_plan
 from .rema_recipes import TAGS as REMA_TAGS
 from .schema import vol
 from .sites import SITES, site_of
@@ -810,6 +812,34 @@ async def ws_plan_rematch(
     planner = _entry(hass, msg).runtime_data.planner
     plan = await planner.async_rematch_all(msg["plan_id"])
     connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "middagsro/plan/record", ENTRY: str, vol.Required("plan_id"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_plan_record(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The plan's answered items as test cases for the matcher (record.py)."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = planner.store.get_plan(msg["plan_id"])
+    if plan is None:
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key="plan_not_found")
+    connection.send_result(msg["id"], await async_record_plan(planner, plan))
+
+
+@websocket_api.websocket_command({vol.Required("type"): "middagsro/links/share", ENTRY: str})
+@websocket_api.async_response
+@_wrap
+async def ws_links_share(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The family's chosen products, ready to share for the shared table (links.py)."""
+    planner = _entry(hass, msg).runtime_data.planner
+    links = family_links([*planner.store.plans, *planner.store.freezer_plans])
+    connection.send_result(msg["id"], {"count": len(links), "url": share_url(planner.shop, links)})
 
 
 @websocket_api.websocket_command(
@@ -1662,6 +1692,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_plan_line,
         ws_plan_review,
         ws_plan_rematch,
+        ws_plan_record,
+        ws_links_share,
         ws_health,
         ws_nutrition,
         ws_mealie_save,

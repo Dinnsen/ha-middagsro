@@ -1406,6 +1406,32 @@ class Rema1000Panel extends HTMLElement {
           () => this._ws("middagsro/plan/rematch", { plan_id: this._plan.id }),
           "Varerne er fundet igen. Jeres egne valg er beholdt, og usikre varer står øverst."
         ),
+      "plan-record": () =>
+        this._run(async () => {
+          const record = await this._ws("middagsro/plan/record", { plan_id: this._plan.id });
+          if (!record.cases.length) throw new Error("Ingen varer er beholdt eller valgt i denne madplan endnu");
+          const blob = new Blob([JSON.stringify(record, null, 1)], { type: "application/json" });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = `middagsro-testsag-${record.plan || record.recorded}.json`;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        }, "Testsagen er gemt som fil."),
+      "links-share": () => {
+        // Opened at once (a window opened after waiting is stopped by the browser).
+        const win = window.open("", "_blank");
+        this._run(async () => {
+          const share = await this._ws("middagsro/links/share");
+          if (!share.url) {
+            win?.close();
+            throw new Error("Der er ingen nye valg at dele endnu");
+          }
+          if (win) win.location.href = share.url;
+          else window.location.href = share.url;
+        }, "GitHub er åbnet med jeres valg. Tryk “Submit new issue” for at dele dem.");
+      },
       "plan-refresh": () =>
         this._editPlan(
           () => this._ws("middagsro/plan/refresh", { plan_id: this._plan.id }),
@@ -4174,7 +4200,11 @@ class Rema1000Panel extends HTMLElement {
         <details class="shopping-tools"><summary>Flere muligheder</summary><div class="row wrap">
           <button class="btn small" data-action="pantry-open">Basisvarer i madplanen</button>
           ${this._hasPrices() ? `<button class="btn small" data-action="plan-rematch" ${this._busy ? "disabled" : ""}
-            title="Alle varer, der ikke er sendt, findes igen med de nyeste regler. Retterne og jeres egne valg bliver.">Find varer igen</button>` : ""}
+            title="Alle varer, der ikke er sendt, findes igen med de nyeste regler. Retterne og jeres egne valg bliver.">Find varer igen</button>
+          <button class="btn small" data-action="plan-record" ${this._busy ? "disabled" : ""}
+            title="Gemmer de varer, I har beholdt eller valgt, som en testsag, så varesøgningen kan testes mod dem. Kun ingredienser og varenumre.">Gem som testsag</button>
+          <button class="btn small" data-action="links-share" ${this._busy ? "disabled" : ""}
+            title="Åbner GitHub med jeres valgte varer (kun ingrediens og varenummer), så alle kan få gavn af dem i den fælles tabel.">Del jeres valg</button>` : ""}
           <button class="btn small" data-action="plan-refresh" ${this._busy ? "disabled" : ""}>Opdatér tilbudspriser</button>
           ${!missingProducts.length && this._hasPrices() && plan.shopping.some(line => !line.product && !line.sent && !line.product_id && !line.added && !line.buy_at) ? `<button class="btn small" data-action="rematch-missing" ${this._busy ? "disabled" : ""}>Søg manglende varer igen</button>` : ""}
         </div></details>

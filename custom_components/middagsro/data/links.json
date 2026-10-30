@@ -1,0 +1,416 @@
+{
+ "version": 1,
+ "shops": {
+  "rema": {
+   "agurk": [
+    306008
+   ],
+   "avocado": [
+    305405
+   ],
+   "bacon": [
+    410873
+   ],
+   "basilikum": [
+    306783
+   ],
+   "blomkål": [
+    306258,
+    306272
+   ],
+   "boller": [
+    61248
+   ],
+   "broccoli": [
+    306300,
+    306325
+   ],
+   "bulgur": [
+    92350
+   ],
+   "champignon": [
+    306700
+   ],
+   "cherrytomater": [
+    306178
+   ],
+   "chiliflager": [
+    90910
+   ],
+   "chorizopølse i": [
+    411305
+   ],
+   "citron": [
+    304566
+   ],
+   "couscous": [
+    91395
+   ],
+   "creme fraiche": [
+    21519,
+    23418
+   ],
+   "dild": [
+    306706
+   ],
+   "eddike": [
+    100847
+   ],
+   "feta": [
+    450013
+   ],
+   "fishsauce": [
+    120051
+   ],
+   "fiskefilet": [
+    43005
+   ],
+   "flåede tomater": [
+    110329
+   ],
+   "forårsløg": [
+    306450
+   ],
+   "frosne ærter": [
+    40686,
+    40804
+   ],
+   "frossen spinat": [
+    40661
+   ],
+   "grøn pesto": [
+    108649
+   ],
+   "grønne bønner": [
+    306830
+   ],
+   "grøntsagsbouillon": [
+    100369
+   ],
+   "gulerødder": [
+    306520
+   ],
+   "gurkemeje": [
+    90126
+   ],
+   "hakkede tomater": [
+    108341,
+    110328
+   ],
+   "hakket kylling": [
+    404900
+   ],
+   "hakket oksekød": [
+    400176
+   ],
+   "hakket svinekød": [
+    400546
+   ],
+   "havregryn": [
+    180122
+   ],
+   "hel kylling": [
+    404969
+   ],
+   "honning": [
+    106819
+   ],
+   "hvidkål": [
+    306503
+   ],
+   "hvidløg": [
+    306950
+   ],
+   "hytteost": [
+    28825
+   ],
+   "hønsebouillon": [
+    100353
+   ],
+   "hønsebouillonterninger": [
+    100353
+   ],
+   "ingefær": [
+    306880
+   ],
+   "kanel": [
+    90927
+   ],
+   "karrypulver": [
+    90909
+   ],
+   "kartofler": [
+    306988
+   ],
+   "ketchup": [
+    110848
+   ],
+   "kidneybønner": [
+    100098
+   ],
+   "kikærter": [
+    100042
+   ],
+   "kokosmælk": [
+    120171
+   ],
+   "kokosmælk light": [
+    120170
+   ],
+   "koriander": [
+    306786
+   ],
+   "kyllinge pølser i": [
+    410963
+   ],
+   "kyllingelår": [
+    250055
+   ],
+   "kødboller": [
+    41168
+   ],
+   "laks": [
+    440092
+   ],
+   "laksefilet": [
+    440047
+   ],
+   "lasagne": [
+    90357
+   ],
+   "lasagneplader": [
+    90357
+   ],
+   "letmælk": [
+    20494
+   ],
+   "lime": [
+    305658
+   ],
+   "løg": [
+    306960,
+    306967
+   ],
+   "madlavningsfløde": [
+    21878
+   ],
+   "majs": [
+    100425,
+    101898
+   ],
+   "mandler": [
+    70112
+   ],
+   "mayonnaise": [
+    460113
+   ],
+   "mel": [
+    90166
+   ],
+   "mozzarella": [
+    452016
+   ],
+   "mælk": [
+    20758
+   ],
+   "nakkekoteletter": [
+    401030
+   ],
+   "nudler": [
+    96652
+   ],
+   "oksebouillon": [
+    100375
+   ],
+   "olivenolie": [
+    118421
+   ],
+   "ost": [
+    451106
+   ],
+   "paprika": [
+    90293
+   ],
+   "parmesan": [
+    455418
+   ],
+   "passata": [
+    120192
+   ],
+   "pasta": [
+    90312
+   ],
+   "peberfrugt": [
+    306353
+   ],
+   "persille": [
+    306712
+   ],
+   "piskefløde": [
+    21863
+   ],
+   "pitabrød": [
+    46340
+   ],
+   "pizza": [
+    43840
+   ],
+   "porre": [
+    306600
+   ],
+   "purløg": [
+    306708
+   ],
+   "pølser": [
+    410963
+   ],
+   "rejer": [
+    43250
+   ],
+   "revet ost": [
+    455405
+   ],
+   "ris": [
+    98311
+   ],
+   "risnudler": [
+    90511
+   ],
+   "rosmarin": [
+    306793
+   ],
+   "rugbrød": [
+    61206
+   ],
+   "rød chili": [
+    306386
+   ],
+   "rød karrypasta": [
+    100831
+   ],
+   "rød peberfrugt": [
+    306353
+   ],
+   "røde linser": [
+    91398
+   ],
+   "rødløg": [
+    306958
+   ],
+   "røget laks": [
+    412418
+   ],
+   "salat": [
+    306215
+   ],
+   "salt og peber": [
+    90930
+   ],
+   "saltede peanuts": [
+    79082
+   ],
+   "sennep": [
+    110129
+   ],
+   "sesamolie": [
+    120062
+   ],
+   "skalotteløg": [
+    306977
+   ],
+   "skinke i tern": [
+    410813
+   ],
+   "skyr naturel": [
+    23401
+   ],
+   "smør": [
+    25751
+   ],
+   "soja": [
+    120053
+   ],
+   "sojabønner": [
+    40798
+   ],
+   "sojasauce": [
+    120053
+   ],
+   "sort peber": [
+    90930
+   ],
+   "spaghetti": [
+    90377
+   ],
+   "spidskommen": [
+    90039
+   ],
+   "spidskål": [
+    306650
+   ],
+   "spinat": [
+    306439
+   ],
+   "squash": [
+    306824
+   ],
+   "stort løg": [
+    306960,
+    306967
+   ],
+   "stødt chili": [
+    90910
+   ],
+   "stødt koriander": [
+    90127
+   ],
+   "sukker": [
+    90119
+   ],
+   "søde kartofler": [
+    306997
+   ],
+   "sødmælk": [
+    20302
+   ],
+   "timian": [
+    306794
+   ],
+   "tomater": [
+    306175
+   ],
+   "tomater hakket": [
+    108341,
+    110328
+   ],
+   "tomatpure": [
+    110064
+   ],
+   "torsk": [
+    440059
+   ],
+   "tortillas": [
+    102802
+   ],
+   "tun på": [
+    30018
+   ],
+   "tærtedej": [
+    412380
+   ],
+   "tørret oregano": [
+    90140,
+    90925
+   ],
+   "tørret timian": [
+    90481
+   ],
+   "vaniljeis": [
+    260516
+   ],
+   "yoghurt naturel": [
+    22218
+   ]
+  }
+ }
+}
