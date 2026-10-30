@@ -32,6 +32,7 @@ from .panel import async_register_panel, async_unregister_panel
 from .services import async_setup_services
 from .storage import STORE_VERSION, RemaPlanStore
 from .store_client import REMA, BilkaStoreClient, StoreClient, store_of
+from .store_selection import selection
 from .watch import CHECK_EVERY as WATCH_CHECK_EVERY, async_check as async_watch_check
 from .websocket import async_register_websocket
 
@@ -50,6 +51,7 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the actions and the panel's websocket commands."""
+    await selection(hass).async_load()
     async_setup_services(hass)
     async_register_websocket(hass)
     return True

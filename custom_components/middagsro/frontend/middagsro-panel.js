@@ -467,7 +467,7 @@ class Rema1000Panel extends HTMLElement {
   // ------------------------------------------------------------------ data
 
   async _ws(type, data = {}) {
-    const entry = this._state?.entry_id ? { entry_id: this._state.entry_id } : {};
+    const entry = type !== "middagsro/state" && this._state?.entry_id ? { entry_id: this._state.entry_id } : {};
     return this._hass.callWS({ type, ...entry, ...data });
   }
 
@@ -475,7 +475,14 @@ class Rema1000Panel extends HTMLElement {
     const before = this._signature();
     try {
       const state = await this._ws("middagsro/state", refresh ? { refresh: true } : {});
+      if (this._state && state.entry_id !== this._state.entry_id) {
+        location.reload(); // discard account-specific caches before showing another shop
+        return;
+      }
+      const first = !this._state;
       this._state = state;
+      if (first && state.start_new_plan) { this._viewingLatest = false; this._plan = null; }
+      else if (first && state.switched_plan?.kind === "freezer") { this._viewingLatest = false; this._plan = state.switched_plan; }
       this._error = null;
       this._loadedAt = Date.now();
       if (!this._startDate || !this._startDateTouched) this._startDate = state.default_start;
@@ -652,6 +659,9 @@ class Rema1000Panel extends HTMLElement {
     if (!el) return;
     const { action, arg } = el.dataset;
     const actions = {
+      "store-switch-copy": () => this._performStoreSwitch(this._modal.target, "copy", this._modal.remember),
+      "store-switch-new": () => this._performStoreSwitch(this._modal.target, "new", this._modal.remember),
+      "store-switch-ask": () => this._run(() => this._ws("middagsro/store/ask"), "Du bliver spurgt ved næste butiksskift."),
       tab: () => {
         this._moreOpen = false;
         this._chain = null;
@@ -1446,6 +1456,17 @@ class Rema1000Panel extends HTMLElement {
   _onInput(ev) {
     const el = ev.target;
     const ds = el.dataset;
+    if (ds.bind === "store-choice") {
+      if (ev.type !== "change") return;
+      const target = el.value;
+      el.value = this._state.entry_id;
+      this._openStoreSwitch(target);
+      return;
+    }
+    if (ds.bind === "remember-store-switch") {
+      if (this._modal?.kind === "store-switch") this._modal.remember = el.checked;
+      return;
+    }
     if (ds.bind === "freezer-note") {
       this._freezerNote = el.value;
       return;
@@ -2965,6 +2986,63 @@ class Rema1000Panel extends HTMLElement {
     if (node) node.innerHTML = this._statusHtml();
   }
 
+  _storeChooser() {
+    const stores = this._state?.stores || [];
+    if (!stores.length) return "";
+    const pref = this._state.store_switch_preference;
+    return `<div class="store-chooser"><label class="field">Vi handler i
+      <select data-bind="store-choice" aria-label="Vælg butik" ${this._busy || stores.length < 2 ? "disabled" : ""}>
+      ${stores.map(store => `<option value="${esc(store.entry_id)}" ${store.entry_id === this._state.entry_id ? "selected" : ""}>${esc(store.name)}${store.pickup ? ` · ${esc(store.pickup)}` : ""}</option>`).join("")}</select></label>
+      <div class="muted small">${stores.length < 2 ? 'Tilføj en anden butik under <a href="/config/integrations/integration/middagsro" target="_top">Enheder og tjenester</a>.' : 'Vælg mellem jeres tilføjede butikker. Kurven ændres først, når du sender varer.'}
+      ${pref && pref !== "ask" ? `<br>${pref === "copy" ? "Madplanen følger med ved skift." : "Et butiksskift åbner en ny madplan."} <button class="link" data-action="store-switch-ask">Spørg mig igen</button>` : ""}</div></div>`;
+  }
+
+  _openStoreSwitch(target) {
+    if (this._busy || target === this._state.entry_id) return;
+    if (this._dirty) return this._say("Gem eller fortryd dine indstillingsændringer, før du skifter butik.");
+    if (Object.values(this._timers || {}).some(end => end > Date.now())) return this._say("Afslut madlavningens timere, før du skifter butik.");
+    const store = this._state.stores.find(store => store.entry_id === target);
+    if (!store) return;
+    const pref = this._state.store_switch_preference;
+    if (pref === "new" || (pref === "copy" && this._plan)) return this._performStoreSwitch(target, pref, true);
+    this._modal = { kind: "store-switch", target, name: store.name, remember: false, busy: false };
+    this._renderModal();
+  }
+
+  _storeSwitchModal(modal) {
+    return `<div class="scrim" ${modal.busy ? "" : 'data-action="modal-close"'}></div>
+      <div class="dialog" role="dialog" aria-modal="true" aria-label="Skift butik">
+      <h2>Skift til ${esc(modal.name)}</h2>
+      <p>Vil du tage madplanen med eller starte en ny til denne butik?</p>
+      <div class="store-switch-actions">
+        <button class="btn primary" data-action="store-switch-copy" ${modal.busy || !this._plan ? "disabled" : ""}>Tag madplanen med</button>
+        <p class="muted small">Opskrifterne beholdes, og vi finder den nye butiks varer og priser. Allerede sendte varer sendes ikke igen.</p>
+        <button class="btn" data-action="store-switch-new" ${modal.busy ? "disabled" : ""}>Start en ny madplan</button>
+        <p class="muted small">Du vælger selv startdag og laver planen bagefter. Tidligere planer bliver i historikken.</p>
+      </div>
+      <p class="muted small">Familie, allergier, basisvarer og madønsker følger med. Øvrige butiksindstillinger beholdes. Skiftet gælder også Middagsros dashboardkort.</p>
+      <label class="check"><input type="checkbox" data-bind="remember-store-switch" ${modal.remember ? "checked" : ""} ${modal.busy ? "disabled" : ""}> Husk valget ved fremtidige butiksskift</label>
+      <p class="muted small">Du kan altid vælge “Spørg mig igen”.</p>
+      <div class="dialog-bottom"><button class="btn" data-action="modal-close" ${modal.busy ? "disabled" : ""}>Annullér</button>${modal.busy ? '<span class="spinner small"></span><span>Skifter butik …</span>' : ""}</div></div>`;
+  }
+
+  async _performStoreSwitch(target, action, remember) {
+    this._busy = true;
+    if (this._modal) this._modal.busy = true;
+    this._renderModal();
+    this._renderBusy();
+    try {
+      await this._ws("middagsro/store/switch", { target_entry_id: target, action, remember: !!remember, plan_id: action === "copy" ? this._plan?.id || null : null });
+      location.reload();
+    } catch (err) {
+      this._busy = false;
+      if (this._modal) this._modal.busy = false;
+      this._renderModal();
+      this._renderBusy();
+      this._say(`Butikken kunne ikke skiftes: ${err?.message || err}`);
+    }
+  }
+
   _statusHtml() {
     const status = this._state?.status;
     if (!status) return "";
@@ -3059,7 +3137,7 @@ class Rema1000Panel extends HTMLElement {
       focused && root.querySelector("#content")?.contains(focused) && focused.matches("input, textarea, select")
         ? { key: this._fieldKey(focused), start: focused.selectionStart, end: focused.selectionEnd, scroll: focused.scrollTop }
         : null;
-    root.querySelector("#content").innerHTML = `<div id="status">${this._statusHtml()}</div>${body}`;
+    root.querySelector("#content").innerHTML = `${this._embed ? "" : this._storeChooser()}<div id="status">${this._statusHtml()}</div>${body}`;
     this._renderToast();
     if (keep?.key) {
       const again = [...root.querySelectorAll("#content input, #content textarea, #content select")].find((el) => this._fieldKey(el) === keep.key);
@@ -3098,6 +3176,10 @@ class Rema1000Panel extends HTMLElement {
   _renderModal() {
     const node = this.shadowRoot.querySelector("#modal");
     if (!node) return;
+    if (this._modal?.kind === "store-switch") {
+      node.innerHTML = this._storeSwitchModal(this._modal);
+      return;
+    }
     if (this._modal?.kind === "notice") {
       node.innerHTML = `<div class="scrim" data-action="notice-close"></div>
         <div class="dialog" role="dialog" aria-modal="true" aria-label="Nyt i Middagsro">
@@ -4818,7 +4900,7 @@ class Rema1000Panel extends HTMLElement {
         <p class="muted small">${(this._state.watch || []).length} ting overvåges. Tilføj flere med klokken under Favoritter.</p>`),
       shop: () => {
         const shop = this._state.shop || { name: "REMA 1000", rema: true, rema_only: [] };
-        const how = `Butikken skiftes under <b>Indstillinger › Enheder og tjenester › Middagsro › ⋮ › Omkonfigurér</b>. Madplaner, opskrifter, budget og indstillinger beholdes.`;
+        const how = `Vælg mellem tilføjede butikker i <b>Vi handler i</b> øverst. Login og Bilka-varehus ændres under <b>Indstillinger › Enheder og tjenester › Middagsro › ⋮ › Omkonfigurér</b>.`;
         if (shop.rema) {
           return card(`        <h2 class="flush">I handler i REMA 1000</h2>
         <p>Middagsro er logget ind på jeres REMA 1000-konto: alle varer har en pris, REMA's opskrifter kan bruges, og indkøbslisten sendes til REMA-appen.</p>
@@ -4832,7 +4914,7 @@ class Rema1000Panel extends HTMLElement {
         <p>Madplanens varer sendes til kurven i BilkaToGo-appen og på hjemmesiden. Du gennemgår selv kurven, vælger afhentningstid og bestiller i BilkaToGo.</p>
         <p>Fundne varer sendes til kurven. Ingredienser uden match vises særskilt og bliver i Middagsro, så du kan vælge en vare eller tilføje dem selv. Kurven kan ikke afkrydses som en indkøbsliste.</p>
         <p class="muted small">${how} Vælg Bilka igen for at ændre varehus eller login.</p>
-        <a class="btn" href="/config/integrations/integration/middagsro" target="_top">Vælg butik, varehus eller login</a>`);
+        <a class="btn" href="/config/integrations/integration/middagsro" target="_top">Ret login eller varehus</a>`);
         }
         const todos = Object.keys(this._hass?.states || {})
           .filter((id) => id.startsWith("todo.") && !id.includes("middagsro"))
@@ -4879,6 +4961,7 @@ class Rema1000Panel extends HTMLElement {
           <div><h1>${esc(open.title)}</h1><p class="muted small">${esc(open.summary)}</p></div>
         </div>
         ${html[open.key]()}
+        ${open.key === "shop" ? '<p class="muted small">Skift mellem allerede tilføjede butikker i “Vi handler i” øverst på siden.</p>' : ""}
         ${open.form || this._dirty ? savebar : ""}`;
     }
     const row = (sec) => `<button class="setting-row" data-action="settings-section" data-arg="${sec.key}">
@@ -5180,6 +5263,11 @@ const STYLE = `
   .chev { font-size: 22px; color: var(--secondary-text-color); }
   .settings-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
   .settings-head h1 { margin: 0; }
+  .store-chooser { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; padding: 12px 16px; margin-bottom: 16px; border: 1px solid var(--divider-color); border-radius: 12px; background: var(--rema-card); }
+  .store-chooser .field { margin: 0; min-width: 200px; }
+  .store-chooser > .small { flex: 1; min-width: 180px; }
+  .store-switch-actions { display: grid; gap: 8px; margin: 20px 0; }
+  .store-switch-actions p { margin: 0 0 12px; }
   .freezer-section { border-top: 1px solid var(--divider-color); margin-top: 24px; padding-top: 8px; text-align: left; }
   .freezer-section.flat { border-top: 0; margin-top: 4px; padding-top: 0; }
   details.fold > summary { cursor: pointer; font-weight: 600; padding: 6px 0; list-style-position: inside; }

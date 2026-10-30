@@ -26,6 +26,8 @@
 
 ## Features
 
+**Switch between installed shops:** Use **Vi handler i** above the panel to select an account already added to Middagsro. Choose to carry the displayed plan (rematched/repriced for the destination shop) or start planning a new one. Existing history and sent-item flags are preserved; switching never writes to a cart or invokes AI. Household, allergies, pantry and food preferences follow; budgets, fixed weekly items and other account settings stay separate. Optionally remember the copy/new choice and reset it with **Spørg mig igen**. The active account is persisted across restarts and also selected by default dashboard subscriptions. Credentials and Bilka pickup stores are still changed through Reconfigure.
+
 The integration adds a **Middagsro panel** to the sidebar. It follows your Home Assistant theme, light and dark mode, and works on a computer, tablet and phone, where the tabs sit at the bottom and you can swipe between them.
 
 ### The week's meal plan, made with AI

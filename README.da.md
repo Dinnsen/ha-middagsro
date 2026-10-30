@@ -26,6 +26,8 @@
 
 ## Funktioner
 
+**Skift mellem jeres butikker:** Når flere butiksopsætninger er tilføjet under Middagsro, vælger I den aktive butik i **Vi handler i** øverst i panelet. Vælg **Tag madplanen med** for at kopiere den viste plan og finde den nye butiks varer/priser, eller **Start en ny madplan** for selv at vælge startdag og lave en ny. Historikken beholdes; allerede sendte varer sendes ikke igen. Butiksskiftet sender ingen varer og starter ikke AI. Familie, allergier, basisvarer og madønsker følger med; budget, faste ugevarer og andre butiksindstillinger beholdes separat. **Husk valget** gemmer valget til fremtidige skift; **Spørg mig igen** nulstiller det. Den aktive butik gælder også Middagsros dashboardkort og huskes efter genstart. Login og Bilka-varehus ændres fortsat via Omkonfigurér.
+
 Integrationen lægger et **Middagsro-panel** i sidebaren. Det følger dit Home Assistant-tema, lys og mørk tilstand, og virker lige godt på computer, tablet og telefon, hvor fanerne ligger i bunden, og man kan stryge mellem dem.
 
 ### Ugens madplan, lavet med AI

@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## Unreleased
+
+### Added
+- Select an installed grocery account directly in the panel. Choose to carry the current plan or start planning a new one, optionally remembering the choice. Carried plans are matched/priced for the new shop without cart writes; sent items stay sent and source history is preserved. Family/preferences follow; other account settings remain separate. The selected shop persists across restarts and is also used by default dashboard subscriptions.
+
 ## [2.11.0] - 2026-10-29
 
 ### Added

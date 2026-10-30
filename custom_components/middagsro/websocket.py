@@ -71,6 +71,7 @@ from .schema import vol
 from .sites import SITES, site_of
 from .storage import ALLERGY_OPTIONS, AVOID_OPTIONS, FAVORITE_FREQUENCIES
 from .store_client import REMA, REMA_ONLY, rema_only, store_name, store_of
+from .store_selection import SIGNAL as STORE_CHANGED, async_switch, selected_entry, selection
 from .watch import (
     async_check as async_watch_check,
     async_deals as async_watch_deals,
@@ -96,7 +97,7 @@ def _entry(hass: HomeAssistant, msg: dict[str, Any]) -> RemaConfigEntry:
         entries = [e for e in entries if e.entry_id == entry_id]
     if not entries:
         raise ServiceValidationError(translation_domain=DOMAIN, translation_key="entry_not_found")
-    return entries[0]
+    return selected_entry(hass, entries)
 
 
 def _catalog(cat: Catalog | None) -> dict[str, Any] | None:
@@ -146,6 +147,25 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
     shown = {entry["plan_id"] for entry in timeline}
     return {
         "entry_id": entry.entry_id,
+        "stores": [
+            {
+                "entry_id": other.entry_id,
+                "name": store_name(store_of(other.data)),
+                "pickup": getattr(
+                    getattr(other.runtime_data.client, "cart", None), "pickup_name", ""
+                ),
+            }
+            for other in hass.config_entries.async_loaded_entries(DOMAIN)
+        ],
+        "store_switch_preference": selection(hass).preference,
+        "switched_plan": store.get_plan(str(selection(hass).data.get("copied_plan_id") or ""))
+        if selection(hass).data.get("entry_id") == entry.entry_id
+        else None,
+        "start_new_plan": bool(
+            selection(hass).data.get("start_new")
+            and selection(hass).data.get("entry_id") == entry.entry_id
+            and selection(hass).data.get("previous_plan_id") == (latest or {}).get("id")
+        ),
         "title": entry.title,
         "settings": store.settings,
         "favorites": store.favorites,
@@ -287,6 +307,9 @@ async def ws_subscribe(
     @callback
     def send(*_: Any) -> None:
         pending.clear()
+        if not msg.get("entry_id") and _entry(hass, msg).entry_id != entry.entry_id:
+            connection.send_message(websocket_api.event_message(msg_id, {"reload": True}))
+            return
         if entry.state is not ConfigEntryState.LOADED:
             # Reloaded (new settings, a new login): the cards subscribe again.
             connection.send_message(websocket_api.event_message(msg_id, {"reload": True}))
@@ -299,6 +322,7 @@ async def ws_subscribe(
             pending.append(async_call_later(hass, 0.5, send))
 
     unsubs = [
+        async_dispatcher_connect(hass, STORE_CHANGED, changed),
         async_dispatcher_connect(hass, signal_plans_updated(entry.entry_id), changed),
         entry.runtime_data.shopping_list.async_add_listener(changed),
         async_track_time_change(hass, changed, hour=0, minute=0, second=10),
@@ -356,6 +380,43 @@ async def ws_settings(
     settings = await entry.runtime_data.store.async_set_settings(msg["settings"])
     entry.runtime_data.planner._notify()  # the budget's sensors follow
     connection.send_result(msg["id"], settings)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/store/switch",
+        ENTRY: str,
+        vol.Required("target_entry_id"): str,
+        vol.Required("action"): vol.In(["copy", "new"]),
+        vol.Optional("remember", default=False): bool,
+        vol.Optional("plan_id"): vol.Any(str, None),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_store_switch(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Select an installed account without reconfiguring or writing to its cart."""
+    source = _entry(hass, msg)
+    target = _entry(hass, {"entry_id": msg["target_entry_id"]})
+    await async_switch(hass, source, target, msg["action"], msg["remember"], msg.get("plan_id"))
+    connection.send_result(msg["id"], {"entry_id": target.entry_id})
+
+
+@websocket_api.websocket_command({vol.Required("type"): "middagsro/store/ask", ENTRY: str})
+@websocket_api.async_response
+@_wrap
+async def ws_store_ask(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Forget the remembered copy/new preference, keeping the selected account."""
+    manager = selection(hass)
+    async with manager.lock:
+        data = {**manager.data, "plan_action": "ask"}
+        await manager.store.async_save(data)
+        manager.data = data
+    connection.send_result(msg["id"], True)
 
 
 @websocket_api.websocket_command(
@@ -1594,6 +1655,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_notice_seen,
         ws_plan,
         ws_settings,
+        ws_store_switch,
+        ws_store_ask,
         ws_note,
         ws_favorite_save,
         ws_favorite_delete,
