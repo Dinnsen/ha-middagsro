@@ -4024,7 +4024,8 @@ class MealPlanner:
 
             async def match(line: dict[str, Any]) -> None:
                 async with semaphore:
-                    await self._async_match_on_day(line, at, offers.get(line.get("offer_name")))
+                    offer = offers.get(str(line.get("offer_name") or ""))
+                    await self._async_match_on_day(line, at, offer)
 
             await asyncio.gather(*(match(line) for line in kept))
             await self._async_ai_choices(plan)
