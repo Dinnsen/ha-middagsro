@@ -403,7 +403,7 @@ def avis_packages(
     per = pieces_per_package(("g", grams[0]), piece_g) if grams else None
     if size and size[0] > 0:
         return max(1, min(20, math.ceil(need[1] / size[0] - 0.05)))
-    if per:
+    if per and per >= 1:  # a pack of several pieces (not a part of one, like 120 g of pizza)
         return max(1, min(20, math.ceil(need[1] / per - 0.05)))
     if need[0] == "stk":
         return max(1, min(20, math.ceil(need[1])))
