@@ -75,7 +75,9 @@ def test_weekly_scaling_is_limited() -> None:
     """A misread serving count can't multiply a weekly plan's shopping (freezer plans
     scale on their own)."""
     big = clean_settings({"household": [{"role": "adult"}] * 12})
-    assert mp.recipe_factor(big, {"servings": 1}, {}) == 4.0
+    assert mp.recipe_factor(big, {"servings": 2}, {}) == 4.0
+    # "1 tærte" is not one serving: unknown, read as a normal recipe's four.
+    assert mp.recipe_factor(big, {"servings": 1}, {}) == 3.0
     double = clean_settings({"household": [{"role": "adult"}] * 12, "portion_percent": 200})
-    assert mp.recipe_factor(double, {"servings": 1}, {}) == 8.0
+    assert mp.recipe_factor(double, {"servings": 2}, {}) == 8.0
     assert mp.recipe_factor(double, {"servings": 4}, {}) == pytest.approx(6.0)

@@ -14,6 +14,7 @@ from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN
 from .coordinator import RemaConfigEntry
+from .matching import plan_total
 from .storage import MAX_PLANS
 
 SIGNAL = f"{DOMAIN}_selected_store_changed"
@@ -99,6 +100,8 @@ async def _copy_plan(
             "prefer",
         ):
             line.pop(key, None)
+        if not line.get("have"):
+            line.pop("skipped", None)
         if was_sent:
             line["sent"] = was_sent
         line["must_have"] = False  # resolve by ingredient/amount, never by another shop's SKU
@@ -143,7 +146,7 @@ async def _copy_plan(
                     copied_recipes.append(recipe)
         day["recipe_id"] = mapping.get(rid)
     await target.runtime_data.planner._async_price_lines(plan["shopping"], [])
-    plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
+    plan["total"] = plan_total(plan["shopping"])
     plan["over_budget"] = bool(plan.get("budget")) and plan["total"] > plan["budget"]
     return {"plan": plan, "recipes": copied_recipes}
 

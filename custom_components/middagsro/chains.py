@@ -29,6 +29,7 @@ from .bilka import BILKA_ID
 from .const import DOMAIN
 
 if TYPE_CHECKING:
+    from .matcher import ProductMatcher
     from .mealplan import MealPlanner
 
 _LOGGER = logging.getLogger(__name__)
@@ -224,7 +225,8 @@ def _equivalent_price(product: dict[str, Any], offer: Offer) -> float | None:
 
     With a size range ("400-500 g") the smallest size is used, so a saving is never overstated.
     """
-    from .mealplan import avis_size, package_size  # noqa: PLC0415
+    from .amounts import package_size  # noqa: PLC0415
+    from .matching import avis_size  # noqa: PLC0415
 
     if offer.price is None:
         return None
@@ -250,7 +252,8 @@ def offer_pieces(offer: Offer) -> int:
 def _same_kind(product: dict[str, Any], offer: Offer) -> bool:
     """Every word of REMA's name is in the offer (also inside a compound word, "mælk" in
     "letmælk"), nothing in it makes it another product, and fat % and organic are the same."""
-    from .mealplan import _FROZEN_WORDS, _NEUTRAL_WORDS, _percents, _tokens, name_fit  # noqa: PLC0415
+    from .matching import _percents, name_fit  # noqa: PLC0415
+    from .words import _FROZEN_WORDS, _NEUTRAL_WORDS, _tokens  # noqa: PLC0415
 
     name = str(product.get("name") or "")
     words = [w for w in _tokens(name) if len(w) > 1 and w not in _NEUTRAL_WORDS]
@@ -286,7 +289,8 @@ def _same_kind(product: dict[str, Any], offer: Offer) -> bool:
 
 def _specifics(underline: str | None) -> list[str]:
     """The brand and variety in REMA's underline ("100 GR. / LOVEMADE, QUINOA & ÆBLE")."""
-    from .mealplan import _NEUTRAL_WORDS, _ORIGINS, _tokens  # noqa: PLC0415
+    from .matching import _ORIGINS  # noqa: PLC0415
+    from .words import _NEUTRAL_WORDS, _tokens  # noqa: PLC0415
 
     if not underline or "/" not in underline:
         return []
@@ -387,7 +391,7 @@ def bilka_entry(product: Product) -> dict[str, Any]:
     }
 
 
-def wants_bilka(planner: MealPlanner) -> bool:
+def wants_bilka(planner: ProductMatcher) -> bool:
     """Bilka's prices on every item: when Bilka is among the chains (and not the shop)."""
     return BILKA_ID in planner.store.settings["chains"] and planner.dealer_id != BILKA_ID
 
@@ -504,7 +508,7 @@ def product_unit_price(product: dict[str, Any]) -> dict[str, Any] | None:
 
 def offer_unit_price(entry: dict[str, Any]) -> dict[str, Any] | None:
     """An offer's price per kg, litre or piece (its smallest size, so never too low)."""
-    from .mealplan import avis_size  # noqa: PLC0415
+    from .matching import avis_size  # noqa: PLC0415
 
     offer = as_offer(entry)
     if offer.price is None:
@@ -536,7 +540,8 @@ def query_fit(query: str, name: str) -> tuple[bool, bool]:
     The kind is wrong if a word makes it another product ("oksekød 35% grønt") or the
     fat % differs ("oksekød 4-7%" for "oksekød 8-12%").
     """
-    from .mealplan import _NEUTRAL_WORDS, _percents, name_fit  # noqa: PLC0415
+    from .matching import _percents, name_fit  # noqa: PLC0415
+    from .words import _NEUTRAL_WORDS  # noqa: PLC0415
 
     words = query_words(query)
     words = [w for w in words if w not in _NEUTRAL_WORDS] or words

@@ -7,6 +7,79 @@ All notable changes to REMA 1000 for Home Assistant. The version is the one in `
 ### Added
 - Select an installed grocery account directly in the panel. Choose to carry the current plan or start planning a new one, optionally remembering the choice. Carried plans are matched/priced for the new shop without cart writes; sent items stay sent and source history is preserved. Family/preferences follow; other account settings remain separate. The selected shop persists across restarts and is also used by default dashboard subscriptions.
 
+## [2.13.0b2] - 2026-10-31
+
+### Added
+- **Har det** for an item you have at home: it is taken off the list this time, and Middagsro learns nothing from it – next time it is on the list again. It is in the list of uncertain items and on every item's own page (*Har det hjemme*).
+
+### Changed
+- **Udelad is now Forkert vare**, so it says what it does: the item is left out, and that product is never taken for the ingredient again. *Har det* after *Forkert vare*, or *Tag den med igen*, takes that back.
+- *Gem som testsag* only includes items left out as the wrong product, not the ones you have at home.
+
+### Fixed
+- **"Barbecue Sauce Original" found nothing:** BBQ is read as barbecue, and words like *Original* and *Classic* no longer decide what a thing is. Plain kyllingebryst is still never the BBQ one.
+
+## [2.13.0b1] - 2026-10-30
+
+Beta: a new core for finding products – measured, shared and in its own modules.
+
+### Added
+- **Gem som testsag** under *Indkøb → Flere muligheder*: downloads the plan's items you kept or chose (and the ones you left out), with everything REMA answered, as a file for the tests (`tests/corpus/cases/`). The tests match them again by name and report how many get the right product. Only ingredient names and product numbers are in it.
+- **Measured matching:** every test run counts the right products, the *sure but wrong* ones (bought without asking – must be 0), the unsure and wrong, the not found and the wrong counts, with the shared table and by name alone; the numbers are on the CI run's page.
+- **A shared product table** (`data/links.json`): ingredient names and the REMA products they are, seeded from the test corpus. A name in it gets its product straight away (after your own choice and the offers), still by your organic and egg rules; a product you said no to is never taken.
+- **Del jeres valg** opens GitHub with your chosen products (ingredient and product number, nothing about you) as an issue, so they can go into the shared table for everyone.
+- **The AI names the catalogue entry:** each shopping item may come with a key from the ingredient catalogue. For words the catalogue doesn't know ("vårløg") the key decides what is searched for, and the item is marked *Tjek* unless its words say the same.
+
+### Changed
+- **Amounts in base units:** an item written as "300 g" in one recipe and "1 pk" in another keeps both, and the packages are counted from both (two packs, not one). Grams of something sold per piece are counted in pieces (600 g squash: two).
+- **Another shop for what REMA isn't sure of** is now a step of its own that can take more shops than Bilka (`shops.py`).
+- The matching moved out of `mealplan.py` into `amounts.py`, `matching.py` and `matcher.py`.
+
+## [2.12.0b3] - 2026-10-30
+
+### Added
+- **Find varer igen** under *Indkøb → Flere muligheder*: every item of the plan that isn't sent is read again from its words and matched with the rules as they are now – same dishes, one line per thing, and what isn't sure is looked for in Bilka. What you chose, kept, left out or moved to another shop stays as it is. So a plan made with an older version gets the newest fixes without making a new plan.
+
+## [2.12.0b2] - 2026-10-30
+
+Beta: fixes from a real week-45 plan made with 2.12.0b1.
+
+### Added
+- **Bilka for what REMA has no sure product for:** with Bilka among *Andre butikker*, a line Middagsro isn't sure of in REMA (galangarod, romainesalat …) is looked for in Bilka ToGo by the same rules. A sure match goes on Bilka's list under Indkøb at Bilka's price (and can be moved back); a line Bilka isn't sure of either stays among *Usikre varer*.
+
+### Fixed
+- **Behold, Udelad, Behold alle and Glem valget did nothing but show an error:** the panel's command for them was never registered in Home Assistant ("Unknown command").
+- **Æg in the Thursday basket without being on offer:** a dish built on Thursday's skrabeæg offer, with the family's organic eggs chosen, put the eggs in the Thursday basket at the normal price. Only the offer's own product waits for its day; the rest is bought and priced on the shopping day.
+- **A colour or sort the line names is kept:** "rød peberfrugt" is never GUL/ORANGE PEBER and "romainesalat" never icebergsalat or hjertesalat; a product that doesn't say it is the red one (ØKO. PEBER) is marked for a check.
+- **An offer's product must be what the line is called:** "Mini-baguettes" searched as "brød" no longer gets the Schulstad offer's sødmælksbrød (baguettes and flutes are their own thing in the catalogue).
+- **"8 pølser" of an avis pack** were 8 packs; they are counted by what a sausage weighs. "Rød peber" and "rød peberfrugt" are one line.
+- **A recipe's instructions are not the name:** "Kaffirblade, fjern stilken i midten og striml bladene fint" is searched as kaffirblade.
+
+## [2.12.0b1] - 2026-10-30
+
+Beta: the matching of ingredients to REMA's products rebuilt. Please check the shopping list of a new plan closely and report what is wrong.
+
+### Added
+- **Usikre varer – a check before the list is sent:** when Middagsro is not sure a product is the right one for an ingredient, the line is marked *Tjek* or *Usikker* on the shopping list, with the other products it could be. A yellow box at the top lists them: keep the product, choose another, search for one, or leave the line out. The new setting **Indstillinger → Indkøb → Usikre varer** decides what a send does with lines nobody has looked at: wait for the check (default – an automatic send at 02:00 goes without them), send them as chosen, or leave them out.
+- **Middagsro remembers your choices:** a product you keep, choose or put on a line yourself is the one that ingredient gets in the next plans (marked *Jeres valg*); a product you leave out is never taken for that ingredient again. *Glem valget* on the line undoes it.
+- **An ingredient catalogue:** some 250 common ingredients with how they are searched, what one piece weighs (so "2 løg" from a kilo bag is one bag, not two, and "3 fed hvidløg" one bulb), whether they are fresh, canned or dried, and the words that make a product something else ("skalotteløg" is not løg, "stødt chili" is not fresh chili, "indbagt laks" is not laks).
+- **REMA's own shelf decides what a product is:** department and category gate every search result, so cup noodles can never be nudler, a can of pepper strips never a fresh peberfrugt, grill skewers never food – and a line only gets a ready meal, a snack or a drink when it asks for one (a Friday frysepizza).
+- **Allergies and avoided foods are checked:** every dish of a plan, every AI recipe and every item a recipe adds are checked against word lists for what the family can't eat; the AI is asked to put a dish or recipe right, and an extra item with a conflict is never added. (Gluten and lactose are left to the product choice, which prefers GLUTENFRI and LAKTOSEFRI products.)
+- **Structured answers from the AI:** AI Task is given the shape of the plan, the recipe and the product choice, so the answer is valid JSON with the right keys. After the list is priced, one question to the AI picks among the products found for the uncertain lines.
+- A corpus of REMA's real search results (164 lines, among them every error of a real week-45 plan) guards the matching in the tests.
+
+### Changed
+- **One line per thing:** the plan's "Løg", "Løg, i både" and "Stort løg" become one line with the amounts added up; the same for a web recipe's second onion.
+- **Recipe text is not shopping:** a heading ("Dej:", "Fyld:"), the tin ("Tærteform"), water and remarks ("Server med ris", "Kan erstattes med skyr") never reach the list; "Evt. chili" is chili.
+- **The usual size, not the cheapest package:** "2 dåser kokosmælk" is two normal cans, not mini cans of light coconut milk; a "vej selv" loose item is not chosen over a bag; "kokosmælk light" is only chosen when asked for. A percent asked for is kept ("creme fraiche 18%" is not the 38%). Frozen meat, poultry or fish only when clearly cheaper than fresh.
+- **The avis offers shown to the AI** are food for dinner the family can eat: no household goods, sweets or drinks, nothing they avoid or are allergic to. Vegan and vegetarian households get the rule spelled out. The AI's checklist is only for the family's own rules – the other rules are checked by Middagsro – and the corrections from a previous try come last in the instructions, where the model weighs them most.
+- A plan is checked against the rules before its list is priced (a worse try costs no searches), REMA's answers are kept for the rounds of one generation, and if the AI fails on a later round the best try so far is the plan. The budget feedback separates the fixed weekly items the AI can't change.
+- A fixed day at a restaurant is no longer a leftovers day.
+
+### Fixed
+- Many wrong products from a real plan: cupnudler for "oksekød i strimler", pepper strips in a can for peberfrugt, soybeans for soja, bearnaise for fishsauce, ground chili for fresh chili, skalotteløg for løg, a date bar for peanuts, onions bought three times, 3 forårsløg as 3 bunches, a tart scaled by four, 1 kg chicken breast counted as 2 pieces, mini cans of light coconut milk.
+- A recipe link's redirects are followed one hop at a time, each address checked, so a page can't lead to the home network.
+
 ## [2.11.0] - 2026-10-29
 
 ### Added

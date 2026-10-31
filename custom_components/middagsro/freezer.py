@@ -52,7 +52,7 @@ def _shopping(plan: dict[str, Any], settings: dict[str, Any]) -> list[dict[str, 
             if is_tap_water(ingredient["name"]):
                 continue
             line = recipe_line(ingredient)
-            if line["search"].lower() in pantry:
+            if line is None or line["search"].lower() in pantry:
                 continue
             key = (line["search"].lower(), line["unit"])
             if key in merged:

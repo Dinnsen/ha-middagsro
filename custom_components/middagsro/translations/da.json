@@ -324,6 +324,15 @@
     },
     "plan_already_sent": {
       "message": "Madplanens indkøbsliste er allerede sendt, så den kan ikke opdateres. Lav en ny madplan i stedet."
+    },
+    "review_needed": {
+      "message": "{count} skal tjekkes, før listen sendes – se den gule boks øverst på indkøbslisten."
+    },
+    "product_required": {
+      "message": "Vælg en vare først."
+    },
+    "unknown_action": {
+      "message": "Ukendt handling: {action}"
     }
   },
   "issues": {
