@@ -1073,7 +1073,7 @@ async def test_generation_guards(
     with pytest.raises(ServiceValidationError):
         await planner.async_generate(START, every_day)
 
-    async def forever(*args: Any) -> None:
+    async def forever(*args: Any, **kwargs: Any) -> None:
         await asyncio.Event().wait()
 
     with patch.object(planner, "_async_run", side_effect=forever):

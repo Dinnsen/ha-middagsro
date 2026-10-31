@@ -676,6 +676,16 @@ class Rema1000Panel extends HTMLElement {
         this._moreOpen = !this._moreOpen;
         this._render();
       },
+      "inventory-save": () => this._run(async () => {
+        const d = this._inventoryDraft || {};
+        await this._ws("middagsro/inventory/edit", { item_id: d.id || null, name: d.name || "", amount: Number(String(d.amount || "").replace(",", ".")), unit: d.unit || "g" });
+        this._inventoryDraft = {};
+      }, "Fryserlageret er gemt."),
+      "inventory-edit": () => { this._inventoryDraft = { ...(this._state.freezer_inventory || []).find(i => i.id === arg) }; this._render(); },
+      "inventory-cancel": () => { this._inventoryDraft = {}; this._render(); },
+      "inventory-delete": () => this._run(async () => { await this._ws("middagsro/inventory/delete", { item_id: arg }); if (this._inventoryDraft?.id === arg) this._inventoryDraft = {}; }, "Råvaren er fjernet."),
+      "inventory-consume-open": () => { this._modal = { kind: "inventory-consume" }; this._renderModal(); },
+      "inventory-consume": () => this._run(async () => { await this._ws("middagsro/inventory/consume", { plan_id: this._plan.id }); this._modal = null; this._renderModal(); }, "De viste mængder er trukket fra fryserlageret."),
       "fav-refresh": () => this._loadFavs(true),
       "fav-week": () => {
         if (arg === this._favWeek) return;
@@ -1517,6 +1527,11 @@ class Rema1000Panel extends HTMLElement {
       if (this._modal?.kind === "store-switch") this._modal.remember = el.checked;
       return;
     }
+    if (ds.bind === "use-freezer") { this._useFreezer = el.checked; return; }
+    if (ds.bind === "inventory-field") {
+      this._inventoryDraft = { ...this._inventoryDraft, [ds.field]: el.value };
+      return;
+    }
     if (ds.bind === "freezer-note") {
       this._freezerNote = el.value;
       return;
@@ -1741,6 +1756,7 @@ class Rema1000Panel extends HTMLElement {
       start_date: this._startDate || null,
       skip_dates: [...this._skip].filter((d) => days.has(d)),
       surprise,
+      use_freezer: !!this._useFreezer,
       picks: Object.fromEntries(Object.entries(this._picks).filter(([d]) => days.has(d) && !this._skip.has(d))),
     });
     this._skip.clear();
@@ -3240,6 +3256,10 @@ class Rema1000Panel extends HTMLElement {
   _renderModal() {
     const node = this.shadowRoot.querySelector("#modal");
     if (!node) return;
+    if (this._modal?.kind === "inventory-consume") {
+      node.innerHTML = `<div class="scrim" data-action="modal-close"></div><div class="dialog" role="dialog" aria-modal="true" aria-label="Bekræft forbrug fra fryseren"><h2>Er råvarerne brugt?</h2><p>Træk kun disse mængder fra lageret, når du har brugt dem til madplanen.</p><ul>${(this._plan?.freezer_used || []).map(i => `<li>${esc(i.name)}: ${i.amount} ${esc(i.unit)}</li>`).join("")}</ul><div class="row wrap"><button class="btn primary" data-action="inventory-consume" ${this._busy ? "disabled" : ""}>Ja, træk fra lageret</button><button class="btn" data-action="modal-close">Annuller</button></div></div>`;
+      return;
+    }
     if (this._modal?.kind === "store-switch") {
       node.innerHTML = this._storeSwitchModal(this._modal);
       return;
@@ -3601,6 +3621,7 @@ class Rema1000Panel extends HTMLElement {
       return `<details class="fold" data-fold="days" ${open ? "open" : ""}><summary>Tilpas dagene${tailored ? ` <span class="badge">${tailored} ${tailored === 1 ? "dag" : "dage"}</span>` : ""}</summary>
         <p class="muted small">AI'en vælger retterne. Du kan selv vælge en ret eller springe en dag over.</p><div class="skipdays">${skip}</div></details>`;
     })() : ""}
+    ${(this._state?.freezer_inventory || []).length ? `<label class="check"><input type="checkbox" data-bind="use-freezer" ${this._useFreezer ? "checked" : ""}> Brug råvarer fra fryseren i denne madplan</label><p class="muted small">Prioritér fryserens indhold. Kun manglende mængder købes; du bekræfter selv forbruget bagefter.</p>` : ""}
     <div class="row wrap skipgo">
       <button class="btn primary" data-action="generate" ${generating || this._busy ? "disabled" : ""}>
         ${generating ? "Laves …" : aiLabel(label)}
@@ -3608,6 +3629,31 @@ class Rema1000Panel extends HTMLElement {
       <button class="btn surprise" data-action="surprise" ${generating || this._busy ? "disabled" : ""}
         title="Retter I aldrig har fået – fra andre køkkener og med overraskende smage">${SURPRISE_ICON}Overrask os</button>
     </div>`;
+  }
+
+  _inventoryCard() {
+    const items = this._state?.freezer_inventory || [];
+    const d = this._inventoryDraft || {};
+    return `<details class="card fold" data-fold="inventory" ${this._folds?.has("inventory") ? "open" : ""}>
+      <summary><span class="fold-title">Råvarer i fryseren</span> <span class="badge">${items.length}</span></summary>
+      <p class="muted small">Fælles lager for alle butikker. Skriv råvaren, fx hakket oksekød, og den samlede mængde. Vælg “Brug råvarer fra fryseren”, når du laver en ny madplan.</p>
+      ${items.map(i => `<div class="row wrap"><span class="spacer">${esc(i.name)} · ${i.amount} ${esc(i.unit)}</span><button class="btn small" data-action="inventory-edit" data-arg="${esc(i.id)}">Ret</button><button class="btn small" data-action="inventory-delete" data-arg="${esc(i.id)}" ${this._busy ? "disabled" : ""}>Fjern</button></div>`).join("") || '<p class="muted">Fryserlageret er tomt.</p>'}
+      <div class="row wrap inventory-fields">
+        <label class="field">Råvare <input data-bind="inventory-field" data-field="name" maxlength="120" value="${esc(d.name || "")}" placeholder="Fx hakket oksekød"></label>
+        <label class="field">Mængde <input data-bind="inventory-field" data-field="amount" type="number" min="0.001" max="100000" step="any" value="${esc(d.amount ?? "")}" placeholder="800"></label>
+        <label class="field">Enhed <select data-bind="inventory-field" data-field="unit">${["g", "kg", "ml", "l", "stk"].map(u => `<option ${u === (d.unit || "g") ? "selected" : ""}>${u}</option>`).join("")}</select></label>
+      </div><div class="row wrap"><button class="btn" data-action="inventory-save" ${this._busy ? "disabled" : ""}>${d.id ? "Gem mængde" : "Tilføj råvare"}</button>${d.id ? '<button class="btn" data-action="inventory-cancel">Annuller</button>' : ""}</div>
+      <p class="muted small">Lageret reserveres ikke af en madplan. Det ændres først, når du bekræfter forbruget. Ret lageret her, hvis du bruger noget til andet. Nye lagerændringer gælder nye madplaner.</p>
+    </details>`;
+  }
+
+  _inventoryUsage(plan) {
+    const used = plan?.freezer_used || [];
+    if (!used.length) return "";
+    const done = (this._state?.freezer_consumed || []).includes(plan.id);
+    return `<div class="banner"><b>Fra fryseren til denne madplan</b><ul>${used.map(i => `<li>${esc(i.name)}: ${i.amount} ${esc(i.unit)}</li>`).join("")}</ul>
+      <p class="small">Disse mængder er allerede trukket fra indkøbslisten. Opskrifterne viser de fulde mængder.</p>
+      ${done ? "Forbruget er registreret ✓" : `<button class="btn" data-action="inventory-consume-open" ${this._busy ? "disabled" : ""}>Registrér som brugt</button><p class="muted small">Bekræft først, når de viste råvarer er brugt. Lageret er endnu ikke ændret.</p>`}</div>`;
   }
 
   // Månedens frysermad, folded away under the weekly plan.
@@ -3672,7 +3718,7 @@ class Rema1000Panel extends HTMLElement {
         <p>Madplanen laves med AI ud fra ugens tilbud og jeres indstillinger. Tjek indstillingerne først, og tryk så på knappen.</p>
         ${this._generateControls("Lav madplan")}
         <p class="muted">${catLine}</p>
-      </div>${this._freezerCard()}`;
+      </div>${this._inventoryCard()}${this._freezerCard()}`;
     }
     const over = plan.budget && plan.total > plan.budget;
     const today = localToday();
@@ -3740,6 +3786,7 @@ class Rema1000Panel extends HTMLElement {
             ? `<div class="banner warn">AI'en kunne ikke overholde ${broken.length === 1 ? "ét krav" : `${broken.length} krav`}, selv efter at have prøvet igen:<ul class="checklist">${broken.map((c) => `<li class="bad">✗ ${esc(c.requirement)}</li>`).join("")}</ul>Tryk på retten for at skifte den ud, eller lav en ny madplan.</div>`
             : "";
         })()}
+        ${this._inventoryUsage(plan)}
         <div class="days">${days}</div>
         <div class="help-row">
           ${this._planHelp ? '<p class="muted small help-text">Tryk på en ret for at se opskriften eller skifte den ud. 👍, 👎 og ♥ gemmer retten i opskriftsamlingen – tryk igen for at fortryde.</p>' : ""}
@@ -3769,7 +3816,7 @@ class Rema1000Panel extends HTMLElement {
         <h2>Ny madplan</h2>
         ${this._generateControls()}
         <p class="muted">${catLine}</p>
-      </div>${this._freezerCard()}`;
+      </div>${this._inventoryCard()}${this._freezerCard()}`;
   }
 
   // Which plan and date the chosen recipe day belongs to; a new plan or a new
@@ -5397,6 +5444,9 @@ const STYLE = `
   .chev { font-size: 22px; color: var(--secondary-text-color); }
   .settings-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
   .settings-head h1 { margin: 0; }
+  .inventory-fields .field { flex: 1; min-width: 100px; }
+  @media (max-width: 600px) { .inventory-fields .field:first-child { flex-basis: 100%; } }
+  .inventory-fields input, .inventory-fields select { box-sizing: border-box; width: 100%; min-width: 0; }
   .store-chooser { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; padding: 12px 16px; margin-bottom: 16px; border: 1px solid var(--divider-color); border-radius: 12px; background: var(--rema-card); }
   .store-chooser .field { margin: 0; min-width: 200px; }
   .store-chooser > .small { flex: 1; min-width: 180px; }

@@ -26,6 +26,7 @@ from .coordinator import (
     RemaShoppingListCoordinator,
 )
 from .favorites import FavoriteOffers
+from .inventory import inventory
 from .mealplan import MealPlanner
 from .migrate import async_migrate
 from .panel import async_register_panel, async_unregister_panel
@@ -52,6 +53,7 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the actions and the panel's websocket commands."""
     await selection(hass).async_load()
+    await inventory(hass).async_load()
     async_setup_services(hass)
     async_register_websocket(hass)
     return True

@@ -229,3 +229,15 @@ async def test_copy_without_a_plan_opens_new_plan_and_selection_survives_removal
     assert selection(hass).data["start_new"]
     assert selection(hass).preference == "copy"
     assert selected_entry(hass, [init_integration]) is init_integration
+
+
+async def test_copy_keeps_have_but_rechecks_rejected_product(hass, init_integration, second_entry):
+    plan = make_plan()
+    plan["shopping"][0].update(skipped=True, have=True, reviewed=True)
+    plan["shopping"][1].update(skipped=True, reviewed=True)
+    await init_integration.runtime_data.store.async_add_plan(plan)
+    await async_switch(hass, init_integration, second_entry, "copy", False, plan["id"])
+    copied = second_entry.runtime_data.store.latest_plan
+    assert copied["shopping"][0]["have"] and copied["shopping"][0]["skipped"]
+    assert not copied["shopping"][1].get("skipped")
+    assert copied["total"] == 20

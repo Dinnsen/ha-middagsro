@@ -471,3 +471,15 @@ If you like Middagsro, you can [buy me a coffee](https://buymeacoffee.com/dinnse
 ## Licence
 
 [MIT](LICENSE). The home-screen app includes [home-assistant-js-websocket](https://github.com/home-assistant/home-assistant-js-websocket) under the Apache-2.0 licence. REMA 1000 is a trademark of its owner; this project is not affiliated with REMA 1000 or the other chains. The other chains' names and logos are only used to show their offers.
+
+
+### Freezer raw ingredients (test)
+
+The **Råvarer i fryseren** card stores household quantities shared across shops.
+Opt in with **Brug råvarer fra fryseren i denne madplan** for a new weekly plan.
+Recipes keep full amounts; only missing quantities are purchased. **Registrér som brugt**
+asks before deducting the displayed usage, with a durable receipt shared across
+copies of the plan. Plans do not reserve inventory. Stock changes affect new plans;
+update the inventory when using ingredients elsewhere. Matching is conservative:
+same ingredient names (preparation removed), compatible mass/volume/count units;
+no guesses between pieces and grams, and no cooked meal inventory yet.

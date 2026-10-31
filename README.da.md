@@ -468,3 +468,19 @@ Kan du lide Middagsro, kan du [give mig en kop kaffe](https://buymeacoffee.com/d
 ## Licens
 
 [MIT](LICENSE) © Christian Dinnsen. REMA 1000 og REMA 1000-logoet tilhører REMA 1000. Integrationen er ikke lavet af eller godkendt af REMA 1000 eller de andre kæder; deres navne og logoer bruges kun til at vise deres tilbud.
+
+
+### Råvarer i fryseren (test)
+
+Åbn **Råvarer i fryseren** under madplanen, og tilføj fx *hakket oksekød, 800 g*.
+Lageret er fælles for butikkerne. Markér **Brug råvarer fra fryseren i denne madplan**,
+når en ny ugentlig plan laves. AI'en prioriterer råvarerne, og indkøbslisten køber
+kun manglende mængder; opskrifterne beholder de fulde mængder.
+
+Oversigten **Fra fryseren til denne madplan** viser de fratrukne mængder.
+**Registrér som brugt** beder om bekræftelse og trækker dem fra lageret én gang,
+også hvis planen kopieres til en anden butik. Planer reserverer ikke lager;
+ret lageret, hvis noget bruges til andet, og kontrollér det før næste plan.
+Nye lagerændringer gælder nye planer. Første version bruger kun ens råvarenavne
+(tilberedning som finthakket fjernes) og kompatible g/kg, ml/l eller stk.
+Den gætter ikke mellem styk og gram, og færdige fryserretter er ikke med.
