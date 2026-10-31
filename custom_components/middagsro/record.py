@@ -70,7 +70,8 @@ def answered(line: dict[str, Any]) -> list[int] | str | None:
     if line.get("added") or line.get("must_have") or line.get("buy_at") or line.get("chain_only"):
         return None
     if line.get("skipped"):
-        return "unknown" if product.get("id") else None
+        # Left out as the wrong product: it was not that. In the house: says nothing.
+        return "unknown" if product.get("id") and not line.get("have") else None
     if product.get("id") and (line.get("reviewed") or line.get("remembered")):
         return [int(product["id"])]
     return None

@@ -10,6 +10,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.middagsro import mealplan as mp
 from custom_components.middagsro.planedit import async_edit_line, async_review_line
+from custom_components.middagsro.record import answered
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
@@ -256,3 +257,41 @@ def test_every_websocket_command_is_registered(hass: HomeAssistant) -> None:
     registered = [call.args[1] for call in register.call_args_list]
     missing = [name for name, f in handlers.items() if not any(f is r for r in registered)]
     assert missing == []
+
+
+async def test_have_it_at_home_is_not_learned(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """Har det: off the list this time, nothing remembered; and after Forkert vare it
+    takes the no back (as Tag den med igen does)."""
+    store = init_integration.runtime_data.store
+    planner = init_integration.runtime_data.planner
+    plan = _unsure_plan("have")
+    await store.async_add_plan(plan)
+    shop = planner.shop
+
+    result = await async_review_line(planner, "have", "pasta", "have")
+    pasta = next(line for line in result["shopping"] if line["id"] == "pasta")
+    assert pasta["skipped"] and pasta["have"] and pasta["reviewed"]
+    assert store.rejected_products("spaghetti", shop) == set()
+    assert answered(pasta) is None  # says nothing about the product
+
+    await async_review_line(planner, "have", "pasta", "skip")
+    assert "have" not in pasta
+    assert store.rejected_products("spaghetti", shop) == {60002}
+    assert answered(pasta) == "unknown"
+    await async_review_line(planner, "have", "pasta", "have")
+    assert store.rejected_products("spaghetti", shop) == set()
+    assert "spaghetti" not in str(store.choices)  # nothing left to remember
+
+    await async_review_line(planner, "have", "pasta", "skip")
+    await async_review_line(planner, "have", "pasta", "unskip")
+    assert store.rejected_products("spaghetti", shop) == set()
+    assert not pasta.get("skipped") and not pasta.get("have")
+
+    # A product the family also chose stays chosen when one no is taken back.
+    await store.async_remember_choice("spaghetti", shop, 60003, "FULDKORNSSPAGHETTI", 60002)
+    await store.async_unreject_product("spaghetti", shop, 60002)
+    assert store.choice_for("spaghetti", shop)["product_id"] == 60003
+    await store.async_unreject_product("spaghetti", shop, 60002)  # nothing to take back
+    await store.async_unreject_product("persille", shop, 1)

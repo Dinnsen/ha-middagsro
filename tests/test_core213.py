@@ -162,3 +162,31 @@ async def test_next_shops(hass: HomeAssistant, init_integration: MockConfigEntry
 
     planner.client.has_prices = False  # another shop than REMA: no searches
     assert next_shops(planner) == []
+
+
+async def test_bbq_is_barbecue(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """BBQ is short for barbecue; "Original" is the brand's usual variety. Plain
+    kyllingebryst is still not the BBQ-marinated one."""
+    sauce = make_product(110238, "BBQ SAUCE", 17.16, underline="370 GR. / REMA 1000",
+                         category="Dressing")  # fmt: skip
+    chicken = make_product(404000, "BBQ KYLLINGEBRYST", 39, underline="300 GR.",
+                           department="Kød, fisk & fjerkræ", category="Kylling")  # fmt: skip
+
+    async def search(query: str, limit: int = 15, **kwargs: Any) -> list[Any]:
+        return [sauce, chicken]
+
+    mock_client.async_search_products.side_effect = search
+    planner = init_integration.runtime_data.planner
+    line = planner._clean_line(
+        {"name": "Barbecue Sauce Original", "amount": 80, "unit": "ml",
+         "search": "Barbecue Sauce Original", "category": "Kolonial"}
+    )  # fmt: skip
+    await planner._async_match(line)
+    assert line["product"]["name"] == "BBQ SAUCE"
+    breast = planner._clean_line(
+        {"name": "Kyllingebryst", "amount": 300, "unit": "g", "category": "Kød"}
+    )
+    await planner._async_match(breast)
+    assert breast["product"] is None

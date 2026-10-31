@@ -873,9 +873,10 @@ async def async_review_line(
     action: str,
     product_id: int | None = None,
 ) -> dict[str, Any]:
-    """The family's answer to an uncertain line: keep the product (and use it for
-    this ingredient from now on), choose another, leave the line out (and not
-    take that product for the ingredient again), take it back in, or forget
+    """The family's answer to a line: keep the product (and use it for this
+    ingredient from now on), choose another, leave the line out as the wrong
+    product (and not take it for the ingredient again), leave it out because
+    it is in the house already (nothing learned), take it back in, or forget
     the choice remembered for the ingredient."""
     if action == "choose":
         if product_id is None:
@@ -900,11 +901,22 @@ async def async_review_line(
     elif action == "skip":
         line["reviewed"] = True
         line["skipped"] = True
+        line.pop("have", None)
         if product.get("id"):
             await planner.store.async_reject_product(key, planner.shop, int(product["id"]))
+    elif action == "have":
+        # In the house already: left out this time, and nothing is learned from it.
+        if line.get("skipped") and not line.get("have") and product.get("id"):
+            await planner.store.async_unreject_product(key, planner.shop, int(product["id"]))
+        line["reviewed"] = True
+        line["skipped"] = True
+        line["have"] = True
     elif action == "unskip":
+        if line.get("skipped") and not line.get("have") and product.get("id"):
+            await planner.store.async_unreject_product(key, planner.shop, int(product["id"]))
         line.pop("skipped", None)
         line.pop("reviewed", None)
+        line.pop("have", None)
     elif action == "forget":
         await planner.store.async_forget_choice(key, planner.shop)
         line.pop("remembered", None)

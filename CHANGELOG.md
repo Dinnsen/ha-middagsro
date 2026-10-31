@@ -2,6 +2,18 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.13.0b2] - 2026-10-31
+
+### Added
+- **Har det** for an item you have at home: it is taken off the list this time, and Middagsro learns nothing from it – next time it is on the list again. It is in the list of uncertain items and on every item's own page (*Har det hjemme*).
+
+### Changed
+- **Udelad is now Forkert vare**, so it says what it does: the item is left out, and that product is never taken for the ingredient again. *Har det* after *Forkert vare*, or *Tag den med igen*, takes that back.
+- *Gem som testsag* only includes items left out as the wrong product, not the ones you have at home.
+
+### Fixed
+- **"Barbecue Sauce Original" found nothing:** BBQ is read as barbecue, and words like *Original* and *Classic* no longer decide what a thing is. Plain kyllingebryst is still never the BBQ one.
+
 ## [2.13.0b1] - 2026-10-30
 
 Beta: a new core for finding products – measured, shared and in its own modules.

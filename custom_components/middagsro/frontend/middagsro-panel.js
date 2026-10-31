@@ -1330,7 +1330,8 @@ class Rema1000Panel extends HTMLElement {
       },
       "line-menu": () => this._openLine(arg),
       "review-keep": () => this._reviewAction(arg, "keep", null, "Varen beholdes – og huskes til næste gang."),
-      "review-skip": () => this._reviewAction(arg, "skip", null, "Varen er udeladt fra listen."),
+      "review-skip": () => this._reviewAction(arg, "skip", null, "Varen er udeladt, og den vælges ikke til ingrediensen igen."),
+      "review-have": () => this._reviewAction(arg, "have", null, "Varen er taget af listen denne gang. Næste gang kommer den med igen."),
       "review-unskip": () => this._reviewAction(arg, "unskip", null, "Varen er med på listen igen."),
       "review-forget": () => this._reviewAction(arg, "forget", null, "Valget er glemt – varen findes på ny næste gang."),
       "review-choose": () => {
@@ -2197,10 +2198,11 @@ class Rema1000Panel extends HTMLElement {
                 .map(([k, label, unit]) => `<tr><td>${label}</td><td>${String(m.nutrition[k]).replace(".", ",")}${unit}</td></tr>`)
                 .join("")}</table></details>`
           : ""}
-        ${line.skipped ? `<div class="banner info">Varen er udeladt fra listen. <button class="btn small" data-action="review-unskip" data-arg="${esc(line.id)}" ${busy ? "disabled" : ""}>Tag den med igen</button></div>` : ""}
+        ${line.skipped ? `<div class="banner info">${line.have ? "I har varen hjemme, så den er ikke på listen denne gang." : "Varen er udeladt som forkert vare."} <button class="btn small" data-action="review-unskip" data-arg="${esc(line.id)}" ${busy ? "disabled" : ""}>Tag den med igen</button></div>` : ""}
         ${this._needsReview(line) ? `<div class="banner warn"><div>Middagsro er ikke sikker på, at det er den rigtige vare${line.note ? ` (${esc(line.note)})` : ""}.
           <div class="row wrap">${p ? `<button class="btn small primary" data-action="review-keep" data-arg="${esc(line.id)}" ${busy ? "disabled" : ""}>✓ Behold varen</button>` : ""}
-          <button class="btn small" data-action="review-skip" data-arg="${esc(line.id)}" ${busy ? "disabled" : ""}>Udelad varen</button></div></div></div>` : ""}
+          <button class="btn small" data-action="review-skip" data-arg="${esc(line.id)}" ${busy ? "disabled" : ""} title="Varen udelades og vælges ikke til ingrediensen igen">Forkert vare</button></div></div></div>` : ""}
+        ${!line.skipped && !line.sent ? `<p class="muted small"><button class="btn small" data-action="review-have" data-arg="${esc(line.id)}" ${busy ? "disabled" : ""}>Har det hjemme</button> Tager varen af listen denne gang. Middagsro lærer ikke noget af det.</p>` : ""}
         ${line.remembered ? `<p class="muted small">Den vare I valgte til ingrediensen sidst. <button class="btn small" data-action="review-forget" data-arg="${esc(line.id)}" ${busy ? "disabled" : ""}>Glem valget</button></p>` : ""}
         ${(line.alternatives || []).filter((a) => !p || a.id !== p.id).length ? `<h2 class="small-h">Andre muligheder</h2>
         <div class="results">${(line.alternatives || [])
@@ -4061,7 +4063,8 @@ class Rema1000Panel extends HTMLElement {
           <div class="row wrap review-actions">
             ${p ? `<button class="btn small primary" data-action="review-keep" data-arg="${esc(line.id)}" ${busy}>✓ Behold</button>` : ""}
             <button class="btn small" data-action="line-menu" data-arg="${esc(line.id)}" ${busy}>Søg anden vare</button>
-            <button class="btn small" data-action="review-skip" data-arg="${esc(line.id)}" ${busy}>Udelad</button>
+            <button class="btn small" data-action="review-have" data-arg="${esc(line.id)}" ${busy} title="Tag varen af listen denne gang – I har den">Har det</button>
+            <button class="btn small" data-action="review-skip" data-arg="${esc(line.id)}" ${busy} title="Udelad varen og vælg den ikke til ingrediensen igen">Forkert vare</button>
           </div>
         </li>`;
       })
@@ -4114,7 +4117,7 @@ class Rema1000Panel extends HTMLElement {
               const badges = [
                 p?.is_advertised || p?.is_campaign ? '<span class="badge offer">Tilbud</span>' : "",
                 p?.is_organic ? '<span class="badge eco">Øko</span>' : "",
-                line.skipped ? '<span class="badge skipped">Udeladt</span>' : this._needsReview(line) ? `<span class="badge doubt">${line.confidence === "low" ? "Tjek" : "Usikker"}</span>` : "",
+                line.skipped ? `<span class="badge skipped">${line.have ? "Har det" : "Udeladt"}</span>` : this._needsReview(line) ? `<span class="badge doubt">${line.confidence === "low" ? "Tjek" : "Usikker"}</span>` : "",
                 line.remembered ? '<span class="badge remembered" title="Den vare I valgte til ingrediensen sidst">Jeres valg</span>' : "",
                 line.must_have ? '<span class="badge">Fast vare</span>' : "",
                 line.buy_from ? `<span class="badge from">Købes ${esc(dayShort(line.buy_from))}</span>` : "",

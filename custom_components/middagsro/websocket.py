@@ -936,7 +936,7 @@ async def ws_plan_line(
         ENTRY: str,
         vol.Required("plan_id"): str,
         vol.Required("line_id"): str,
-        vol.Required("action"): vol.In(["keep", "choose", "skip", "unskip", "forget"]),
+        vol.Required("action"): vol.In(["keep", "choose", "skip", "have", "unskip", "forget"]),
         vol.Optional("product_id"): vol.Any(int, None),
     }
 )

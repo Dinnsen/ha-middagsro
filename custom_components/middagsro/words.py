@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import re
 
-_ABBREVIATIONS = {"hk": "hakket", "øko": "økologisk", "økologiske": "økologisk"}
+_ABBREVIATIONS = {
+    "hk": "hakket",
+    "øko": "økologisk",
+    "økologiske": "økologisk",
+    "bbq": "barbecue",
+}
 # Extra words that make a product something else than what was asked for.
 _DIFFERENT_WORDS = {
     "løse",
@@ -56,7 +61,8 @@ _DIFFERENT_WORDS = {
     "kopnudler",
     "instant",
     "cup",
-    "bbq",
+    "barbecue",  # "BBQ" is read as barbecue
+    "bbq",  # in a compound ("bbqkylling")
     "indbagt",
     "fyldt",
     "fyldte",
@@ -126,6 +132,12 @@ _NEUTRAL_WORDS = {
     "fedt",
     "frisk",
     "friske",
+    # a brand's word for its usual variety ("Barbecue Sauce Original")
+    "original",
+    "originale",
+    "classic",
+    "klassisk",
+    "klassiske",
 }
 
 _ACCENTS = str.maketrans("éèêëáàâíìîïóòôúùûüç", "eeeeaaaiiiiooouuuuc")
