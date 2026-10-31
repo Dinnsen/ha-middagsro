@@ -51,13 +51,14 @@ const TAB_ICONS = {
   recipes: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7.5c-1.6-1.6-4.3-2.3-8-2.2v12.5c3.7-.1 6.4.6 8 2.2 1.6-1.6 4.3-2.3 8-2.2V5.3c-3.7-.1-6.4.6-8 2.2zM12 7.5V20"/></svg>',
   shopping: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2.2l2.3 10.3a1 1 0 0 0 1 .7h8.9a1 1 0 0 0 1-.8L20 8H6.3"/><circle cx="9.5" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/></svg>',
   favorites: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z"/></svg>',
+  inventory: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h16v12H4zM3 4h18v4H3zM9 12h6"/></svg>',
   health: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>',
   history: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
   settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>',
   budget: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h14.5a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18V6.5A1.5 1.5 0 0 1 5.5 5H17"/><path d="M16 12.5h4v3h-4a1.5 1.5 0 0 1 0-3z"/></svg>',
 };
-// On a phone the bottom bar shows the first tabs; the rest sit behind "Mere".
-const EXTRA_TABS = new Set(["budget", "health", "history", "settings"]);
+const NAV_STORAGE = "middagsro.navigation.v1";
+const PHONE_TABS = ["plan", "recipes", "shopping", "favorites"];
 const MORE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>';
 const CLOSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 // Shown on every button that asks the AI for something.
@@ -129,6 +130,7 @@ const TABS = [
   ["favorites", "Favoritter"],
   ["budget", "Økonomi"],
   ["health", "Sundhed"],
+  ["inventory", "Råvarelager"],
   ["history", "Historik"],
   ["settings", "Indstillinger"],
 ];
@@ -262,6 +264,7 @@ class Rema1000Panel extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._tab = "plan";
+    this._navigation = this._readNavigation();
     this._state = null;
     this._plan = null; // the plan being viewed (latest unless chosen in history)
     this._viewingLatest = true;
@@ -649,7 +652,8 @@ class Rema1000Panel extends HTMLElement {
     const dy = t.clientY - start.y;
     if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2 || Date.now() - start.time > 700) return;
     if (getSelection()?.toString()) return;
-    const keys = TABS.map(([key]) => key);
+    const primary = this._navigation[matchMedia("(max-width: 700px)").matches ? "mobile" : "desktop"];
+    const keys = [...primary, ...TABS.map(([key]) => key).filter(key => !primary.includes(key))];
     const next = keys[keys.indexOf(this._tab) + (dx < 0 ? 1 : -1)];
     this._goTab(next, dx < 0 ? 1 : -1);
   }
@@ -676,14 +680,31 @@ class Rema1000Panel extends HTMLElement {
         this._moreOpen = !this._moreOpen;
         this._render();
       },
-      "inventory-open": () => { this._modal = { kind: "inventory" }; this._renderModal(); },
+      "inventory-open": () => this._goTab("inventory"),
+      "nav-open": () => {
+        this._moreOpen = false;
+        this._modal = { kind: "navigation", screen: matchMedia("(max-width: 700px)").matches ? "mobile" : "desktop", draft: { desktop: [...this._navigation.desktop], mobile: [...this._navigation.mobile] } };
+        this._render();
+        this._renderModal();
+      },
+      "nav-screen": () => { if (this._modal?.kind === "navigation") { this._modal.screen = arg; this._renderModal(); } },
+      "nav-move": () => {
+        const [screen, key, step] = String(arg).split("|");
+        const list = this._modal?.draft?.[screen];
+        if (!list) return;
+        const at = list.indexOf(key), to = at + Number(step);
+        if (at >= 0 && to >= 0 && to < list.length) [list[at], list[to]] = [list[to], list[at]];
+        this._renderModal();
+      },
+      "nav-reset": () => { this._modal.draft = this._defaultNavigation(); this._renderModal(); },
+      "nav-save": () => this._saveNavigation(),
       "inventory-save": () => this._run(async () => {
         const d = this._inventoryDraft || {};
         await this._ws("middagsro/inventory/edit", { item_id: d.id || null, name: d.name || "", amount: Number(String(d.amount || "").replace(",", ".")), unit: d.unit || "g" });
         this._inventoryDraft = {};
       }, "Fryserlageret er gemt."),
-      "inventory-edit": () => { this._inventoryDraft = { ...(this._state.freezer_inventory || []).find(i => i.id === arg) }; this._renderModal(); },
-      "inventory-cancel": () => { this._inventoryDraft = {}; this._renderModal(); },
+      "inventory-edit": () => { this._inventoryDraft = { ...(this._state.freezer_inventory || []).find(i => i.id === arg) }; this._render(); },
+      "inventory-cancel": () => { this._inventoryDraft = {}; this._render(); },
       "inventory-delete": () => this._run(async () => { await this._ws("middagsro/inventory/delete", { item_id: arg }); if (this._inventoryDraft?.id === arg) this._inventoryDraft = {}; }, "Råvaren er fjernet."),
       "inventory-consume-open": () => {
         const [planId, groupId] = String(arg || "").split("|");
@@ -1537,6 +1558,16 @@ class Rema1000Panel extends HTMLElement {
     }
     if (ds.bind === "remember-store-switch") {
       if (this._modal?.kind === "store-switch") this._modal.remember = el.checked;
+      return;
+    }
+    if (ds.bind === "navigation") {
+      if (ev.type !== "change") return;
+      const list = this._modal?.draft?.[ds.screen];
+      if (!list) return;
+      const at = list.indexOf(ds.key);
+      if (el.checked && at < 0 && (ds.screen !== "mobile" || list.length < 4)) list.push(ds.key);
+      else if (!el.checked && at >= 0) list.splice(at, 1);
+      this._renderModal();
       return;
     }
     if (ds.bind === "inventory-used") {
@@ -3083,6 +3114,62 @@ class Rema1000Panel extends HTMLElement {
     if (node) node.innerHTML = this._statusHtml();
   }
 
+  _defaultNavigation() {
+    return { desktop: TABS.map(([key]) => key), mobile: [...PHONE_TABS] };
+  }
+
+  _readNavigation() {
+    const defaults = this._defaultNavigation();
+    try {
+      const saved = JSON.parse(localStorage.getItem(NAV_STORAGE) || "null");
+      const clean = values => Array.isArray(values) ? [...new Set(values.filter(key => TABS.some(([id]) => id === key)))] : [];
+      const desktop = clean(saved?.desktop), mobile = clean(saved?.mobile);
+      return { desktop: desktop.length ? desktop : defaults.desktop, mobile: mobile.length === 4 ? mobile : defaults.mobile };
+    } catch { return defaults; }
+  }
+
+  _renderNavigation() {
+    const nav = this.shadowRoot.querySelector("nav.tabs");
+    if (!nav) return;
+    const signature = JSON.stringify(this._navigation);
+    if (nav.dataset.signature === signature) return;
+    const { desktop, mobile } = this._navigation;
+    const classes = key => `${desktop.includes(key) ? " desktop-primary" : ""}${mobile.includes(key) ? " mobile-primary" : ""}`;
+    const style = key => `--desktop-order:${desktop.indexOf(key)};--mobile-order:${mobile.indexOf(key)}`;
+    nav.innerHTML = TABS.map(([key, label]) => `<button class="tab${classes(key)}" style="${style(key)}" data-action="tab" data-arg="${key}">${TAB_ICONS[key] || ""}<span>${label}</span></button>`).join("")
+      + `<button class="tab more ${desktop.length === TABS.length ? "no-desktop-extra" : ""}" data-action="more" aria-expanded="false"></button><button class="tab customize" data-action="nav-open">Tilpas menu</button>`;
+    this.shadowRoot.querySelector(".more-sheet").innerHTML = TABS.map(([key, label]) => `<button class="more-item${classes(key)}" data-action="tab" data-arg="${key}">${TAB_ICONS[key] || ""}<span>${label}</span></button>`).join("")
+      + '<button class="more-item" data-action="nav-open">Tilpas menu</button>';
+    nav.dataset.signature = signature;
+  }
+
+  _navigationModal() {
+    const m = this._modal;
+    const section = (screen, title, help) => {
+      const selected = m.draft[screen];
+      const ordered = [...selected, ...TABS.map(([key]) => key).filter(key => !selected.includes(key))];
+      return `<section><h3>${title}</h3><p class="muted small">${help}</p>${ordered.map(key => {
+        const index = selected.indexOf(key), checked = index >= 0;
+        const label = TABS.find(([id]) => id === key)[1];
+        return `<div class="nav-option"><label class="check"><input type="checkbox" data-bind="navigation" data-screen="${screen}" data-key="${key}" ${checked ? "checked" : ""} ${screen === "mobile" && !checked && selected.length >= 4 ? "disabled" : ""}>${label}</label>${checked ? `<button class="btn small" data-action="nav-move" data-arg="${screen}|${key}|-1" aria-label="Flyt ${label} op på ${screen === "mobile" ? "telefon" : "computer"}" ${index === 0 ? "disabled" : ""}>↑</button><button class="btn small" data-action="nav-move" data-arg="${screen}|${key}|1" aria-label="Flyt ${label} ned på ${screen === "mobile" ? "telefon" : "computer"}" ${index === selected.length - 1 ? "disabled" : ""}>↓</button>` : ""}</div>`;
+      }).join("")}</section>`;
+    };
+    return `<div class="scrim" data-action="modal-close"></div><div class="dialog wide" role="dialog" aria-modal="true" aria-label="Tilpas menu"><div class="dialog-top"><h2>Tilpas menu</h2><button class="btn" data-action="modal-close">Luk</button></div><p>Vælg genveje og rækkefølge. Alle andre sider kan stadig åbnes under “Mere”. Valgene gemmes i denne browser.</p>${`<div class="seg fit"><button data-action="nav-screen" data-arg="desktop" class="${m.screen === "desktop" ? "active" : ""}">Computer</button><button data-action="nav-screen" data-arg="mobile" class="${m.screen === "mobile" ? "active" : ""}">Telefon</button></div>`}${m.screen === "mobile" ? section("mobile", `Telefon · ${m.draft.mobile.length} af 4 valgt`, "Vælg præcis fire. Fjern et flueben for at vælge et andet punkt.") : section("desktop", "Computer", "Vælg mindst ét menupunkt.")}<div class="dialog-bottom wrap"><button class="btn primary" data-action="nav-save" ${m.draft.mobile.length !== 4 || !m.draft.desktop.length ? "disabled" : ""}>Gem menu</button><button class="btn" data-action="nav-reset">Gendan standard</button><button class="btn" data-action="modal-close">Annuller</button></div></div>`;
+  }
+
+  _saveNavigation() {
+    const draft = this._modal?.draft;
+    if (!draft || !draft.desktop.length || draft.mobile.length !== 4) return;
+    this._navigation = { desktop: [...draft.desktop], mobile: [...draft.mobile] };
+    let message = "Menuen er gemt i denne browser.";
+    try { localStorage.setItem(NAV_STORAGE, JSON.stringify(this._navigation)); }
+    catch { message = "Menuen er ændret, men browseren kunne ikke gemme den til næste besøg."; }
+    this._modal = null;
+    this._render();
+    this._renderModal();
+    this._say(message);
+  }
+
   _storeChooser() {
     const stores = this._state?.stores || [];
     if (stores.length < 2) return "";
@@ -3168,6 +3255,7 @@ class Rema1000Panel extends HTMLElement {
           shopping: () => this._shoppingView(),
           favorites: () => this._favoritesView(),
           budget: () => this._budgetView(),
+          inventory: () => `<div class="card"><h1>Råvarelager</h1><p class="muted">Hold styr på råvarerne, I allerede har i fryseren.</p></div>${this._inventoryCard(true)}`,
           health: () => this._healthView(),
           history: () => this._historyView(),
           settings: () => this._settingsView(),
@@ -3185,13 +3273,6 @@ class Rema1000Panel extends HTMLElement {
     const root = this.shadowRoot;
     // The toolbar and tabs are built once, so their horizontal scroll survives.
     if (!root.querySelector("#content")) {
-      const tabs = TABS.map(
-        ([key, label]) =>
-          `<button class="tab${EXTRA_TABS.has(key) ? " extra" : ""}" data-action="tab" data-arg="${key}">${TAB_ICONS[key] || ""}<span>${label}</span></button>`
-      ).join("");
-      const extra = TABS.filter(([key]) => EXTRA_TABS.has(key))
-        .map(([key, label]) => `<button class="more-item" data-action="tab" data-arg="${key}">${TAB_ICONS[key] || ""}<span>${label}</span></button>`)
-        .join("");
       root.innerHTML = `
         <style>${STYLE}</style>
         <div id="top"></div>
@@ -3199,17 +3280,17 @@ class Rema1000Panel extends HTMLElement {
           <ha-menu-button></ha-menu-button>
           <span class="brand"><img class="logo" src="${this._img("icon.svg")}" alt=""><span class="wordmark">Middagsro</span></span>
           <span class="spacer"></span>
-          <button class="btn small" data-action="inventory-open">Råvarelager</button>
           <span id="timerchip" class="timer-chip" data-action="tab" data-arg="recipes"></span>
           <span id="busy"></span>
         </div>
-        <nav class="tabs">${tabs}<button class="tab more" data-action="more" aria-expanded="false"></button></nav>
+        <nav class="tabs" aria-label="Middagsro"></nav>
         <div class="more-scrim" data-action="more" hidden></div>
-        <div class="more-sheet" hidden>${extra}</div>
+        <div class="more-sheet" hidden></div>
         <main id="content"></main>
         <div id="modal"></div>
         <div id="toast" role="status" aria-live="polite"></div>`;
     }
+    this._renderNavigation();
     const menu = root.querySelector("ha-menu-button");
     if (menu) {
       menu.hass = this._hass;
@@ -3218,7 +3299,7 @@ class Rema1000Panel extends HTMLElement {
     root.querySelectorAll(".tab, .more-item").forEach((tab) => tab.classList.toggle("active", tab.dataset.arg === this._tab));
     const more = root.querySelector(".tab.more");
     if (more) {
-      more.classList.toggle("active", this._moreOpen || EXTRA_TABS.has(this._tab));
+      more.classList.toggle("active", this._moreOpen || !this._navigation[matchMedia("(max-width: 700px)").matches ? "mobile" : "desktop"].includes(this._tab));
       more.setAttribute("aria-expanded", String(!!this._moreOpen));
       more.innerHTML = this._moreOpen ? `${CLOSE_ICON}<span>Luk</span>` : `${MORE_ICON}<span>Mere</span>`;
     }
@@ -3274,6 +3355,7 @@ class Rema1000Panel extends HTMLElement {
   _renderModal() {
     const node = this.shadowRoot.querySelector("#modal");
     if (!node) return;
+    if (this._modal?.kind === "navigation") { node.innerHTML = this._navigationModal(); return; }
     if (this._modal?.kind === "inventory") {
       node.innerHTML = `<div class="scrim" data-action="modal-close"></div><div class="dialog wide" role="dialog" aria-modal="true" aria-label="Råvarelager"><div class="dialog-top"><h2>Råvarelager</h2><button class="btn" data-action="modal-close">Luk</button></div>${this._inventoryCard(true)}</div>`;
       return;
@@ -4636,8 +4718,8 @@ class Rema1000Panel extends HTMLElement {
     const sent = (this._plan?.shopping || []).filter((l) => l.sent && String(l.sent).slice(0, 10) === localToday());
     const suggestion = sent.reduce((sum, l) => sum + (Number(l.cost) || 0), 0);
     return `<div class="book">
-        <input type="text" inputmode="decimal" data-bind="book" data-field="amount" value="${esc(this._book.amount)}" placeholder="Beløb" aria-label="Beløb">
-        <input type="date" data-bind="book" data-field="date" value="${esc(this._book.date || localToday())}" max="${localToday()}" aria-label="Dato">
+        <label class="field">Beløb (kr.)<input type="text" inputmode="decimal" data-bind="book" data-field="amount" value="${esc(this._book.amount)}" placeholder="Fx 450" aria-label="Beløb"></label>
+        <label class="field">Dato<input type="date" data-bind="book" data-field="date" value="${esc(this._book.date || localToday())}" max="${localToday()}" aria-label="Dato"></label>
         <button class="btn primary" data-action="budget-book">Kontér</button>
       </div>
       <div class="book-stores">${chains.map(chip).join("")}</div>
@@ -5247,8 +5329,22 @@ const STYLE = `
   .tab { border: none; background: none; color: var(--secondary-text-color); padding: 10px 14px; font-size: 15px; cursor: pointer;
     border-bottom: 3px solid transparent; white-space: nowrap; font-weight: 500; }
   .tab.active { color: var(--rema-accent); border-color: var(--rema-accent); }
-  .tab.more { display: none; }
+  .tab { order: var(--desktop-order, 20); }
+  .tab:not(.desktop-primary):not(.more):not(.customize) { display: none; }
+  .tab.more { display: flex; order: 21; }
+  .tab.more.no-desktop-extra { display: none; }
+  .tab.customize { order: 22; margin-left: auto; font-size: 13px; }
   .more-scrim, .more-sheet { display: none; }
+  .more-scrim:not([hidden]) { display: block; position: fixed; inset: 0; z-index: 4; }
+  .more-sheet:not([hidden]) { display: flex; flex-direction: column; position: fixed; right: 12px; top: calc(var(--header-height, 56px) + 50px); max-height: calc(100dvh - 140px); overflow-y: auto; z-index: 6; min-width: 210px; padding: 6px; border-radius: 16px; background: var(--rema-solid-card); border: 1px solid var(--divider-color); box-shadow: 0 8px 28px rgba(0,0,0,.22); }
+  .more-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: none; border-radius: 10px; background: none; color: var(--primary-text-color); font-size: 15px; text-align: left; cursor: pointer; }
+  .more-item.desktop-primary { display: none; }
+  .more-item svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+  .more-item.active { color: var(--rema-accent); background: var(--rema-tint); }
+  .nav-option { display: flex; gap: 8px; align-items: center; min-height: 44px; }
+  .nav-option .check { flex: 1; min-width: 0; }
+  .nav-option .btn { padding: 4px 10px; }
+  .nav-option + .nav-option { border-top: 1px solid var(--divider-color); }
   .credit { margin: 24px 0 0; text-align: center; font-size: 13px; color: var(--secondary-text-color); }
   .credit .gh-link { display: inline-flex; vertical-align: -3px; margin-left: 4px; padding: 2px; color: inherit; border-radius: 999px; }
   .credit .gh { width: 16px; height: 16px; display: block; }
@@ -5704,8 +5800,15 @@ const STYLE = `
   .budget-bar.over > span { background: var(--rema-sale, #d33); }
   .budget-bar > i { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--primary-text-color); }
   .budget-card .banner.small { font-size: 13px; margin: 8px 0; }
-  .book { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; gap: 8px; align-items: center; }
-  .book input { min-width: 0; width: 100%; box-sizing: border-box; }
+  #budget-book { container-type: inline-size; }
+  .book { margin-top: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: end; }
+  .book .field { margin: 0; min-width: 0; }
+  .book input { display: block; min-width: 0; min-inline-size: 0; max-width: 100%; width: 100%; height: 46px; box-sizing: border-box; font-size: 16px; }
+  .book input[type="date"] { appearance: none; -webkit-appearance: none; }
+  .book input::-webkit-date-and-time-value { text-align: left; }
+  .book > .btn { grid-column: 1 / -1; min-height: 46px; }
+  @container (max-width: 340px) { .book { grid-template-columns: minmax(0, 1fr); } }
+  @container (min-width: 480px) { .book { grid-template-columns: repeat(2, minmax(0, 1fr)) auto; } .book > .btn { grid-column: auto; } }
   .book-stores { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
   .book-stores .chip { padding: 4px 10px; font-size: 13px; }
   .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0 0 12px; }
@@ -5762,14 +5865,18 @@ const STYLE = `
       font-size: 10.5px; font-weight: 600; border-bottom: none; }
     .tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
     .tabs { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-    .tab.extra { display: none; }
-    .tab.more { display: flex; }
+    .tabs .tab { order: var(--mobile-order, 20); }
+    .tabs .tab:not(.mobile-primary):not(.more) { display: none; }
+    .tabs .tab.mobile-primary { display: flex; }
+    .tabs .tab.more { display: flex; order: 21; }
     .more-scrim:not([hidden]) { display: block; position: fixed; inset: 0; z-index: 4; }
     .more-sheet:not([hidden]) { display: flex; flex-direction: column; position: fixed; right: 8px; z-index: 6;
-      bottom: calc(var(--rema-tabbar) + 8px); min-width: 200px; padding: 6px; border-radius: 16px;
+      top: auto; bottom: calc(var(--rema-tabbar) + 8px); min-width: 200px; padding: 6px; border-radius: 16px;
       background: var(--rema-solid-card); border: 1px solid var(--divider-color); box-shadow: 0 8px 28px rgba(0, 0, 0, .22); }
     .more-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: none; border-radius: 10px;
       background: none; color: var(--primary-text-color); font-size: 16px; font-weight: 500; text-align: left; cursor: pointer; }
+    .more-item.desktop-primary { display: flex; }
+    .more-item.mobile-primary { display: none; }
     .more-item svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
     .more-item.active { color: var(--rema-accent); background: var(--rema-tint); }
     .tab svg { display: block; }

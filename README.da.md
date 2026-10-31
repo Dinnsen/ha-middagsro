@@ -472,7 +472,7 @@ Kan du lide Middagsro, kan du [give mig en kop kaffe](https://buymeacoffee.com/d
 
 ### Råvarelager (test)
 
-Åbn **Råvarelager** i toppen, og tilføj fx *hakket oksekød, 800 g*.
+Åbn **Råvarelager** i menuen (på telefonen under **Mere**, indtil du vælger det som genvej), og tilføj fx *hakket oksekød, 800 g*.
 Lageret er fælles for butikkerne. Nye ugentlige planer bruger lageret som standard;
 slå **Brug råvarer fra fryseren i denne madplan** fra, hvis det ikke skal bruges.
 AI'en prioriterer råvarerne. Indkøbslisten køber kun manglende mængder,
@@ -489,3 +489,13 @@ Planer reserverer ikke lager. Ret lageret, hvis noget bruges til andet, og kontr
 det før næste plan. Nye lagerændringer gælder nye planer. Kun ens råvarenavne
 (tilberedning som finthakket fjernes) og kompatible g/kg, ml/l eller stk bruges.
 Der gættes ikke mellem styk og gram. Færdige fryserretter og stregkodescanning er ikke med.
+
+
+### Tilpas menuen
+
+**Tilpas menu** ved computerens menulinje eller under **Mere** på telefonen åbner
+menuvalget. Computer og telefon har hver sine valg: vælg synlige sider og flyt dem
+med pilene. Telefonen viser præcis fire valgte genveje plus **Mere**. Andre sider
+kan altid åbnes under **Mere**, også hvis fx Indstillinger skjules fra menulinjen.
+**Gendan standard** og **Gem menu** gendanner de oprindelige valg. Valgene gemmes
+kun i den aktuelle browser/app på enheden; de ændrer ikke familiens HA-indstillinger.

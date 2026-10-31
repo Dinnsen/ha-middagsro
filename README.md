@@ -475,7 +475,7 @@ If you like Middagsro, you can [buy me a coffee](https://buymeacoffee.com/dinnse
 
 ### Raw material inventory (test)
 
-Open **Råvarelager** in the top toolbar. Quantities are shared across shops;
+Open **Råvarelager** from the navigation (under **Mere** on phones by default). Quantities are shared across shops;
 new weekly plans use stock by default, with a **Brug råvarer fra fryseren** opt-out.
 Recipes retain full amounts. The shopping page explicitly lists quantities omitted
 because they come from inventory. On each relevant dinner and its recipe, **Retten
@@ -487,3 +487,14 @@ receipts remain valid. Plans do not reserve stock. Updates affect new plans; cor
 stock used elsewhere. Matching is conservative: same names, preparation removed,
 compatible mass/volume/count units. No piece-to-gram guesses, cooked meals or barcode
 scanning yet.
+
+
+### Custom navigation
+
+Use **Tilpas menu** next to the desktop navigation or under **Mere** on phones.
+Choose and reorder desktop pages and the four phone shortcuts independently.
+Every remaining page stays available under **Mere**, including Settings.
+**Gendan standard**, followed by **Gem menu**, restores the defaults. Preferences
+are local to this browser/app on the device and do not change household HA settings.
+The budget booking form adapts to card width, with labelled, equal-size amount/date
+fields and a separate submit row on narrow cards.
