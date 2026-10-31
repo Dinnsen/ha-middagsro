@@ -70,13 +70,37 @@ class FreezerInventory:
             data["items"] = [i for i in data["items"] if i["id"] != item_id]
             await self._save(data)
 
-    async def async_consume(self, plan: dict[str, Any]) -> None:
-        """One household receipt per plan, also when copied to another shop."""
+    async def async_consume(
+        self, plan: dict[str, Any], group_id: str | None = None, item_ids: list[str] | None = None
+    ) -> None:
+        """Confirm one dish once across shops; retain receipts for old whole-plan usage."""
         async with self.lock:
             if plan["id"] in self.data["consumed"]:
                 return
-            used = plan.get("freezer_used") or []
-            if not used:
+            group = None
+            if group_id:
+                group = next(
+                    (g for g in plan.get("freezer_groups") or [] if g["id"] == group_id), None
+                )
+                if group is None:
+                    raise ValueError("Rettens lagerforbrug findes ikke længere. Genindlæs siden.")
+                if group_id in self.data.get("confirmed", {}):
+                    return
+                if group.get("day_id") and not any(
+                    day.get("inventory_id") == group["day_id"]
+                    and recipe_signature(day) == group.get("recipe_signature")
+                    for day in plan.get("days") or []
+                ):
+                    raise ValueError("Opskriften er ændret. Ret lageret manuelt for denne ret.")
+                allowed_ids = {i["id"] for i in group["items"]}
+                if item_ids is None or not set(item_ids) <= allowed_ids:
+                    raise ValueError("Vælg hvilke af rettens råvarer der blev brugt.")
+                used = [i for i in group["items"] if i["id"] in item_ids]
+            else:
+                if plan.get("freezer_groups"):
+                    raise ValueError("Bekræft lagerforbruget for én ret ad gangen.")
+                used = plan.get("freezer_used") or []
+            if not used and group is None:
                 raise ValueError("Madplanen har ingen råvarer fra fryseren.")
             data = copy.deepcopy(self.data)
             by_id = {i["id"]: i for i in data["items"]}
@@ -93,7 +117,10 @@ class FreezerInventory:
                     )
                 item["amount"] = round(item["amount"] - use["amount"], 3)
             data["items"] = [i for i in data["items"] if i["amount"] > 0]
-            data["consumed"].append(plan["id"])
+            if group:
+                data.setdefault("confirmed", {})[group["id"]] = {"items": copy.deepcopy(used)}
+            else:
+                data["consumed"].append(plan["id"])
             await self._save(data)
 
 
@@ -168,5 +195,67 @@ def apply_inventory(plan: dict[str, Any], items: list[dict[str, Any]]) -> bool:
         shopping.append(line)
     plan["shopping"] = shopping
     plan["freezer_used"] = list(used.values())
+    allocate_dishes(plan)
     plan["freezer_applied"] = True
     return bool(used)
+
+
+def recipe_signature(day: dict[str, Any]) -> list[list[str]]:
+    """Changing an ingredient invalidates the old consumption confirmation."""
+    return sorted(
+        [
+            [ingredient_key(i["name"]), str(i.get("amount") or "")]
+            for i in day.get("ingredients") or []
+        ]
+    )
+
+
+def allocate_dishes(plan: dict[str, Any]) -> None:
+    """Attribute the deducted quantities to cooking days, never to leftover days."""
+    if not plan.get("days"):
+        return
+    remaining = copy.deepcopy(plan.get("freezer_used") or [])
+    groups = []
+    for day in plan.get("days") or []:
+        if not is_cooked(day):
+            continue
+        needs: dict[tuple[str, str], float] = {}
+        for ingredient in day.get("ingredients") or []:
+            parsed = parse_amount(str(ingredient.get("amount") or ""))
+            base = to_base(*parsed) if parsed else None
+            if base:
+                key = (ingredient_key(ingredient["name"]), base[0])
+                needs[key] = needs.get(key, 0) + base[1]
+        items = []
+        for use in remaining:
+            key = (ingredient_key(use["name"]), use["unit"])
+            take = min(use["amount"], needs.get(key, 0))
+            if take <= 0:
+                continue
+            items.append({**use, "amount": round(take, 3)})
+            needs[key] -= take
+            use["amount"] = round(use["amount"] - take, 3)
+        if items:
+            day.setdefault("inventory_id", uuid.uuid4().hex)
+            groups.append(
+                {
+                    "id": uuid.uuid4().hex,
+                    "day_id": day["inventory_id"],
+                    "dish": day.get("dish") or "Retten",
+                    "items": items,
+                    "recipe_signature": recipe_signature(day),
+                }
+            )
+    # Older/incomplete recipes may not identify every shopping ingredient. Keep that
+    # usage visible and manually confirmable rather than inventing a cooking day.
+    other = [i for i in remaining if i["amount"] > 0]
+    if other:
+        groups.append(
+            {
+                "id": uuid.uuid4().hex,
+                "day_id": None,
+                "dish": "Øvrige råvarer til planen",
+                "items": other,
+            }
+        )
+    plan["freezer_groups"] = groups

@@ -5,7 +5,7 @@ All notable changes to REMA 1000 for Home Assistant. The version is the one in `
 ## Unreleased
 
 ### Added
-- Household freezer inventory for raw ingredients with measured quantities. Opt in when generating a weekly plan; full recipe amounts stay visible and only missing quantities are bought. Explicit confirmation deducts the displayed usage once per plan across accounts. Plans do not reserve inventory; incompatible names/units are never guessed.
+- Household freezer inventory for raw ingredients with measured quantities. Opt in when generating a weekly plan; full recipe amounts stay visible and only missing quantities are bought. A top-bar Raw materials button opens the inventory. The shopping page explains omitted quantities. Consumption is confirmed per dish with individual ingredient checkboxes and durable receipts across accounts; recipe changes invalidate an old confirmation. Stock is enabled for new plans by default, with an opt-out. Plans do not reserve inventory; incompatible names/units are never guessed.
 - Select an installed grocery account directly in the panel. Choose to carry the current plan or start planning a new one, optionally remembering the choice. Carried plans are matched/priced for the new shop without cart writes; sent items stay sent and source history is preserved. Family/preferences follow; other account settings remain separate. The selected shop persists across restarts and is also used by default dashboard subscriptions.
 
 ## [2.13.0b2] - 2026-10-31

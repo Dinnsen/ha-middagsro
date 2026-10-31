@@ -473,13 +473,17 @@ If you like Middagsro, you can [buy me a coffee](https://buymeacoffee.com/dinnse
 [MIT](LICENSE). The home-screen app includes [home-assistant-js-websocket](https://github.com/home-assistant/home-assistant-js-websocket) under the Apache-2.0 licence. REMA 1000 is a trademark of its owner; this project is not affiliated with REMA 1000 or the other chains. The other chains' names and logos are only used to show their offers.
 
 
-### Freezer raw ingredients (test)
+### Raw material inventory (test)
 
-The **Råvarer i fryseren** card stores household quantities shared across shops.
-Opt in with **Brug råvarer fra fryseren i denne madplan** for a new weekly plan.
-Recipes keep full amounts; only missing quantities are purchased. **Registrér som brugt**
-asks before deducting the displayed usage, with a durable receipt shared across
-copies of the plan. Plans do not reserve inventory. Stock changes affect new plans;
-update the inventory when using ingredients elsewhere. Matching is conservative:
-same ingredient names (preparation removed), compatible mass/volume/count units;
-no guesses between pieces and grams, and no cooked meal inventory yet.
+Open **Råvarelager** in the top toolbar. Quantities are shared across shops;
+new weekly plans use stock by default, with a **Brug råvarer fra fryseren** opt-out.
+Recipes retain full amounts. The shopping page explicitly lists quantities omitted
+because they come from inventory. On each relevant dinner and its recipe, **Retten
+er lavet** asks which ingredients were actually used; only checked ingredients are
+deducted. Durable receipts prevent a second deduction after retries or shop switches.
+Changed recipes require manual stock correction, rather than using stale amounts.
+Unattributable usage stays visible as a separate manual group. Legacy whole-plan
+receipts remain valid. Plans do not reserve stock. Updates affect new plans; correct
+stock used elsewhere. Matching is conservative: same names, preparation removed,
+compatible mass/volume/count units. No piece-to-gram guesses, cooked meals or barcode
+scanning yet.

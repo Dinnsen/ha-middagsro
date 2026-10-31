@@ -676,16 +676,28 @@ class Rema1000Panel extends HTMLElement {
         this._moreOpen = !this._moreOpen;
         this._render();
       },
+      "inventory-open": () => { this._modal = { kind: "inventory" }; this._renderModal(); },
       "inventory-save": () => this._run(async () => {
         const d = this._inventoryDraft || {};
         await this._ws("middagsro/inventory/edit", { item_id: d.id || null, name: d.name || "", amount: Number(String(d.amount || "").replace(",", ".")), unit: d.unit || "g" });
         this._inventoryDraft = {};
       }, "Fryserlageret er gemt."),
-      "inventory-edit": () => { this._inventoryDraft = { ...(this._state.freezer_inventory || []).find(i => i.id === arg) }; this._render(); },
-      "inventory-cancel": () => { this._inventoryDraft = {}; this._render(); },
+      "inventory-edit": () => { this._inventoryDraft = { ...(this._state.freezer_inventory || []).find(i => i.id === arg) }; this._renderModal(); },
+      "inventory-cancel": () => { this._inventoryDraft = {}; this._renderModal(); },
       "inventory-delete": () => this._run(async () => { await this._ws("middagsro/inventory/delete", { item_id: arg }); if (this._inventoryDraft?.id === arg) this._inventoryDraft = {}; }, "Råvaren er fjernet."),
-      "inventory-consume-open": () => { this._modal = { kind: "inventory-consume" }; this._renderModal(); },
-      "inventory-consume": () => this._run(async () => { await this._ws("middagsro/inventory/consume", { plan_id: this._plan.id }); this._modal = null; this._renderModal(); }, "De viste mængder er trukket fra fryserlageret."),
+      "inventory-consume-open": () => {
+        const [planId, groupId] = String(arg || "").split("|");
+        const plan = this._planOf(planId) || this._plan;
+        const group = (plan?.freezer_groups || []).find(g => g.id === groupId);
+        this._modal = { kind: "inventory-consume", plan, group, selected: new Set((group?.items || plan?.freezer_used || []).map(i => i.id)) };
+        this._renderModal();
+      },
+      "inventory-consume": () => this._run(async () => {
+        const m = this._modal;
+        if (!m || m.kind !== "inventory-consume") return;
+        await this._ws("middagsro/inventory/consume", { plan_id: m.plan.id, ...(m.group ? { group_id: m.group.id, item_ids: [...m.selected] } : {}) });
+        this._modal = null; this._renderModal();
+      }, "Forbruget er registreret."),
       "fav-refresh": () => this._loadFavs(true),
       "fav-week": () => {
         if (arg === this._favWeek) return;
@@ -1527,6 +1539,11 @@ class Rema1000Panel extends HTMLElement {
       if (this._modal?.kind === "store-switch") this._modal.remember = el.checked;
       return;
     }
+    if (ds.bind === "inventory-used") {
+      const selected = this._modal?.selected;
+      if (selected) { if (el.checked) selected.add(ds.id); else selected.delete(ds.id); }
+      return;
+    }
     if (ds.bind === "use-freezer") { this._useFreezer = el.checked; return; }
     if (ds.bind === "inventory-field") {
       this._inventoryDraft = { ...this._inventoryDraft, [ds.field]: el.value };
@@ -1756,7 +1773,7 @@ class Rema1000Panel extends HTMLElement {
       start_date: this._startDate || null,
       skip_dates: [...this._skip].filter((d) => days.has(d)),
       surprise,
-      use_freezer: !!this._useFreezer,
+      use_freezer: this._useFreezer !== false,
       picks: Object.fromEntries(Object.entries(this._picks).filter(([d]) => days.has(d) && !this._skip.has(d))),
     });
     this._skip.clear();
@@ -3182,6 +3199,7 @@ class Rema1000Panel extends HTMLElement {
           <ha-menu-button></ha-menu-button>
           <span class="brand"><img class="logo" src="${this._img("icon.svg")}" alt=""><span class="wordmark">Middagsro</span></span>
           <span class="spacer"></span>
+          <button class="btn small" data-action="inventory-open">Råvarelager</button>
           <span id="timerchip" class="timer-chip" data-action="tab" data-arg="recipes"></span>
           <span id="busy"></span>
         </div>
@@ -3256,8 +3274,14 @@ class Rema1000Panel extends HTMLElement {
   _renderModal() {
     const node = this.shadowRoot.querySelector("#modal");
     if (!node) return;
+    if (this._modal?.kind === "inventory") {
+      node.innerHTML = `<div class="scrim" data-action="modal-close"></div><div class="dialog wide" role="dialog" aria-modal="true" aria-label="Råvarelager"><div class="dialog-top"><h2>Råvarelager</h2><button class="btn" data-action="modal-close">Luk</button></div>${this._inventoryCard(true)}</div>`;
+      return;
+    }
     if (this._modal?.kind === "inventory-consume") {
-      node.innerHTML = `<div class="scrim" data-action="modal-close"></div><div class="dialog" role="dialog" aria-modal="true" aria-label="Bekræft forbrug fra fryseren"><h2>Er råvarerne brugt?</h2><p>Træk kun disse mængder fra lageret, når du har brugt dem til madplanen.</p><ul>${(this._plan?.freezer_used || []).map(i => `<li>${esc(i.name)}: ${i.amount} ${esc(i.unit)}</li>`).join("")}</ul><div class="row wrap"><button class="btn primary" data-action="inventory-consume" ${this._busy ? "disabled" : ""}>Ja, træk fra lageret</button><button class="btn" data-action="modal-close">Annuller</button></div></div>`;
+      const m = this._modal;
+      const items = m.group?.items || m.plan?.freezer_used || [];
+      node.innerHTML = `<div class="scrim" data-action="modal-close"></div><div class="dialog" role="dialog" aria-modal="true" aria-label="Bekræft råvarer brugt"><h2>${m.group?.day_id ? "Er retten lavet?" : "Er råvarerne brugt?"}</h2>${m.group ? `<p><b>${esc(m.group.dish)}</b></p>` : ""}<p>Markér de råvarer fra lageret, du faktisk brugte. Fjern fluebenet, hvis du brugte noget andet. Kun de markerede mængder trækkes fra.</p>${items.map(i => `<label class="check"><input type="checkbox" data-bind="inventory-used" data-id="${esc(i.id)}" ${m.selected.has(i.id) ? "checked" : ""}>${esc(i.name)} · ${i.amount} ${esc(i.unit)}</label>`).join("")}<div class="row wrap"><button class="btn primary" data-action="inventory-consume" ${this._busy ? "disabled" : ""}>Bekræft forbrug</button><button class="btn" data-action="modal-close">Ikke nu</button></div></div>`;
       return;
     }
     if (this._modal?.kind === "store-switch") {
@@ -3621,7 +3645,7 @@ class Rema1000Panel extends HTMLElement {
       return `<details class="fold" data-fold="days" ${open ? "open" : ""}><summary>Tilpas dagene${tailored ? ` <span class="badge">${tailored} ${tailored === 1 ? "dag" : "dage"}</span>` : ""}</summary>
         <p class="muted small">AI'en vælger retterne. Du kan selv vælge en ret eller springe en dag over.</p><div class="skipdays">${skip}</div></details>`;
     })() : ""}
-    ${(this._state?.freezer_inventory || []).length ? `<label class="check"><input type="checkbox" data-bind="use-freezer" ${this._useFreezer ? "checked" : ""}> Brug råvarer fra fryseren i denne madplan</label><p class="muted small">Prioritér fryserens indhold. Kun manglende mængder købes; du bekræfter selv forbruget bagefter.</p>` : ""}
+    ${(this._state?.freezer_inventory || []).length ? `<label class="check"><input type="checkbox" data-bind="use-freezer" ${this._useFreezer !== false ? "checked" : ""}> Brug råvarer fra fryseren i denne madplan</label><p class="muted small">Prioritér fryserens indhold. Kun manglende mængder købes; du bekræfter selv forbruget bagefter.</p>` : ""}
     <div class="row wrap skipgo">
       <button class="btn primary" data-action="generate" ${generating || this._busy ? "disabled" : ""}>
         ${generating ? "Laves …" : aiLabel(label)}
@@ -3631,29 +3655,34 @@ class Rema1000Panel extends HTMLElement {
     </div>`;
   }
 
-  _inventoryCard() {
+  _inventoryCard(open = false) {
     const items = this._state?.freezer_inventory || [];
     const d = this._inventoryDraft || {};
-    return `<details class="card fold" data-fold="inventory" ${this._folds?.has("inventory") ? "open" : ""}>
-      <summary><span class="fold-title">Råvarer i fryseren</span> <span class="badge">${items.length}</span></summary>
-      <p class="muted small">Fælles lager for alle butikker. Skriv råvaren, fx hakket oksekød, og den samlede mængde. Vælg “Brug råvarer fra fryseren”, når du laver en ny madplan.</p>
+    return `<details class="card fold" data-fold="inventory" ${open || this._folds?.has("inventory") ? "open" : ""}>
+      <summary><span class="fold-title">Råvarelager · fryser</span> <span class="badge">${items.length}</span></summary>
+      <p class="muted small">Fælles lager for alle butikker. Skriv råvaren, fx hakket oksekød, og den samlede mængde. Råvarerne bruges automatisk til nye madplaner, medmindre du slår det fra.</p>
       ${items.map(i => `<div class="row wrap"><span class="spacer">${esc(i.name)} · ${i.amount} ${esc(i.unit)}</span><button class="btn small" data-action="inventory-edit" data-arg="${esc(i.id)}">Ret</button><button class="btn small" data-action="inventory-delete" data-arg="${esc(i.id)}" ${this._busy ? "disabled" : ""}>Fjern</button></div>`).join("") || '<p class="muted">Fryserlageret er tomt.</p>'}
       <div class="row wrap inventory-fields">
         <label class="field">Råvare <input data-bind="inventory-field" data-field="name" maxlength="120" value="${esc(d.name || "")}" placeholder="Fx hakket oksekød"></label>
         <label class="field">Mængde <input data-bind="inventory-field" data-field="amount" type="number" min="0.001" max="100000" step="any" value="${esc(d.amount ?? "")}" placeholder="800"></label>
         <label class="field">Enhed <select data-bind="inventory-field" data-field="unit">${["g", "kg", "ml", "l", "stk"].map(u => `<option ${u === (d.unit || "g") ? "selected" : ""}>${u}</option>`).join("")}</select></label>
       </div><div class="row wrap"><button class="btn" data-action="inventory-save" ${this._busy ? "disabled" : ""}>${d.id ? "Gem mængde" : "Tilføj råvare"}</button>${d.id ? '<button class="btn" data-action="inventory-cancel">Annuller</button>' : ""}</div>
-      <p class="muted small">Lageret reserveres ikke af en madplan. Det ændres først, når du bekræfter forbruget. Ret lageret her, hvis du bruger noget til andet. Nye lagerændringer gælder nye madplaner.</p>
+      <p class="muted small">Lageret reserveres ikke af en madplan. Tryk “Retten er lavet” ved den enkelte ret for at bekræfte forbruget. Ret lageret her, hvis du bruger noget til andet. Nye lagerændringer gælder nye madplaner.</p>
     </details>`;
   }
 
-  _inventoryUsage(plan) {
+  _inventoryUsage(plan, day = null, shopping = false) {
     const used = plan?.freezer_used || [];
     if (!used.length) return "";
-    const done = (this._state?.freezer_consumed || []).includes(plan.id);
-    return `<div class="banner"><b>Fra fryseren til denne madplan</b><ul>${used.map(i => `<li>${esc(i.name)}: ${i.amount} ${esc(i.unit)}</li>`).join("")}</ul>
-      <p class="small">Disse mængder er allerede trukket fra indkøbslisten. Opskrifterne viser de fulde mængder.</p>
-      ${done ? "Forbruget er registreret ✓" : `<button class="btn" data-action="inventory-consume-open" ${this._busy ? "disabled" : ""}>Registrér som brugt</button><p class="muted small">Bekræft først, når de viste råvarer er brugt. Lageret er endnu ikke ændret.</p>`}</div>`;
+    const groups = (plan.freezer_groups || []).filter(g => !day || g.day_id === day.inventory_id);
+    const consumed = (this._state?.freezer_consumed || []).includes(plan.id);
+    const confirmed = this._state?.freezer_confirmed || {};
+    const list = items => `<ul>${items.map(i => `<li>${esc(i.name)}: ${i.amount} ${esc(i.unit)}</li>`).join("")}</ul>`;
+    if (!groups.length && day) return "";
+    return `<div class="banner"><b>${shopping ? "Ikke på indkøbslisten – fra råvarelageret" : "Fra råvarelageret"}</b>
+      <p class="small">${shopping ? "Disse mængder har I allerede. Hvis lageret kun dækker en del, købes resten." : "Disse mængder er ikke lagt på indkøbslisten. Opskriften viser den fulde mængde."}</p>
+      ${groups.length ? groups.map(g => `<div><b>${esc(g.dish)}</b>${list(g.items)}${consumed || confirmed[g.id] ? `<p class="small">${consumed || confirmed[g.id]?.items?.length ? "Forbruget er registreret ✓" : "Bekræftet: råvarerne blev ikke brugt fra lageret."}</p>` : shopping ? "" : `<button class="btn small" data-action="inventory-consume-open" data-arg="${esc(plan.id)}|${esc(g.id)}" ${this._busy ? "disabled" : ""}>${g.day_id ? "Retten er lavet" : "Registrér forbrug"}</button>`}</div>`).join("") : `${list(used)}${consumed ? "Forbruget er registreret ✓" : shopping ? "" : `<button class="btn" data-action="inventory-consume-open" data-arg="${esc(plan.id)}" ${this._busy ? "disabled" : ""}>Registrér forbrug</button>`}`}
+      ${!shopping && !consumed ? '<p class="muted small">Lageret ændres først, når du bekræfter forbruget.</p>' : ""}</div>`;
   }
 
   // Månedens frysermad, folded away under the weekly plan.
@@ -3718,7 +3747,7 @@ class Rema1000Panel extends HTMLElement {
         <p>Madplanen laves med AI ud fra ugens tilbud og jeres indstillinger. Tjek indstillingerne først, og tryk så på knappen.</p>
         ${this._generateControls("Lav madplan")}
         <p class="muted">${catLine}</p>
-      </div>${this._inventoryCard()}${this._freezerCard()}`;
+      </div>${this._freezerCard()}`;
     }
     const over = plan.budget && plan.total > plan.budget;
     const today = localToday();
@@ -3816,7 +3845,7 @@ class Rema1000Panel extends HTMLElement {
         <h2>Ny madplan</h2>
         ${this._generateControls()}
         <p class="muted">${catLine}</p>
-      </div>${this._inventoryCard()}${this._freezerCard()}`;
+      </div>${this._freezerCard()}`;
   }
 
   // Which plan and date the chosen recipe day belongs to; a new plan or a new
@@ -4135,6 +4164,7 @@ class Rema1000Panel extends HTMLElement {
         </div>
         <p class="muted">${plan.kind === "freezer" ? "Fryserret" : esc(dateLabel(day.date))}${day.servings ? ` · ${day.servings} ${plan.kind === "freezer" ? "portioner" : "personer"}` : ""}${day.active_minutes ? ` · ${day.active_minutes} min aktiv` : ""}${day.total_minutes ? ` · ${day.total_minutes} min i alt` : ""}${type ? ` · ${esc(type)}` : ""}</p>
         ${leftovers}
+        ${this._inventoryUsage(plan, day)}
         ${day.nutrition
           ? `<p class="nutri">Pr. voksenportion: <b>${Math.round(day.nutrition.kcal)} kcal</b>${["protein_g", "carbs_g", "fat_g"]
               .filter((k) => day.nutrition[k] != null)
@@ -4347,7 +4377,7 @@ class Rema1000Panel extends HTMLElement {
           .map((i) => `<li class="${i.bought ? "bought" : ""}">${i.amount > 1 ? `${i.amount} × ` : ""}${esc(i.name)}</li>`)
           .join("")
       : "<li class='muted'>Listen er tom.</li>";
-    return `${this._olderBanner()}${planHtml}
+    return `${this._olderBanner()}${this._inventoryUsage(plan, null, true)}${planHtml}
       <div class="card">
         <div class="row between wrap">
           <h2>På ${this._listName()} lige nu${rema && this._isRema() ? ` (${esc(rema.name)})` : ""}</h2>

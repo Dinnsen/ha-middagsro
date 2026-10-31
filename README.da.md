@@ -470,17 +470,22 @@ Kan du lide Middagsro, kan du [give mig en kop kaffe](https://buymeacoffee.com/d
 [MIT](LICENSE) © Christian Dinnsen. REMA 1000 og REMA 1000-logoet tilhører REMA 1000. Integrationen er ikke lavet af eller godkendt af REMA 1000 eller de andre kæder; deres navne og logoer bruges kun til at vise deres tilbud.
 
 
-### Råvarer i fryseren (test)
+### Råvarelager (test)
 
-Åbn **Råvarer i fryseren** under madplanen, og tilføj fx *hakket oksekød, 800 g*.
-Lageret er fælles for butikkerne. Markér **Brug råvarer fra fryseren i denne madplan**,
-når en ny ugentlig plan laves. AI'en prioriterer råvarerne, og indkøbslisten køber
-kun manglende mængder; opskrifterne beholder de fulde mængder.
+Åbn **Råvarelager** i toppen, og tilføj fx *hakket oksekød, 800 g*.
+Lageret er fælles for butikkerne. Nye ugentlige planer bruger lageret som standard;
+slå **Brug råvarer fra fryseren i denne madplan** fra, hvis det ikke skal bruges.
+AI'en prioriterer råvarerne. Indkøbslisten køber kun manglende mængder,
+og forklarer hvilke råvarer der kommer fra lageret; opskrifterne beholder de fulde mængder.
 
-Oversigten **Fra fryseren til denne madplan** viser de fratrukne mængder.
-**Registrér som brugt** beder om bekræftelse og trækker dem fra lageret én gang,
-også hvis planen kopieres til en anden butik. Planer reserverer ikke lager;
-ret lageret, hvis noget bruges til andet, og kontrollér det før næste plan.
-Nye lagerændringer gælder nye planer. Første version bruger kun ens råvarenavne
-(tilberedning som finthakket fjernes) og kompatible g/kg, ml/l eller stk.
-Den gætter ikke mellem styk og gram, og færdige fryserretter er ikke med.
+Ved den enkelte ret, også på opskriftssiden, viser **Fra råvarelageret** mængderne.
+Tryk **Retten er lavet**, og markér de råvarer fra lageret, der faktisk blev brugt.
+Kun de markerede mængder trækkes fra, én gang pr. ret, også efter butiksskift.
+**Ikke nu** ændrer intet. En ændret opskrift kræver manuel lagerrettelse for den ret,
+så en gammel mængde ikke trækkes fra ved en fejl. Råvarer, som ikke kan knyttes til
+en opskrift, vises særskilt og bekræftes manuelt; de kobles ikke til en vilkårlig dag.
+
+Planer reserverer ikke lager. Ret lageret, hvis noget bruges til andet, og kontrollér
+det før næste plan. Nye lagerændringer gælder nye planer. Kun ens råvarenavne
+(tilberedning som finthakket fjernes) og kompatible g/kg, ml/l eller stk bruges.
+Der gættes ikke mellem styk og gram. Færdige fryserretter og stregkodescanning er ikke med.

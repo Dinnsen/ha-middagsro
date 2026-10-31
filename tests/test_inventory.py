@@ -204,3 +204,105 @@ def test_prompt_empty_and_full_amounts():
     assert prompt_items([]) == ""
     text = prompt_items([item()])
     assert "HELE planen" in text and "FULDE mængder" in text
+
+
+def dinner_plan():
+    return {
+        "id": "cooking",
+        "shopping": [line(amount=800), line("Løg", 2, "stk")],
+        "days": [
+            {
+                "date": "2026-11-01",
+                "dish": "Pasta med kødsovs",
+                "type": "normal",
+                "ingredients": [
+                    {"name": "Hakket oksekød", "amount": "400 g"},
+                    {"name": "Løg", "amount": "1 stk"},
+                ],
+            },
+            {
+                "date": "2026-11-02",
+                "dish": "Chili",
+                "type": "normal",
+                "ingredients": [
+                    {"name": "Hakket oksekød", "amount": "400 g"},
+                    {"name": "Løg", "amount": "1 stk"},
+                ],
+            },
+            {"date": "2026-11-03", "dish": "Rester", "type": "rester", "ingredients": []},
+        ],
+    }
+
+
+async def test_confirm_one_dish_with_individual_raw_materials(hass):
+    stock = inventory(hass)
+    await stock.async_edit(None, "Hakket oksekød", 800, "g")
+    await stock.async_edit(None, "Løg", 2, "stk")
+    beef_id, onion_id = [i["id"] for i in stock.items]
+    plan = dinner_plan()
+    assert apply_inventory(plan, stock.items)
+    assert plan["shopping"] == []
+    groups = plan["freezer_groups"]
+    assert len(groups) == 2
+    assert [i["amount"] for i in groups[0]["items"]] == [400, 1]
+    assert stock.items[0]["amount"] == 800
+    with pytest.raises(ValueError, match="én ret"):
+        await stock.async_consume(plan)
+    await stock.async_consume(plan, groups[0]["id"], [beef_id])
+    assert [i["amount"] for i in stock.items] == [400, 2]
+    # A copy in another shop and a moved dinner have the same durable receipt.
+    copied = copy.deepcopy(plan)
+    copied["days"][0]["date"] = "2026-11-04"
+    await stock.async_consume(copied, groups[0]["id"], [beef_id, onion_id])
+    assert [i["amount"] for i in stock.items] == [400, 2]
+    await stock.async_consume(plan, groups[1]["id"], [])
+    assert [i["amount"] for i in stock.items] == [400, 2]
+    assert stock.data["confirmed"][groups[1]["id"]]["items"] == []
+    restored = FreezerInventory(hass)
+    await restored.async_load()
+    await restored.async_consume(plan, groups[0]["id"], [beef_id])
+    assert restored.items[0]["amount"] == 400
+
+
+async def test_changed_recipe_and_invalid_confirmation_do_not_deduct(hass):
+    stock = inventory(hass)
+    await stock.async_edit(None, "Hakket oksekød", 800, "g")
+    beef_id = stock.items[0]["id"]
+    plan = dinner_plan()
+    apply_inventory(plan, stock.items)
+    group = plan["freezer_groups"][0]
+    with pytest.raises(ValueError, match="findes ikke"):
+        await stock.async_consume(plan, "missing", [beef_id])
+    with pytest.raises(ValueError, match="Vælg"):
+        await stock.async_consume(plan, group["id"])
+    with pytest.raises(ValueError, match="Vælg"):
+        await stock.async_consume(plan, group["id"], ["arbitrary"])
+    plan["days"][0]["ingredients"][0]["amount"] = "600 g"
+    with pytest.raises(ValueError, match="ændret"):
+        await stock.async_consume(plan, group["id"], [beef_id])
+    assert stock.items[0]["amount"] == 800
+    assert not stock.data.get("confirmed")
+
+
+async def test_per_dish_websocket_and_shared_state(hass, init_integration, hass_ws_client):
+    stock = inventory(hass)
+    await stock.async_edit(None, "Hakket oksekød", 800, "g")
+    plan = dinner_plan()
+    apply_inventory(plan, stock.items)
+    init_integration.runtime_data.store.plans.insert(0, plan)
+    group = plan["freezer_groups"][0]
+    client = await hass_ws_client(hass)
+    await client.send_json(
+        {
+            "id": 1,
+            "type": "middagsro/inventory/consume",
+            "plan_id": plan["id"],
+            "group_id": group["id"],
+            "item_ids": [stock.items[0]["id"]],
+        }
+    )
+    assert (await client.receive_json())["success"]
+    await client.send_json({"id": 2, "type": "middagsro/state"})
+    state = (await client.receive_json())["result"]
+    assert state["freezer_inventory"][0]["amount"] == 400
+    assert group["id"] in state["freezer_confirmed"]

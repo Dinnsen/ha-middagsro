@@ -187,6 +187,7 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
         "freezer_note": store.freezer_note,
         "freezer_inventory": inventory(hass).items,
         "freezer_consumed": inventory(hass).data["consumed"],
+        "freezer_confirmed": inventory(hass).data.get("confirmed", {}),
         # When a setting the plans are made from last changed: "Opdater madplan".
         "settings_changed": store.settings_changed or None,
         "recipes": [_recipe_summary(r) for r in store.recipes],
@@ -1760,7 +1761,13 @@ async def ws_inventory_delete(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "middagsro/inventory/consume", ENTRY: str, vol.Required("plan_id"): str}
+    {
+        vol.Required("type"): "middagsro/inventory/consume",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Optional("group_id"): str,
+        vol.Optional("item_ids"): [str],
+    }
 )
 @websocket_api.async_response
 @_wrap
@@ -1771,7 +1778,7 @@ async def ws_inventory_consume(
     plan = entry.runtime_data.store.get_plan(msg["plan_id"])
     if plan is None:
         raise ValueError("Madplanen findes ikke længere.")
-    await inventory(hass).async_consume(plan)
+    await inventory(hass).async_consume(plan, msg.get("group_id"), msg.get("item_ids"))
     for loaded in hass.config_entries.async_loaded_entries(DOMAIN):
         loaded.runtime_data.planner._notify()
     connection.send_result(msg["id"], True)
