@@ -2988,12 +2988,12 @@ class Rema1000Panel extends HTMLElement {
 
   _storeChooser() {
     const stores = this._state?.stores || [];
-    if (!stores.length) return "";
+    if (stores.length < 2) return "";
     const pref = this._state.store_switch_preference;
     return `<div class="store-chooser"><label class="field">Vi handler i
-      <select data-bind="store-choice" aria-label="Vælg butik" ${this._busy || stores.length < 2 ? "disabled" : ""}>
+      <select data-bind="store-choice" aria-label="Vælg butik" ${this._busy ? "disabled" : ""}>
       ${stores.map(store => `<option value="${esc(store.entry_id)}" ${store.entry_id === this._state.entry_id ? "selected" : ""}>${esc(store.name)}${store.pickup ? ` · ${esc(store.pickup)}` : ""}</option>`).join("")}</select></label>
-      <div class="muted small">${stores.length < 2 ? 'Tilføj en anden butik under <a href="/config/integrations/integration/middagsro" target="_top">Enheder og tjenester</a>.' : 'Vælg mellem jeres tilføjede butikker. Kurven ændres først, når du sender varer.'}
+      <div class="muted small">Vælg mellem jeres tilføjede butikker. Kurven ændres først, når du sender varer.
       ${pref && pref !== "ask" ? `<br>${pref === "copy" ? "Madplanen følger med ved skift." : "Et butiksskift åbner en ny madplan."} <button class="link" data-action="store-switch-ask">Spørg mig igen</button>` : ""}</div></div>`;
   }
 
