@@ -117,6 +117,8 @@ def _ingredient(item: Any) -> dict[str, Any] | None:
             out["product"] = product
         if item.get("basic"):
             out["basic"] = True
+        if item.get("exact"):
+            out["exact"] = True  # always this product, not another of its kind
         return out
     if isinstance(item, str) and item.strip():
         return split_ingredient(item)

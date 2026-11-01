@@ -2,6 +2,13 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.14.0b3] - 2026-11-01
+
+### Added
+- **A recipe's items linked to REMA's products, once:** a recipe shows how many of its items still need a REMA product. *Find varer* suggests one for each (your earlier choices and the shared table first, then a search), with *Brug* for each suggestion, a few others to choose from, and *Brug de sikre forslag* for all the sure ones at once. *Har vi altid* marks an item you don't buy. A recipe not in the collection yet (a link, a scan, a recipe site or one of REMA's) gets the suggestions as soon as it opens. Nothing is saved until the recipe is.
+- **Kinds and exact products:** each item shows its kind (*pasta*, *hakket oksekød*). *Altid præcis denne* marks an item that must be that very product (fettuccine spinat); by default another product of the same kind may be used when it is on offer (the planner uses this in a later beta).
+- **"Klar" and "Mangler N varer" in the collection**, and a filter *Mangler varer* for the recipes to link. A recipe's linked products are what its days put on the shopping list.
+
 ## [2.14.0b2] - 2026-11-01
 
 ### Added

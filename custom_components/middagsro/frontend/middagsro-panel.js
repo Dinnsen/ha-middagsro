@@ -103,7 +103,7 @@ const REMA_ID = "11deC"; // REMA 1000 on Tjek: its avis is shown first among the
 const RATE_LABELS = { like: "Synes om", dislike: "Synes ikke om", favorite: "Favorit" };
 const SURPRISE_ICON = '<svg class="ai" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11h16v9H4zM12 11v9M3 7.5h18V11H3zM12 7.5C10 3 6 4 7.5 6.5 8.4 8 12 7.5 12 7.5zm0 0c2-4.5 6-3.5 4.5-1C15.6 8 12 7.5 12 7.5z"/></svg>';
 const RECIPE_SORTS = { name: "Navn", newest: "Senest tilføjet", most_used: "Mest brugt", quickest: "Hurtigst" };
-const RECIPE_FILTERS = { all: "Alle", favorite: "Favoritter", like: "Synes om", dislike: "Synes ikke om" };
+const RECIPE_FILTERS = { all: "Alle", favorite: "Favoritter", like: "Synes om", dislike: "Synes ikke om", unlinked: "Mangler varer" };
 // 👍, 👎 and ❤️: pressing the same again takes it back, the other one replaces it (as the server does).
 const applyRating = (recipe, action) => {
   const r = { ...recipe };
@@ -1104,6 +1104,10 @@ class Rema1000Panel extends HTMLElement {
         const rows = m.recipe[list];
         if (op === "add") rows.push(list === "ingredients" ? { amount: "", name: "" } : { text: "", minutes: 0 });
         else rows.splice(Number(idx), 1);
+        if (list === "ingredients" && op !== "add") {
+          m.found = {}; // the rows moved: the suggestions no longer fit them
+          this._rcLinksSoon(m);
+        }
         this._renderModal();
       },
       "rc-save": () => this._recipeSave(),
@@ -1123,6 +1127,46 @@ class Rema1000Panel extends HTMLElement {
         if (!ing) return;
         delete ing.product;
         delete ing.basic;
+        delete ing.exact;
+        this._renderModal();
+      },
+      "rc-ing-use": () => {
+        const m = this._modal;
+        const [idx, id] = String(arg).split("|");
+        const ing = m?.kind === "recipe" ? m.recipe.ingredients[Number(idx)] : null;
+        const found = m?.found?.[idx];
+        const product = found && [found.product, ...(found.alternatives || [])].find((p) => p && String(p.id) === id);
+        if (!ing || !product) return;
+        ing.product = { id: product.id, name: product.name, underline: product.underline || "" };
+        delete m.found[idx];
+        this._renderModal();
+      },
+      "rc-ing-basic": () => {
+        const ing = this._modal?.kind === "recipe" ? this._modal.recipe.ingredients[Number(arg)] : null;
+        if (!ing) return;
+        ing.basic = true;
+        this._renderModal();
+      },
+      "rc-ing-exact": () => {
+        const ing = this._modal?.kind === "recipe" ? this._modal.recipe.ingredients[Number(arg)] : null;
+        if (!ing) return;
+        if (ing.exact) delete ing.exact;
+        else ing.exact = true;
+        this._renderModal();
+      },
+      "rc-links-find": () => {
+        if (this._modal?.kind === "recipe") this._rcLinks(this._modal, true);
+      },
+      "rc-links-useall": () => {
+        const m = this._modal;
+        if (m?.kind !== "recipe") return;
+        for (const [idx, f] of Object.entries(m.found || {})) {
+          const ing = m.recipe.ingredients[Number(idx)];
+          if (ing && !ing.product && !ing.basic && f.product && f.confidence === "high") {
+            ing.product = { id: f.product.id, name: f.product.name, underline: f.product.underline || "" };
+            delete m.found[idx];
+          }
+        }
         this._renderModal();
       },
       "rc-delete": () => {
@@ -1706,6 +1750,7 @@ class Rema1000Panel extends HTMLElement {
       else m.recipe[ds.field] = value;
       // Typing an ingredient searches REMA, so it can be linked to the very product.
       if (ds.list === "ingredients" && ds.field === "name" && ev.type === "input" && this._hasPrices()) this._ingSearchSoon(Number(ds.idx), el.value);
+      if (ds.list === "ingredients" && ds.field === "name" && ev.type === "change") this._rcLinksSoon(m);
       return;
     }
     if (ds.bind === "newrule") {
@@ -2868,6 +2913,7 @@ class Rema1000Panel extends HTMLElement {
     const list = (this._state.recipes || []).filter((r) => {
       if (this._rc.filter === "favorite" && !r.favorite) return false;
       if (["like", "dislike"].includes(this._rc.filter) && r.rating !== this._rc.filter) return false;
+      if (this._rc.filter === "unlinked" && !r.missing) return false;
       const text = normName(`${r.name} ${(r.ingredient_names || []).join(" ")}`);
       return words.every((w) => text.includes(w));
     });
@@ -2899,7 +2945,7 @@ class Rema1000Panel extends HTMLElement {
               r.source === "link" ? "fra link" : r.source === "web" ? `fra ${r.site || "madside"}` : r.source === "scan" ? "fra kogebog" : r.source === "manual" ? "egen opskrift" : "",
             ]
               .filter(Boolean)
-              .join(" · ")}</span>
+              .join(" · ")}${this._hasPrices() ? (r.ready ? ' <span class="badge ready">Klar</span>' : r.missing ? ` <span class="badge doubt">Mangler ${r.missing} ${r.missing === 1 ? "vare" : "varer"}</span>` : "") : ""}</span>
           </button>
           ${this._recipeRateButtons(r)}
         </div>`
@@ -3049,6 +3095,67 @@ class Rema1000Panel extends HTMLElement {
     }
   }
 
+  // A recipe's items and REMA's products: which are bought and linked, and (suggest)
+  // products for those that have none. Nothing is saved until the recipe is.
+  async _rcLinks(m, suggest = false) {
+    if (!this._hasPrices()) return;
+    const token = (m.linksToken = (m.linksToken || 0) + 1);
+    if (suggest) m.suggesting = true;
+    if (this._modal === m) this._renderModal();
+    try {
+      const res = await this._ws("middagsro/recipes/links", { recipe: { ingredients: m.recipe.ingredients }, suggest });
+      if (token !== m.linksToken) return;
+      m.links = res;
+      if (suggest) m.found = Object.fromEntries((res.suggestions || []).map((x) => [String(x.index), x]));
+    } catch (err) {
+      if (token !== m.linksToken) return;
+      if (m.links === null) m.links = { ingredients: [], missing: 0, ready: false, failed: true };
+    }
+    m.suggesting = false;
+    if (this._modal === m) this._renderModal();
+  }
+
+  _rcLinksSoon(m) {
+    clearTimeout(this._rcLinksTimer);
+    this._rcLinksTimer = setTimeout(() => this._modal === m && this._rcLinks(m), 500);
+  }
+
+  // Under the ingredients' heading: ready, or how many items still need a product.
+  _rcLinkStatus(m) {
+    if (!this._hasPrices()) return "";
+    if (m.suggesting) return '<div class="banner info small"><span class="spinner small"></span> Finder REMA-varer til ingredienserne …</div>';
+    if (!m.links || m.links.failed) return m.links === null ? '<p class="muted small"><span class="spinner small"></span> Tjekker varerne …</p>' : "";
+    const rows = m.links.ingredients || [];
+    const ings = m.recipe.ingredients;
+    const missing = ings.filter((ing, i) => rows[i]?.bought && !ing.product && !ing.basic).length;
+    if (!ings.length) return "";
+    if (!missing) return '<div class="banner info small"><span class="badge ready">Klar</span> Alle varer, der skal købes, er koblet til en REMA-vare.</div>';
+    const found = Object.values(m.found || {});
+    const sure = found.filter((f) => f.product && f.confidence === "high" && !ings[f.index]?.product && !ings[f.index]?.basic).length;
+    return `<div class="banner warn small"><div>${missing === 1 ? "1 ingrediens mangler" : `${missing} ingredienser mangler`} en REMA-vare. Kobl dem én gang, så indkøbslisten får de rigtige varer – eller tryk <i>Har vi altid</i> ved det, I ikke køber.</div>
+      <div class="row wrap">${m.found ? "" : '<button class="btn small" data-action="rc-links-find">Find varer</button>'}${sure ? `<button class="btn small primary" data-action="rc-links-useall">Brug de sikre forslag (${sure})</button>` : ""}</div></div>`;
+  }
+
+  // One ingredient's product: linked (exact or of its kind), always in the house, or missing with suggestions.
+  _rcIngLink(m, ing, i) {
+    const row = m.links?.ingredients?.[i];
+    const kind = row?.kind ? `<span class="muted">slags: ${esc(row.kind)}</span>` : "";
+    if (ing.product) {
+      return `<p class="muted small rc-prod">REMA: ${esc(ing.product.name)}${ing.product.underline ? ` · ${esc(ing.product.underline)}` : ""}${ing.basic ? " · basisvare" : ""}
+        <button class="link small" data-action="rc-ing-unlink" data-arg="${i}">Fjern</button>
+        ${this._hasPrices() ? `<label class="check inline small" title="Ellers må en anden vare af samme slags bruges, når den er på tilbud"><input type="checkbox" data-action="rc-ing-exact" data-arg="${i}" ${ing.exact ? "checked" : ""}> Altid præcis denne</label>` : ""}</p>`;
+    }
+    if (ing.basic) return `<p class="muted small rc-prod">Har I altid – købes ikke <button class="link small" data-action="rc-ing-unlink" data-arg="${i}">Fortryd</button></p>`;
+    if (!row?.bought || !this._hasPrices()) return "";
+    const f = m.found?.[String(i)];
+    const others = (f?.alternatives || []).filter((a) => a.id !== f?.product?.id).slice(0, 3);
+    return `<div class="small rc-prod rc-missing"><span class="badge doubt">Mangler vare</span> ${kind}
+      ${f?.product ? `<span>Forslag: <b>${esc(f.product.name)}</b>${f.product.underline ? ` <span class="muted">${esc(f.product.underline)}</span>` : ""}</span>
+        <button class="btn small" data-action="rc-ing-use" data-arg="${i}|${esc(f.product.id)}">Brug</button>` : f ? '<span class="muted">Intet sikkert forslag – skriv navnet om, eller søg ved at skrive i feltet.</span>' : ""}
+      ${others.map((a) => `<button class="chip" data-action="rc-ing-use" data-arg="${i}|${esc(a.id)}">${esc(a.name)}${a.underline ? ` · ${esc(a.underline)}` : ""}</button>`).join("")}
+      <button class="link small" data-action="rc-ing-basic" data-arg="${i}">Har vi altid</button></div>`;
+  }
+
   _recipeModal(m) {
     if (m.loading) {
       return `<div class="scrim" data-action="modal-close"></div>
@@ -3064,10 +3171,7 @@ class Rema1000Panel extends HTMLElement {
           <input type="text" class="amount" data-bind="rcp" data-list="ingredients" data-idx="${i}" data-field="amount" value="${esc(ing.amount)}" placeholder="Mængde">
           <input type="text" class="grow" data-bind="rcp" data-list="ingredients" data-idx="${i}" data-field="name" value="${esc(ing.name)}" placeholder="Ingrediens">
           <button class="icon-btn" data-action="rc-row" data-arg="ingredients|del|${i}" aria-label="Fjern ingrediens">${CLOSE_ICON}</button>
-        </div>${ing.product
-          ? `<p class="muted small rc-prod">REMA: ${esc(ing.product.name)}${ing.product.underline ? ` · ${esc(ing.product.underline)}` : ""}${ing.basic ? " · basisvare" : ""}
-              <button class="link small" data-action="rc-ing-unlink" data-arg="${i}">Fjern</button></p>`
-          : ""}<div class="rc-sugg" data-idx="${i}"></div>`
+        </div>${this._rcIngLink(m, ing, i)}<div class="rc-sugg" data-idx="${i}"></div>`
       )
       .join("");
     const steps = r.steps
@@ -3117,6 +3221,7 @@ class Rema1000Panel extends HTMLElement {
             </select></label>
         </div>
         <h3>Ingredienser</h3>
+        ${this._rcLinkStatus(m)}
         ${ingredients}
         <button class="btn small" data-action="rc-row" data-arg="ingredients|add">+ Ingrediens</button>
         <h3>Sådan gør du</h3>
@@ -3318,6 +3423,12 @@ class Rema1000Panel extends HTMLElement {
       return;
     }
     if (this._modal?.kind === "recipe") {
+      const rm = this._modal;
+      if (rm.links === undefined && !rm.loading && this._hasPrices()) {
+        // Which items are linked; a recipe not in the collection yet gets suggestions.
+        rm.links = null;
+        queueMicrotask(() => this._rcLinks(rm, !rm.recipe.id));
+      }
       // Keep the scroll position when rows are added or removed.
       const top = node.querySelector(".dialog")?.scrollTop || 0;
       node.innerHTML = this._recipeModal(this._modal);
@@ -5317,6 +5428,8 @@ const STYLE = `
   .rc-sugg-item .what b { font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rc-sugg-item .price { font-weight: 700; white-space: nowrap; } .rc-sugg-item .price.sale { color: var(--rema-sale); }
   @media (max-width: 600px) { .rc-prod, .rc-sugg { margin-left: 0; } }
+  .rc-missing { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: -2px; margin-bottom: 10px; }
+  .rc-prod .check.inline { display: inline-flex; gap: 4px; margin-left: 8px; }
   .rc-photo { width: 100%; max-height: 260px; object-fit: cover; border-radius: 12px; margin: 4px 0 10px; }
   .rr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin: 12px 0; }
   .rr-card { display: grid; gap: 4px; align-content: start; padding: 8px; border: 1px solid var(--divider-color); border-radius: 12px; background: var(--secondary-background-color); }
