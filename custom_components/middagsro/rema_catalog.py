@@ -270,6 +270,6 @@ class RemaRecipeCatalog:
         entry = self.recipes.get(slug)
         if entry is None:
             return None
-        recipe = copy.deepcopy(entry["recipe"])
+        recipe: dict[str, Any] = copy.deepcopy(entry["recipe"])
         recipe["id"] = None
         return recipe
