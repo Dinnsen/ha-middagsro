@@ -96,6 +96,10 @@ def heading_kinds(heading: str) -> set[str]:
     return {k for part in parts if part.strip() and (k := _kind(part)) in SWAPPABLE}
 
 
+# An item made without meat is not swapped for the meat kind ("vegetariske pølser").
+_MEAT_FREE = re.compile(
+    r"\b(?:vegetar\w*|vegansk\w*|vegan|plantebaser\w*|kødfri\w*)\b", re.IGNORECASE
+)
 # Not food for a dinner: drinks ("Tuborg Squash" is no squash), sold with a deposit.
 _DRINK = re.compile(r"\b(?:cola|fanta|sodavand|øl|vin|juice|saft)\b", re.IGNORECASE)
 
@@ -163,6 +167,7 @@ def price_recipe(
             on_offer.append(name)
         elif (
             not ingredient.get("exact")
+            and not _MEAT_FREE.search(name)
             and (kind := _kind(name))
             and (found := swap_price(product, offers.get(kind, [])))
             and (price is None or found[1] < price)

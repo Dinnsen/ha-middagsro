@@ -88,6 +88,8 @@ def test_price_a_recipe() -> None:
             }
         ],
     }
+    veggie = [{"name": "vegetariske kyllingebryst", "product": {"id": 2, "underline": "600 GR."}}]
+    assert cd.price_recipe(veggie, prices, offers, [])["swaps"] == []  # no meat for it
     ingredients[1]["exact"] = True  # always that product: no swap
     assert cd.price_recipe(ingredients, prices, offers, ["salt"])["swaps"] == []
     # A product without a price takes the offer's, with nothing saved.
