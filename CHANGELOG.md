@@ -6,6 +6,7 @@ All notable changes to REMA 1000 for Home Assistant. The version is the one in `
 
 ### Fixed
 - **A plan for next week made from the wrong avis:** REMA's "Meget Mere REMA 1000" (4 to 25 November, no offers) was taken for next week's avis, so *Lav madplan automatisk* made a plan for week 46 without any offers on 1 November. An avis without offers, or one that runs for more than ten days, is never a week's avis: it neither starts an automatic plan nor moves the start of the next plan.
+- **"Kunne ikke lave madplanen: 'id'":** a new plan with an uncertain item, and an AI to help choose, stopped before it was saved. The plan's items get their ids before the AI is asked (and the panel's buttons work on a new plan without a restart).
 
 ## [2.13.0b2] - 2026-10-31
 

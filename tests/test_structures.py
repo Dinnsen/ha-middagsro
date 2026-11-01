@@ -163,6 +163,11 @@ async def test_ai_helps_choose_between_products(
         raise HomeAssistantError("busy")
 
     parsley["reviewed"] = True
+    # A new plan's line has no id yet: it gets one (the AI's answer names it).
+    fresh = {**pasta, "name": "Basilikum", "confidence": "low"}
+    del fresh["id"]
+    plan["shopping"].append(fresh)
     with patch("homeassistant.components.ai_task.async_generate_data", new=broken):
         await planner._async_ai_choices(plan)
     assert pasta["product"]["id"] == 60002
+    assert fresh["id"]

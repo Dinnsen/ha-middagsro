@@ -71,7 +71,7 @@ from .recipes import (
 )
 from .rema_recipes import RemaRecipes
 from .sites import RecipeSites
-from .storage import RemaPlanStore
+from .storage import RemaPlanStore, ensure_line_ids
 from .store_client import genitive
 from .structures import choices_structure, plan_structure, recipe_structure, schema_library
 from .words import (
@@ -2166,6 +2166,9 @@ class MealPlanner(ProductMatcher):
         of the products found is the ingredient, or none of them. Its pick is a
         better first choice for the family's check; the line stays marked for it.
         """
+        # A new plan's lines get their ids here: the AI's answer names them, and
+        # the panel's Behold and Har det do too.
+        ensure_line_ids(plan)
         unsure = [
             line
             for line in plan["shopping"]
