@@ -511,7 +511,10 @@ class ProductMatcher:
             or (known_kind is None and spec.entry is None)
             or fit_penalty >= 2
             or variety_missing(line.get("name") or "", chosen.name)
-            or not is_named(distinguishing_words(str(line.get("name") or ""), spec), chosen.name)
+            or not is_named(
+                distinguishing_words(str(line.get("name") or ""), spec),
+                f"{chosen.name} {chosen.underline or ''}",
+            )
             or bool(line.get("guessed"))
         ):
             line["confidence"] = "medium"
@@ -830,7 +833,7 @@ class ProductMatcher:
         # "Fettuccine spinat pasta": the pasta that is fettuccine with spinach beats
         # the cheapest pasta, when the shop has it.
         if extra := distinguishing_words(str(line.get("name") or ""), spec):
-            named_so = {p.id for p in relevant if is_named(extra, p.name)}
+            named_so = {p.id for p in relevant if is_named(extra, f"{p.name} {p.underline or ''}")}
             if named_so:
                 full = (full & named_so) or named_so
         if full and len(full) < len(relevant):

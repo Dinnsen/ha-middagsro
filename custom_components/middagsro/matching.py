@@ -426,7 +426,8 @@ def distinguishing_words(name: str, spec: Spec) -> list[str]:
 
 
 def is_named(words: list[str], product_name: str) -> bool:
-    """Does a product's name have every one of these words (or a form of it)?"""
+    """Does a product's name (with its underline: the brand is there, "600 GR. /
+    SCHULSTAD") have every one of these words, or a form of it?"""
     return not words or name_fit(words, product_name)[0] == len(words)
 
 

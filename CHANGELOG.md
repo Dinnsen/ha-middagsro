@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.13.0b5] - 2026-11-01
+
+### Fixed
+- **"Schulstad brød" marked Tjek:** the words of an item's name are also looked for on the package's underline, where REMA writes the brand ("600 GR. / SCHULSTAD").
+
 ## [2.13.0b4] - 2026-11-01
 
 ### Fixed

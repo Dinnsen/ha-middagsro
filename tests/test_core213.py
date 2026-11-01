@@ -276,3 +276,25 @@ async def test_the_pasta_the_line_is_called(
     assert choice_key(planner._clean_line({"name": "Pasta"})) == "pasta"
     assert choice_key(planner._clean_line({"name": "Rød peberfrugt"})) == "peberfrugt rød"
     assert choice_key(planner._clean_line({"name": "Laksefilet"})) == "laks"
+
+
+async def test_a_brand_in_the_name_is_on_the_package(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """ "Schulstad brød" is Schulstad's bread: the brand is in REMA's underline."""
+    schulstad = make_product(62632, "SØDMÆLKSBRØD", 15, underline="600 GR. / SCHULSTAD",
+                             department="Brød & Bavinchi", category="Brød")  # fmt: skip
+    toast = make_product(60001, "TOASTBRØD", 9, underline="500 GR. / REMA 1000",
+                         department="Brød & Bavinchi", category="Brød")  # fmt: skip
+
+    async def search(query: str, limit: int = 15, **kwargs: Any) -> list[Any]:
+        return [toast, schulstad]
+
+    mock_client.async_search_products.side_effect = search
+    planner = init_integration.runtime_data.planner
+    line = planner._clean_line(
+        {"name": "Schulstad brød", "amount": 1, "unit": "pk", "search": "brød", "category": "Brød"}
+    )
+    await planner._async_match(line)
+    assert line["product"]["name"] == "SØDMÆLKSBRØD"
+    assert line["confidence"] == "high"
