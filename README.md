@@ -160,6 +160,8 @@ The **Opskrifter** (recipes) tab has three pages: **Ugens opskrifter** (the week
 
 Below the controls for a new meal plan you can make a separate **freezer plan** with four or five dishes for one cooking day – with its own wishes (*Ønsker til fryserretterne*), apart from the week's. Open it and choose portions for each dish, e.g. 16. Ingredients and the combined shopping list are recalculated from the recipe's four portions, without the household percentage or fixed weekly items. Rice and pasta for the eating day are not part of the freezer shopping. Portions lock once the groceries are sent. Freezer plans are kept apart and don't change the week's plan or the calendar.
 
+Use **Slet** in the freezer-plan overview or **Slet fryserplan** in an open plan to delete it after confirmation. Cart contents and ingredient inventory are kept.
+
 ### Spisekammer (ingredient inventory)
 
 Open **Spisekammer** from the navigation (under **Mere** on phones unless selected

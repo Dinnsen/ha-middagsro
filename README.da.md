@@ -156,7 +156,7 @@ Fanen **Opskrifter** har tre sider: **Ugens opskrifter** som hidtil, **Opskrifts
 
 ### Månedens frysermad
 
-Under knapperne til en ny madplan kan I lave en særskilt **fryserplan** med 4 eller 5 retter til én maddag – med sine egne ønsker (*Ønsker til fryserretterne*), adskilt fra ugens. Åbn planen, og vælg portioner for hver ret, fx 16. Ingredienser og den samlede indkøbsliste regnes om fra opskriftens 4 portioner, uden familiens portionsprocent og faste ugevarer. Ris og pasta til spisedagen er ikke med i fryserindkøbet. Portionsvalget låses, når overførsel er startet eller lagerforbrug er bekræftet. Fryserplaner gemmes for sig og ændrer ikke ugens madplan eller kalenderen.
+Under knapperne til en ny madplan kan I lave en særskilt **fryserplan** med 4 eller 5 retter til én maddag – med sine egne ønsker (*Ønsker til fryserretterne*), adskilt fra ugens. Åbn planen, og vælg portioner for hver ret, fx 16. Ingredienser og den samlede indkøbsliste regnes om fra opskriftens 4 portioner, uden familiens portionsprocent og faste ugevarer. Ris og pasta til spisedagen er ikke med i fryserindkøbet. Portionsvalget låses, når overførsel er startet eller lagerforbrug er bekræftet. Fryserplaner gemmes for sig og ændrer ikke ugens madplan eller kalenderen. Brug **Slet** i oversigten eller **Slet fryserplan** i den åbne plan; sletning bekræftes først og ændrer ikke kurven eller Spisekammerets beholdning.
 
 ### Spisekammer
 

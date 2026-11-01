@@ -916,13 +916,15 @@ class Rema1000Panel extends HTMLElement {
         this._render();
       },
       "delete-plan": () => {
-        if (!confirm("Slet denne madplan fra historikken?")) return;
+        const freezer = this._plan?.id === arg && this._plan.kind === "freezer"
+          || (this._state?.freezer_plans || []).some(p => p.id === arg);
+        if (!confirm(freezer ? "Slet denne fryserplan? Varer i kurven og Spisekammerets beholdning ændres ikke." : "Slet denne madplan fra historikken?")) return;
         this._run(async () => {
           await this._ws("middagsro/plan/delete", { plan_id: arg });
           if (this._plan?.id === arg) {
             this._viewingLatest = true;
           }
-        }, "Madplanen er slettet.");
+        }, freezer ? "Fryserplanen er slettet." : "Madplanen er slettet.");
       },
       "send-line": () => {
         const line = (this._plan?.shopping || []).find((l) => l.id === arg);
@@ -3783,7 +3785,7 @@ class Rema1000Panel extends HTMLElement {
       <p class="muted small">Bruges kun til fryserplanen – ugens madplan har sine egne ønsker.</p>
       ${(this._state?.freezer_inventory || []).length ? `<label class="check"><input type="checkbox" data-bind="use-freezer-batch" ${this._useFreezerBatch !== false ? "checked" : ""}> Brug råvarer fra spisekammeret til fryserretterne</label>` : ""}
       <div class="row wrap">${[4, 5].map(n => `<button class="btn" data-action="freezer-generate" data-arg="${n}" ${busy ? "disabled" : ""}>${aiLabel(`Lav en plan med ${n} retter`)}</button>`).join("")}</div>
-      ${plans.length ? `<h3>Dine fryserplaner</h3><div class="batch-plans">${plans.map(p => `<button class="setting-row" data-action="freezer-open" data-arg="${esc(p.id)}"><span class="setting-text"><b>${esc(p.title)}</b><span class="muted small">${p.dishes?.length || ""} retter · ${kr(p.total)}</span></span><span class="chev" aria-hidden="true">›</span></button>`).join("")}</div>` : '<p class="muted small">Når planen er klar, kan du åbne den her. Den ændrer ikke ugens madplan.</p>'}
+      ${plans.length ? `<h3>Dine fryserplaner</h3><div class="batch-plans">${plans.map(p => `<div class="batch-plan-row"><button class="setting-row" data-action="freezer-open" data-arg="${esc(p.id)}"><span class="setting-text"><b>${esc(p.title)}</b><span class="muted small">${p.dishes?.length || ""} retter · ${kr(p.total)}</span></span><span class="chev" aria-hidden="true">›</span></button><button class="btn small danger" data-action="delete-plan" data-arg="${esc(p.id)}" aria-label="Slet fryserplan: ${esc(p.title)}" ${busy ? "disabled" : ""}>Slet</button></div>`).join("")}</div>` : '<p class="muted small">Når planen er klar, kan du åbne den her. Den ændrer ikke ugens madplan.</p>'}
     </section>`;
   }
 
@@ -3806,7 +3808,7 @@ class Rema1000Panel extends HTMLElement {
         <button class="btn small" data-action="open-day" data-arg="${esc(plan.id)}|${day.date}" aria-label="Se opskrift på ${esc(day.dish)}">Se opskrift</button></article>`).join("")}</div>
       <details><summary>Fordeling i fryseposer</summary><p class="muted small">Fordel den færdige ret i fx 400 g poser. Antallet afhænger af rettens færdige vægt og beregnes ikke automatisk.</p></details>
       <div class="batch-footer"><div><span class="muted small">Anslået indkøb i alt</span><strong>${kr(plan.total)}</strong></div><button class="btn primary" data-action="tab" data-arg="shopping">Se indkøbsliste →</button></div>
-      <button class="link" data-action="view-latest">‹ Til ugens madplan</button>
+      <div class="row between wrap"><button class="link" data-action="view-latest">‹ Til ugens madplan</button><button class="btn small danger" data-action="delete-plan" data-arg="${esc(plan.id)}" ${this._busy ? "disabled" : ""}>Slet fryserplan</button></div>
     </div>${this._freezerControls()}`;
   }
 
@@ -5585,6 +5587,8 @@ const STYLE = `
   .freezer-card > summary .fold-title { font-size: 18px; font-weight: 700; }
   .pickday.skipped { opacity: .6; }
   .update-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+  .batch-plan-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; border-top: 1px solid var(--divider-color); }
+  .batch-plan-row .setting-text { overflow-wrap: anywhere; }
   .batch-plans .setting-row { grid-template-columns: 1fr auto; padding: 14px 8px; }
   .batch-steps { display: flex; flex-wrap: wrap; gap: 12px 28px; padding: 12px 12px 12px 32px; background: var(--rema-subtle); border-radius: 12px; color: var(--secondary-text-color); }
   .batch-steps [aria-current] { color: var(--rema-accent); font-weight: 700; }
