@@ -22,7 +22,7 @@ from homeassistant.util import dt as dt_util
 
 from .api import Offer, RemaError
 from .dishes import matches_any
-from .matching import noon
+from .matching import choice_key, noon
 from .mealie import MealieError
 from .mealplan import (
     ALLERGY_DA,
@@ -888,7 +888,7 @@ async def async_review_line(
     line = next((item for item in plan["shopping"] if item.get("id") == line_id), None)
     if line is None:
         raise _invalid("line_not_found")
-    key = line.get("key") or line_spec(line).key
+    key = choice_key(line)
     product = line.get("product") or {}
     if action == "keep":
         line["reviewed"] = True
@@ -981,7 +981,7 @@ async def async_edit_line(
         # Chosen by hand: the product the family wants for this ingredient from now on.
         if not line.get("must_have") and not line.get("added"):
             await planner.store.async_remember_choice(
-                line.get("key") or spec.key, planner.shop, product.id, product.name, previous
+                choice_key(line, spec), planner.shop, product.id, product.name, previous
             )
     elif packages is not None:
         count = max(1, min(99, packages))

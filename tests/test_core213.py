@@ -6,6 +6,7 @@ from datetime import date
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.middagsro import amounts, mealplan as mp, structures
@@ -190,3 +191,88 @@ async def test_bbq_is_barbecue(
     )
     await planner._async_match(breast)
     assert breast["product"] is None
+
+
+async def test_repeated_days_are_swapped(
+    hass: HomeAssistant, init_integration: MockConfigEntry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A day the AI kept repeating is swapped as Skift ret does it; a day that can't
+    be (only repeats suggested, or the AI failing) keeps its warning."""
+    from custom_components.middagsro import planedit  # noqa: PLC0415
+    from homeassistant.exceptions import HomeAssistantError  # noqa: PLC0415
+
+    from .conftest import make_plan  # noqa: PLC0415
+
+    planner = init_integration.runtime_data.planner
+    plan = make_plan("rep", start="2026-11-01")
+    days = plan["days"]
+    plan["checklist"] = [
+        {"requirement": "Fredag er altid pizzadag", "ok": True},
+        *(
+            {"requirement": f'{d["weekday"]} {d["date"]}: "{d["dish"]}" gentager "x" fra de '
+             "seneste uger – vælg en helt anden hovedret", "ok": False}
+            for d in days
+        ),
+        {"requirement": 'mandag 2099-01-01: "Tacos" gentager "x" fra de seneste uger', "ok": False},
+    ]  # fmt: skip
+    await init_integration.runtime_data.store.async_add_plan(plan)
+    swapped: list[tuple[str, str]] = []
+
+    async def options(planner: Any, plan_id: str, day: str) -> dict[str, Any]:
+        if day == days[1]["date"]:
+            raise HomeAssistantError("AI'en svarer ikke")
+        dishes = ["Ovnbagt laks"] if day == days[2]["date"] else ["Ovnbagt laks", "Tacos"]
+        return {"options": [{"dish": d} for d in dishes]}
+
+    async def swap(planner: Any, plan_id: str, day: str, option: dict[str, Any]) -> dict[str, Any]:
+        swapped.append((day, option["dish"]))
+        return plan
+
+    monkeypatch.setattr(planedit, "async_swap_options", options)
+    monkeypatch.setattr(planedit, "async_swap_dish", swap)
+    await planner._async_swap_repeats(plan, ["Laks med pasta"])
+    assert swapped == [(days[0]["date"], "Tacos")]
+    left = [c["requirement"][:20] for c in plan["checklist"] if not c["ok"]]
+    assert len(left) == 3  # the AI failing, only repeats, and a day not in the plan
+    assert not any(
+        c["requirement"].startswith(f"{days[0]['weekday']} {days[0]['date']}")
+        for c in plan["checklist"]
+    )
+
+
+async def test_the_pasta_the_line_is_called(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """ "Fettuccine spinat pasta" is FETTUCCINE SPINAT, not the cheapest pasta (also
+    in a smaller package); without it in the shop, the pasta found is to be checked.
+    The family's choice is remembered for fettuccine spinat pasta, not every pasta."""
+    from custom_components.middagsro.matching import choice_key  # noqa: PLC0415
+
+    screws = make_product(90312, "PASTA SKRUER", 5.95, underline="500 GR. / REMA 1000",
+                          category="Ris & pasta, mv")  # fmt: skip
+    penne = make_product(90346, "PENNE RIGATE", 8.72, underline="500 GR. / REMA 1000",
+                         category="Ris & pasta, mv")  # fmt: skip
+    spinach = make_product(412322, "FETTUCCINE SPINAT", 10.16, underline="250 GR. / PASTA DI MARIA",
+                           department="Køl", category="Frisk pasta")  # fmt: skip
+    shelf = [screws, penne, spinach]
+
+    async def search(query: str, limit: int = 15, **kwargs: Any) -> list[Any]:
+        return shelf
+
+    mock_client.async_search_products.side_effect = search
+    planner = init_integration.runtime_data.planner
+    item = {"name": "Fettuccine spinat pasta", "amount": 2, "unit": "pk", "search": "pasta",
+            "category": "Kolonial"}  # fmt: skip
+    line = planner._clean_line(item)
+    await planner._async_match(line)
+    assert line["product"]["name"] == "FETTUCCINE SPINAT"
+    assert line["confidence"] == "high"
+    shelf.remove(spinach)
+    await planner._async_match(line)
+    assert line["product"]["name"] == "PASTA SKRUER"
+    assert line["confidence"] == "medium"
+
+    assert choice_key(line) == "pasta fettuccine spinat"
+    assert choice_key(planner._clean_line({"name": "Pasta"})) == "pasta"
+    assert choice_key(planner._clean_line({"name": "Rød peberfrugt"})) == "peberfrugt rød"
+    assert choice_key(planner._clean_line({"name": "Laksefilet"})) == "laks"

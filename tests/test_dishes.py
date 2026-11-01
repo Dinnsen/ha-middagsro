@@ -103,7 +103,7 @@ def test_check_plan() -> None:
     )
     assert problems == [
         'søndag 2026-10-25: "Ovnbagt laks med pasta" gentager "Laks med ris" fra de seneste uger '
-        "– vælg en helt anden hovedret",
+        "– vælg en helt anden hovedret, uden laks",
         # Kyllingefrikadeller are not the disliked fiskefrikadeller ...
         'lørdag 2026-10-31: "Fiskefrikadeller" er en variant af "Fiskefrikadeller med remoulade", '
         "som familien ikke kan lide",
@@ -554,3 +554,15 @@ def test_compound_search_words() -> None:
         "pesto",
         "Grøn pesto",
     ]
+
+
+def test_staple_mains_with_other_sides_are_other_dinners() -> None:
+    """Chicken with potatoes and chicken with other potatoes are two dinners when
+    the sides differ; with the same sides, or none, they are the same."""
+    week45 = "Stegt kyllingebryst med pandestegte kartofler og gnavegrønt"
+    assert not ds.same_dish(week45, "Dansk kylling med ovnbagte lammefjordskartofler og gulerødder")
+    assert ds.same_dish("Kylling i karry med ris", "Kylling i karry med ris og salat")
+    assert ds.same_dish("Kylling", "Stegt kylling")
+    assert ds.same_dish("Kyllingefrikadeller med ovnbagte kartofler", "Kyllingefrikadeller")
+    assert ds.repeated_main("Ovnbagt laks med fettuccine spinat pasta", LAKS) == "laks"
+    assert ds.repeated_main("Tacos", "Lasagne") == ""

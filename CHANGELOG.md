@@ -2,6 +2,14 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.13.0b4] - 2026-11-01
+
+### Fixed
+- **"Fettuccine spinat pasta" became PASTA SKRUER, marked sure:** the words of an item's own name that say which one of a thing it is (*fettuccine* and *spinat* pasta, *rød* peberfrugt) must be in the product's name. A product that has them beats a cheaper one that doesn't, also in a smaller package; when the shop has none, the item is marked *Tjek*.
+- **Your choice for one pasta was the choice for every pasta:** a product you keep, choose or leave out is remembered for what the item is called (fettuccine spinat pasta), not only for the ingredient (pasta), so the bolognese keeps its spaghetti. (Choices remembered before are still used for items without such words.)
+- **A dish from the last weeks is swapped by Middagsro itself** when the AI keeps suggesting it: the day is changed as *Skift ret* does it, to the first suggestion that is no repeat. The AI is also told which main to leave out ("uden laks"). Only a day that can't be swapped keeps its warning.
+- **Chicken with potatoes is not the same dinner every time:** a common main (kylling, svinekød, hakket oksekød …) only makes two dinners the same when the sides are too.
+
 ## [2.13.0b3] - 2026-11-01
 
 ### Fixed

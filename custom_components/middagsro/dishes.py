@@ -96,6 +96,37 @@ def _generic(word: str) -> bool:
     return any(stem == g or stem.startswith(g) for g in _GENERIC)
 
 
+# Mains a family has most weeks: chicken with potatoes one week and chicken with
+# rice the next are two dinners. With one of these in common, the sides must be too.
+_STAPLES = ("kylling", "kalkun", "svinekød", "oksekød", "hakket", "hakkekød", "flæsk")
+
+
+def _staple(word: str) -> bool:
+    return any(_same_word(word, staple, False) for staple in _STAPLES)
+
+
+def _sides(name: str) -> set[str]:
+    """The sides of a dinner that say something (not pasta, potatoes or rice, nor
+    the main again: "Ris med kylling" has none)."""
+    parts = _SIDES.split(_LEFTOVERS.sub("", name or ""), maxsplit=1)
+    if len(parts) < 2:
+        return set()
+    return {
+        _stem(w)
+        for w in _tokens(parts[1])
+        if len(w) > 2
+        and w not in _NEUTRAL_WORDS
+        and w not in _HOW
+        and not _generic(w)
+        and not _staple(w)
+    }
+
+
+def _shared(a: str, b: str, strict: bool = False) -> set[str]:
+    key_a, key_b = dish_key(a, not strict), dish_key(b, not strict)
+    return {x for x in key_a for y in key_b if _same_word(x, y, strict)}
+
+
 def same_dish(a: str, b: str, strict: bool = False) -> bool:
     """Are two dinners the same dish ("Laks med pasta" and "Ovnbagt laks med ris")?
 
@@ -112,7 +143,24 @@ def same_dish(a: str, b: str, strict: bool = False) -> bool:
     # Only the pasta in common, and each has its own main: different dinners.
     if all(_generic(x) for x in shared):
         return not (key_a - shared and key_b - shared)
+    if not strict and all(_staple(x) for x in shared):
+        # "Stegt kyllingebryst med pandestegte kartofler og gnavegrønt" is not
+        # "Dansk kylling med ovnbagte kartofler og gulerødder".
+        sides_a, sides_b = _sides(a), _sides(b)
+        return any(_same_word(x, y, False) for x in sides_a for y in sides_b) or not (
+            sides_a and sides_b
+        )
     return True
+
+
+def repeated_main(dish: str, earlier: str) -> str:
+    """The main a dish has in common with an earlier one, as the dish writes it
+    ("laks"), for telling the AI what not to choose."""
+    shared = _shared(dish, earlier)
+    for word in _tokens(dish):
+        if _stem(word) in shared:
+            return word
+    return next(iter(sorted(shared)), "")
 
 
 def matches_any(name: str, names: list[str], strict: bool = False) -> str | None:
@@ -407,9 +455,10 @@ def check_plan(
         if day.get("favorite_id") in due_ids or in_text(dish, note):
             continue
         if (earlier := matches_any(dish, recent)) is not None:
+            main = repeated_main(dish, earlier)
             problems.append(
                 f'{day["weekday"]} {day["date"]}: "{dish}" gentager "{earlier}" fra de '
-                "seneste uger – vælg en helt anden hovedret"
+                "seneste uger – vælg en helt anden hovedret" + (f", uden {main}" if main else "")
             )
     for day in cooked:
         if (bad := matches_any(day["dish"], disliked or [], strict=True)) is not None:

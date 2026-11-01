@@ -40,6 +40,7 @@ from .dishes import (
     household_portions,
     is_cooked,
     is_rest_text,
+    matches_any,
     same_dish,
 )
 from .errors import _failed, _invalid
@@ -1985,6 +1986,7 @@ class MealPlanner(ProductMatcher):
             best["updated_from"] = base["id"]
             await self.store.async_delete_plan(base["id"])
         await self.store.async_add_plan(best)
+        await self._async_swap_repeats(best, recent)
         self._schedule_refreshes(best)
         await self.async_mealie_sync(best)
         if note and self.store.note.strip() == note:
@@ -1994,6 +1996,37 @@ class MealPlanner(ProductMatcher):
             best = await self._async_put_picks(best, picks)
         self._notify()
         return best
+
+    async def _async_swap_repeats(self, plan: dict[str, Any], recent: list[str]) -> None:
+        """Days the AI kept giving a dish from the last weeks, though asked not to,
+        are swapped here, as Skift ret does it: the first suggestion that is no
+        repeat takes the day. A day that can't be swapped keeps its warning."""
+        from .planedit import async_swap_dish, async_swap_options  # noqa: PLC0415
+
+        swapped = False
+        for item in list(plan.get("checklist") or []):
+            text = str(item.get("requirement") or "")
+            if item.get("ok") or "fra de seneste uger" not in text:
+                continue
+            day = next(
+                (d for d in plan["days"] if text.startswith(f"{d['weekday']} {d['date']}:")), None
+            )
+            if day is None:
+                continue
+            self._set_status("generating", f"Skifter {day['weekday']}s ret, den var for nylig …")
+            try:
+                found = await async_swap_options(self, plan["id"], day["date"])
+                fresh = [o for o in found["options"] if matches_any(o["dish"], recent) is None]
+                if not fresh:
+                    continue
+                await async_swap_dish(self, plan["id"], day["date"], fresh[0])
+            except (HomeAssistantError, RemaError) as err:
+                _LOGGER.info("Could not swap the repeated dish on %s: %s", day["date"], err)
+                continue
+            plan["checklist"] = [c for c in plan["checklist"] if c is not item]
+            swapped = True
+        if swapped:
+            await self.store.async_save()
 
     async def _async_generate_rounds(
         self,
