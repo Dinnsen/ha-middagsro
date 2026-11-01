@@ -2,6 +2,12 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.14.0b4] - 2026-11-01
+
+### Added
+- **Ugens tilbudsretter:** a new page under Opskrifter with the week's cheapest dinners from the avis. Every ready recipe, yours and REMA's, is priced at the plan's first day: an item whose product is on offer counts at the offer's price, and an item not marked *Altid præcis denne* takes an offer of the same kind when it is cheaper (minced beef, chicken breast, salmon, pasta, potatoes, cream …). Each dish shows its price per person, what it saves and which offers it uses; sort by *Billigst pr. person* or *Mest sparet*. Your rules leave dishes out (allergies and what you avoid, dishes you don't like, dishes from the last weeks), and the page says how many. The price is an estimate with one package of each item.
+- An offer only stands in for things sold as themselves: not *brunede kartofler* for potatoes, nor *tun i tomat* for tomatoes.
+
 ## [2.14.0b3] - 2026-11-01
 
 ### Added

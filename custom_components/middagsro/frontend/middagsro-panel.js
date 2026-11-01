@@ -1052,6 +1052,11 @@ class Rema1000Panel extends HTMLElement {
         if (arg !== "rema") this._remaPick = null;
         this._render();
         if (arg === "rema" && !this._rr.page) this._rrLoad();
+        if (arg === "offers" && !this._cand?.data && !this._cand?.loading) this._candLoad();
+      },
+      "cand-sort": () => {
+        this._cand = { ...(this._cand || {}), sort: arg, data: null };
+        this._candLoad();
       },
       "rr-tag": () => {
         if (this._rr.loading) return;
@@ -4016,6 +4021,58 @@ class Rema1000Panel extends HTMLElement {
     into ? this._renderModal() : this._render();
   }
 
+  // The week's dinners from the avis: ready recipes priced with its offers.
+  async _candLoad() {
+    const c = (this._cand = { sort: "cheapest", ...(this._cand || {}), loading: true, error: null });
+    this._render();
+    try {
+      const data = await this._ws("middagsro/candidates", { start: this._state?.default_start || null, sort: c.sort });
+      if (this._cand !== c) return;
+      c.data = data;
+    } catch (err) {
+      c.error = err?.message || String(err);
+    }
+    c.loading = false;
+    if (this._tab === "recipes") this._render();
+  }
+
+  _candView() {
+    const c = this._cand || { sort: "cheapest" };
+    const d = c.data;
+    const chip = (key, label) => `<button class="chip ${c.sort === key ? "active" : ""}" data-action="cand-sort" data-arg="${key}" ${c.loading ? "disabled" : ""}>${label}</button>`;
+    const cards = (d?.candidates || [])
+      .map((r) => {
+        const open = r.source === "collection" ? `data-action="rc-open" data-arg="${esc(r.id)}"` : `data-action="rr-open" data-arg="${esc(r.slug)}"`;
+        const swaps = (r.swaps || []).map((x) => `<li>${esc(x.item)} → <b>${esc(x.offer)}</b> ${kr(x.price)}</li>`).join("");
+        return `<div class="rr-card">
+          <button class="rr-img" ${open} aria-label="Se ${esc(r.name)}">${r.image ? `<img src="${esc(r.image)}" alt="" loading="lazy">` : ""}</button>
+          <b class="rr-title">${esc(r.name)}</b>
+          <span class="muted small">ca. ${kr(r.per_person)} pr. person${r.saving >= 1 ? ` · sparer ca. ${kr0(r.saving)}` : ""}${r.total_minutes ? ` · ${r.total_minutes} min` : ""}</span>
+          <span class="rr-badges"><span class="badge offer">${r.on_offer.length} på tilbud</span>${r.source === "collection" ? '<span class="badge">Jeres</span>' : '<span class="badge">REMA</span>'}${r.vegetarian ? '<span class="badge eco">Vegetar</span>' : ""}${r.favorite ? '<span class="badge">♥</span>' : ""}</span>
+          ${swaps ? `<ul class="cand-swaps small muted">${swaps}</ul>` : ""}
+          <button class="btn small" ${open}>Se opskrift</button>
+        </div>`;
+      })
+      .join("");
+    const lo = d?.left_out || {};
+    const out = [
+      lo.recent ? `${lo.recent} lavet for nylig` : "",
+      lo.disliked ? `${lo.disliked} I ikke kan lide` : "",
+      lo.rules ? `${lo.rules} med noget, I undgår` : "",
+      lo.not_ready ? `${lo.not_ready} mangler varer` : "",
+    ].filter(Boolean);
+    return `<div class="card">
+      <h2 class="flush">Ugens billigste retter ud fra avisen</h2>
+      <p class="muted small">${d ? `${d.avis ? `${esc(d.avis)}: ` : ""}${d.total} klare opskrifter bruger noget fra avisen.` : ""} Prisen er anslået med én pakke af hver vare. En vare, der ikke er markeret <i>Altid præcis denne</i>, kan erstattes af en tilbudsvare af samme slags.</p>
+      <div class="chips">${chip("cheapest", "Billigst pr. person")}${chip("offers", "Mest sparet")}</div>
+      ${c.error ? `<div class="banner error">${esc(c.error)}</div>` : ""}
+      ${c.loading ? '<p class="muted"><span class="spinner small"></span> Regner ugens priser ud …</p>' : ""}
+      ${d && !c.loading && !cards ? `<p class="muted">Ingen klare opskrifter bruger noget fra avisen.${d.catalog && !d.catalog.swept ? " REMA's opskrifter er ikke hentet endnu." : ""}</p>` : ""}
+      <div class="rr-grid">${cards}</div>
+      ${out.length && d ? `<p class="muted small">Ikke med: ${out.join(", ")}.</p>` : ""}
+    </div>`;
+  }
+
   _remaView() {
     const rr = this._rr;
     const pick = this._remaPick;
@@ -4179,10 +4236,11 @@ class Rema1000Panel extends HTMLElement {
     const seg = `<div class="seg subnav fit">
         <button class="${this._recipesSub === "week" ? "active" : ""}" data-action="recipes-sub" data-arg="week">Ugens<span class="wide"> opskrifter</span></button>
         <button class="${this._recipesSub === "collection" ? "active" : ""}" data-action="recipes-sub" data-arg="collection"><span class="wide">Opskriftsamling</span><span class="narrow">Samling</span>${this._state.recipes?.length ? ` (${this._state.recipes.length})` : ""}</button>
+        ${this._hasPrices() ? `<button class="${this._recipesSub === "offers" ? "active" : ""}" data-action="recipes-sub" data-arg="offers">Tilbud<span class="wide">sretter</span></button>` : ""}
         ${this._isRema() ? `<button class="${this._recipesSub === "rema" ? "active" : ""}" data-action="recipes-sub" data-arg="rema">REMA<span class="wide">-opskrifter</span></button>` : ""}
         <button class="${this._recipesSub === "sites" ? "active" : ""}" data-action="recipes-sub" data-arg="sites">Madsider</button>
       </div>`;
-    const view = { collection: () => this._collectionView(), rema: this._isRema() ? () => this._remaView() : null, sites: () => this._sitesView() }[this._recipesSub];
+    const view = { collection: () => this._collectionView(), offers: this._hasPrices() ? () => this._candView() : null, rema: this._isRema() ? () => this._remaView() : null, sites: () => this._sitesView() }[this._recipesSub];
     return (view ? "" : this._olderBanner()) + seg + (view ? view() : this._weekRecipesView());
   }
 
@@ -5428,6 +5486,7 @@ const STYLE = `
   .rc-sugg-item .what b { font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rc-sugg-item .price { font-weight: 700; white-space: nowrap; } .rc-sugg-item .price.sale { color: var(--rema-sale); }
   @media (max-width: 600px) { .rc-prod, .rc-sugg { margin-left: 0; } }
+  .cand-swaps { margin: 0; padding-left: 16px; }
   .rc-missing { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: -2px; margin-bottom: 10px; }
   .rc-prod .check.inline { display: inline-flex; gap: 4px; margin-left: 8px; }
   .rc-photo { width: 100%; max-height: 260px; object-fit: cover; border-radius: 12px; margin: 4px 0 10px; }

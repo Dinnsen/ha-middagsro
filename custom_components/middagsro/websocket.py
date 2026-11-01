@@ -22,6 +22,7 @@ from .budget import (
     async_edit as async_purchase_edit,
     summary as budget_summary,
 )
+from .candidates import SORTS as CANDIDATE_SORTS, async_candidates
 from .chains import (
     CHAINS,
     REMA_ID,
@@ -1128,6 +1129,25 @@ async def ws_recipe_get(
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "middagsro/candidates",
+        ENTRY: str,
+        vol.Optional("start"): vol.Any(str, None),
+        vol.Optional("sort", default="cheapest"): vol.In(CANDIDATE_SORTS),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_candidates(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The week's dinners from the avis: ready recipes priced with its offers."""
+    planner = _entry(hass, msg).runtime_data.planner
+    start = parse_date(msg.get("start")) or planner.default_start()
+    connection.send_result(msg["id"], await async_candidates(planner, start, msg["sort"]))
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "middagsro/recipes/links",
         ENTRY: str,
         vol.Required("recipe"): dict,
@@ -1787,6 +1807,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_mealie_sync,
         ws_recipe_get,
         ws_recipe_links,
+        ws_candidates,
         ws_recipe_save,
         ws_recipe_delete,
         ws_recipe_rate,
