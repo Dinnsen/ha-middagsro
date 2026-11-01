@@ -16,7 +16,15 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import Catalog, RemaAuthError, RemaClient, RemaError, ShoppingList, is_insert, parse_time
+from .api import (
+    Catalog,
+    RemaAuthError,
+    RemaClient,
+    RemaError,
+    ShoppingList,
+    is_week_avis,
+    parse_time,
+)
 from .bilka import BilkaError
 from .const import DOMAIN, LIST_SCAN_INTERVAL, OFFERS_SCAN_INTERVAL, STORAGE_VERSION
 from .store_client import BilkaStoreClient
@@ -229,8 +237,9 @@ class RemaOffersCoordinator(DataUpdateCoordinator[OffersData]):
             await self._store.async_save({"first_seen": self._first_seen})
 
         # An insert (indstik) is part of its week's avis, whose offers it
-        # repeats; it is never the week's avis itself, nor next week's.
-        weekly = [c for c in catalogs if not is_insert(c, catalogs)]
+        # repeats, and a weeks-long avis without offers ("Meget Mere") is no
+        # week's avis either: neither is the week's avis itself, nor next week's.
+        weekly = [c for c in catalogs if is_week_avis(c, catalogs)]
         running = [
             c for c in weekly if c.valid_from and c.valid_to and c.valid_from <= now <= c.valid_to
         ]

@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.13.0b3] - 2026-11-01
+
+### Fixed
+- **A plan for next week made from the wrong avis:** REMA's "Meget Mere REMA 1000" (4 to 25 November, no offers) was taken for next week's avis, so *Lav madplan automatisk* made a plan for week 46 without any offers on 1 November. An avis without offers, or one that runs for more than ten days, is never a week's avis: it neither starts an automatic plan nor moves the start of the next plan.
+
 ## [2.13.0b2] - 2026-10-31
 
 ### Added

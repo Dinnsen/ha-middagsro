@@ -100,3 +100,26 @@ async def test_offers_none_running(
     mock_client.async_get_catalogs.return_value = []
     await coordinator.async_refresh()
     assert coordinator.data.upcoming is None
+
+
+async def test_weeks_long_avis_is_not_next_weeks(
+    hass: HomeAssistant, config_entry: MockConfigEntry, mock_client: MagicMock, freezer: Any
+) -> None:
+    """ "Meget Mere REMA 1000" came out on 1 November for 4 to 25 November, without
+    offers: it is not next week's avis (it started a plan for week 46)."""
+    freezer.move_to(NOW)
+    more = Catalog("more", "Meget Mere REMA 1000 ", datetime(2026, 10, 20, 23, tzinfo=UTC),
+                   datetime(2026, 11, 11, 22, 59, tzinfo=UTC), 0)  # fmt: skip
+    long_with_offers = Catalog("long", "Jul", datetime(2026, 10, 19, 23, tzinfo=UTC),
+                               datetime(2026, 11, 20, 22, 59, tzinfo=UTC), 40)  # fmt: skip
+    mock_client.async_get_catalogs.return_value = [more, long_with_offers, CURRENT]
+    config_entry.add_to_hass(hass)
+    coordinator = RemaOffersCoordinator(hass, config_entry, mock_client)
+    await coordinator.async_refresh()
+    assert coordinator.data.current is CURRENT
+    assert coordinator.data.upcoming is None
+    assert {c.id for c in coordinator.data.catalogs} == {"more", "long", "cat-42"}
+
+    mock_client.async_get_catalogs.return_value = [more, CURRENT, UPCOMING]
+    await coordinator.async_refresh()
+    assert coordinator.data.upcoming is UPCOMING
