@@ -548,6 +548,7 @@ async def ws_send(
         vol.Required("type"): "middagsro/freezer/generate",
         ENTRY: str,
         vol.Required("count"): vol.In([4, 5]),
+        vol.Optional("use_freezer", default=False): bool,
         vol.Optional("note"): vol.All(str, vol.Length(max=2000)),
     }
 )
@@ -566,7 +567,9 @@ async def ws_freezer_generate(
 
     async def generate() -> None:
         try:
-            await async_generate_freezer(planner, msg["count"], msg.get("note"))
+            await async_generate_freezer(
+                planner, msg["count"], msg.get("note"), use_freezer=msg["use_freezer"]
+            )
         except Exception as err:  # match the weekly background task's error reporting
             if isinstance(err, ValueError) or getattr(err, "translation_key", "") in (
                 "ai_no_credit",

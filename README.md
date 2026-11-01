@@ -13,22 +13,36 @@
   <a href="https://buymeacoffee.com/dinnsen"><img alt="Buy Me a Coffee" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-ffdd00?style=flat-square&logo=buymeacoffee&logoColor=black"></a>
 </p>
 
-# Middagsro – meal plans and REMA 1000 shopping in Home Assistant
+# Middagsro – meal plans and grocery shopping in Home Assistant
 
 🇩🇰 [Læs på dansk](README.da.md)
 
-**Middagsro** (Danish for *dinner calm*) plans the week's dinners with AI from REMA 1000's weekly offers (*tilbudsavis*), brings the recipes up in the kitchen, keeps the family's recipe collection and sends the shopping list straight to the REMA 1000 app with one tap. The shopping list in the app also becomes a to-do list in Home Assistant, so you can add items by voice, from an automation or from a dashboard.
+**Middagsro** (Danish for *dinner calm*) plans dinner with AI from shop offers,
+shows recipes and keeps track of shopping, the food budget and ingredient inventory.
+Choose REMA 1000, Bilka or another supported chain. REMA's shopping list and the
+BilkaToGo cart connect directly to Home Assistant; other shops use a local list.
 
 > [!NOTE]
-> Unofficial integration, not made by or affiliated with REMA 1000 or the other chains it shows offers from. REMA 1000 has no public API, so the integration uses the same calls as rema1000.dk and the web shop. It may stop working if REMA changes its site. For personal use with your own REMA 1000 account in Denmark. The panel and the meal plans are in Danish.
+> Unofficial integration, not made by or affiliated with REMA 1000 or the other chains it shows offers from. REMA 1000 has no public API, so the integration uses the same calls as rema1000.dk and the web shop. It may stop working if REMA changes its site. For personal use in Denmark. The panel and the meal plans are in Danish.
 
-**Contents:** [Features](#features) · [Food budget](#food-budget-økonomi) · [Dashboard cards](#cards-for-your-own-dashboards) · [Requirements](#requirements) · [Installation](#installation) · [Setup](#setup) · [Settings](#settings-in-the-panel) · [Entities](#entities) · [Actions](#actions) · [Examples](#examples) · [How it works](#how-it-works) · [Limitations](#known-limitations) · [Troubleshooting](#troubleshooting) · [Removal](#removing-the-integration) · [Privacy](#privacy)
+**Contents:** [Features](#features) · [Food budget](#food-budget-økonomi) · [Spisekammer](#spisekammer-ingredient-inventory) · [Navigation](#customize-navigation) · [Dashboard cards](#cards-for-your-own-dashboards) · [Requirements](#requirements) · [Installation](#installation) · [Setup](#setup) · [Settings](#settings-in-the-panel) · [Entities](#entities) · [Actions](#actions) · [Examples](#examples) · [How it works](#how-it-works) · [Limitations](#known-limitations) · [Troubleshooting](#troubleshooting) · [Removal](#removing-the-integration) · [Privacy](#privacy)
 
 ## Features
 
-**Switch between installed shops:** Use **Vi handler i** above the panel to select an account already added to Middagsro. Choose to carry the displayed plan (rematched/repriced for the destination shop) or start planning a new one. Existing history and sent-item flags are preserved; switching never writes to a cart or invokes AI. Household, allergies, pantry and food preferences follow; budgets, fixed weekly items and other account settings stay separate. Optionally remember the copy/new choice and reset it with **Spørg mig igen**. The active account is persisted across restarts and also selected by default dashboard subscriptions. Credentials and Bilka pickup stores are still changed through Reconfigure.
-
 The integration adds a **Middagsro panel** to the sidebar. It follows your Home Assistant theme, light and dark mode, and works on a computer, tablet and phone, where the tabs sit at the bottom and you can swipe between them.
+
+### Switch between shops
+
+When several shops are configured, use **Vi handler i** to select the active one.
+Carry the displayed plan and match its products/prices for the new shop, or start
+a new plan. History is preserved and items already sent stay sent. The choice can
+be remembered and reset with **Spørg mig igen**. The active shop survives restarts
+and is also used by dashboard cards.
+
+Household, allergies, pantry staples and food preferences follow. Budgets, fixed
+weekly items and other shop settings stay separate. Credentials and the Bilka
+pickup store are changed through **Reconfigure**. Switching does not send groceries
+or invoke AI.
 
 ### The week's meal plan, made with AI
 
@@ -146,6 +160,27 @@ The **Opskrifter** (recipes) tab has three pages: **Ugens opskrifter** (the week
 
 Below the controls for a new meal plan you can make a separate **freezer plan** with four or five dishes for one cooking day – with its own wishes (*Ønsker til fryserretterne*), apart from the week's. Open it and choose portions for each dish, e.g. 16. Ingredients and the combined shopping list are recalculated from the recipe's four portions, without the household percentage or fixed weekly items. Rice and pasta for the eating day are not part of the freezer shopping. Portions lock once the groceries are sent. Freezer plans are kept apart and don't change the week's plan or the calendar.
 
+### Spisekammer (ingredient inventory)
+
+Open **Spisekammer** from the navigation (under **Mere** on phones unless selected
+as a shortcut). Add ingredients and quantities, e.g. *hakket oksekød, 800 g*.
+Inventory is shared across shops. New weekly plans and **Månedens frysermad** use
+it by default, with an opt-out for each new plan.
+
+Recipes retain full quantities. The shopping page explains what comes from inventory
+and only missing amounts are purchased. Changing freezer-plan portions recalculates
+shopping and planned usage without deducting stock.
+
+At the dish or recipe, **Retten er lavet** asks which inventory ingredients were
+actually used. Only checked quantities are deducted, once per dish. **Ikke nu**
+changes nothing. Freezer portions lock after usage is confirmed or a cart transfer
+starts.
+
+Plans do not reserve stock. Correct ingredients used elsewhere and check quantities
+before the next plan. Stock updates affect new plans. Matching is conservative:
+same ingredient names and compatible units, without guessing between pieces and
+grams. A recipe changed after planning requires manual stock correction for that dish.
+
 ### Overrask os (surprise us)
 
 <img src="docs/images/new-plan.png" alt="A new meal plan: first day, wishes, days to skip, Lav ny madplan and Overrask os" width="40%" align="right">
@@ -160,7 +195,7 @@ Above the buttons you choose the first day, write **wishes for this plan** and t
 
 <img src="docs/images/chains.png" alt="Round logos of other chains on the front page and items that are cheaper elsewhere in the shopping list" width="100%">
 
-Middagsro is still about REMA 1000, but under **Indstillinger → Andre butikker** you can choose other chains you also shop in (Netto, Lidl, føtex, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, Brugsen, SPAR, Løvbjerg, Min Købmand, ABC Lavpris).
+Under **Indstillinger → Andre butikker** you can choose other chains you also shop in (Netto, Lidl, føtex, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, Brugsen, SPAR, Løvbjerg, Min Købmand, ABC Lavpris).
 
 - REMA 1000's logo comes first: its page shows all the offers in REMA's avis.
 
@@ -186,6 +221,14 @@ From the shopping list: fruit and vegetables, fish (and oily fish), red meat and
 ### Settings in sub-pages
 
 The settings are split into pages – meal plan and week, food budget, the family, dishes, shopping, what the AI must remember, nutrition, other shops, watch list and notifications, Mealie and the app – each with a short summary of what is chosen.
+
+### Customize navigation
+
+Open **Tilpas menu** next to the desktop navigation or under **Mere** on phones.
+Choose and reorder desktop pages and the four phone shortcuts independently.
+All remaining pages stay reachable under **Mere**. Preferences are stored in the
+current browser/app on the device. **Gendan standard**, then **Gem menu**, restores
+the defaults.
 
 ### Made for the kitchen and the sofa
 
@@ -436,7 +479,7 @@ The entity IDs depend on the account's name and your language; find them under *
 
 ## Known limitations
 
-- Only REMA 1000 **Denmark** and only your **primary** shopping list (the one the app shows).
+- REMA 1000 uses the account's **primary** shopping list in Denmark. BilkaToGo uses the cart for the selected pickup store.
 - The panel, meal plans and recipes are in Danish.
 - Prices are REMA's web prices and can differ from the shop. Offers outside the catalogue (e.g. local in-store offers) are not known.
 - Some ingredients have no safe REMA product (e.g. a cut of beef REMA doesn't sell). They are marked for your check, go on the list as text if you send them anyway, and are not counted in the price.
@@ -462,7 +505,11 @@ Feel free to open an [issue](https://github.com/Dinnsen/ha-middagsro/issues) wit
 
 ## Privacy
 
-Your REMA 1000 login is stored in Home Assistant and only sent to REMA 1000. For the meal plan, the integration sends your settings, the week's offers, your favourite dishes, your wishes for the plan and the dishes of the last weeks (so they are not repeated) to the AI service you have chosen in Home Assistant – never your login or your e-mail.
+Credentials are stored in Home Assistant and used with the selected shop's login service.
+For meal planning, settings, offers, favourite dishes, wishes and previous meals are
+sent to the selected AI service. When Spisekammer is used, ingredient names and
+quantities are included. Credentials and email are not sent to the AI. Navigation
+preferences are stored locally in the browser.
 
 ## Support
 
@@ -471,30 +518,3 @@ If you like Middagsro, you can [buy me a coffee](https://buymeacoffee.com/dinnse
 ## Licence
 
 [MIT](LICENSE). The home-screen app includes [home-assistant-js-websocket](https://github.com/home-assistant/home-assistant-js-websocket) under the Apache-2.0 licence. REMA 1000 is a trademark of its owner; this project is not affiliated with REMA 1000 or the other chains. The other chains' names and logos are only used to show their offers.
-
-
-### Raw material inventory (test)
-
-Open **Råvarelager** from the navigation (under **Mere** on phones by default). Quantities are shared across shops;
-new weekly plans use stock by default, with a **Brug råvarer fra fryseren** opt-out.
-Recipes retain full amounts. The shopping page explicitly lists quantities omitted
-because they come from inventory. On each relevant dinner and its recipe, **Retten
-er lavet** asks which ingredients were actually used; only checked ingredients are
-deducted. Durable receipts prevent a second deduction after retries or shop switches.
-Changed recipes require manual stock correction, rather than using stale amounts.
-Unattributable usage stays visible as a separate manual group. Legacy whole-plan
-receipts remain valid. Plans do not reserve stock. Updates affect new plans; correct
-stock used elsewhere. Matching is conservative: same names, preparation removed,
-compatible mass/volume/count units. No piece-to-gram guesses, cooked meals or barcode
-scanning yet.
-
-
-### Custom navigation
-
-Use **Tilpas menu** next to the desktop navigation or under **Mere** on phones.
-Choose and reorder desktop pages and the four phone shortcuts independently.
-Every remaining page stays available under **Mere**, including Settings.
-**Gendan standard**, followed by **Gem menu**, restores the defaults. Preferences
-are local to this browser/app on the device and do not change household HA settings.
-The budget booking form adapts to card width, with labelled, equal-size amount/date
-fields and a separate submit row on narrow cards.

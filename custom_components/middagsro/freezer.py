@@ -10,6 +10,7 @@ import uuid
 
 from homeassistant.util import dt as dt_util
 
+from .inventory import apply_inventory, inventory, prompt_items
 from .mealplan import MealPlanner, recipe_line
 from .recipes import scale_amount
 from .words import is_tap_water, pantry_words
@@ -36,7 +37,8 @@ def build_prompt(settings: dict[str, Any], count: int, note: str) -> str:
         f"Ønsker til maden: {settings.get('wishes', '')}. "
         f"Familiens faste ønsker: {json.dumps(settings.get('rules', []), ensure_ascii=False)}. "
         f"Ønsker til fryserplanen: {note[:2000]}. "
-        'Svar KUN JSON: {"days":[{"dish":"Kødsovs","servings":4,'
+        + prompt_items(settings.get("_freezer_inventory") or [])
+        + 'Svar KUN JSON: {"days":[{"dish":"Kødsovs","servings":4,'
         '"ingredients":[{"name":"Hakket oksekød","amount":"400 g"}],'
         '"steps":[{"text":"Brun kødet.","minutes":5}],'
         '"active_minutes":20,"total_minutes":60,"tip":"Server med friskkogt pasta."}]}.'
@@ -69,14 +71,17 @@ def _shopping(plan: dict[str, Any], settings: dict[str, Any]) -> list[dict[str, 
 
 async def _price(planner: MealPlanner, plan: dict[str, Any]) -> None:
     lines = _shopping(plan, planner.store.settings)
-    await planner._async_price_lines(lines, [])
     plan["shopping"] = lines
-    plan["total"] = round(sum(line.get("cost") or 0 for line in lines), 2)
+    if plan.get("use_freezer"):
+        plan.pop("freezer_applied", None)
+        apply_inventory(plan, plan.get("inventory_snapshot") or [])
+    await planner._async_price_lines(plan["shopping"], [])
+    plan["total"] = round(sum(line.get("cost") or 0 for line in plan["shopping"]), 2)
     plan.pop("missing_products", None)
 
 
 async def async_generate(
-    planner: MealPlanner, count: int, note: str | None = None
+    planner: MealPlanner, count: int, note: str | None = None, *, use_freezer: bool = False
 ) -> dict[str, Any]:
     """Create a batch plan independently of the weekly calendar and household settings.
 
@@ -88,8 +93,14 @@ async def async_generate(
     if note is not None:
         planner.store.freezer_note = " ".join(note.split())[:2000]
         await planner.store.async_save()
+    snapshot = inventory(planner.hass).items if use_freezer else []
     raw = await planner._async_ask_ai(
-        build_prompt(planner.store.settings, count, planner.store.freezer_note), "Fryserplan"
+        build_prompt(
+            {**planner.store.settings, "_freezer_inventory": snapshot},
+            count,
+            planner.store.freezer_note,
+        ),
+        "Fryserplan",
     )
     raw_days = raw.get("days")
     if not isinstance(raw_days, list) or len(raw_days) != count:
@@ -112,6 +123,8 @@ async def async_generate(
     plan = {
         "id": uuid.uuid4().hex[:12],
         "kind": "freezer",
+        "use_freezer": use_freezer,
+        "inventory_snapshot": snapshot,
         "created": dt_util.now().isoformat(),
         "title": f"Fryserplan · {today.strftime('%d/%m/%Y')}",
         "start_date": today.isoformat(),
@@ -151,12 +164,18 @@ async def _async_portions(
     if not 1 <= portions <= 100:
         raise ValueError("Vælg mellem 1 og 100 portioner.")
     # Once a transfer has started, changing totals could duplicate or underbuy products.
+    confirmed = inventory(planner.hass).data.get("confirmed", {})
     if (
         plan.get("portions_locked")
+        or plan["id"] in inventory(planner.hass).data["consumed"]
+        or any(g["id"] in confirmed for g in plan.get("freezer_groups") or [])
+        or any(day.get("inventory_group_id") in confirmed for day in plan["days"])
         or plan.get("sent_at")
         or any(line.get("sent") for line in plan["shopping"])
     ):
-        raise ValueError("Ret portioner før varer sendes til kurven. Lav en ny fryserplan.")
+        raise ValueError(
+            "Ret portioner før varer sendes eller lagerforbrug bekræftes. Lav en ny fryserplan."
+        )
     candidate = copy.deepcopy(plan)
     day = next((d for d in candidate["days"] if d["date"] == day_date), None)
     if day is None:

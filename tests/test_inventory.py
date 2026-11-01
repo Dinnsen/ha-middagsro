@@ -184,7 +184,7 @@ async def test_generation_prompt_and_real_package_reduction(hass, init_integrati
     ai = FakeAI(json.dumps(ai_answer(mp.plan_dates(START, 7, {SKIP}), SHOPPING)))
     with patch("homeassistant.components.ai_task.async_generate_data", ai):
         plan = await planner.async_generate(START, {SKIP}, use_freezer=True)
-    assert "RÅVARER I FRYSEREN" in ai.prompts[0]
+    assert "RÅVARER I SPISEKAMMERET" in ai.prompts[0]
     assert "Spaghetti: 1600 g" in ai.prompts[0]
     pasta = next(row for row in plan["shopping"] if row["name"] == "Spaghetti")
     assert pasta["amount"] == 400

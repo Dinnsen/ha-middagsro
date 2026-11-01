@@ -13,22 +13,35 @@
   <a href="https://buymeacoffee.com/dinnsen"><img alt="Buy Me a Coffee" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-ffdd00?style=flat-square&logo=buymeacoffee&logoColor=black"></a>
 </p>
 
-# Middagsro – madplan og REMA 1000-indkøb i Home Assistant
+# Middagsro – madplan og indkøb i Home Assistant
 
 🇬🇧 [Read this in English](README.md)
 
-**Middagsro** laver ugens aftensmad med AI ud fra REMA 1000's tilbudsavis, får opskrifterne frem i køkkenet, holder styr på familiens opskriftsamling og sender indkøbslisten direkte til REMA 1000-appen med ét tryk. Din indkøbsliste i appen bliver samtidig en to-do-liste i Home Assistant, så du også kan tilføje varer med stemmen, fra en automatisering eller fra et dashboard.
+**Middagsro** laver ugens aftensmad med AI ud fra butikkernes tilbud, viser opskrifterne
+og holder styr på familiens indkøb, madbudget og Spisekammer. Vælg REMA 1000,
+Bilka eller en anden understøttet kæde. REMA-listen og BilkaToGo-kurven kan bruges
+direkte fra Home Assistant; andre butikker bruger en lokal indkøbsliste.
 
 > [!NOTE]
-> Uofficiel integration, ikke lavet af eller tilknyttet REMA 1000 eller de andre kæder, den viser tilbud fra. REMA 1000 har ikke et offentligt API, så integrationen bruger de samme kald som rema1000.dk og webshoppen. Den kan holde op med at virke, hvis REMA ændrer deres side. Kun til personlig brug med din egen REMA 1000-konto i Danmark.
+> Uofficiel integration, ikke lavet af eller tilknyttet REMA 1000 eller de andre kæder, den viser tilbud fra. REMA 1000 har ikke et offentligt API, så integrationen bruger de samme kald som rema1000.dk og webshoppen. Den kan holde op med at virke, hvis REMA ændrer deres side. Til personlig brug i Danmark.
 
-**Indhold:** [Funktioner](#funktioner) · [Madbudget](#madbudget-økonomi) · [Kort til dashboards](#kort-til-dashboards) · [Krav](#krav) · [Installation](#installation) · [Opsætning](#opsætning) · [Indstillinger](#indstillinger-i-panelet) · [Entiteter](#entiteter) · [Handlinger](#handlinger) · [Eksempler](#eksempler) · [Sådan virker det](#sådan-virker-det) · [Begrænsninger](#kendte-begrænsninger) · [Fejlfinding](#fejlfinding) · [Fjern integrationen](#fjern-integrationen)
+**Indhold:** [Funktioner](#funktioner) · [Madbudget](#madbudget-økonomi) · [Spisekammer](#spisekammer) · [Menu](#tilpas-menuen) · [Kort til dashboards](#kort-til-dashboards) · [Krav](#krav) · [Installation](#installation) · [Opsætning](#opsætning) · [Indstillinger](#indstillinger-i-panelet) · [Entiteter](#entiteter) · [Handlinger](#handlinger) · [Eksempler](#eksempler) · [Sådan virker det](#sådan-virker-det) · [Begrænsninger](#kendte-begrænsninger) · [Fejlfinding](#fejlfinding) · [Fjern integrationen](#fjern-integrationen)
 
 ## Funktioner
 
-**Skift mellem jeres butikker:** Når flere butiksopsætninger er tilføjet under Middagsro, vælger I den aktive butik i **Vi handler i** øverst i panelet. Vælg **Tag madplanen med** for at kopiere den viste plan og finde den nye butiks varer/priser, eller **Start en ny madplan** for selv at vælge startdag og lave en ny. Historikken beholdes; allerede sendte varer sendes ikke igen. Butiksskiftet sender ingen varer og starter ikke AI. Familie, allergier, basisvarer og madønsker følger med; budget, faste ugevarer og andre butiksindstillinger beholdes separat. **Husk valget** gemmer valget til fremtidige skift; **Spørg mig igen** nulstiller det. Den aktive butik gælder også Middagsros dashboardkort og huskes efter genstart. Login og Bilka-varehus ændres fortsat via Omkonfigurér.
-
 Integrationen lægger et **Middagsro-panel** i sidebaren. Det følger dit Home Assistant-tema, lys og mørk tilstand, og virker lige godt på computer, tablet og telefon, hvor fanerne ligger i bunden, og man kan stryge mellem dem.
+
+### Skift mellem butikker
+
+Når flere butikker er tilføjet, vælger I den aktive butik i **Vi handler i**.
+Tag den viste madplan med og få varer/priser tilpasset den nye butik, eller start
+en ny plan. Historikken beholdes, og allerede sendte varer sendes ikke igen.
+Valget kan huskes og nulstilles med **Spørg mig igen**. Den aktive butik huskes
+efter genstart og bruges også af dashboardkortene.
+
+Familie, allergier, basisvarer og madønsker følger med. Budget, faste ugevarer og
+andre butiksindstillinger holdes separate. Login og Bilka-varehus ændres under
+**Omkonfigurér**. Butiksskiftet sender ikke varer til kurven og bruger ikke AI.
 
 ### Ugens madplan, lavet med AI
 
@@ -143,7 +156,28 @@ Fanen **Opskrifter** har tre sider: **Ugens opskrifter** som hidtil, **Opskrifts
 
 ### Månedens frysermad
 
-Under knapperne til en ny madplan kan I lave en særskilt **fryserplan** med 4 eller 5 retter til én maddag – med sine egne ønsker (*Ønsker til fryserretterne*), adskilt fra ugens. Åbn planen, og vælg portioner for hver ret, fx 16. Ingredienser og den samlede indkøbsliste regnes om fra opskriftens 4 portioner, uden familiens portionsprocent og faste ugevarer. Ris og pasta til spisedagen er ikke med i fryserindkøbet. Portionsvalget låses, når varerne er sendt. Fryserplaner gemmes for sig og ændrer ikke ugens madplan eller kalenderen.
+Under knapperne til en ny madplan kan I lave en særskilt **fryserplan** med 4 eller 5 retter til én maddag – med sine egne ønsker (*Ønsker til fryserretterne*), adskilt fra ugens. Åbn planen, og vælg portioner for hver ret, fx 16. Ingredienser og den samlede indkøbsliste regnes om fra opskriftens 4 portioner, uden familiens portionsprocent og faste ugevarer. Ris og pasta til spisedagen er ikke med i fryserindkøbet. Portionsvalget låses, når overførsel er startet eller lagerforbrug er bekræftet. Fryserplaner gemmes for sig og ændrer ikke ugens madplan eller kalenderen.
+
+### Spisekammer
+
+Åbn **Spisekammer** i menuen (på telefonen under **Mere**, medmindre I vælger det
+som genvej). Tilføj råvarer og mængder, fx *hakket oksekød, 800 g*. Lageret er fælles
+for butikkerne. Nye ugeplaner og **Månedens frysermad** bruger lageret som standard;
+det kan slås fra for den enkelte nye plan.
+
+Opskrifterne beholder de fulde mængder. Under **Indkøb** vises, hvad der kommer fra
+spisekammeret, og kun manglende mængder købes. Fryserplanens indkøb og lagerforbrug
+beregnes igen, når portionerne ændres, uden at lageret trækkes ned.
+
+Tryk **Retten er lavet** ved retten eller opskriften, og markér de råvarer fra
+spisekammeret, I faktisk brugte. Kun de markerede mængder trækkes fra, én gang pr.
+ret. **Ikke nu** ændrer intet. Fryserplanens portioner låses, når forbrug er
+bekræftet eller overførsel til kurven er startet.
+
+Planer reserverer ikke lager. Ret det, hvis råvarer bruges til andet, og kontrollér
+beholdningen før næste plan. Lagerændringer gælder nye planer. Der matches forsigtigt
+på råvarenavn og kompatible enheder; styk omregnes ikke til gram ved et gæt.
+Ændres en opskrift efter planlægning, skal lagerforbruget rettes manuelt for den ret.
 
 ### Overrask os
 
@@ -159,7 +193,7 @@ Over knapperne vælger I første dag, skriver **ønsker til netop denne plan** o
 
 <img src="docs/images/chains.png" alt="Runde logoer for andre kæder på forsiden og varer, der er billigere andre steder, i indkøbslisten" width="100%">
 
-Middagsro handler stadig om REMA 1000, men under **Indstillinger → Andre butikker** kan I vælge andre kæder, I også handler i (Netto, Lidl, føtex, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, Brugsen, SPAR, Løvbjerg, Min Købmand og ABC Lavpris).
+Under **Indstillinger → Andre butikker** kan I vælge andre kæder, I også handler i (Netto, Lidl, føtex, Bilka, 365discount, MENY, SuperBrugsen, Kvickly, Brugsen, SPAR, Løvbjerg, Min Købmand og ABC Lavpris).
 
 - REMA 1000's logo står først: siden viser alle tilbud i REMA's avis.
 
@@ -185,6 +219,14 @@ Ud fra indkøbslisten: frugt og grønt, fisk (og fed fisk), rødt kød og bælgf
 ### Indstillinger i undermenuer
 
 Indstillingerne er delt op i sider – madplan og uge, madbudget, familien, retter, indkøb, det AI'en skal huske, næring, andre butikker, overvågning og beskeder, Mealie og appen – hver med et kort overblik over, hvad der er valgt.
+
+### Tilpas menuen
+
+Åbn **Tilpas menu** ved computerens menulinje eller under **Mere** på telefonen.
+Vælg sider og rækkefølge separat til computer og telefon. Telefonen viser fire
+valgte genveje plus **Mere**, hvor alle øvrige sider stadig kan åbnes.
+Valgene gemmes i den aktuelle browser/app på enheden. **Gendan standard** efterfulgt
+af **Gem menu** gendanner de oprindelige valg.
 
 ### Lavet til køkkenet og sofaen
 
@@ -434,7 +476,7 @@ Entitets-id'erne afhænger af kontoens navn; find dem under **Indstillinger → 
 
 ## Kendte begrænsninger
 
-- Kun REMA 1000 **Danmark** og kun din **primære** indkøbsliste (den, appen viser).
+- REMA 1000 bruger kontoens **primære** indkøbsliste i Danmark. BilkaToGo bruger kurven for det valgte varehus.
 - Priserne er REMA's webpriser og kan afvige fra butikken. Tilbud uden for avisen (fx lokale tilbud i butikken) kendes ikke.
 - Nogle ingredienser har ingen sikker REMA-vare (fx friske krydderurter). De kommer på listen som tekst og tæller ikke med i prisen.
 - AI'en kan tage fejl. Tjek opskrifter og allergener, før I laver maden.
@@ -459,7 +501,10 @@ Opret gerne et [issue](https://github.com/Dinnsen/ha-middagsro/issues) med diagn
 
 ## Privatliv
 
-Dit REMA 1000-login gemmes i Home Assistant og sendes kun til REMA 1000. Til madplanen sender integrationen jeres indstillinger, ugens tilbud, jeres favoritretter, jeres ønsker til planen og de seneste ugers retter (så de ikke gentages) til den AI-tjeneste, du har valgt i Home Assistant – aldrig dit login eller din e-mail.
+Loginoplysninger gemmes i Home Assistant og bruges til den valgte butiks logintjeneste.
+Til madplanlægning sendes indstillinger, tilbud, favoritretter, ønsker og tidligere
+retter til den valgte AI-tjeneste. Bruges Spisekammeret, medsendes også råvarenavne
+og mængder. Login og e-mail sendes ikke til AI'en. Menuvalget gemmes lokalt i browseren.
 
 ## Støt projektet
 
@@ -468,34 +513,3 @@ Kan du lide Middagsro, kan du [give mig en kop kaffe](https://buymeacoffee.com/d
 ## Licens
 
 [MIT](LICENSE) © Christian Dinnsen. REMA 1000 og REMA 1000-logoet tilhører REMA 1000. Integrationen er ikke lavet af eller godkendt af REMA 1000 eller de andre kæder; deres navne og logoer bruges kun til at vise deres tilbud.
-
-
-### Råvarelager (test)
-
-Åbn **Råvarelager** i menuen (på telefonen under **Mere**, indtil du vælger det som genvej), og tilføj fx *hakket oksekød, 800 g*.
-Lageret er fælles for butikkerne. Nye ugentlige planer bruger lageret som standard;
-slå **Brug råvarer fra fryseren i denne madplan** fra, hvis det ikke skal bruges.
-AI'en prioriterer råvarerne. Indkøbslisten køber kun manglende mængder,
-og forklarer hvilke råvarer der kommer fra lageret; opskrifterne beholder de fulde mængder.
-
-Ved den enkelte ret, også på opskriftssiden, viser **Fra råvarelageret** mængderne.
-Tryk **Retten er lavet**, og markér de råvarer fra lageret, der faktisk blev brugt.
-Kun de markerede mængder trækkes fra, én gang pr. ret, også efter butiksskift.
-**Ikke nu** ændrer intet. En ændret opskrift kræver manuel lagerrettelse for den ret,
-så en gammel mængde ikke trækkes fra ved en fejl. Råvarer, som ikke kan knyttes til
-en opskrift, vises særskilt og bekræftes manuelt; de kobles ikke til en vilkårlig dag.
-
-Planer reserverer ikke lager. Ret lageret, hvis noget bruges til andet, og kontrollér
-det før næste plan. Nye lagerændringer gælder nye planer. Kun ens råvarenavne
-(tilberedning som finthakket fjernes) og kompatible g/kg, ml/l eller stk bruges.
-Der gættes ikke mellem styk og gram. Færdige fryserretter og stregkodescanning er ikke med.
-
-
-### Tilpas menuen
-
-**Tilpas menu** ved computerens menulinje eller under **Mere** på telefonen åbner
-menuvalget. Computer og telefon har hver sine valg: vælg synlige sider og flyt dem
-med pilene. Telefonen viser præcis fire valgte genveje plus **Mere**. Andre sider
-kan altid åbnes under **Mere**, også hvis fx Indstillinger skjules fra menulinjen.
-**Gendan standard** og **Gem menu** gendanner de oprindelige valg. Valgene gemmes
-kun i den aktuelle browser/app på enheden; de ændrer ikke familiens HA-indstillinger.

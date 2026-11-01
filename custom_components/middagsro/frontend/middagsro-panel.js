@@ -130,7 +130,7 @@ const TABS = [
   ["favorites", "Favoritter"],
   ["budget", "Økonomi"],
   ["health", "Sundhed"],
-  ["inventory", "Råvarelager"],
+  ["inventory", "Spisekammer"],
   ["history", "Historik"],
   ["settings", "Indstillinger"],
 ];
@@ -680,7 +680,6 @@ class Rema1000Panel extends HTMLElement {
         this._moreOpen = !this._moreOpen;
         this._render();
       },
-      "inventory-open": () => this._goTab("inventory"),
       "nav-open": () => {
         this._moreOpen = false;
         this._modal = { kind: "navigation", screen: matchMedia("(max-width: 700px)").matches ? "mobile" : "desktop", draft: { desktop: [...this._navigation.desktop], mobile: [...this._navigation.mobile] } };
@@ -702,7 +701,7 @@ class Rema1000Panel extends HTMLElement {
         const d = this._inventoryDraft || {};
         await this._ws("middagsro/inventory/edit", { item_id: d.id || null, name: d.name || "", amount: Number(String(d.amount || "").replace(",", ".")), unit: d.unit || "g" });
         this._inventoryDraft = {};
-      }, "Fryserlageret er gemt."),
+      }, "Spisekammeret er gemt."),
       "inventory-edit": () => { this._inventoryDraft = { ...(this._state.freezer_inventory || []).find(i => i.id === arg) }; this._render(); },
       "inventory-cancel": () => { this._inventoryDraft = {}; this._render(); },
       "inventory-delete": () => this._run(async () => { await this._ws("middagsro/inventory/delete", { item_id: arg }); if (this._inventoryDraft?.id === arg) this._inventoryDraft = {}; }, "Råvaren er fjernet."),
@@ -814,6 +813,7 @@ class Rema1000Panel extends HTMLElement {
         () => this._ws("middagsro/freezer/generate", {
           count: Number(arg),
           note: (this._freezerNote ?? this._state?.freezer_note ?? "").slice(0, 2000),
+          use_freezer: this._useFreezerBatch !== false,
         }),
         "Fryserplanen laves. Åbn den nedenfor, når den er klar."
       ),
@@ -1575,6 +1575,7 @@ class Rema1000Panel extends HTMLElement {
       if (selected) { if (el.checked) selected.add(ds.id); else selected.delete(ds.id); }
       return;
     }
+    if (ds.bind === "use-freezer-batch") { this._useFreezerBatch = el.checked; return; }
     if (ds.bind === "use-freezer") { this._useFreezer = el.checked; return; }
     if (ds.bind === "inventory-field") {
       this._inventoryDraft = { ...this._inventoryDraft, [ds.field]: el.value };
@@ -3255,7 +3256,7 @@ class Rema1000Panel extends HTMLElement {
           shopping: () => this._shoppingView(),
           favorites: () => this._favoritesView(),
           budget: () => this._budgetView(),
-          inventory: () => `<div class="card"><h1>Råvarelager</h1><p class="muted">Hold styr på råvarerne, I allerede har i fryseren.</p></div>${this._inventoryCard(true)}`,
+          inventory: () => `<div class="card"><h1>Spisekammer</h1><p class="muted">Hold styr på råvarerne, I allerede har hjemme.</p></div>${this._inventoryCard(true)}`,
           health: () => this._healthView(),
           history: () => this._historyView(),
           settings: () => this._settingsView(),
@@ -3356,10 +3357,6 @@ class Rema1000Panel extends HTMLElement {
     const node = this.shadowRoot.querySelector("#modal");
     if (!node) return;
     if (this._modal?.kind === "navigation") { node.innerHTML = this._navigationModal(); return; }
-    if (this._modal?.kind === "inventory") {
-      node.innerHTML = `<div class="scrim" data-action="modal-close"></div><div class="dialog wide" role="dialog" aria-modal="true" aria-label="Råvarelager"><div class="dialog-top"><h2>Råvarelager</h2><button class="btn" data-action="modal-close">Luk</button></div>${this._inventoryCard(true)}</div>`;
-      return;
-    }
     if (this._modal?.kind === "inventory-consume") {
       const m = this._modal;
       const items = m.group?.items || m.plan?.freezer_used || [];
@@ -3727,7 +3724,7 @@ class Rema1000Panel extends HTMLElement {
       return `<details class="fold" data-fold="days" ${open ? "open" : ""}><summary>Tilpas dagene${tailored ? ` <span class="badge">${tailored} ${tailored === 1 ? "dag" : "dage"}</span>` : ""}</summary>
         <p class="muted small">AI'en vælger retterne. Du kan selv vælge en ret eller springe en dag over.</p><div class="skipdays">${skip}</div></details>`;
     })() : ""}
-    ${(this._state?.freezer_inventory || []).length ? `<label class="check"><input type="checkbox" data-bind="use-freezer" ${this._useFreezer !== false ? "checked" : ""}> Brug råvarer fra fryseren i denne madplan</label><p class="muted small">Prioritér fryserens indhold. Kun manglende mængder købes; du bekræfter selv forbruget bagefter.</p>` : ""}
+    ${(this._state?.freezer_inventory || []).length ? `<label class="check"><input type="checkbox" data-bind="use-freezer" ${this._useFreezer !== false ? "checked" : ""}> Brug råvarer fra spisekammeret i denne madplan</label><p class="muted small">Prioritér spisekammerets indhold. Kun manglende mængder købes; du bekræfter selv forbruget bagefter.</p>` : ""}
     <div class="row wrap skipgo">
       <button class="btn primary" data-action="generate" ${generating || this._busy ? "disabled" : ""}>
         ${generating ? "Laves …" : aiLabel(label)}
@@ -3741,9 +3738,9 @@ class Rema1000Panel extends HTMLElement {
     const items = this._state?.freezer_inventory || [];
     const d = this._inventoryDraft || {};
     return `<details class="card fold" data-fold="inventory" ${open || this._folds?.has("inventory") ? "open" : ""}>
-      <summary><span class="fold-title">Råvarelager · fryser</span> <span class="badge">${items.length}</span></summary>
+      <summary><span class="fold-title">Råvarer på lager</span> <span class="badge">${items.length}</span></summary>
       <p class="muted small">Fælles lager for alle butikker. Skriv råvaren, fx hakket oksekød, og den samlede mængde. Råvarerne bruges automatisk til nye madplaner, medmindre du slår det fra.</p>
-      ${items.map(i => `<div class="row wrap"><span class="spacer">${esc(i.name)} · ${i.amount} ${esc(i.unit)}</span><button class="btn small" data-action="inventory-edit" data-arg="${esc(i.id)}">Ret</button><button class="btn small" data-action="inventory-delete" data-arg="${esc(i.id)}" ${this._busy ? "disabled" : ""}>Fjern</button></div>`).join("") || '<p class="muted">Fryserlageret er tomt.</p>'}
+      ${items.map(i => `<div class="row wrap"><span class="spacer">${esc(i.name)} · ${i.amount} ${esc(i.unit)}</span><button class="btn small" data-action="inventory-edit" data-arg="${esc(i.id)}">Ret</button><button class="btn small" data-action="inventory-delete" data-arg="${esc(i.id)}" ${this._busy ? "disabled" : ""}>Fjern</button></div>`).join("") || '<p class="muted">Spisekammeret er tomt.</p>'}
       <div class="row wrap inventory-fields">
         <label class="field">Råvare <input data-bind="inventory-field" data-field="name" maxlength="120" value="${esc(d.name || "")}" placeholder="Fx hakket oksekød"></label>
         <label class="field">Mængde <input data-bind="inventory-field" data-field="amount" type="number" min="0.001" max="100000" step="any" value="${esc(d.amount ?? "")}" placeholder="800"></label>
@@ -3761,7 +3758,7 @@ class Rema1000Panel extends HTMLElement {
     const confirmed = this._state?.freezer_confirmed || {};
     const list = items => `<ul>${items.map(i => `<li>${esc(i.name)}: ${i.amount} ${esc(i.unit)}</li>`).join("")}</ul>`;
     if (!groups.length && day) return "";
-    return `<div class="banner"><b>${shopping ? "Ikke på indkøbslisten – fra råvarelageret" : "Fra råvarelageret"}</b>
+    return `<div class="banner"><b>${shopping ? "Ikke på indkøbslisten – fra spisekammeret" : "Fra spisekammeret"}</b>
       <p class="small">${shopping ? "Disse mængder har I allerede. Hvis lageret kun dækker en del, købes resten." : "Disse mængder er ikke lagt på indkøbslisten. Opskriften viser den fulde mængde."}</p>
       ${groups.length ? groups.map(g => `<div><b>${esc(g.dish)}</b>${list(g.items)}${consumed || confirmed[g.id] ? `<p class="small">${consumed || confirmed[g.id]?.items?.length ? "Forbruget er registreret ✓" : "Bekræftet: råvarerne blev ikke brugt fra lageret."}</p>` : shopping ? "" : `<button class="btn small" data-action="inventory-consume-open" data-arg="${esc(plan.id)}|${esc(g.id)}" ${this._busy ? "disabled" : ""}>${g.day_id ? "Retten er lavet" : "Registrér forbrug"}</button>`}</div>`).join("") : `${list(used)}${consumed ? "Forbruget er registreret ✓" : shopping ? "" : `<button class="btn" data-action="inventory-consume-open" data-arg="${esc(plan.id)}" ${this._busy ? "disabled" : ""}>Registrér forbrug</button>`}`}
       ${!shopping && !consumed ? '<p class="muted small">Lageret ændres først, når du bekræfter forbruget.</p>' : ""}</div>`;
@@ -3784,13 +3781,15 @@ class Rema1000Panel extends HTMLElement {
       <p class="muted">Én maddag, flere aftener med nem mad. Lav en separat plan, og vælg bagefter portioner for hver ret.</p>
       <label class="field">Ønsker til fryserretterne <textarea data-bind="freezer-note" rows="2" maxlength="2000" placeholder="Fx gryderetter med kylling, ingen svampe">${esc(this._freezerNote ?? this._state?.freezer_note ?? "")}</textarea></label>
       <p class="muted small">Bruges kun til fryserplanen – ugens madplan har sine egne ønsker.</p>
+      ${(this._state?.freezer_inventory || []).length ? `<label class="check"><input type="checkbox" data-bind="use-freezer-batch" ${this._useFreezerBatch !== false ? "checked" : ""}> Brug råvarer fra spisekammeret til fryserretterne</label>` : ""}
       <div class="row wrap">${[4, 5].map(n => `<button class="btn" data-action="freezer-generate" data-arg="${n}" ${busy ? "disabled" : ""}>${aiLabel(`Lav en plan med ${n} retter`)}</button>`).join("")}</div>
       ${plans.length ? `<h3>Dine fryserplaner</h3><div class="batch-plans">${plans.map(p => `<button class="setting-row" data-action="freezer-open" data-arg="${esc(p.id)}"><span class="setting-text"><b>${esc(p.title)}</b><span class="muted small">${p.dishes?.length || ""} retter · ${kr(p.total)}</span></span><span class="chev" aria-hidden="true">›</span></button>`).join("")}</div>` : '<p class="muted small">Når planen er klar, kan du åbne den her. Den ændrer ikke ugens madplan.</p>'}
     </section>`;
   }
 
   _freezerView(plan) {
-    const locked = plan.portions_locked || plan.shopping.some(l => l.sent);
+    const consumed = (this._state?.freezer_consumed || []).includes(plan.id) || (plan.freezer_groups || []).some(g => Object.hasOwn(this._state?.freezer_confirmed || {}, g.id));
+    const locked = plan.portions_locked || plan.sent_at || plan.shopping.some(l => l.sent) || consumed || plan.days.some(d => Object.hasOwn(this._state?.freezer_confirmed || {}, d.inventory_group_id));
     const portions = day => {
       const values = [...new Set([4, 8, 12, 16, 20, 24, 32, 40, day.servings])].sort((a, b) => a - b);
       return `<label class="field batch-portions">Antal portioner <select data-bind="freezer-portions" data-date="${day.date}" aria-label="Portioner til ${esc(day.dish)}" ${locked || this._busy ? "disabled" : ""}>${values.map(n => `<option value="${n}" ${n === day.servings ? "selected" : ""}>${n} portioner</option>`).join("")}</select></label>`;
@@ -3800,7 +3799,8 @@ class Rema1000Panel extends HTMLElement {
       <ol class="batch-steps" aria-label="Sådan bruger du fryserplanen"><li>Retterne er valgt</li><li ${!locked ? 'aria-current="step"' : ""}>Vælg portioner</li><li ${locked ? 'aria-current="step"' : ""}>Gennemgå indkøb</li></ol>
       <p>Hvor meget vil I lave af hver ret? Vælg fx 16 portioner. Opskrift og indkøbsliste opdateres automatisk.</p>
       <p class="muted small">Familiens portionsprocent bruges ikke her. Ris og pasta til spisedagen købes separat.</p>
-      ${locked ? '<div class="banner info">Portionsvalget er låst, fordi overførsel til indkøbskurven er startet.</div>' : ""}
+      ${locked ? '<div class="banner info">Portionsvalget er låst, fordi overførsel er startet eller lagerforbrug er bekræftet.</div>' : ""}
+      ${this._inventoryUsage(plan)}
       <div class="batch-dishes">${plan.days.map((day, i) => `<article class="batch-dish"><div class="batch-dish-name"><span class="batch-number" aria-hidden="true">${i + 1}</span><h2>${esc(day.dish)}</h2></div>${portions(day)}
         ${day.tip ? `<p class="muted">${esc(day.tip)}</p>` : ""}
         <button class="btn small" data-action="open-day" data-arg="${esc(plan.id)}|${day.date}" aria-label="Se opskrift på ${esc(day.dish)}">Se opskrift</button></article>`).join("")}</div>

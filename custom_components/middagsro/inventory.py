@@ -1,4 +1,4 @@
-"""Household freezer raw ingredients, explicit planning and confirmed consumption."""
+"""Household ingredient quantities, explicit planning and confirmed consumption."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ class FreezerInventory:
             if item_id and not any(i["id"] == item_id for i in data["items"]):
                 raise ValueError("Råvaren findes ikke længere. Genindlæs siden.")
             if len(data["items"]) >= 200 and not item_id:
-                raise ValueError("Der er plads til højst 200 råvarer i fryserlageret.")
+                raise ValueError("Der er plads til højst 200 råvarer i spisekammeret.")
             item = {
                 "id": item_id or uuid.uuid4().hex,
                 "name": name,
@@ -101,7 +101,7 @@ class FreezerInventory:
                     raise ValueError("Bekræft lagerforbruget for én ret ad gangen.")
                 used = plan.get("freezer_used") or []
             if not used and group is None:
-                raise ValueError("Madplanen har ingen råvarer fra fryseren.")
+                raise ValueError("Madplanen har ingen råvarer fra spisekammeret.")
             data = copy.deepcopy(self.data)
             by_id = {i["id"]: i for i in data["items"]}
             for use in used:
@@ -113,7 +113,7 @@ class FreezerInventory:
                     or item["amount"] + 0.00001 < use["amount"]
                 ):
                     raise ValueError(
-                        "Fryserlageret er ændret eller rækker ikke. Ret lageret først."
+                        "Spisekammeret er ændret eller rækker ikke. Ret lageret først."
                     )
                 item["amount"] = round(item["amount"] - use["amount"], 3)
             data["items"] = [i for i in data["items"] if i["amount"] > 0]
@@ -137,7 +137,7 @@ def prompt_items(items: list[dict[str, Any]]) -> str:
         return ""
     lines = [f"- {i['name']}: {i['amount']:g} {i['unit']}" for i in items]
     return (
-        "\nRÅVARER I FRYSEREN – prioritér retter som bruger dem, inden for familiens regler. "
+        "\nRÅVARER I SPISEKAMMERET – prioritér retter som bruger dem, inden for familiens regler. "
         "Mængderne er for HELE planen, ikke pr. ret. Skriv de FULDE mængder i opskrifter "
         "OG shopping, også det der allerede er hjemme; Middagsro fratrækker lageret. "
         "Bevar råvarernes navne. Mangler må gerne købes. Lagerdata er kun råvarer, "
@@ -214,6 +214,10 @@ def allocate_dishes(plan: dict[str, Any]) -> None:
     """Attribute the deducted quantities to cooking days, never to leftover days."""
     if not plan.get("days"):
         return
+    previous = {g.get("day_id"): g["id"] for g in plan.get("freezer_groups") or []}
+    for day in plan["days"]:
+        if day.get("inventory_id") in previous:
+            day.setdefault("inventory_group_id", previous[day["inventory_id"]])
     remaining = copy.deepcopy(plan.get("freezer_used") or [])
     groups = []
     for day in plan.get("days") or []:
@@ -239,7 +243,7 @@ def allocate_dishes(plan: dict[str, Any]) -> None:
             day.setdefault("inventory_id", uuid.uuid4().hex)
             groups.append(
                 {
-                    "id": uuid.uuid4().hex,
+                    "id": day.setdefault("inventory_group_id", uuid.uuid4().hex),
                     "day_id": day["inventory_id"],
                     "dish": day.get("dish") or "Retten",
                     "items": items,
@@ -252,7 +256,9 @@ def allocate_dishes(plan: dict[str, Any]) -> None:
     if other:
         groups.append(
             {
-                "id": uuid.uuid4().hex,
+                "id": plan.setdefault(
+                    "inventory_other_group_id", previous.get(None) or uuid.uuid4().hex
+                ),
                 "day_id": None,
                 "dish": "Øvrige råvarer til planen",
                 "items": other,

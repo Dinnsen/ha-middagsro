@@ -1,13 +1,16 @@
 # Changelog
 
-All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
+All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
 ## Unreleased
 
 ### Added
-- Customize desktop navigation and the four phone shortcuts, including their order, with preferences saved per browser and all remaining pages reachable under More. Raw material inventory is a navigation page. Budget booking has labelled, equal-size amount/date fields and a responsive submit row for narrow cards.
-- Household freezer inventory for raw ingredients with measured quantities. Opt in when generating a weekly plan; full recipe amounts stay visible and only missing quantities are bought. The Raw materials navigation page opens the inventory. The shopping page explains omitted quantities. Consumption is confirmed per dish with individual ingredient checkboxes and durable receipts across accounts; recipe changes invalidate an old confirmation. Stock is enabled for new plans by default, with an opt-out. Plans do not reserve inventory; incompatible names/units are never guessed.
-- Select an installed grocery account directly in the panel. Choose to carry the current plan or start planning a new one, optionally remembering the choice. Carried plans are matched/priced for the new shop without cart writes; sent items stay sent and source history is preserved. Family/preferences follow; other account settings remain separate. The selected shop persists across restarts and is also used by default dashboard subscriptions.
+- **Spisekammer:** shared ingredient quantities for weekly and freezer plans. Shopping shows omitted amounts; usage is confirmed per dish and deducted once. Freezer portion changes recalculate shopping before cooking or cart transfer.
+- Switch installed shops from the panel, carry the current plan or start a new one, and optionally remember the choice. Carried plans get the destination shop's products/prices while retaining sent-item flags.
+- Customize desktop navigation and the four phone shortcuts, including their order. Preferences are saved per browser; remaining pages stay available under **Mere**.
+
+### Fixed
+- Budget booking uses labelled, equally sized amount/date inputs and a separate submit row on narrow cards.
 
 ## [2.13.0b2] - 2026-10-31
 
