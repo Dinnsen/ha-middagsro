@@ -2,6 +2,18 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.14.0b2] - 2026-11-01
+
+### Added
+- **Change or delete a purchase:** tap a purchase under *Økonomi › Køb* to change its amount, day, shop or note, or to delete it. Right after booking, the message has a *Fortryd* button, and the budget card on the plan has a link to the purchases.
+- **The food budget a week or a month:** choose whether you enter it per week or per month. A weekly amount is the same every day (1.400 kr. a week is 200 kr. a day), and the month is what its days add up to; the week and month views use the same budget either way.
+- **Take a skipped day back:** the days under *Springes over* can be tapped to bring the day back, with its dish, its items and its leftovers days as they were. A day skipped before this version comes back empty, for a new dish.
+- **Write a day yourself:** *Skriv på dagen* in a day's menu (Spiser ude, Skolefest …). There is no dinner to make that day, so the dish's own items leave the list; *Opdater madplan* keeps the day as you wrote it.
+
+### Fixed
+- **Items from a removed dish stayed on REMA's list:** when a sent item leaves the plan (a day deleted, skipped or written by hand, another dish chosen, *Har det*, *Forkert vare* or a deleted item), the amount sent is taken off REMA's list again, and the line is removed when nothing is left. A line ticked off in the app, or more of it you added yourselves, is left as it is.
+- **"Du ser en ældre madplan" on the newest plan:** after deleting a newer plan in the history, the plan you were looking at is the newest, and the banner is gone (also when the plan looked at was itself deleted).
+
 ## [2.14.0b1] - 2026-11-01
 
 ### Added

@@ -396,11 +396,15 @@ def food_conflicts(names: list[str], settings: dict[str, Any]) -> list[tuple[str
 # ------------------------------------------------------------------ checking a plan
 
 
+# A day the family wrote themselves ("Spiser ude", "Skolefest"): no dinner is made.
+TEXT_TYPE = "egen"
+
+
 def is_cooked(day: dict[str, Any]) -> bool:
-    """A day a dinner is made on (not leftovers, not emptied)."""
+    """A day a dinner is made on (not leftovers, not emptied, not a day written by hand)."""
     return (
         not day.get("uses_leftovers_from")
-        and day.get("type") not in ("rester", "tom")
+        and day.get("type") not in ("rester", "tom", TEXT_TYPE)
         and bool(day.get("dish"))
     )
 

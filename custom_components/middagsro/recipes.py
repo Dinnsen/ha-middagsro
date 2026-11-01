@@ -307,7 +307,7 @@ async def async_rate_day(
     if plan is None or picked is None:
         raise _invalid("day_not_found")
     day = cooked_day(plan, picked)
-    if not day.get("dish") or day.get("type") == "tom":
+    if not day.get("dish") or day.get("type") in ("tom", "egen"):
         raise _invalid("recipe_name_required")
     recipe = find_recipe(store, day.get("recipe_id")) or find_by_name(store, day["dish"])
     if recipe is None:

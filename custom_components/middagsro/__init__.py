@@ -130,7 +130,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
         shopping_list.mirror = _mirror
 
     planner = MealPlanner(
-        hass, entry.entry_id, client, store, catalogs, shopping_list.async_add_items
+        hass,
+        entry.entry_id,
+        client,
+        store,
+        catalogs,
+        shopping_list.async_add_items,
+        shopping_list.async_take_items,
     )
     if store_id == BILKA_ID and entry.data.get("bilka_rematch"):
         # Keep history intact; old product matches must be checked before send.

@@ -51,7 +51,9 @@ from .planedit import (
     async_edit_line,
     async_move_day,
     async_remove_line,
+    async_restore_day,
     async_review_line,
+    async_set_day_text,
     async_swap_dish,
     async_swap_options,
     cooked_day,
@@ -883,6 +885,45 @@ async def ws_day_clear(
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "middagsro/day/restore",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("date"): str,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_day_restore(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Take a skipped day back."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_restore_day(planner, msg["plan_id"], msg["date"])
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/day/text",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("date"): str,
+        vol.Required("text"): str,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_day_text(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Write a day by hand ("Spiser ude", "Skolefest")."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_set_day_text(planner, msg["plan_id"], msg["date"], msg["text"])
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "middagsro/day/move",
         ENTRY: str,
         vol.Required("plan_id"): str,
@@ -1684,6 +1725,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_plan_remove,
         ws_plan_refresh,
         ws_day_clear,
+        ws_day_restore,
+        ws_day_text,
         ws_day_move,
         ws_recipe_scan,
         ws_sites_search,

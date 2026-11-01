@@ -151,6 +151,31 @@ class RemaShoppingListCoordinator(DataUpdateCoordinator[ShoppingList]):
                     "BilkaToGo bekræftede ikke alle varer i kurven. Send listen igen for resten"
                 )
 
+    async def async_take_items(self, items: list[dict[str, Any]]) -> int:
+        """Take items ({product_id|name, amount}) off the primary list again: the
+        amount is lowered, and a line that gets to nothing is removed. A line that
+        is bought already is left as it is. Returns how many lines were changed."""
+        changed = 0
+        async with self._change:
+            shopping_list = await self.client.async_get_primary_list()
+            gone: list[int] = []
+            for item in items:
+                found = shopping_list.find(product_id=item.get("product_id"), name=item.get("name"))
+                if found is None or found.bought or found.id in gone:
+                    continue
+                left = found.amount - int(item.get("amount") or 1)
+                if left > 0:
+                    await self.client.async_update_item(shopping_list.id, found.id, amount=left)
+                    found.amount = left
+                else:
+                    gone.append(found.id)
+                changed += 1
+            if gone:
+                await self.client.async_delete_items(shopping_list.id, gone)
+            if changed:
+                await self.async_refresh()
+        return changed
+
     async def async_clear(self) -> int:
         """Remove every item from the primary list. Returns how many."""
         async with self._change:

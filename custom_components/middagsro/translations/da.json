@@ -208,6 +208,12 @@
     "recipe_failed": {
       "message": "Opskriften kunne ikke skrives: {error}"
     },
+    "day_not_skipped": {
+      "message": "Dagen er ikke sprunget over."
+    },
+    "day_text_required": {
+      "message": "Skriv, hvad der skal stå på dagen."
+    },
     "day_not_found": {
       "message": "Dagen findes ikke i madplanen."
     },

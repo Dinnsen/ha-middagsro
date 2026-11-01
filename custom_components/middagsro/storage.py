@@ -51,6 +51,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # The family's food budget a month (budget.py); 0 = not kept. With it, a plan's
     # budget is what is left of its week, and the economy page follows the spending.
     "monthly_budget": 0,
+    # Entered as an amount a week ("week") or a month ("month"). A weekly amount is
+    # the same every day (weekly / 7), and monthly_budget is then its month on average.
+    "budget_period": "month",
+    "weekly_budget": 0,
     "budget_notify": False,  # tell when 80 % of the week is used (to watch_notify's target)
     "budget_since": None,  # the day the monthly budget was first set (kept by the store)
     "organic": "prefer",
@@ -130,6 +134,11 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
     settings["days"] = _clamp(settings["days"], 1, 14, 7)
     settings["budget"] = _clamp(settings["budget"], 0, 100000, 500)
     settings["monthly_budget"] = _clamp(settings["monthly_budget"], 0, 1000000, 0)
+    if settings["budget_period"] not in ("month", "week"):
+        settings["budget_period"] = "month"
+    settings["weekly_budget"] = _clamp(settings["weekly_budget"], 0, 250000, 0)
+    if settings["budget_period"] == "week":
+        settings["monthly_budget"] = round(settings["weekly_budget"] * 365 / 12 / 7)
     settings["budget_notify"] = bool(settings["budget_notify"])
     try:
         settings["budget_since"] = (
@@ -248,7 +257,7 @@ def plan_period(plan: dict[str, Any]) -> tuple[str, str]:
 
 # The settings a plan is made from: changing one of them offers to update the plan.
 PLAN_SETTINGS = (
-    "days", "budget", "monthly_budget", "organic", "organic_max_extra_pct", "avoid",
+    "days", "budget", "monthly_budget", "budget_period", "weekly_budget", "organic", "organic_max_extra_pct", "avoid",
     "avoid_other", "allergies", "allergies_other", "household", "portion_percent",
     "must_haves", "min_vegetarian", "max_vegetarian", "leftover_days", "no_leftover_weekdays",
     "fixed_days", "max_cook_minutes_weekday", "pantry", "wishes", "egg_min", "milk_organic",
@@ -588,7 +597,7 @@ class RemaPlanStore:
             if (
                 day is None
                 or day.get("uses_leftovers_from")
-                or day.get("type") in ("rester", "tom")
+                or day.get("type") in ("rester", "tom", "egen")
             ):
                 continue
             dish = str(day.get("dish") or "").strip()

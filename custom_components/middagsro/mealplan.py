@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta
 import json
 import logging
@@ -34,6 +34,7 @@ from .chains import CHAINS, ChainError, ChainOffers, runs_on
 from .const import DOMAIN
 from .dishes import (
     SWAP_MARKS,
+    TEXT_TYPE,
     check_plan,
     day_wishes,
     fixed_rest_dates,
@@ -1226,6 +1227,20 @@ def own_shopping(plan: dict[str, Any], day: dict[str, Any]) -> list[dict[str, An
     ]
 
 
+def list_entry(line: dict[str, Any]) -> dict[str, Any]:
+    """A shopping line as it goes on the shop's list: a product, or a name."""
+    if line.get("product"):
+        return {"product_id": line["product"]["id"], "amount": line["packages"]}
+    if line.get("avis_item"):
+        # Only in the shops: the avis's name, as the webshop puts it on.
+        return {"name": line["avis_item"]["name"], "amount": line["packages"]}
+    amount = line.get("amount")
+    label = line["name"]
+    if amount and line.get("unit") and line["unit"] != "pk":
+        label += f" ({amount:g} {line['unit']})"
+    return {"name": label, "amount": int(line.get("packages") or 1)}
+
+
 class AddItems(Protocol):
     """Puts items ({product_id|name, amount}) on the REMA list, telling about each."""
 
@@ -1247,6 +1262,7 @@ class MealPlanner(ProductMatcher):
         store: RemaPlanStore,
         get_catalogs: Callable[[], tuple[Catalog | None, Catalog | None]],
         add_items: AddItems,
+        take_items: Callable[[list[dict[str, Any]]], Awaitable[int]] | None = None,
     ) -> None:
         """Initialize the planner."""
         self.hass = hass
@@ -1255,6 +1271,7 @@ class MealPlanner(ProductMatcher):
         self.store = store
         self._get_catalogs = get_catalogs
         self._add_items = add_items
+        self._take_items = take_items
         self._send_lock = asyncio.Lock()
         self.status: dict[str, Any] = {"state": "idle", "message": None, "started": None}
         self._task: asyncio.Task[None] | None = None
@@ -1383,6 +1400,14 @@ class MealPlanner(ProductMatcher):
             raise _invalid("no_ai_task")
         start = date.fromisoformat(plan["start_date"])
         skip = {d for d in (parse_date(v) for v in plan.get("skipped") or []) if d}
+        # A day the family wrote themselves ("Spiser ude") stays as it is.
+        skip |= {
+            d
+            for d in (
+                parse_date(day["date"]) for day in plan["days"] if day.get("type") == TEXT_TYPE
+            )
+            if d
+        }
         self._set_status("generating", "Opdaterer madplanen …")
         self._task = self.hass.async_create_background_task(
             self._async_run(start, False, skip, bool(plan.get("surprise")), {}, plan_id),
@@ -1978,6 +2003,18 @@ class MealPlanner(ProductMatcher):
             _LOGGER.info("The plan still breaks %d rule(s): %s", len(problems), "; ".join(problems))
         best["budget"] = settings["budget"]
         best["skipped"] = [d.isoformat() for d in skipped]
+        if base is not None:
+            # An update keeps the days the family wrote themselves, and the skipped
+            # days that can be taken back.
+            written = [dict(d) for d in base["days"] if d.get("type") == TEXT_TYPE]
+            dates_written = {d["date"] for d in written}
+            best["days"] = sorted(
+                [*(d for d in best["days"] if d["date"] not in dates_written), *written],
+                key=lambda d: d["date"],
+            )
+            best["skipped"] = [d for d in best["skipped"] if d not in dates_written]
+            aside = base.get("skipped_days") or {}
+            best["skipped_days"] = {k: v for k, v in aside.items() if k in best["skipped"]}
         best["note"] = note
         best["surprise"] = surprise
         await self._async_align_recipes(best, offers, self.price_time(start), late)
@@ -2717,17 +2754,7 @@ class MealPlanner(ProductMatcher):
         for line in lines:
             line.pop("on_list", None)
             line.setdefault("id", uuid.uuid4().hex[:8])
-            if line.get("product"):
-                item = {"product_id": line["product"]["id"], "amount": line["packages"]}
-            elif line.get("avis_item"):
-                # Only in the shops: the avis's name, as the webshop puts it on.
-                item = {"name": line["avis_item"]["name"], "amount": line["packages"]}
-            else:
-                amount = line.get("amount")
-                label = line["name"]
-                if amount and line.get("unit") and line["unit"] != "pk":
-                    label += f" ({amount:g} {line['unit']})"
-                item = {"name": label, "amount": int(line.get("packages") or 1)}
+            item = list_entry(line)
             if getattr(self.client, "cart", None) is not None:
                 item["transfer_id"] = (
                     f"{plan['id']}:{line['id']}:{plan.get('transfer_revision', 0)}"
@@ -2776,6 +2803,25 @@ class MealPlanner(ProductMatcher):
             await self.store.async_mark_sent(plan["id"], part)
         self._notify()
         return plan
+
+    async def async_unlist(self, lines: list[dict[str, Any]]) -> int:
+        """Take lines that were sent, and have left the plan, off the shop's list
+        again (the amount sent is taken off; a line bought already is left). The
+        lines are no longer sent. Returns how many list lines were changed."""
+        sent = [
+            line
+            for line in lines
+            if line.get("sent") and not line.get("buy_at") and not line.get("must_have")
+        ]
+        for line in sent:
+            line.pop("sent", None)
+        if not sent or self._take_items is None or getattr(self.client, "cart", None) is not None:
+            return 0
+        try:
+            return await self._take_items([list_entry(line) for line in sent])
+        except (RemaError, HomeAssistantError) as err:
+            _LOGGER.warning("Could not take the items off the list again: %s", err)
+            return 0
 
     async def _async_skip_listed(
         self, pairs: list[tuple[dict[str, Any], dict[str, Any]]]

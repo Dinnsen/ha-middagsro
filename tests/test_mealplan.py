@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
-from custom_components.middagsro import matching, mealplan as mp
+from custom_components.middagsro import matching, mealplan as mp, planedit as pe
 from custom_components.middagsro.api import Offer, RemaError
 from custom_components.middagsro.chains import ChainError
 from custom_components.middagsro.const import DOMAIN
@@ -1736,6 +1736,8 @@ async def test_update_plan_to_changed_settings(
     await client.send_json({"id": 1, "type": "middagsro/state"})
     assert (await client.receive_json())["result"]["settings_changed"] == changed
 
+    # A day the family wrote themselves stays as it is.
+    await pe.async_set_day_text(planner, first["id"], "2026-10-20", "Skolefest")
     ai = FakeAI(ai_answer(mp.plan_dates(START, 5), SHOPPING[:2]))
     with patch("homeassistant.components.ai_task.async_generate_data", new=ai):
         await client.send_json({"id": 2, "type": "middagsro/plan/update", "plan_id": first["id"]})
@@ -1746,6 +1748,9 @@ async def test_update_plan_to_changed_settings(
     assert plan is not None and plan["updated_from"] == first["id"]
     assert store.get_plan(first["id"]) is None  # replaced, not one more plan
     assert plan["start_date"] == first["start_date"] and len(plan["days"]) == 5
+    written = [d for d in plan["days"] if d["type"] == "egen"]
+    assert [(d["date"], d["dish"]) for d in written] == [("2026-10-20", "Skolefest")]
+    assert "2026-10-20" not in plan["skipped"]
     prompt = ai.prompts[0]
     assert "Familien har allerede denne madplan: søndag 2026-10-18: Tacos" in prompt
     assert "behold så mange af retterne som muligt" in prompt
