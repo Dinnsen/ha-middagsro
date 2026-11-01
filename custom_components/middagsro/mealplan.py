@@ -33,6 +33,7 @@ from .budget import plan_budget
 from .chains import CHAINS, ChainError, ChainOffers, runs_on
 from .const import DOMAIN
 from .dishes import (
+    SWAP_MARKS,
     check_plan,
     day_wishes,
     fixed_rest_dates,
@@ -690,8 +691,11 @@ def build_prompt(
         "oregano/basilikum, bouillon, lasagneplader, mælk, smør, mel og revet ost).",
         "Brug den kødtype, retten traditionelt laves af – også når en anden er på tilbud: "
         "hakkebøffer, burgere, bøf bearnaise og chili con carne af hakket oksekød; frikadeller "
-        "af hakket svine- og kalvekød; kyllingeretter af kylling. Et tilbud på en anden kødtype "
-        "er en grund til at vælge en anden ret, ikke til at lave retten om.",
+        "af hakket svine- og kalvekød; gullasch og andre gryderetter af oksekød i tern "
+        "(gullaschkød), stroganoff af oksekød i strimler, boeuf bourguignon af grydekød; "
+        "kyllingeretter af kylling. Et tilbud på en anden kødtype er en grund til at vælge en "
+        "anden ret, ikke til at lave retten om (hakket oksekød på tilbud: kødsovs, lasagne, "
+        "hakkebøffer – ikke gullasch).",
         "Angiv for hver dag i uses navnene på de varer fra indkøbslisten, retten bruger "
         "(præcis som de står på listen; ikke basisvarer). Restedage har en tom liste.",
         "",
@@ -861,7 +865,9 @@ def build_recipe_prompt(
                 "Den skal smage godt: krydr ordentligt (salt og peber er ikke nok), byg smag "
                 "med løg, hvidløg, krydderurter, bouillon eller tomatpuré, og giv sovsen tid "
                 "til at simre. Brug den kødtype, retten traditionelt laves af (hakkebøffer af "
-                "oksekød).",
+                "oksekød, gullasch af oksekød i tern). Passer rettens kød på listen ikke til "
+                "retten, så lav ikke en efterligning: lav den ret, kødet er til, og skriv i det "
+                "første trin, hvad retten så er (fx kødboller i paprikasovs).",
             ]
         ),
         "Skriv til en uerfaren kok: præcise mængder, højst 10 korte trin med minutter, og ét "
@@ -1998,22 +2004,23 @@ class MealPlanner(ProductMatcher):
         return best
 
     async def _async_swap_repeats(self, plan: dict[str, Any], recent: list[str]) -> None:
-        """Days the AI kept giving a dish from the last weeks, though asked not to,
-        are swapped here, as Skift ret does it: the first suggestion that is no
-        repeat takes the day. A day that can't be swapped keeps its warning."""
+        """Days the AI kept getting wrong, though asked not to (a dish from the last
+        weeks, gullasch of minced meat), are swapped here, as Skift ret does it: the
+        first suggestion that is no repeat takes the day. A day that can't be
+        swapped keeps its warning."""
         from .planedit import async_swap_dish, async_swap_options  # noqa: PLC0415
 
         swapped = False
         for item in list(plan.get("checklist") or []):
             text = str(item.get("requirement") or "")
-            if item.get("ok") or "fra de seneste uger" not in text:
+            if item.get("ok") or not any(mark in text for mark in SWAP_MARKS):
                 continue
             day = next(
                 (d for d in plan["days"] if text.startswith(f"{d['weekday']} {d['date']}:")), None
             )
             if day is None:
                 continue
-            self._set_status("generating", f"Skifter {day['weekday']}s ret, den var for nylig …")
+            self._set_status("generating", f"Skifter {day['weekday']}s ret …")
             try:
                 found = await async_swap_options(self, plan["id"], day["date"])
                 fresh = [o for o in found["options"] if matches_any(o["dish"], recent) is None]

@@ -424,6 +424,30 @@ def fixed_rest_dates(settings: dict[str, Any], dates: list[date]) -> list[date]:
     return [d for d in dates if d.weekday() in weekdays]
 
 
+# Dishes made of meat in pieces that simmer, never of minced meat: "Klassisk dansk
+# gullasch" of hakket oksekød became meatballs in paprika sauce.
+_NOT_MINCED = ("gullasch", "goulash", "gulasch", "stroganoff", "bourguignon", "oksegryde",
+               "kalvegryde", "osso")  # fmt: skip
+_MINCED = ("hakket", "hakkede", "hakkekød", "fars")
+REPEAT_MARK = "fra de seneste uger"
+MINCED_MARK = "laves af kød i tern"
+# The problems Middagsro swaps a day for itself when the AI keeps them (mealplan).
+SWAP_MARKS = (REPEAT_MARK, MINCED_MARK)
+
+
+def minced_for_pieces(plan: dict[str, Any], day: dict[str, Any]) -> str | None:
+    """The minced meat on a day whose dish is made of meat in pieces, if any."""
+    dish = set(_tokens(str(day.get("dish") or "")))
+    if not any(word.startswith(kind) for word in dish for kind in _NOT_MINCED):
+        return None
+    uses = {str(name).lower() for name in day.get("uses") or []}
+    for line in plan.get("shopping") or []:
+        name = str(line.get("name") or "")
+        if name.lower() in uses and set(_tokens(name)) & set(_MINCED):
+            return name
+    return None
+
+
 def check_plan(
     plan: dict[str, Any],
     settings: dict[str, Any],
@@ -457,8 +481,14 @@ def check_plan(
         if (earlier := matches_any(dish, recent)) is not None:
             main = repeated_main(dish, earlier)
             problems.append(
-                f'{day["weekday"]} {day["date"]}: "{dish}" gentager "{earlier}" fra de '
-                "seneste uger – vælg en helt anden hovedret" + (f", uden {main}" if main else "")
+                f'{day["weekday"]} {day["date"]}: "{dish}" gentager "{earlier}" {REPEAT_MARK} '
+                "– vælg en helt anden hovedret" + (f", uden {main}" if main else "")
+            )
+    for day in cooked:
+        if (minced := minced_for_pieces(plan, day)) is not None:
+            problems.append(
+                f'{day["weekday"]} {day["date"]}: "{day["dish"]}" {MINCED_MARK}, ikke af '
+                f'"{minced}" – brug oksekød i tern, eller vælg en ret til det hakkede kød'
             )
     for day in cooked:
         if (bad := matches_any(day["dish"], disliked or [], strict=True)) is not None:

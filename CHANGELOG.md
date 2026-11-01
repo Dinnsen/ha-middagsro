@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.13.0b6] - 2026-11-01
+
+### Fixed
+- **"Klassisk dansk gullasch" of hakket oksekød (meatballs in paprika sauce):** the AI is told that gullasch, stroganoff, boeuf bourguignon and other stews are made of meat in pieces, also when minced beef is on offer; a plan that still has one of them with minced meat is sent back to the AI, and a day it keeps is swapped by Middagsro. A recipe whose meat doesn't fit its dish is written as the dish the meat is for, not an imitation.
+
 ## [2.13.0b5] - 2026-11-01
 
 ### Fixed
