@@ -127,14 +127,14 @@ def summary(entity: dict[str, Any], now: datetime) -> dict[str, Any] | None:
     form = fields.get("customForm") or {}
     on_offer = 0
     cost = 0.0
+    ready = True
     items = _ingredients(entity)
     for item in items:
         digital, active = _product(item)
-        if (
-            not active
-            or digital.get("is_basic_ingredient")
-            or item.get("isExcludedFromShoppingList")
-        ):
+        if digital.get("is_basic_ingredient") or item.get("isExcludedFromShoppingList"):
+            continue
+        if not active.get("id"):
+            ready = False  # an item to buy that REMA has no product for
             continue
         price, offer = current_price(active, now)
         on_offer += offer
@@ -151,6 +151,7 @@ def summary(entity: dict[str, Any], now: datetime) -> dict[str, Any] | None:
         "ingredients": len(items),
         "on_offer": on_offer,
         "cost": round(cost, 2),
+        "ready": ready and bool(items),
     }
 
 
@@ -228,6 +229,11 @@ class RemaRecipes:
             raise _invalid("rema_recipes_failed", error="ukendt kategori")
         order = SORTS.get(sort, SORTS["popular"])
         page = max(1, min(int(page or 1), 100))
+        if order == SORTS["popular"] and (
+            local := self._planner.rema_catalog.page(tag, page, query)
+        ):
+            # Every recipe is here already: no need to ask REMA.
+            return {**local, "catalog": self._planner.rema_catalog.status()}
         key = (f"?{query.lower()}" if query else tag or "", order, page)
         now = dt_util.utcnow()
         cached = self._pages.get(key)
@@ -250,6 +256,7 @@ class RemaRecipes:
             "page": int(pagination.get("current_page") or page),
             "last_page": int(pagination.get("last_page") or page),
             "total": int(pagination.get("total") or len(recipes)),
+            "catalog": self._planner.rema_catalog.status(),
         }
         if len(self._pages) > 60:
             self._pages.clear()
@@ -261,6 +268,8 @@ class RemaRecipes:
         slug = str(slug or "").strip()[:200]
         if not slug:
             raise _invalid("recipe_not_found")
+        if (kept := self._planner.rema_catalog.recipe(slug)) is not None:
+            return kept
         try:
             entity = await self._planner.client.async_get_recipe(slug)
         except RemaError as err:

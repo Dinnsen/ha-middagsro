@@ -71,6 +71,7 @@ from .recipes import (
     recipe_to_day,
     scale_amount,
 )
+from .rema_catalog import RemaRecipeCatalog
 from .rema_recipes import RemaRecipes
 from .sites import RecipeSites
 from .storage import RemaPlanStore, ensure_line_ids
@@ -1260,6 +1261,7 @@ class MealPlanner(ProductMatcher):
         self._auto_attempted: set[str] = set()
         self.mealie = MealieLink(hass)
         self.chains = ChainOffers(hass)
+        self.rema_catalog = RemaRecipeCatalog(hass, entry_id, client)
         self.rema_recipes = RemaRecipes(self)
         self.sites = RecipeSites(hass)
         # Bilka ToGo's prices (the shop's own search when the family shops in Bilka).

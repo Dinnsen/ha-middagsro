@@ -156,6 +156,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
 
     entry.async_on_unload(offers.async_add_listener(_offers_updated))
     entry.async_on_unload(planner.async_cancel)
+    # REMA's own recipes, read slowly into Home Assistant (rema_catalog.py).
+    await planner.rema_catalog.async_load()
+    planner.rema_catalog.async_start()
+    entry.async_on_unload(planner.rema_catalog.async_stop)
 
     # The watch list: every few hours, tell about watched items that came on offer.
     async def _check_watch(_now: datetime) -> None:

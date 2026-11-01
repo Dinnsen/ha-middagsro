@@ -134,6 +134,7 @@ def test_card_and_recipe() -> None:
         "ingredients": 4,
         "on_offer": 1,  # the oil is a basic item, the water isn't bought
         "cost": 47.0,
+        "ready": True,  # every item that is bought has a product
     }
     assert rr.summary({"fields": {"slug": "x"}}, NOW) is None
     veggie = rr.summary(VEGGIE, NOW)

@@ -3799,7 +3799,7 @@ class Rema1000Panel extends HTMLElement {
           <button class="rr-img" data-action="rr-open" data-arg="${esc(r.slug)}" aria-label="Se ${esc(r.title)}">${r.image ? `<img src="${esc(r.image)}" alt="" loading="lazy">` : ""}</button>
           <b class="rr-title">${esc(r.title)}</b>
           <span class="muted small">${[r.total_minutes ? `${r.total_minutes} min` : "", r.servings ? `${r.servings} pers.` : "", r.cost ? `ca. ${kr(r.cost)}` : ""].filter(Boolean).join(" · ")}</span>
-          <span class="rr-badges">${r.on_offer ? `<span class="badge offer">${r.on_offer} på tilbud</span>` : ""}${r.vegetarian ? '<span class="badge eco">Vegetar</span>' : ""}</span>
+          <span class="rr-badges">${r.ready ? '<span class="badge ready" title="Alle varer er koblet til REMA – klar til madplanen">Klar</span>' : ""}${r.on_offer ? `<span class="badge offer">${r.on_offer} på tilbud</span>` : ""}${r.vegetarian ? '<span class="badge eco">Vegetar</span>' : ""}</span>
           ${pick
             ? `<button class="btn primary small" data-action="rr-pick" data-arg="${esc(r.slug)}" ${this._busy ? "disabled" : ""}>Vælg</button>`
             : `<button class="btn small" data-action="rr-open" data-arg="${esc(r.slug)}">Se opskrift</button>`}
@@ -3813,6 +3813,7 @@ class Rema1000Panel extends HTMLElement {
         : ""}
       <h2 class="flush">REMA 1000's opskrifter</h2>
       <p class="muted small">${rr.total ? `${rr.total} ${searching ? `opskrifter med "${esc(rr.query)}"` : "opskrifter"}. ` : ""}Ingredienserne er koblet til REMA's varer, så indkøbslisten får de rigtige varer – også dem på tilbud.</p>
+      ${this._rrCatalogLine()}
       <div class="row wrap">
         <input class="grow" type="search" data-bind="rrquery" value="${esc(this._rrQuery ?? rr.query)}" placeholder="Søg fx frikadeller, laks eller spinatpandekager" enterkeyhint="search">
         <button class="btn" data-action="rr-search" ${rr.loading ? "disabled" : ""}>Søg</button>
@@ -3825,6 +3826,17 @@ class Rema1000Panel extends HTMLElement {
       ${!rr.loading && rr.page && rr.page < rr.last ? '<button class="btn" data-action="rr-more">Vis flere</button>' : ""}
       ${!rr.loading && rr.page && !rr.recipes.length ? `<p class="muted">${searching ? `Ingen af REMA's opskrifter passer til "${esc(rr.query)}".` : "Ingen opskrifter her."}</p>` : ""}
     </div>`;
+  }
+
+  // How far Home Assistant has got reading all of REMA's dinner recipes.
+  _rrCatalogLine() {
+    const c = this._rrCatalog;
+    if (!c) return "";
+    if (c.running)
+      return `<p class="muted small"><span class="spinner small"></span> Henter alle REMA's aftensretter til Home Assistant – én side i minuttet, så REMA ikke belastes${c.pages ? ` (${c.pages} sider indtil videre)` : ""} …</p>`;
+    if (c.swept && c.count)
+      return `<p class="muted small">Alle ${c.count} aftensretter er hentet til Home Assistant – ${c.ready} er klar til madplanen (alle varer koblet). Opdateret ${esc(sentWhen(c.swept))}.</p>`;
+    return "";
   }
 
   async _rrLoad() {
@@ -3845,6 +3857,7 @@ class Rema1000Panel extends HTMLElement {
       const seen = new Set(rr.recipes.map((r) => r.slug));
       rr.recipes.push(...data.recipes.filter((r) => !seen.has(r.slug)));
       Object.assign(rr, { page: data.page, last: data.last_page, total: data.total, tags: data.tags || rr.tags });
+      if (data.catalog) this._rrCatalog = data.catalog;
     } catch (err) {
       rr.error = err?.message || String(err);
     }
@@ -5388,7 +5401,7 @@ const STYLE = `
   .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
     background: var(--rema-subtle); color: var(--secondary-text-color); vertical-align: middle; }
   .badge.offer { background: var(--rema-sale); color: var(--rema-on-sale); }
-  .badge.eco, .badge.sent { background: var(--rema-ok); color: var(--rema-on-accent); }
+  .badge.eco, .badge.sent, .badge.ready { background: var(--rema-ok); color: var(--rema-on-accent); }
   .badge.from { background: var(--info-color, #039be5); color: #fff; }
   .badge.doubt { background: var(--rema-warn); color: #000; }
   .badge.skipped { background: var(--secondary-text-color); color: var(--rema-on-accent); }

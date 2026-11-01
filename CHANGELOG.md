@@ -2,6 +2,13 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.14.0b1] - 2026-11-01
+
+### Added
+- **All of REMA's dinner recipes, kept in Home Assistant:** a few minutes after start Middagsro reads every recipe in REMA's dinner categories (Aftensmad, Nem hverdagsmad, Mad for børn, Kødfri, Fisk & skaldyr) with the product each ingredient is linked to and its prices. It reads one page (20 recipes) a minute, so REMA is never pressed, and reads them again once a week. The recipes are kept on your Home Assistant only, not in the repository.
+- **"Klar" on a recipe card:** every item of the recipe that is bought is linked to one of REMA's products, so a plan can use it without anyone checking its items. The REMA recipes page says how many recipes are read and how many are ready.
+- Once every recipe is read, the popular recipes, the categories and the search on the REMA recipes page are answered from Home Assistant (faster, and search also finds words in the ingredients); *Nyeste* and the other categories still ask REMA.
+
 ## [2.13.0b6] - 2026-11-01
 
 ### Fixed
