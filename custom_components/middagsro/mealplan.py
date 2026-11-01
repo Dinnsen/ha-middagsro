@@ -2020,7 +2020,7 @@ class MealPlanner(ProductMatcher):
                 if not fresh:
                     continue
                 await async_swap_dish(self, plan["id"], day["date"], fresh[0])
-            except Exception as err:  # noqa: BLE001 - the plan is made; this only improves it
+            except Exception as err:  # the plan is made already; this only improves it
                 _LOGGER.info("Could not swap the repeated dish on %s: %s", day["date"], err)
                 continue
             plan["checklist"] = [c for c in plan["checklist"] if c is not item]
