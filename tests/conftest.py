@@ -36,6 +36,16 @@ def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
 
 
 @pytest.fixture(autouse=True)
+def no_rema_recipe_reads(request: pytest.FixtureRequest) -> Generator[None]:
+    """REMA's recipes are only read in the background in the tests about that."""
+    if request.module.__name__.endswith("test_rema_catalog"):
+        yield
+        return
+    with patch("custom_components.middagsro.rema_catalog.RemaRecipeCatalog.async_start"):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def skip_panel_dependencies(hass: HomeAssistant) -> None:
     """The sidebar panel needs the real frontend; mark it as loaded instead."""
     hass.config.components.update({"frontend", "panel_custom"})

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 import copy
 from datetime import date, datetime, timedelta
 import json
@@ -34,6 +34,8 @@ from .budget import plan_budget
 from .chains import CHAINS, ChainError, ChainOffers, runs_on
 from .const import DOMAIN
 from .dishes import (
+    SWAP_MARKS,
+    TEXT_TYPE,
     check_plan,
     day_wishes,
     fixed_rest_dates,
@@ -41,6 +43,7 @@ from .dishes import (
     household_portions,
     is_cooked,
     is_rest_text,
+    matches_any,
     same_dish,
 )
 from .errors import _failed, _invalid
@@ -71,9 +74,10 @@ from .recipes import (
     recipe_to_day,
     scale_amount,
 )
+from .rema_catalog import RemaRecipeCatalog
 from .rema_recipes import RemaRecipes
 from .sites import RecipeSites
-from .storage import RemaPlanStore
+from .storage import RemaPlanStore, ensure_line_ids
 from .store_client import genitive
 from .structures import choices_structure, plan_structure, recipe_structure, schema_library
 from .words import (
@@ -692,8 +696,11 @@ def build_prompt(
         "oregano/basilikum, bouillon, lasagneplader, mælk, smør, mel og revet ost).",
         "Brug den kødtype, retten traditionelt laves af – også når en anden er på tilbud: "
         "hakkebøffer, burgere, bøf bearnaise og chili con carne af hakket oksekød; frikadeller "
-        "af hakket svine- og kalvekød; kyllingeretter af kylling. Et tilbud på en anden kødtype "
-        "er en grund til at vælge en anden ret, ikke til at lave retten om.",
+        "af hakket svine- og kalvekød; gullasch og andre gryderetter af oksekød i tern "
+        "(gullaschkød), stroganoff af oksekød i strimler, boeuf bourguignon af grydekød; "
+        "kyllingeretter af kylling. Et tilbud på en anden kødtype er en grund til at vælge en "
+        "anden ret, ikke til at lave retten om (hakket oksekød på tilbud: kødsovs, lasagne, "
+        "hakkebøffer – ikke gullasch).",
         "Angiv for hver dag i uses navnene på de varer fra indkøbslisten, retten bruger "
         "(præcis som de står på listen; ikke basisvarer). Restedage har en tom liste.",
         "",
@@ -863,7 +870,9 @@ def build_recipe_prompt(
                 "Den skal smage godt: krydr ordentligt (salt og peber er ikke nok), byg smag "
                 "med løg, hvidløg, krydderurter, bouillon eller tomatpuré, og giv sovsen tid "
                 "til at simre. Brug den kødtype, retten traditionelt laves af (hakkebøffer af "
-                "oksekød).",
+                "oksekød, gullasch af oksekød i tern). Passer rettens kød på listen ikke til "
+                "retten, så lav ikke en efterligning: lav den ret, kødet er til, og skriv i det "
+                "første trin, hvad retten så er (fx kødboller i paprikasovs).",
             ]
         ),
         "Skriv til en uerfaren kok: præcise mængder, højst 10 korte trin med minutter, og ét "
@@ -1223,6 +1232,20 @@ def own_shopping(plan: dict[str, Any], day: dict[str, Any]) -> list[dict[str, An
     ]
 
 
+def list_entry(line: dict[str, Any]) -> dict[str, Any]:
+    """A shopping line as it goes on the shop's list: a product, or a name."""
+    if line.get("product"):
+        return {"product_id": line["product"]["id"], "amount": line["packages"]}
+    if line.get("avis_item"):
+        # Only in the shops: the avis's name, as the webshop puts it on.
+        return {"name": line["avis_item"]["name"], "amount": line["packages"]}
+    amount = line.get("amount")
+    label = line["name"]
+    if amount and line.get("unit") and line["unit"] != "pk":
+        label += f" ({amount:g} {line['unit']})"
+    return {"name": label, "amount": int(line.get("packages") or 1)}
+
+
 class AddItems(Protocol):
     """Puts items ({product_id|name, amount}) on the REMA list, telling about each."""
 
@@ -1244,6 +1267,7 @@ class MealPlanner(ProductMatcher):
         store: RemaPlanStore,
         get_catalogs: Callable[[], tuple[Catalog | None, Catalog | None]],
         add_items: AddItems,
+        take_items: Callable[[list[dict[str, Any]]], Awaitable[int]] | None = None,
     ) -> None:
         """Initialize the planner."""
         self.hass = hass
@@ -1252,12 +1276,14 @@ class MealPlanner(ProductMatcher):
         self.store = store
         self._get_catalogs = get_catalogs
         self._add_items = add_items
+        self._take_items = take_items
         self._send_lock = asyncio.Lock()
         self.status: dict[str, Any] = {"state": "idle", "message": None, "started": None}
         self._task: asyncio.Task[None] | None = None
         self._auto_attempted: set[str] = set()
         self.mealie = MealieLink(hass)
         self.chains = ChainOffers(hass)
+        self.rema_catalog = RemaRecipeCatalog(hass, entry_id, client)
         self.rema_recipes = RemaRecipes(self)
         self.sites = RecipeSites(hass)
         # Bilka ToGo's prices (the shop's own search when the family shops in Bilka).
@@ -1382,6 +1408,14 @@ class MealPlanner(ProductMatcher):
             raise _invalid("no_ai_task")
         start = date.fromisoformat(plan["start_date"])
         skip = {d for d in (parse_date(v) for v in plan.get("skipped") or []) if d}
+        # A day the family wrote themselves ("Spiser ude") stays as it is.
+        skip |= {
+            d
+            for d in (
+                parse_date(day["date"]) for day in plan["days"] if day.get("type") == TEXT_TYPE
+            )
+            if d
+        }
         self._set_status("generating", "Opdaterer madplanen …")
         self._task = self.hass.async_create_background_task(
             self._async_run(start, False, skip, bool(plan.get("surprise")), {}, plan_id),
@@ -1988,6 +2022,18 @@ class MealPlanner(ProductMatcher):
             _LOGGER.info("The plan still breaks %d rule(s): %s", len(problems), "; ".join(problems))
         best["budget"] = settings["budget"]
         best["skipped"] = [d.isoformat() for d in skipped]
+        if base is not None:
+            # An update keeps the days the family wrote themselves, and the skipped
+            # days that can be taken back.
+            written = [dict(d) for d in base["days"] if d.get("type") == TEXT_TYPE]
+            dates_written = {d["date"] for d in written}
+            best["days"] = sorted(
+                [*(d for d in best["days"] if d["date"] not in dates_written), *written],
+                key=lambda d: d["date"],
+            )
+            best["skipped"] = [d for d in best["skipped"] if d not in dates_written]
+            aside = base.get("skipped_days") or {}
+            best["skipped_days"] = {k: v for k, v in aside.items() if k in best["skipped"]}
         best["note"] = note
         best["surprise"] = surprise
         await self._async_align_recipes(best, offers, self.price_time(start), late)
@@ -2004,6 +2050,7 @@ class MealPlanner(ProductMatcher):
             best["updated_from"] = base["id"]
             await self.store.async_delete_plan(base["id"])
         await self.store.async_add_plan(best)
+        await self._async_swap_repeats(best, recent)
         self._schedule_refreshes(best)
         await self.async_mealie_sync(best)
         if note and self.store.note.strip() == note:
@@ -2028,6 +2075,38 @@ class MealPlanner(ProductMatcher):
             await self.store.async_save()
         self._notify()
         return best
+
+    async def _async_swap_repeats(self, plan: dict[str, Any], recent: list[str]) -> None:
+        """Days the AI kept getting wrong, though asked not to (a dish from the last
+        weeks, gullasch of minced meat), are swapped here, as Skift ret does it: the
+        first suggestion that is no repeat takes the day. A day that can't be
+        swapped keeps its warning."""
+        from .planedit import async_swap_dish, async_swap_options  # noqa: PLC0415
+
+        swapped = False
+        for item in list(plan.get("checklist") or []):
+            text = str(item.get("requirement") or "")
+            if item.get("ok") or not any(mark in text for mark in SWAP_MARKS):
+                continue
+            day = next(
+                (d for d in plan["days"] if text.startswith(f"{d['weekday']} {d['date']}:")), None
+            )
+            if day is None:
+                continue
+            self._set_status("generating", f"Skifter {day['weekday']}s ret …")
+            try:
+                found = await async_swap_options(self, plan["id"], day["date"])
+                fresh = [o for o in found["options"] if matches_any(o["dish"], recent) is None]
+                if not fresh:
+                    continue
+                await async_swap_dish(self, plan["id"], day["date"], fresh[0])
+            except Exception as err:  # the plan is made already; this only improves it
+                _LOGGER.info("Could not swap the repeated dish on %s: %s", day["date"], err)
+                continue
+            plan["checklist"] = [c for c in plan["checklist"] if c is not item]
+            swapped = True
+        if swapped:
+            await self.store.async_save()
 
     async def _async_generate_rounds(
         self,
@@ -2200,6 +2279,9 @@ class MealPlanner(ProductMatcher):
         of the products found is the ingredient, or none of them. Its pick is a
         better first choice for the family's check; the line stays marked for it.
         """
+        # A new plan's lines get their ids here: the AI's answer names them, and
+        # the panel's Behold and Har det do too.
+        ensure_line_ids(plan)
         unsure = [
             line
             for line in plan["shopping"]
@@ -2706,17 +2788,7 @@ class MealPlanner(ProductMatcher):
         for line in lines:
             line.pop("on_list", None)
             line.setdefault("id", uuid.uuid4().hex[:8])
-            if line.get("product"):
-                item = {"product_id": line["product"]["id"], "amount": line["packages"]}
-            elif line.get("avis_item"):
-                # Only in the shops: the avis's name, as the webshop puts it on.
-                item = {"name": line["avis_item"]["name"], "amount": line["packages"]}
-            else:
-                amount = line.get("amount")
-                label = line["name"]
-                if amount and line.get("unit") and line["unit"] != "pk":
-                    label += f" ({amount:g} {line['unit']})"
-                item = {"name": label, "amount": int(line.get("packages") or 1)}
+            item = list_entry(line)
             if getattr(self.client, "cart", None) is not None:
                 item["transfer_id"] = (
                     f"{plan['id']}:{line['id']}:{plan.get('transfer_revision', 0)}"
@@ -2765,6 +2837,25 @@ class MealPlanner(ProductMatcher):
             await self.store.async_mark_sent(plan["id"], part)
         self._notify()
         return plan
+
+    async def async_unlist(self, lines: list[dict[str, Any]]) -> int:
+        """Take lines that were sent, and have left the plan, off the shop's list
+        again (the amount sent is taken off; a line bought already is left). The
+        lines are no longer sent. Returns how many list lines were changed."""
+        sent = [
+            line
+            for line in lines
+            if line.get("sent") and not line.get("buy_at") and not line.get("must_have")
+        ]
+        for line in sent:
+            line.pop("sent", None)
+        if not sent or self._take_items is None or getattr(self.client, "cart", None) is not None:
+            return 0
+        try:
+            return await self._take_items([list_entry(line) for line in sent])
+        except (RemaError, HomeAssistantError) as err:
+            _LOGGER.warning("Could not take the items off the list again: %s", err)
+            return 0
 
     async def _async_skip_listed(
         self, pairs: list[tuple[dict[str, Any], dict[str, Any]]]

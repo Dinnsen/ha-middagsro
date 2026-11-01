@@ -208,6 +208,12 @@
     "recipe_failed": {
       "message": "The recipe could not be written: {error}"
     },
+    "day_not_skipped": {
+      "message": "That day is not skipped."
+    },
+    "day_text_required": {
+      "message": "Write what the day should say."
+    },
     "day_not_found": {
       "message": "That day is not in the meal plan."
     },

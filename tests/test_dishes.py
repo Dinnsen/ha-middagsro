@@ -103,7 +103,7 @@ def test_check_plan() -> None:
     )
     assert problems == [
         'søndag 2026-10-25: "Ovnbagt laks med pasta" gentager "Laks med ris" fra de seneste uger '
-        "– vælg en helt anden hovedret",
+        "– vælg en helt anden hovedret, uden laks",
         # Kyllingefrikadeller are not the disliked fiskefrikadeller ...
         'lørdag 2026-10-31: "Fiskefrikadeller" er en variant af "Fiskefrikadeller med remoulade", '
         "som familien ikke kan lide",
@@ -554,3 +554,37 @@ def test_compound_search_words() -> None:
         "pesto",
         "Grøn pesto",
     ]
+
+
+def test_staple_mains_with_other_sides_are_other_dinners() -> None:
+    """Chicken with potatoes and chicken with other potatoes are two dinners when
+    the sides differ; with the same sides, or none, they are the same."""
+    week45 = "Stegt kyllingebryst med pandestegte kartofler og gnavegrønt"
+    assert not ds.same_dish(week45, "Dansk kylling med ovnbagte lammefjordskartofler og gulerødder")
+    assert ds.same_dish("Kylling i karry med ris", "Kylling i karry med ris og salat")
+    assert ds.same_dish("Kylling", "Stegt kylling")
+    assert ds.same_dish("Kyllingefrikadeller med ovnbagte kartofler", "Kyllingefrikadeller")
+    assert ds.repeated_main("Ovnbagt laks med fettuccine spinat pasta", LAKS) == "laks"
+    assert ds.repeated_main("Tacos", "Lasagne") == ""
+
+
+def test_gullasch_is_not_made_of_minced_meat() -> None:
+    """ "Klassisk dansk gullasch" with hakket oksekød is meatballs in paprika sauce:
+    the AI is told, and Middagsro swaps the day if it keeps it."""
+    plan = {
+        "days": [
+            _day("2026-11-02", "Klassisk dansk gullasch med kartoffelmos",
+                 uses=["Hakket oksekød", "Kartofler"]),
+            _day("2026-11-03", "Gullasch af oksekød i tern", uses=["Gullaschkød"]),
+            _day("2026-11-04", "Spaghetti bolognese", uses=["Hakket oksekød"]),
+        ],
+        "shopping": [
+            {"name": "Hakket oksekød"}, {"name": "Kartofler"}, {"name": "Gullaschkød"},
+        ],
+    }  # fmt: skip
+    assert ds.minced_for_pieces(plan, plan["days"][0]) == "Hakket oksekød"
+    assert ds.minced_for_pieces(plan, plan["days"][1]) is None
+    assert ds.minced_for_pieces(plan, plan["days"][2]) is None
+    problems = ds.check_plan(plan, {"max_cook_minutes_weekday": 0}, recent=[], due_ids=set())
+    assert any(ds.MINCED_MARK in p and "Hakket oksekød" in p for p in problems)
+    assert all(mark in ds.SWAP_MARKS for mark in (ds.MINCED_MARK, ds.REPEAT_MARK))

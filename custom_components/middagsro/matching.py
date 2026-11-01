@@ -400,6 +400,37 @@ _DESCRIBING = frozenset({
 })  # fmt: skip
 
 
+# Colours do say which one of a thing it is (a red pepper), unlike the rest above.
+_COLOURS = frozenset({"rød", "rødt", "røde", "grøn", "grønt", "grønne", "gul", "gult", "gule"})
+
+
+def distinguishing_words(name: str, spec: Spec) -> list[str]:
+    """The words of a line's own name that say which one of the thing it is:
+    "fettuccine" and "spinat" in "Fettuccine spinat pasta" (the thing is pasta),
+    "rød" in "Rød peberfrugt". Not the thing itself or a word it is built of
+    ("laksefilet" is laks), nor a word that only says how it is.
+    """
+    known = [k for k in {*_tokens(spec.key), *_tokens(spec.query or "")} if len(k) > 2]
+    out: list[str] = []
+    for word in _tokens(ingredient_name(name)):
+        if len(word) <= 2 or word in _NEUTRAL_WORDS or word in out:
+            continue
+        if word in _DESCRIBING and word not in _COLOURS:
+            continue
+        if any(
+            word == k or word.startswith(k) or k.startswith(word) or word.endswith(k) for k in known
+        ):
+            continue
+        out.append(word)
+    return out
+
+
+def is_named(words: list[str], product_name: str) -> bool:
+    """Does a product's name (with its underline: the brand is there, "600 GR. /
+    SCHULSTAD") have every one of these words, or a form of it?"""
+    return not words or name_fit(words, product_name)[0] == len(words)
+
+
 def _called(spec: Spec, product_name: str) -> bool:
     """Is the product called by one of the catalogue's names for the thing
     ("GRANA PADANO" for parmesan, "RØDSPÆTTEFILETER" for fiskefilet)?"""
@@ -516,6 +547,16 @@ def line_spec(line: dict[str, Any]) -> Spec:
     return spec_for(
         str(line.get("name") or ""), line.get("search"), line.get("category"), line.get("catalog")
     )
+
+
+def choice_key(line: dict[str, Any], spec: Spec | None = None) -> str:
+    """What the family's choice for a line is remembered under: the ingredient,
+    and the words that say which one of it ("pasta fettuccine spinat" is not the
+    spaghetti for the bolognese, "peberfrugt rød" not the yellow one)."""
+    spec = spec or line_spec(line)
+    key = str(line.get("key") or spec.key)
+    extra = distinguishing_words(str(line.get("name") or ""), spec)
+    return " ".join([key, *extra]) if key else ""
 
 
 def apply_spec(line: dict[str, Any], spec: Spec | None = None) -> bool:

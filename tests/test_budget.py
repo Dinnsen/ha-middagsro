@@ -338,6 +338,27 @@ def test_settings_clean() -> None:
     assert clean_settings({"budget_since": "2026-10-01"})["budget_since"] == "2026-10-01"
 
 
+def test_weekly_budget() -> None:
+    """A budget a week: every day a seventh of it, a month what its days add up to,
+    and the month's amount (for everything that asks for one) its average."""
+    settings = clean_settings({"budget_period": "week", "weekly_budget": 1400, "monthly_budget": 9})
+    assert settings["monthly_budget"] == round(1400 * 365 / 12 / 7)
+    assert clean_settings({"budget_period": "week"})["monthly_budget"] == 0  # off
+    assert clean_settings({"budget_period": "år", "monthly_budget": 9})["budget_period"] == "month"
+    assert (
+        clean_settings({"budget_period": "month", "weekly_budget": 1400, "monthly_budget": 9})[
+            "monthly_budget"
+        ]
+        == 9
+    )
+    store = FakeStore(budget_period="week", weekly_budget=1400, monthly_budget=6083)
+    data = bg.summary(store, TODAY)
+    assert data is not None
+    assert (data["period"], data["weekly"], data["daily"]) == ("week", 1400, 200)
+    assert data["week"]["budget"] == 1400
+    assert data["month"]["budget"] == 6200  # October's 31 days of 200 kr.
+
+
 # ------------------------------------------------------------------ in Home Assistant
 
 
@@ -371,6 +392,7 @@ async def test_websocket(
     assert (week["spent"], week["remaining"]) == (250.5, 149.5)
     purchase = msg["result"]["purchases"][0]
     assert purchase["store"] == NETTO
+    assert msg["result"]["booked"] == purchase["id"]  # the panel's Fortryd
     msg = await _ws(
         client,
         6,

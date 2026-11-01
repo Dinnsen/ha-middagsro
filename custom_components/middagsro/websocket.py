@@ -22,6 +22,7 @@ from .budget import (
     async_edit as async_purchase_edit,
     summary as budget_summary,
 )
+from .candidates import SORTS as CANDIDATE_SORTS, async_candidates
 from .chains import (
     CHAINS,
     REMA_ID,
@@ -40,6 +41,7 @@ from .coordinator import RemaConfigEntry
 from .freezer import async_generate as async_generate_freezer, async_portions
 from .health import plan_health
 from .inventory import inventory
+from .linking import async_suggest as async_suggest_links, links as recipe_links
 from .links import family_links, share_url
 from .mealie import MealieError
 from .mealplan import ai_choices, parse_date, plan_summary, signal_plans_updated
@@ -52,7 +54,9 @@ from .planedit import (
     async_edit_line,
     async_move_day,
     async_remove_line,
+    async_restore_day,
     async_review_line,
+    async_set_day_text,
     async_swap_dish,
     async_swap_options,
     cooked_day,
@@ -115,8 +119,10 @@ def _catalog(cat: Catalog | None) -> dict[str, Any] | None:
     }
 
 
-def _recipe_summary(recipe: dict[str, Any]) -> dict[str, Any]:
-    """A recipe in the collection without its ingredients and steps (those come on request)."""
+def _recipe_summary(recipe: dict[str, Any], pantry: str = "") -> dict[str, Any]:
+    """A recipe in the collection without its ingredients and steps (those come on
+    request), and whether its items are linked to products (ready)."""
+    status = recipe_links(recipe, pantry)
     return {
         key: recipe.get(key)
         for key in (
@@ -134,7 +140,11 @@ def _recipe_summary(recipe: dict[str, Any]) -> dict[str, Any]:
             "times_planned",
             "last_planned",
         )
-    } | {"ingredient_names": [i["name"] for i in recipe.get("ingredients") or []][:30]}
+    } | {
+        "ingredient_names": [i["name"] for i in recipe.get("ingredients") or []][:30],
+        "ready": status["ready"],
+        "missing": status["missing"],
+    }
 
 
 def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
@@ -190,7 +200,7 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
         "freezer_confirmed": inventory(hass).data.get("confirmed", {}),
         # When a setting the plans are made from last changed: "Opdater madplan".
         "settings_changed": store.settings_changed or None,
-        "recipes": [_recipe_summary(r) for r in store.recipes],
+        "recipes": [_recipe_summary(r, store.settings["pantry"]) for r in store.recipes],
         "watch": store.watch,
         "own_favorites": store.own_favorites,
         # The food budget (budget.py): None when the family keeps none.
@@ -953,6 +963,45 @@ async def ws_day_clear(
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "middagsro/day/restore",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("date"): str,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_day_restore(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Take a skipped day back."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_restore_day(planner, msg["plan_id"], msg["date"])
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/day/text",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("date"): str,
+        vol.Required("text"): str,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_day_text(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Write a day by hand ("Spiser ude", "Skolefest")."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_set_day_text(planner, msg["plan_id"], msg["date"], msg["text"])
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "middagsro/day/move",
         ENTRY: str,
         vol.Required("plan_id"): str,
@@ -1146,6 +1195,62 @@ async def ws_recipe_get(
     if recipe is None:
         raise ServiceValidationError(translation_domain=DOMAIN, translation_key="recipe_not_found")
     connection.send_result(msg["id"], recipe)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/candidates",
+        ENTRY: str,
+        vol.Optional("start"): vol.Any(str, None),
+        vol.Optional("sort", default="cheapest"): vol.In(CANDIDATE_SORTS),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_candidates(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The week's dinners from the avis: ready recipes priced with its offers."""
+    planner = _entry(hass, msg).runtime_data.planner
+    start = parse_date(msg.get("start")) or planner.default_start()
+    connection.send_result(msg["id"], await async_candidates(planner, start, msg["sort"]))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/recipes/links",
+        ENTRY: str,
+        vol.Required("recipe"): dict,
+        vol.Optional("suggest", default=False): bool,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_recipe_links(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """A recipe's ingredients and their products: kinds, what is bought and linked,
+    and (suggest) products for those that have none. The recipe may be unsaved."""
+    data = _entry(hass, msg).runtime_data
+    # Row for row as the panel has them (also an empty row), so the answers line up.
+    recipe = {
+        "ingredients": [
+            {
+                "name": str(item.get("name") or "")[:200],
+                "amount": str(item.get("amount") or "")[:60],
+                "product": item.get("product") if isinstance(item.get("product"), dict) else None,
+                "basic": bool(item.get("basic")),
+            }
+            if isinstance(item, dict)
+            else {"name": ""}
+            for item in (msg["recipe"].get("ingredients") or [])[:80]
+        ]
+    }
+    if msg["suggest"]:
+        result = await async_suggest_links(data.planner, recipe)
+    else:
+        result = recipe_links(recipe, data.store.settings["pantry"])
+    connection.send_result(msg["id"], result)
 
 
 @websocket_api.websocket_command(
@@ -1821,6 +1926,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_plan_remove,
         ws_plan_refresh,
         ws_day_clear,
+        ws_day_restore,
+        ws_day_text,
         ws_day_move,
         ws_recipe_scan,
         ws_sites_search,
@@ -1836,6 +1943,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_mealie_save,
         ws_mealie_sync,
         ws_recipe_get,
+        ws_recipe_links,
+        ws_candidates,
         ws_recipe_save,
         ws_recipe_delete,
         ws_recipe_rate,

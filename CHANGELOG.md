@@ -13,6 +13,69 @@ All notable changes to Middagsro. Versions follow `custom_components/middagsro/m
 ### Fixed
 - Budget booking uses labelled, equally sized amount/date inputs and a separate submit row on narrow cards.
 
+## [2.14.0b5] - 2026-11-01
+
+### Fixed
+- **Tilbudsretter compared packages of different sizes:** an offer now takes an item's place at its price for as much as the item's product holds (450 g of chicken breast on offer against a 600 g package), and only when the sizes can be compared (a 10-pack of eggs is not a 30-pack).
+- **"Tuborg Squash" stood in for squash:** drinks (sold with a deposit, cola, juice …) are not offers for a dinner.
+- **Lunch and snacks among the dinners:** REMA's recipes for lunch, the lunch box, starters, side dishes and the like are left out, unless REMA has them as dinners too.
+
+## [2.14.0b4] - 2026-11-01
+
+### Added
+- **Ugens tilbudsretter:** a new page under Opskrifter with the week's cheapest dinners from the avis. Every ready recipe, yours and REMA's, is priced at the plan's first day: an item whose product is on offer counts at the offer's price, and an item not marked *Altid præcis denne* takes an offer of the same kind when it is cheaper (minced beef, chicken breast, salmon, pasta, potatoes, cream …). Each dish shows its price per person, what it saves and which offers it uses; sort by *Billigst pr. person* or *Mest sparet*. Your rules leave dishes out (allergies and what you avoid, dishes you don't like, dishes from the last weeks), and the page says how many. The price is an estimate with one package of each item.
+- An offer only stands in for things sold as themselves: not *brunede kartofler* for potatoes, nor *tun i tomat* for tomatoes.
+
+## [2.14.0b3] - 2026-11-01
+
+### Added
+- **A recipe's items linked to REMA's products, once:** a recipe shows how many of its items still need a REMA product. *Find varer* suggests one for each (your earlier choices and the shared table first, then a search), with *Brug* for each suggestion, a few others to choose from, and *Brug de sikre forslag* for all the sure ones at once. *Har vi altid* marks an item you don't buy. A recipe not in the collection yet (a link, a scan, a recipe site or one of REMA's) gets the suggestions as soon as it opens. Nothing is saved until the recipe is.
+- **Kinds and exact products:** each item shows its kind (*pasta*, *hakket oksekød*). *Altid præcis denne* marks an item that must be that very product (fettuccine spinat); by default another product of the same kind may be used when it is on offer (the planner uses this in a later beta).
+- **"Klar" and "Mangler N varer" in the collection**, and a filter *Mangler varer* for the recipes to link. A recipe's linked products are what its days put on the shopping list.
+
+## [2.14.0b2] - 2026-11-01
+
+### Added
+- **Change or delete a purchase:** tap a purchase under *Økonomi › Køb* to change its amount, day, shop or note, or to delete it. Right after booking, the message has a *Fortryd* button, and the budget card on the plan has a link to the purchases.
+- **The food budget a week or a month:** choose whether you enter it per week or per month. A weekly amount is the same every day (1.400 kr. a week is 200 kr. a day), and the month is what its days add up to; the week and month views use the same budget either way.
+- **Take a skipped day back:** the days under *Springes over* can be tapped to bring the day back, with its dish, its items and its leftovers days as they were. A day skipped before this version comes back empty, for a new dish.
+- **Write a day yourself:** *Skriv på dagen* in a day's menu (Spiser ude, Skolefest …). There is no dinner to make that day, so the dish's own items leave the list; *Opdater madplan* keeps the day as you wrote it.
+
+### Fixed
+- **Items from a removed dish stayed on REMA's list:** when a sent item leaves the plan (a day deleted, skipped or written by hand, another dish chosen, *Har det*, *Forkert vare* or a deleted item), the amount sent is taken off REMA's list again, and the line is removed when nothing is left. A line ticked off in the app, or more of it you added yourselves, is left as it is.
+- **"Du ser en ældre madplan" on the newest plan:** after deleting a newer plan in the history, the plan you were looking at is the newest, and the banner is gone (also when the plan looked at was itself deleted).
+
+## [2.14.0b1] - 2026-11-01
+
+### Added
+- **All of REMA's dinner recipes, kept in Home Assistant:** a few minutes after start Middagsro reads every recipe in REMA's dinner categories (Aftensmad, Nem hverdagsmad, Mad for børn, Kødfri, Fisk & skaldyr) with the product each ingredient is linked to and its prices. It reads one page (20 recipes) a minute, so REMA is never pressed, and reads them again once a week. The recipes are kept on your Home Assistant only, not in the repository.
+- **"Klar" on a recipe card:** every item of the recipe that is bought is linked to one of REMA's products, so a plan can use it without anyone checking its items. The REMA recipes page says how many recipes are read and how many are ready.
+- Once every recipe is read, the popular recipes, the categories and the search on the REMA recipes page are answered from Home Assistant (faster, and search also finds words in the ingredients); *Nyeste* and the other categories still ask REMA.
+
+## [2.13.0b6] - 2026-11-01
+
+### Fixed
+- **"Klassisk dansk gullasch" of hakket oksekød (meatballs in paprika sauce):** the AI is told that gullasch, stroganoff, boeuf bourguignon and other stews are made of meat in pieces, also when minced beef is on offer; a plan that still has one of them with minced meat is sent back to the AI, and a day it keeps is swapped by Middagsro. A recipe whose meat doesn't fit its dish is written as the dish the meat is for, not an imitation.
+
+## [2.13.0b5] - 2026-11-01
+
+### Fixed
+- **"Schulstad brød" marked Tjek:** the words of an item's name are also looked for on the package's underline, where REMA writes the brand ("600 GR. / SCHULSTAD").
+
+## [2.13.0b4] - 2026-11-01
+
+### Fixed
+- **"Fettuccine spinat pasta" became PASTA SKRUER, marked sure:** the words of an item's own name that say which one of a thing it is (*fettuccine* and *spinat* pasta, *rød* peberfrugt) must be in the product's name. A product that has them beats a cheaper one that doesn't, also in a smaller package; when the shop has none, the item is marked *Tjek*.
+- **Your choice for one pasta was the choice for every pasta:** a product you keep, choose or leave out is remembered for what the item is called (fettuccine spinat pasta), not only for the ingredient (pasta), so the bolognese keeps its spaghetti. (Choices remembered before are still used for items without such words.)
+- **A dish from the last weeks is swapped by Middagsro itself** when the AI keeps suggesting it: the day is changed as *Skift ret* does it, to the first suggestion that is no repeat. The AI is also told which main to leave out ("uden laks"). Only a day that can't be swapped keeps its warning.
+- **Chicken with potatoes is not the same dinner every time:** a common main (kylling, svinekød, hakket oksekød …) only makes two dinners the same when the sides are too.
+
+## [2.13.0b3] - 2026-11-01
+
+### Fixed
+- **A plan for next week made from the wrong avis:** REMA's "Meget Mere REMA 1000" (4 to 25 November, no offers) was taken for next week's avis, so *Lav madplan automatisk* made a plan for week 46 without any offers on 1 November. An avis without offers, or one that runs for more than ten days, is never a week's avis: it neither starts an automatic plan nor moves the start of the next plan.
+- **"Kunne ikke lave madplanen: 'id'":** a new plan with an uncertain item, and an AI to help choose, stopped before it was saved. The plan's items get their ids before the AI is asked (and the panel's buttons work on a new plan without a restart).
+
 ## [2.13.0b2] - 2026-10-31
 
 ### Added

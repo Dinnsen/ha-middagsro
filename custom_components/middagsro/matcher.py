@@ -36,8 +36,11 @@ from .matching import (
     _percents,
     apply_spec,
     avis_packages,
+    choice_key,
+    distinguishing_words,
     egg_level,
     head_word,
+    is_named,
     kind_penalty,
     line_kind,
     line_spec,
@@ -290,7 +293,7 @@ class ProductMatcher:
 
     async def _async_match_remembered(self, line: dict[str, Any], at: datetime | None) -> bool:
         """The product the family chose for this ingredient before, if it is still sold."""
-        choice = self.store.choice_for(str(line.get("key") or ""), self.shop)
+        choice = self.store.choice_for(choice_key(line), self.shop)
         if not choice:
             return False
         try:
@@ -318,7 +321,7 @@ class ProductMatcher:
         except RemaError:
             return False
         requirement = self._requirement(line)
-        rejected = self.store.rejected_products(str(line.get("key") or ""), self.shop)
+        rejected = self.store.rejected_products(choice_key(line), self.shop)
         name = str(line.get("name") or "")
         candidates = [
             p
@@ -508,6 +511,10 @@ class ProductMatcher:
             or (known_kind is None and spec.entry is None)
             or fit_penalty >= 2
             or variety_missing(line.get("name") or "", chosen.name)
+            or not is_named(
+                distinguishing_words(str(line.get("name") or ""), spec),
+                f"{chosen.name} {chosen.underline or ''}",
+            )
             or bool(line.get("guessed"))
         ):
             line["confidence"] = "medium"
@@ -535,8 +542,14 @@ class ProductMatcher:
             candidates = comparable or candidates
         elif need is None or need[0] == "pack" or not spec.piece_g:
             # "2 dåser kokosmælk": the usual size on the shelf, not a mini can
-            # because it is the cheapest package.
-            sizes = sorted(size for p in candidates if (size := package_size(p.underline)))
+            # because it is the cheapest package - among the products that are
+            # what the line is called (fettuccine with spinach comes in 250 g).
+            best_fit = min((penalty.get(p.id, 1.0) for p in candidates), default=1.0)
+            sizes = sorted(
+                size
+                for p in candidates
+                if penalty.get(p.id, 1.0) <= best_fit + 0.5 and (size := package_size(p.underline))
+            )
             if len(sizes) > 1 and len({size[0] for size in sizes}) == 1:
                 usual = sizes[len(sizes) // 2][1]
                 for p in candidates:
@@ -683,7 +696,7 @@ class ProductMatcher:
         # family said no to for this ingredient, or one the catalogue knows is
         # another thing ("skalotteløg" for løg).
         spec = line_spec(line)
-        rejected = self.store.rejected_products(spec.key, self.shop)
+        rejected = self.store.rejected_products(choice_key(line, spec), self.shop)
         trusted: set[int] = set()
         kept: list[Product] = []
         for p in priced:
@@ -817,6 +830,12 @@ class ProductMatcher:
         }
         if not full:
             full = called or {p.id for p in relevant if fits[p.id][0] == len(words)}
+        # "Fettuccine spinat pasta": the pasta that is fettuccine with spinach beats
+        # the cheapest pasta, when the shop has it.
+        if extra := distinguishing_words(str(line.get("name") or ""), spec):
+            named_so = {p.id for p in relevant if is_named(extra, f"{p.name} {p.underline or ''}")}
+            if named_so:
+                full = (full & named_so) or named_so
         if full and len(full) < len(relevant):
             for p in relevant:
                 if p.id not in full:
