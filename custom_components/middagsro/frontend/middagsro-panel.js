@@ -1415,7 +1415,7 @@ class Rema1000Panel extends HTMLElement {
         const day = plan?.days.find((d) => d.date === date);
         if (!day) return;
         const written = day.type === "egen";
-        this._modal = { kind: "day", planId, date, dish: day.dish, written, text: written ? day.dish : "", leftovers: !!day.uses_leftovers_from || day.type === "rester" };
+        this._modal = { kind: "day", planId, date, dish: day.dish, written, newDish: !!day.new_dish, text: written ? day.dish : "", leftovers: !!day.uses_leftovers_from || day.type === "rester" };
         this._renderModal();
       },
       "day-text": () => {
@@ -1427,6 +1427,13 @@ class Rema1000Panel extends HTMLElement {
         this._modal = null;
         this._renderModal();
         this._editPlan(() => this._ws("middagsro/day/text", { plan_id: m.planId, date: m.date, text }), "Dagen er skrevet ind.");
+      },
+      "day-approve": () => {
+        const m = this._modal;
+        if (!m || m.busy) return;
+        this._modal = null;
+        this._renderModal();
+        this._editPlan(() => this._ws("middagsro/day/approve", { plan_id: m.planId, date: m.date }), `${m.dish} er godkendt og gemt i opskriftsamlingen.`);
       },
       "day-restore": () => {
         const [planId, date] = String(arg).split("|");
@@ -3512,7 +3519,9 @@ class Rema1000Panel extends HTMLElement {
            <span class="spacer"></span>
            <button class="btn" data-action="modal-close" ${busy ? "disabled" : ""}>Annullér</button>
          </div>`
-      : `${m.leftovers ? '<p class="muted small">Det er rester – skifter du, skiftes retten, de er rester af.</p>' : ""}
+      : `${m.newDish ? `<div class="banner warn small"><div>En ny ret, der ikke var blandt ugens opskrifter. Godkend den, så kommer den i opskriftsamlingen, og listen kan sendes – eller skift den ud.</div>
+           <div class="row wrap"><button class="btn primary small" data-action="day-approve" ${busy ? "disabled" : ""}>Godkend retten</button></div></div>` : ""}
+         ${m.leftovers ? '<p class="muted small">Det er rester – skifter du, skiftes retten, de er rester af.</p>' : ""}
          <div class="row wrap dialog-actions">
            ${m.dish && !m.written ? `<button class="btn" data-action="day-recipe" ${busy ? "disabled" : ""}>Se opskriften</button>` : ""}
            ${this._mealieButton(m.planId, m.date)}
@@ -3835,7 +3844,7 @@ class Rema1000Panel extends HTMLElement {
       return `<div class="day-row ${past ? "past" : ""}"><button class="day ${day.date === today ? "today" : ""}" data-action="day-menu" data-arg="${esc(owner.id)}|${day.date}">
           <span class="date">${day.date === today ? `I aften · ${esc(dateLabel(day.date))}` : esc(dateLabel(day.date))}</span>
           <span class="dish ${day.dish ? "" : "muted"}">${esc(day.dish || "Ingen ret – tryk for at vælge en")}</span>
-          <span class="meta">${day.total_minutes ? `${day.total_minutes} min` : ""}${type ? ` <span class="badge">${esc(type)}</span>` : ""}${day.mealie ? ' <span class="badge mealie">Mealie</span>' : ""}${owner.surprise ? ' <span class="badge surprise">Overraskelse</span>' : ""}</span>
+          <span class="meta">${day.total_minutes ? `${day.total_minutes} min` : ""}${type ? ` <span class="badge">${esc(type)}</span>` : ""}${day.mealie ? ' <span class="badge mealie">Mealie</span>' : ""}${day.new_dish ? ' <span class="badge doubt">Ny ret – godkend</span>' : ""}${owner.surprise ? ' <span class="badge surprise">Overraskelse</span>' : ""}</span>
         </button><span class="day-tools">${this._rateButtons(owner, day)}${this._moveButtons(owner, day, past)}</span></div>`;
     };
     // The newest plan decides each date; this week and the coming days show as one plan.
@@ -3891,6 +3900,12 @@ class Rema1000Panel extends HTMLElement {
           const broken = (plan.checklist || []).filter((c) => !c.ok);
           return broken.length
             ? `<div class="banner warn">AI'en kunne ikke overholde ${broken.length === 1 ? "ét krav" : `${broken.length} krav`}, selv efter at have prøvet igen:<ul class="checklist">${broken.map((c) => `<li class="bad">✗ ${esc(c.requirement)}</li>`).join("")}</ul>Tryk på retten for at skifte den ud, eller lav en ny madplan.</div>`
+            : "";
+        })()}
+        ${(() => {
+          const waiting = (plan.days || []).filter((d) => d.new_dish);
+          return waiting.length
+            ? `<div class="banner warn">${waiting.length === 1 ? "1 ny ret venter" : `${waiting.length} nye retter venter`} på godkendelse: ${waiting.map((d) => esc(d.dish)).join(", ")}. Listen sendes først, når de er godkendt eller skiftet ud – tryk på retten.</div>`
             : "";
         })()}
         <div class="days">${days}</div>
@@ -4430,7 +4445,7 @@ class Rema1000Panel extends HTMLElement {
                 <div class="what">
                   <span class="title"><b>${esc(p ? p.name : line.name)}</b> ${badges}</span>
                   <span class="muted">${esc(p?.underline || (this._state?.shop?.bilka_cart ? "Vælg en vare" : "Tilføjes som fritekst"))}${need ? ` · behov ${esc(need)}` : ""}</span>
-                  ${line.offer_name ? `<span class="muted">Avisvare: ${esc(line.offer_name)}</span>` : ""}
+                  ${line.offer_name ? `<span class="muted">Avisvare: ${esc(line.offer_name)}${line.swapped_from ? ` – i stedet for ${esc(line.swapped_from)}` : ""}</span>` : ""}
                   ${line.note ? `<span class="note">${esc(line.note)}</span>` : ""}
                   ${compare?.lines?.[line.id]
                     ? `<button class="cheaper" data-action="chain-move" data-arg="${esc(line.id)}|${esc(compare.lines[line.id].dealer_id)}"
@@ -5105,6 +5120,8 @@ class Rema1000Panel extends HTMLElement {
           <label class="field">Budget pr. madplan (kr.) ${num("budget", f.budget, 0, 100000)}</label>
           ${f.monthly_budget ? '<p class="muted small">I har et madbudget: en ny plan må koste det, der er tilbage af ugen, og dette tal bruges ikke.</p>' : ""}
         </div>
+        <label class="check"><input type="checkbox" data-path="recipe_planner" ${f.recipe_planner ? "checked" : ""}> Byg madplanen på opskrifter</label>
+        <p class="muted small">AI'en vælger ugens retter blandt de klare opskrifter (jeres og REMA's), der bruger avisens tilbud, og indkøbslisten regnes ud fra opskrifternes varer. Højst to nye retter om ugen – de skal godkendes, før listen sendes. Slået fra: AI'en finder på retterne og listen som før.</p>
         <label class="check"><input type="checkbox" data-path="shop_late_week" ${f.shop_late_week ? "checked" : ""}> Vi handler også sidst på ugen</label>
         <p class="muted small">Så må madplanen bruge tilbud, der først gælder fra torsdag, i retterne fra den dag. Varerne mærkes med, hvornår de skal købes. Ellers bruges kun tilbud, der gælder på indkøbsdagen.</p>
         `) + card(`        <h2 class="flush">Automatik</h2>

@@ -100,6 +100,8 @@ SITE_WORDS = (
 )  # fmt: skip
 RECIPE_EXTRAS_PER_DAY = 4  # items an AI recipe may add to the list for a dinner
 CHAIN_OFFERS_IN_PROMPT = 240  # other chains' offers the plan may be built on, in all
+# The new dishes a plan built on the week's candidates may have (each waits for approval).
+MAX_NEW_DISHES = 2
 WEEKDAYS_DA = ("mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag", "søndag")
 AVOID_DA = {
     "meat": "kød",
@@ -373,6 +375,7 @@ def build_prompt(
     shop: str = "REMA 1000",
     prices: bool = True,
     chain_offers: list[tuple[str, str, dict[str, Any]]] | None = None,
+    candidates: list[dict[str, Any]] | None = None,
 ) -> str:
     """Build the instructions for the AI (shop: where the family shops; prices: whether
     every item has a price there, or only the offers; chain_offers: other chains' offers
@@ -598,6 +601,24 @@ def build_prompt(
             "id | ret | ingredienser:",
         ]
         out += [f"{r['slug']} | {r['name']} | {', '.join(r['ingredients'])[:300]}" for r in mealie]
+    if candidates:
+        out += [
+            "",
+            "UGENS KANDIDATER – klare opskrifter med koblede varer, prissat med ugens tilbud "
+            "(billigst først). Byg madplanen af dem: skriv kandidatens id i recipe_id og dens "
+            "navn som dish. Indkøbslisten regnes ud fra opskriften, så skriv ikke dens varer i "
+            f"shopping. Højst {MAX_NEW_DISHES} dage må få en ny ret, der ikke er på listen "
+            "(recipe_id: null) – kun når ingen kandidat passer til kravene. "
+            "id | ret | pris pr. person | på tilbud | minutter:",
+        ]
+        out += [
+            f"{c['id']} | {'❤️ ' if c.get('favorite') else ''}{c['name']}"
+            f"{' (vegetar)' if c.get('vegetarian') else ''} | {c['per_person']:.0f} kr. | "
+            f"{', '.join(c.get('on_offer') or [])[:150] or '-'} | "
+            f"{c.get('total_minutes') or '?'}"
+            for c in candidates
+        ]
+        web, own = None, None  # the candidates are the recipes to use
     if web and not surprise:
         out += [
             "",
@@ -1019,6 +1040,24 @@ def link_favorites(
             day["recipe_id"] = recipe["id"]
 
 
+def new_dish_days(plan: dict[str, Any], settings: dict[str, Any]) -> list[dict[str, Any]]:
+    """The dinners that are none of the family's or REMA's recipes (cooked, not a fixed day)."""
+    return [
+        day
+        for day in plan["days"]
+        if is_cooked(day)
+        and not day.get("recipe_id")
+        and not day.get("mealie")
+        and day.get("type") != "fast"
+        and not fixed_day_text(settings, day)
+    ]
+
+
+def waiting_dishes(plan: dict[str, Any]) -> list[str]:
+    """The new dishes on a plan that wait for the family's approval."""
+    return [str(d.get("dish") or "") for d in plan.get("days") or [] if d.get("new_dish")]
+
+
 def recipe_factor(settings: dict[str, Any], recipe: dict[str, Any], day: dict[str, Any]) -> float:
     """How much of a recipe the household needs: twice when it makes leftovers."""
     portions = (
@@ -1239,6 +1278,27 @@ def list_entry(line: dict[str, Any]) -> dict[str, Any]:
     if amount and line.get("unit") and line["unit"] != "pk":
         label += f" ({amount:g} {line['unit']})"
     return {"name": label, "amount": int(line.get("packages") or 1)}
+
+
+def apply_offer_swap(
+    line: dict[str, Any],
+    ingredient: dict[str, Any],
+    by_kind: dict[str, list[Offer]],
+    prices: dict[int, tuple[float | None, bool]],
+    offers: list[Offer],
+) -> None:
+    """An item that may be another of its kind takes the week's cheaper offer of
+    that kind: the line is matched to the offer instead of the recipe's product."""
+    from .candidates import offer_swap  # noqa: PLC0415
+
+    product = ingredient.get("product") or {}
+    price, on_offer = prices.get(int(product.get("id") or 0), (None, False))
+    found = offer_swap(ingredient, price, on_offer, by_kind)
+    if found is None:
+        return
+    line["product_id"] = None
+    line["offer"] = f"o{offers.index(found[0])}"
+    line["swapped_from"] = str(product.get("name") or ingredient.get("name") or "")[:120]
 
 
 class AddItems(Protocol):
@@ -1738,6 +1798,7 @@ class MealPlanner(ProductMatcher):
         """
         settings = {**self.store.settings, "portion_percent": plan.get("portion_percent", 100)}
         pantry = pantry_words(settings["pantry"])
+        swaps = await self._async_swap_context(plan, offers, at)
         new_lines: list[dict[str, Any]] = []
         own_all: set[int] = set()  # the AI's lines of the recipe days
         kept_all: set[int] = set()  # ... that a recipe uses after all
@@ -1769,6 +1830,8 @@ class MealPlanner(ProductMatcher):
                     line = recipe_line(ingredient, factor)
                     if line is None:
                         continue  # a heading, equipment or water: nothing to buy
+                    if swaps is not None:
+                        apply_offer_swap(line, ingredient, *swaps, offers)
                     plan["shopping"].append(line)
                     new_lines.append(line)
                 elif line.get("recipe") and line["name"] not in uses:
@@ -1798,6 +1861,35 @@ class MealPlanner(ProductMatcher):
         if new_lines:
             await self._async_price_lines(new_lines, offers, at, late)
         plan["total"] = plan_total(plan["shopping"])
+
+    async def _async_swap_context(
+        self, plan: dict[str, Any], offers: list[Offer], at: datetime | None
+    ) -> tuple[dict[str, list[Offer]], dict[int, tuple[float | None, bool]]] | None:
+        """The week's offers by kind and the recipes' products' prices, for an item
+        that may be another of its kind; None when the planner doesn't swap."""
+        if not (self.store.settings.get("recipe_planner") and self.prices and offers):
+            return None
+        from .candidates import offer_kinds  # noqa: PLC0415
+
+        by_kind = offer_kinds(offers)
+        ids = sorted(
+            {
+                int(item["product"]["id"])
+                for day in plan["days"]
+                if is_cooked(day) and (recipe := find_recipe(self.store, day.get("recipe_id")))
+                for item in recipe["ingredients"]
+                if isinstance(item.get("product"), dict) and item["product"].get("id")
+            }
+        )
+        prices: dict[int, tuple[float | None, bool]] = {}
+        if ids and by_kind:
+            try:
+                products = await self.client.async_get_products(ids, at)
+            except RemaError as err:
+                _LOGGER.debug("Could not price the recipes' products: %s", err)
+            else:
+                prices = {p.id: (p.price, bool(p.is_advertised)) for p in products}
+        return by_kind, prices
 
     async def _async_recipe_extras(
         self,
@@ -1932,6 +2024,7 @@ class MealPlanner(ProductMatcher):
         # An update keeps the wishes the plan was made with.
         note = str(base.get("note") or "").strip() if base else self.store.note.strip()
         own = [] if surprise else prompt_recipes(self.store, recent)
+        candidates: list[dict[str, Any]] | None = None
         # The family's own recipe for a favourite: the plan uses it is.
         links = {
             fav["id"]: recipe
@@ -1950,6 +2043,12 @@ class MealPlanner(ProductMatcher):
         }
         # The dishes asked for on a day: in the wishes ("frikadeller onsdag"), or chosen.
         wishes = {**day_wishes(note, iso), **{day: p["dish"] for day, p in picks.items()}}
+        if settings.get("recipe_planner") and self.prices and not surprise:
+            # The new planner: the week's ready recipes, priced with its offers.
+            self._set_status("generating", "Finder ugens retter ud fra avisen …")
+            found = await self._async_plan_candidates(start, dates, settings, (catalog, offers))
+            if found is not None:
+                candidates, own, web = found
         mealie: list[dict[str, Any]] = []
         if settings["mealie_recipes"] and self.mealie.available and not surprise:
             self._set_status("generating", "Henter jeres opskrifter fra Mealie …")
@@ -1980,6 +2079,7 @@ class MealPlanner(ProductMatcher):
                 optional=optional, recent=recent, feedback=feedback, skipped=skipped, note=note,
                 late=late, mealie=mealie, own=own, disliked=disliked, surprise=surprise,
                 links=links, wishes=wishes, web=web, chain_offers=chain_offers, start=start,
+                candidates=candidates,
             )  # fmt: skip
         finally:
             self._search_cache = None
@@ -1997,6 +2097,10 @@ class MealPlanner(ProductMatcher):
             ) or await async_save_recipe(self.store, {**recipe, "id": None})
             chosen[web_id] = saved
             day["recipe_id"] = saved["id"]
+        if candidates:
+            # A dish that is none of the candidates waits for the family's approval.
+            for day in new_dish_days(best, settings):
+                day["new_dish"] = True
         problems = best.pop("problems")
         best["checklist"] += [{"requirement": p, "ok": False} for p in problems]
         if problems:
@@ -2041,6 +2145,55 @@ class MealPlanner(ProductMatcher):
             best = await self._async_put_picks(best, picks)
         self._notify()
         return best
+
+    async def _async_plan_candidates(
+        self,
+        start: date,
+        dates: list[date],
+        settings: dict[str, Any],
+        avis: tuple[Catalog | None, list[Offer]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]] | None:
+        """The week's candidates for the AI, the collection's recipes and REMA's
+        among them (REMA's under a short id); None when there are too few to fill
+        the days that are cooked, and the plan is made as before."""
+        from .candidates import async_candidates  # noqa: PLC0415
+
+        try:
+            found = await async_candidates(self, start, avis=avis)
+        except (HomeAssistantError, RemaError) as err:
+            _LOGGER.warning("Could not price the week's recipes: %s", err)
+            return None
+        fixed = sum(1 for d in dates if fixed_day_text(settings, {"date": d.isoformat()}))
+        cooked = max(1, len(dates) - settings["leftover_days"] - fixed)
+        listed = found["candidates"]
+        if len(listed) < cooked:
+            _LOGGER.info(
+                "Only %d ready recipes use the avis (%d days to cook): the plan is made as before",
+                len(listed),
+                cooked,
+            )
+            return None
+        own: list[dict[str, Any]] = []
+        web: list[dict[str, Any]] = []
+        shown: list[dict[str, Any]] = []
+        for item in listed:
+            if item["source"] == "collection":
+                recipe = find_recipe(self.store, item["id"])
+                if recipe is None:
+                    continue
+                own.append(recipe)
+                shown.append({**item, "id": recipe["id"]})
+            else:
+                recipe = self.rema_catalog.recipe(str(item["slug"]))
+                if recipe is None:
+                    continue
+                key = f"rema{len(web) + 1}"
+                recipe.update(id=key, site="REMA 1000", rema_slug=item["slug"])
+                if item.get("image"):
+                    recipe["image"] = item["image"]
+                web.append(recipe)
+                shown.append({**item, "id": key})
+        return shown, own, web
 
     async def _async_swap_repeats(self, plan: dict[str, Any], recent: list[str]) -> None:
         """Days the AI kept getting wrong, though asked not to (a dish from the last
@@ -2097,6 +2250,7 @@ class MealPlanner(ProductMatcher):
         web: list[dict[str, Any]],
         chain_offers: list[tuple[str, str, dict[str, Any]]],
         start: date,
+        candidates: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Ask the AI for a plan, check it, and ask again with what was wrong, up to
         MAX_AI_ROUNDS times. The best try is returned (fewest broken rules, then
@@ -2136,6 +2290,7 @@ class MealPlanner(ProductMatcher):
                 shop=self.shop,
                 prices=self.prices,
                 chain_offers=chain_offers,
+                candidates=candidates,
             )
             try:
                 raw = await self._async_ask_ai(
@@ -2173,6 +2328,11 @@ class MealPlanner(ProductMatcher):
                 disliked=disliked,
                 wishes=wishes,
             )
+            if candidates and (new := len(new_dish_days(plan, settings))) > MAX_NEW_DISHES:
+                problems.append(
+                    f"{new} retter er ikke blandt kandidaterne – højst {MAX_NEW_DISHES} må være "
+                    "nye; brug kandidaterne (deres id i recipe_id) til de andre dage"
+                )
             plan["problems"] = problems
             if best is not None and len(problems) > len(best["problems"]):
                 # Worse than what we have: not worth pricing, just tell the AI.
@@ -2688,6 +2848,9 @@ class MealPlanner(ProductMatcher):
         plan = self.store.get_plan(plan_id) if plan_id else self.store.latest_plan
         if plan is None:
             raise _invalid("no_plan" if not plan_id else "plan_not_found")
+        if waiting := waiting_dishes(plan):
+            # A new dish is bought for only once the family has said yes to it.
+            raise _invalid("new_dishes_waiting", dishes=", ".join(waiting))
         if plan.get("kind") == "freezer":
             plan["portions_locked"] = True
             await self.store.async_save()
@@ -3021,6 +3184,9 @@ class MealPlanner(ProductMatcher):
         for it (and new products on offer) come at 02:00 on the shopping day;
         thursday's offers at 02:00 that thursday.
         """
+        if waiting := waiting_dishes(plan):
+            _LOGGER.info("Not sent: new dishes wait for approval (%s)", ", ".join(waiting))
+            return
         now = dt_util.utcnow()
         main_at = prices_from(date.fromisoformat(plan["start_date"]))
         if main_at <= now:

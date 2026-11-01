@@ -214,6 +214,12 @@
     "day_text_required": {
       "message": "Skriv, hvad der skal stå på dagen."
     },
+    "new_dishes_waiting": {
+      "message": "Godkend de nye retter, før listen sendes: {dishes}. Tryk på retten og vælg Godkend – eller skift den ud."
+    },
+    "day_not_new": {
+      "message": "Retten er ikke en ny ret, der venter på godkendelse."
+    },
     "day_not_found": {
       "message": "Dagen findes ikke i madplanen."
     },

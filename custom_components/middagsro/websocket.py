@@ -49,6 +49,7 @@ from .planedit import (
     async_add_pantry_item,
     async_add_product,
     async_add_text,
+    async_approve_day,
     async_clear_day,
     async_edit_line,
     async_move_day,
@@ -888,6 +889,25 @@ async def ws_day_clear(
     """Delete a day's dish, or skip the day (no dinner at home)."""
     planner = _entry(hass, msg).runtime_data.planner
     plan = await async_clear_day(planner, msg["plan_id"], msg["date"], skip=msg["skip"])
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/day/approve",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("date"): str,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_day_approve(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Say yes to a new dish (it goes in the collection, and the list can be sent)."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_approve_day(planner, msg["plan_id"], msg["date"])
     connection.send_result(msg["id"], plan)
 
 
@@ -1790,6 +1810,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_plan_refresh,
         ws_day_clear,
         ws_day_restore,
+        ws_day_approve,
         ws_day_text,
         ws_day_move,
         ws_recipe_scan,

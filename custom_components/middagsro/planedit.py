@@ -32,6 +32,7 @@ from .mealplan import (
     _failed,
     _household_lines,
     _invalid,
+    _names_match,
     _tokens,
     fit_amounts,
     late_offers,
@@ -42,7 +43,15 @@ from .mealplan import (
     rule_lines,
     to_base,
 )
-from .recipes import disliked_names, favorite_recipe, find_recipe, ingredient_texts, prompt_recipes
+from .recipes import (
+    async_save_recipe,
+    disliked_names,
+    favorite_recipe,
+    find_recipe,
+    ingredient_texts,
+    prompt_recipes,
+    recipe_from_day,
+)
 from .words import _uses_item, pantry_words
 
 _LOGGER = logging.getLogger(__name__)
@@ -524,6 +533,7 @@ async def async_swap_dish(
         mealie=choice["mealie"],
         recipe_id=choice["recipe_id"],
     )
+    day.pop("new_dish", None)  # chosen by the family: nothing to approve
     if own is not None:
         own["times_planned"] = own.get("times_planned", 0) + 1
         own["last_planned"] = day["date"]
@@ -777,6 +787,41 @@ def _empty(day: dict[str, Any]) -> None:
         recipe_id=None,
     )
     day.pop("recipe_error", None)
+    day.pop("new_dish", None)
+
+
+async def async_approve_day(planner: MealPlanner, plan_id: str, day_date: str) -> dict[str, Any]:
+    """Say yes to a new dish on the plan: it goes in the collection, its items
+    linked to the products the plan found for them, and the list can be sent."""
+    plan, day = _plan_and_day(planner, plan_id, day_date)
+    if not day.get("new_dish"):
+        raise _invalid("day_not_new")
+    recipe = recipe_from_day(day)
+    ingredients = []
+    for raw in recipe["ingredients"]:
+        item = dict(raw)
+        line = next(
+            (
+                line
+                for line in plan["shopping"]
+                if line.get("product") and not line.get("must_have") and _names_match(line, item)
+            ),
+            None,
+        )
+        if line is not None:
+            product = line["product"]
+            item["product"] = {
+                "id": product["id"],
+                "name": str(product.get("name") or ""),
+                "underline": str(product.get("underline") or ""),
+            }
+        ingredients.append(item)
+    saved = await async_save_recipe(planner.store, {**recipe, "ingredients": ingredients})
+    day["recipe_id"] = saved["id"]
+    day.pop("new_dish", None)
+    await planner.store.async_save()
+    planner._notify()
+    return plan
 
 
 async def async_clear_day(

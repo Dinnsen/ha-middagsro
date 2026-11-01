@@ -2,6 +2,15 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.14.0b6] - 2026-11-01
+
+### Added
+- **The plan is built on recipes (*Byg madplanen på opskrifter*, on by default):** the AI chooses the week's dinners among the ready recipes that use the avis (yours and REMA's, priced as on *Tilbudsretter*), and the shopping list is worked out from the recipes' linked products in amounts for your household, not written by the AI. An item that may be another of its kind takes the week's cheaper offer of that kind ("Avisvare: … – i stedet for …" on the list). A REMA recipe the plan uses goes in your collection. With too few ready recipes for the days to cook, or the setting off, the plan is made as before.
+- **At most two new dishes, approved before the list is sent:** a dish that is none of the recipes is marked *Ny ret – godkend*. *Godkend retten* in the day's menu puts it in the collection (its items linked to the products the plan found) and lets the list be sent; *Skift ret* replaces it. An automatic send waits for the approval.
+
+### Fixed
+- Vegetarian items (vegetariske pølser) are never swapped for an offer of the meat kind.
+
 ## [2.14.0b5] - 2026-11-01
 
 ### Fixed

@@ -214,6 +214,12 @@
     "day_text_required": {
       "message": "Write what the day should say."
     },
+    "new_dishes_waiting": {
+      "message": "Approve the new dishes before the list is sent: {dishes}. Tap the dish and choose Approve, or swap it."
+    },
+    "day_not_new": {
+      "message": "That dish is not a new dish waiting for approval."
+    },
     "day_not_found": {
       "message": "That day is not in the meal plan."
     },

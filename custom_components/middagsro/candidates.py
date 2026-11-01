@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.util import dt as dt_util
 
 from .amounts import package_size, parse_amount, to_base
-from .api import Offer, Product, RemaError
+from .api import Catalog, Offer, Product, RemaError
 from .dishes import food_conflicts, matches_any
 from .linking import is_bought, kind_of, links
 from .recipes import disliked_names
@@ -142,6 +142,25 @@ def swap_price(product: dict[str, Any], offers: list[Offer]) -> tuple[Offer, flo
     return best
 
 
+def offer_swap(
+    ingredient: dict[str, Any],
+    price: float | None,
+    on_offer: bool,
+    offers: dict[str, list[Offer]],
+) -> tuple[Offer, float] | None:
+    """The offer that takes an item's place, and its price for as much as the item's
+    product holds: an item that may be another of its kind (not exact, not made
+    without meat), whose own product is not on offer, and when the offer is cheaper."""
+    name = str(ingredient.get("name") or "")
+    if on_offer or ingredient.get("exact") or _MEAT_FREE.search(name):
+        return None
+    kind = _kind(name)
+    found = swap_price(ingredient.get("product") or {}, offers.get(kind, [])) if kind else None
+    if found is None or (price is not None and found[1] >= price):
+        return None
+    return found
+
+
 def price_recipe(
     ingredients: list[dict[str, Any]],
     prices: dict[int, tuple[float | None, bool]],
@@ -165,13 +184,7 @@ def price_recipe(
         name = str(ingredient["name"])
         if offer:
             on_offer.append(name)
-        elif (
-            not ingredient.get("exact")
-            and not _MEAT_FREE.search(name)
-            and (kind := _kind(name))
-            and (found := swap_price(product, offers.get(kind, [])))
-            and (price is None or found[1] < price)
-        ):
+        elif found := offer_swap(ingredient, price, offer, offers):
             if price is not None:
                 saving += price - found[1]
             swaps.append({"item": name, "offer": found[0].heading, "price": found[1]})
@@ -191,14 +204,18 @@ def _product_prices(products: list[Product]) -> dict[int, tuple[float | None, bo
 
 
 async def async_candidates(
-    planner: MealPlanner, start: date, sort: str = "cheapest"
+    planner: MealPlanner,
+    start: date,
+    sort: str = "cheapest",
+    avis: tuple[Catalog | None, list[Offer]] | None = None,
 ) -> dict[str, Any]:
-    """The week's dinners from the avis, ranked; and how many the rules left out."""
+    """The week's dinners from the avis, ranked; and how many the rules left out.
+    ``avis``: the catalogue and its offers, when the caller has them already."""
     store = planner.store
     settings = store.settings
     pantry = pantry_words(str(settings.get("pantry") or ""))
     at: datetime | None = planner.price_time(start)
-    catalog, offers = await planner._async_offers(start)
+    catalog, offers = avis if avis is not None else await planner._async_offers(start)
     by_kind = offer_kinds(offers)
     recent = store.recent_dishes(start, settings["no_repeat_weeks"])
     disliked = disliked_names(store)

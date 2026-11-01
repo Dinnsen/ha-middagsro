@@ -54,6 +54,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # Entered as an amount a week ("week") or a month ("month"). A weekly amount is
     # the same every day (weekly / 7), and monthly_budget is then its month on average.
     "budget_period": "month",
+    # Build a plan on the week's ready recipes, priced with the avis (candidates.py);
+    # off: the AI makes up the plan and its list, as before.
+    "recipe_planner": True,
     "weekly_budget": 0,
     "budget_notify": False,  # tell when 80 % of the week is used (to watch_notify's target)
     "budget_since": None,  # the day the monthly budget was first set (kept by the store)
@@ -140,6 +143,7 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
     if settings["budget_period"] == "week":
         settings["monthly_budget"] = round(settings["weekly_budget"] * 365 / 12 / 7)
     settings["budget_notify"] = bool(settings["budget_notify"])
+    settings["recipe_planner"] = bool(settings["recipe_planner"])
     try:
         settings["budget_since"] = (
             date.fromisoformat(str(settings["budget_since"])[:10]).isoformat()
@@ -257,7 +261,7 @@ def plan_period(plan: dict[str, Any]) -> tuple[str, str]:
 
 # The settings a plan is made from: changing one of them offers to update the plan.
 PLAN_SETTINGS = (
-    "days", "budget", "monthly_budget", "budget_period", "weekly_budget", "organic", "organic_max_extra_pct", "avoid",
+    "days", "budget", "monthly_budget", "budget_period", "weekly_budget", "recipe_planner", "organic", "organic_max_extra_pct", "avoid",
     "avoid_other", "allergies", "allergies_other", "household", "portion_percent",
     "must_haves", "min_vegetarian", "max_vegetarian", "leftover_days", "no_leftover_weekdays",
     "fixed_days", "max_cook_minutes_weekday", "pantry", "wishes", "egg_min", "milk_organic",
