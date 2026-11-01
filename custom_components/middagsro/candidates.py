@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.util import dt as dt_util
 
+from .amounts import package_size, parse_amount, to_base
 from .api import Offer, Product, RemaError
 from .dishes import food_conflicts, matches_any
 from .linking import is_bought, kind_of, links
@@ -62,6 +63,21 @@ _ORIGIN = re.compile(
 )
 
 
+# REMA's categories for what is not a dinner (unless it is in Aftensmad too).
+_NOT_DINNER = frozenset(
+    {
+        "Frokost", "Til madpakken", "Morgenmad", "Brunch", "Snacks", "Bagværk", "Kager",
+        "Dessert", "Desserter", "Forretter", "Tapas", "Mad på farten", "Tilbehør til aftensmad",
+        "Drinks", "Halloween", "Fastelavn",
+    }
+)  # fmt: skip
+
+
+def is_dinner(tags: list[str]) -> bool:
+    """Is one of REMA's recipes a dinner, by its categories?"""
+    return "Aftensmad" in tags or not _NOT_DINNER.intersection(tags)
+
+
 @lru_cache(maxsize=4096)
 def _kind(name: str) -> str | None:
     return kind_of(name)
@@ -80,28 +96,58 @@ def heading_kinds(heading: str) -> set[str]:
     return {k for part in parts if part.strip() and (k := _kind(part)) in SWAPPABLE}
 
 
-def offer_kinds(offers: list[Offer]) -> dict[str, Offer]:
-    """The week's offers by the kind of thing each is (the cheapest offer of a kind)."""
-    by_kind: dict[str, Offer] = {}
+# Not food for a dinner: drinks ("Tuborg Squash" is no squash), sold with a deposit.
+_DRINK = re.compile(r"\b(?:cola|fanta|sodavand|øl|vin|juice|saft)\b", re.IGNORECASE)
+
+
+def _is_drink(offer: Offer) -> bool:
+    return "pant" in str(offer.description or "").lower() or bool(_DRINK.search(offer.heading))
+
+
+def offer_size(offer: Offer) -> tuple[str, float] | None:
+    """An offer's package in grams, millilitres or pieces ("400 g", "10 stk.", "0.5 l")."""
+    if size := package_size(offer.quantity):
+        return size
+    parsed = parse_amount(str(offer.quantity or ""))
+    return to_base(parsed[0], parsed[1]) if parsed else None
+
+
+def offer_kinds(offers: list[Offer]) -> dict[str, list[Offer]]:
+    """The week's offers by the kind of thing each is."""
+    by_kind: dict[str, list[Offer]] = {}
     for offer in offers:
-        if offer.price is None:
+        if offer.price is None or _is_drink(offer) or offer_size(offer) is None:
             continue
         for kind in heading_kinds(offer.heading):
-            best = by_kind.get(kind)
-            if best is None or (best.price or 0) > offer.price:
-                by_kind[kind] = offer
+            by_kind.setdefault(kind, []).append(offer)
     return by_kind
+
+
+def swap_price(product: dict[str, Any], offers: list[Offer]) -> tuple[Offer, float] | None:
+    """The cheapest offer for as much as the product holds, and that price; None
+    when the sizes can't be compared (a 10-pack of eggs is not a 30-pack)."""
+    size = package_size(product.get("underline"))
+    best: tuple[Offer, float] | None = None
+    for offer in offers:
+        other = offer_size(offer)
+        if size is None or other is None or other[0] != size[0] or not other[1]:
+            continue
+        price = round(float(offer.price or 0) / other[1] * size[1], 2)
+        if best is None or price < best[1]:
+            best = (offer, price)
+    return best
 
 
 def price_recipe(
     ingredients: list[dict[str, Any]],
     prices: dict[int, tuple[float | None, bool]],
-    offers: dict[str, Offer],
+    offers: dict[str, list[Offer]],
     pantry: list[str],
 ) -> dict[str, Any]:
     """A recipe's price this week: {cost, saving, on_offer: [names], swaps: [{item, offer}]}.
 
-    ``prices``: each product's (price, on offer) at the plan's first day.
+    ``prices``: each product's (price, on offer) at the plan's first day. An offer
+    takes an item's place at its price for as much as the item's product holds.
     """
     cost = 0.0
     saving = 0.0
@@ -115,18 +161,17 @@ def price_recipe(
         name = str(ingredient["name"])
         if offer:
             on_offer.append(name)
-        elif not ingredient.get("exact") and (kind := _kind(name)):
-            cheaper = offers.get(kind)
-            if (
-                cheaper is not None
-                and cheaper.price is not None
-                and (price is None or cheaper.price < price)
-            ):
-                if price is not None:
-                    saving += price - cheaper.price
-                swaps.append({"item": name, "offer": cheaper.heading, "price": cheaper.price})
-                on_offer.append(name)
-                price = cheaper.price
+        elif (
+            not ingredient.get("exact")
+            and (kind := _kind(name))
+            and (found := swap_price(product, offers.get(kind, [])))
+            and (price is None or found[1] < price)
+        ):
+            if price is not None:
+                saving += price - found[1]
+            swaps.append({"item": name, "offer": found[0].heading, "price": found[1]})
+            on_offer.append(name)
+            price = found[1]
         cost += price or 0
     return {
         "cost": round(cost, 2),
@@ -213,6 +258,8 @@ async def async_candidates(
     moment = at or dt_util.utcnow()
     for entry in planner.rema_catalog.recipes.values():
         if entry["slug"] in mine:
+            continue
+        if not is_dinner(entry.get("tags") or []):
             continue
         if not entry.get("ready"):
             left_out["not_ready"] += 1

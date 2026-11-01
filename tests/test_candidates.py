@@ -21,14 +21,16 @@ from .test_rema_recipes import ENTITY, NOW
 START = date(2026, 10, 19)
 
 
-def offer(heading: str, price: float | None) -> Offer:
+def offer(
+    heading: str, price: float | None, quantity: str = "1 kg", description: str | None = None
+) -> Offer:
     return Offer(
         id=heading,
         heading=heading,
-        description=None,
+        description=description,
         price=price,
         pre_price=None,
-        quantity=None,
+        quantity=quantity,
         valid_from=None,
         valid_to=None,
     )
@@ -45,39 +47,53 @@ def test_what_an_offer_is() -> None:
     assert cd.heading_kinds("Glyngøre Tun i vand, olie eller tomat") == set()
     assert cd.heading_kinds("Andebryst eller andelår") == set()  # not one to swap
     kinds = cd.offer_kinds(
-        [offer("Kartofler", 12), offer("Kartofler", 9), offer("Rød peber", None)]
+        [
+            offer("Kartofler", 12, "2 kg"),
+            offer("Kartofler", 9),
+            offer("Rød peber", None),
+            offer("Coca-Cola, Fanta eller Tuborg Squash", 3, "33 cl", "33 cl. Ex. pant"),
+            offer("Squash", 5, quantity="ca. et stykke"),  # no size to compare by
+        ]
     )
     assert set(kinds) == {"kartofler"}
-    assert kinds["kartofler"].price == 9
+    best = cd.swap_price({"underline": "2 KG. / DANMARK"}, kinds["kartofler"])
+    assert best is not None and (best[0].price, best[1]) == (12, 12.0)  # 6 kr. a kg, not 9
+    assert cd.swap_price({"underline": "10 STK."}, kinds["kartofler"]) is None
+    assert cd.swap_price({}, kinds["kartofler"]) is None
+    assert cd.offer_size(offer("Æg", 18, "10 stk.")) == ("stk", 10)
+    assert cd.is_dinner(["Aftensmad", "Frokost"]) and cd.is_dinner(["Kødfri"])
+    assert not cd.is_dinner(["Frokost", "Kødfri"])
 
 
 def test_price_a_recipe() -> None:
     """On offer by its own product, or by an offer of its kind when it may be swapped."""
-    offers = cd.offer_kinds([offer("REMA 1000 Dansk kyllingebrystfilet tilsat lage", 30)])
+    offers = cd.offer_kinds([offer("REMA 1000 Dansk kyllingebrystfilet tilsat lage", 30, "450 g")])
     prices = {1: (40.0, True), 2: (45.0, False), 3: (9.0, False)}
     ingredients = [
         {"name": "hakket oksekød", "product": {"id": 1}},
-        {"name": "kyllingebryst", "product": {"id": 2}},
+        {"name": "kyllingebryst", "product": {"id": 2, "underline": "600 GR. / DANSK"}},
         {"name": "spaghetti", "product": {"id": 3}},
         {"name": "salt"},
     ]
     price = cd.price_recipe(ingredients, prices, offers, ["salt"])
     assert price == {
-        "cost": 79.0,
-        "saving": 15.0,
+        "cost": 89.0,  # 600 g at the offer's 30 kr. for 450 g
+        "saving": 5.0,
         "on_offer": ["hakket oksekød", "kyllingebryst"],
         "swaps": [
             {
                 "item": "kyllingebryst",
                 "offer": "REMA 1000 Dansk kyllingebrystfilet tilsat lage",
-                "price": 30,
+                "price": 40.0,
             }
         ],
     }
     ingredients[1]["exact"] = True  # always that product: no swap
     assert cd.price_recipe(ingredients, prices, offers, ["salt"])["swaps"] == []
     # A product without a price takes the offer's, with nothing saved.
-    unknown = cd.price_recipe([{"name": "kyllingebryst", "product": {"id": 9}}], {}, offers, [])
+    unknown = cd.price_recipe(
+        [{"name": "kyllingebryst", "product": {"id": 9, "underline": "450 GR."}}], {}, offers, []
+    )
     assert (unknown["cost"], unknown["saving"]) == (30.0, 0.0)
 
 
@@ -99,7 +115,8 @@ async def test_the_weeks_dinners(
     store.recipes = [
         _own("Spaghetti bolognese", beef, {"name": "spaghetti", "product": {"id": 60002}},
              {"name": "salt"}, servings=8),
-        _own("Kyllingegryde", {"name": "kyllingebryst", "product": {"id": 30002}}),
+        _own("Kyllingegryde",
+             {"name": "kyllingebryst", "product": {"id": 30002, "underline": "600 GR. / DANSK"}}),
         _own("Laks i ovn", {"name": "laksefilet", "product": {"id": 99}}),
         _own("Pasta med smør", {"name": "spaghetti", "product": {"id": 60002}},
              rema_slug="dobbelt"),
@@ -123,8 +140,8 @@ async def test_the_weeks_dinners(
         return_value=(
             None,
             [
-                offer("REMA 1000 Dansk kyllingebrystfilet tilsat lage", 34.95),
-                offer("Karolines Køkken Piskefløde 36%", 10),
+                offer("REMA 1000 Dansk kyllingebrystfilet tilsat lage", 34.95, "600 g"),
+                offer("Karolines Køkken Piskefløde 36%", 10, "400 g"),
             ],
         )
     )

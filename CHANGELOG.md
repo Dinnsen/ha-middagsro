@@ -2,6 +2,13 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.14.0b5] - 2026-11-01
+
+### Fixed
+- **Tilbudsretter compared packages of different sizes:** an offer now takes an item's place at its price for as much as the item's product holds (450 g of chicken breast on offer against a 600 g package), and only when the sizes can be compared (a 10-pack of eggs is not a 30-pack).
+- **"Tuborg Squash" stood in for squash:** drinks (sold with a deposit, cola, juice …) are not offers for a dinner.
+- **Lunch and snacks among the dinners:** REMA's recipes for lunch, the lunch box, starters, side dishes and the like are left out, unless REMA has them as dinners too.
+
 ## [2.14.0b4] - 2026-11-01
 
 ### Added
