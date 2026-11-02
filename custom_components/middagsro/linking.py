@@ -14,6 +14,7 @@ plan can use it without anyone checking its items.
 from __future__ import annotations
 
 import asyncio
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 from .api import RemaError
@@ -27,6 +28,7 @@ MAX_SUGGEST = 40  # ingredients looked up at a time
 PARALLEL = 4
 
 
+@lru_cache(maxsize=8192)
 def kind_of(name: str) -> str | None:
     """The kind of thing an ingredient is ("2 fed hvidløg, pressede": hvidløg); None
     for a heading, equipment or tap water (nothing to buy)."""

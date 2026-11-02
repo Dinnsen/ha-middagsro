@@ -283,10 +283,10 @@ async def async_candidates(
             continue
         if not is_dinner(entry.get("tags") or []):
             continue
-        if not entry.get("ready"):
+        if not planner.rema_catalog.is_ready(entry):
             left_out["not_ready"] += 1
             continue
-        ingredients = entry["recipe"].get("ingredients") or []
+        ingredients = planner.rema_catalog.ingredients(entry)
         if not allowed(entry["title"], ingredients):
             continue
         entry_prices = {

@@ -103,6 +103,11 @@ const REMA_ID = "11deC"; // REMA 1000 on Tjek: its avis is shown first among the
 const RATE_LABELS = { like: "Synes om", dislike: "Synes ikke om", favorite: "Favorit" };
 const SURPRISE_ICON = '<svg class="ai" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11h16v9H4zM12 11v9M3 7.5h18V11H3zM12 7.5C10 3 6 4 7.5 6.5 8.4 8 12 7.5 12 7.5zm0 0c2-4.5 6-3.5 4.5-1C15.6 8 12 7.5 12 7.5z"/></svg>';
 const RECIPE_SORTS = { name: "Navn", newest: "Senest tilføjet", most_used: "Mest brugt", quickest: "Hurtigst" };
+// What a day can be: in Tilpas dagene (this week) and under Faste dage (every week).
+const DAY_KIND_LABELS = { ai: "AI vælger", pick: "Vælg selv ret", skip: "Spring over", rest: "Restedag", rye: "Rugbrødsdag", veg: "Vegetardag", fixed: "Fast ret" };
+const FIXED_KINDS = ["rest", "rye", "veg", "skip", "fixed"];
+const fixedKindOf = (f) =>
+  FIXED_KINDS.includes(f?.kind) ? f.kind : /\brest/i.test(f?.text || "") ? "rest" : /\brugbrød/i.test(f?.text || "") ? "rye" : "fixed";
 const RECIPE_FILTERS = { all: "Alle", favorite: "Favoritter", like: "Synes om", dislike: "Synes ikke om", unlinked: "Mangler varer" };
 // 👍, 👎 and ❤️: pressing the same again takes it back, the other one replaces it (as the server does).
 const applyRating = (recipe, action) => {
@@ -174,7 +179,7 @@ const SETTINGS_SECTIONS = (panel) => {
     { key: "family", title: "Familie og portioner", form: true,
       summary: `${f.household.length} personer${f.portion_percent > 100 ? ` · +${f.portion_percent - 100} % mad` : ""}${allergies ? ` · ${allergies} allergi${allergies === 1 ? "" : "er"}` : ""}${f.avoid.length ? ` · undgår ${f.avoid.length}` : ""}` },
     { key: "dishes", title: "Retter og vaner", form: true,
-      summary: `${state.favorites.length} favoritretter · ${dislikes} kan ikke lide · ${f.leftover_days} restedage` },
+      summary: `${f.leftover_days} restedage · ${(f.fixed_days || []).length} faste dage · ${f.min_vegetarian}-${f.max_vegetarian} vegetarretter` },
     { key: "shopping", title: "Indkøb og basisvarer", form: true,
       summary: `${organic}${f.must_haves.length ? ` · ${f.must_haves.length} faste varer` : ""}` },
     { key: "rules", title: "Det skal AI'en huske", form: false,
@@ -315,6 +320,7 @@ class Rema1000Panel extends HTMLElement {
     this._book = { amount: "", store: null, date: "", monthly: "" }; // store: null is the family's shop
     // Dishes chosen for a day of the next plan: {date: {dish, source, recipe_id | slug}}.
     this._picks = {};
+    this._dayKinds = {}; // ISO date -> {kind, text}: what a day of the next plan is this week
     this._sites = { query: "", results: [], loading: false, error: null, searched: false, opening: null };
     this._budgetSpan = "month";
     this._wake = null;
@@ -1012,12 +1018,15 @@ class Rema1000Panel extends HTMLElement {
         }
         if (!pick) return;
         this._picks[m.date] = pick;
+        this._dayKinds[m.date] = { kind: "pick", text: "" };
+        this._skip.delete(m.date);
         this._modal = null;
         this._renderModal();
         this._render();
       },
       "pick-remove": () => {
         delete this._picks[arg];
+        this._dayKinds[arg] = { kind: "ai", text: "" };
         this._render();
       },
       "move-day": () => {
@@ -1116,6 +1125,19 @@ class Rema1000Panel extends HTMLElement {
         this._renderModal();
       },
       "rc-save": () => this._recipeSave(),
+      "rc-rema-save": () => {
+        const m = this._modal;
+        if (m?.kind !== "recipe" || !m.recipe.rema_slug || m.busy) return;
+        const slug = m.recipe.rema_slug;
+        this._run(async () => {
+          const res = await this._ws("middagsro/rema_recipes/save_links", { slug, ingredients: m.recipe.ingredients });
+          const card = (this._rr?.recipes || []).find((r) => r.slug === slug);
+          if (card) card.ready = !!res.ready;
+          if (this._cand) this._cand.data = null; // priced again with the new products
+          this._modal = null;
+          this._renderModal();
+        }, "Varerne er gemt på REMA-opskriften.");
+      },
       "rc-ing-pick": () => {
         const m = this._modal;
         const [idx, id] = String(arg).split("|");
@@ -1188,7 +1210,10 @@ class Rema1000Panel extends HTMLElement {
         this._renderModal();
       },
       "rc-plan-day": () => this._recipeToPlan(arg),
-      surprise: () => this._run(() => this._generate(true), "Madplanen med nye, overraskende retter er ved at blive lavet – det tager typisk 1-2 minutter."),
+      surprise: () => {
+        if (!confirm("Overrask jer? Middagsro laver en ny madplan med retter, I aldrig har fået – fra andre køkkener og med overraskende smage.")) return;
+        this._run(() => this._generate(true), "Madplanen med nye, overraskende retter er ved at blive lavet – det tager typisk 1-2 minutter.");
+      },
       everywhere: () => this._everywhereRun(),
       "everywhere-clear": () => {
         this._everywhere = { query: "", loading: false, data: null, error: null };
@@ -1351,7 +1376,7 @@ class Rema1000Panel extends HTMLElement {
       "add-row": () => {
         const rows = {
           household: { role: "adult", age: 40, sex: "female" },
-          fixed_days: { weekday: 3, text: "" },
+          fixed_days: { weekday: 3, kind: "rest", text: "Rester" },
           must_haves: { name: "", amount: 1, product_id: null },
         };
         this._form[arg].push(clone(rows[arg]));
@@ -1666,6 +1691,26 @@ class Rema1000Panel extends HTMLElement {
       if (ev.type === "change") this._render(); // the skip boxes follow the dates
       return;
     }
+    if (ds.bind === "daykind") {
+      if (ev.type !== "change") return;
+      const iso = ds.field;
+      const kind = el.value;
+      const before = this._kindOf(iso);
+      this._dayKinds[iso] = { kind, text: kind === "fixed" ? before.text || "" : "" };
+      if (kind !== "pick") delete this._picks[iso];
+      if (kind === "skip") this._skip.add(iso);
+      else this._skip.delete(iso);
+      this._render();
+      if (kind === "pick" && !this._picks[iso]) {
+        this._modal = { kind: "pick", date: iso, tab: "collection", query: "", rema: null, mealie: null };
+        this._renderModal();
+      }
+      return;
+    }
+    if (ds.bind === "daykindtext") {
+      this._dayKinds[ds.field] = { kind: "fixed", text: el.value };
+      return;
+    }
     if (ds.bind === "skip") {
       if (el.checked) this._skip.add(el.value);
       else this._skip.delete(el.value);
@@ -1822,6 +1867,12 @@ class Rema1000Panel extends HTMLElement {
       let target = this._form;
       while (keys.length > 1) target = target[keys.shift()];
       target[keys[0]] = value;
+      // A fixed day's own text only for a fixed dish.
+      const fixedKind = /^fixed_days\.(\d+)\.kind$/.exec(ds.path);
+      if (fixedKind && ev.type === "change") {
+        const row = this._form.fixed_days[Number(fixedKind[1])];
+        if (row) row.text = value === "fixed" ? "" : DAY_KIND_LABELS[value];
+      }
       // The same budget in the other period, so switching doesn't turn it off.
       if (ds.path === "budget_period" && ev.type === "change") {
         const f = this._form;
@@ -1882,15 +1933,18 @@ class Rema1000Panel extends HTMLElement {
   }
 
   async _generate(surprise = false) {
-    const days = new Set(this._planDates());
+    const dates = this._planDates();
+    const kinds = Object.fromEntries(dates.map((iso) => [iso, this._kindOf(iso)]));
     await this._ws("middagsro/generate", {
       start_date: this._startDate || null,
-      skip_dates: [...this._skip].filter((d) => days.has(d)),
+      skip_dates: dates.filter((d) => kinds[d].kind === "skip"),
       surprise,
-      picks: Object.fromEntries(Object.entries(this._picks).filter(([d]) => days.has(d) && !this._skip.has(d))),
+      days: Object.fromEntries(dates.map((d) => [d, { kind: kinds[d].kind === "pick" && !this._picks[d] ? "ai" : kinds[d].kind, text: kinds[d].text || "" }])),
+      picks: Object.fromEntries(Object.entries(this._picks).filter(([d]) => kinds[d]?.kind === "pick")),
     });
     this._skip.clear();
     this._picks = {};
+    this._dayKinds = {};
     this._viewingLatest = true;
     this._tab = "plan";
   }
@@ -3214,7 +3268,7 @@ class Rema1000Panel extends HTMLElement {
         </div>
         ${r.image ? `<img class="rc-photo" src="${esc(r.image)}" alt="">` : ""}
         ${r.rema_slug
-          ? `<p class="muted small">Fra REMA 1000's opskrifter. Ingredienserne er koblet til REMA's varer, så indkøbslisten får de rigtige varer.${r.id ? "" : " Gem den i opskriftsamlingen, eller sæt den direkte på madplanen."}</p>`
+          ? `<p class="muted small">Fra REMA 1000's opskrifter. Ingredienserne er koblet til REMA's varer, så indkøbslisten får de rigtige varer.${r.id ? "" : " <b>Gem</b> beholder jeres valg af varer på REMA-opskriften; <b>Gem i samlingen</b> gemmer den også i jeres opskriftsamling."}</p>`
           : m.imported ? `<p class="muted small">${m.recipe.source === "scan" ? "Læst fra billedet af AI'en – tjek mængder og trin" : m.recipe.source === "web" ? `Fra ${esc(m.recipe.site || "madsiden")}` : "Hentet fra linket"}. Ret det, der skal rettes, og gem den i opskriftsamlingen.</p>` : ""}
         ${m.recipe.url ? `<p class="muted small"><a href="${esc(m.recipe.url)}" target="_blank" rel="noopener">Se opskriften på ${esc(m.recipe.site || "siden")} ↗</a></p>` : ""}
         ${this._remaPick && r.rema_slug
@@ -3222,6 +3276,8 @@ class Rema1000Panel extends HTMLElement {
               <button class="btn primary small" data-action="rr-pick" data-arg="${esc(r.rema_slug)}" ${busy ? "disabled" : ""}>${m.busy === "pick" ? '<span class="spinner small"></span> Sætter på …' : "Sæt på madplanen"}</button></div>`
           : ""}
         ${m.error ? `<div class="banner error">${esc(m.error)}</div>` : ""}
+        ${r.favorite ? `<label class="field rc-freq">Favorit – hvor tit skal den på madplanen?
+          <select data-bind="rcp" data-field="frequency">${["weekly", "biweekly", "monthly", "on_offer", "inspiration"].map((q) => `<option value="${q}" ${(r.frequency || "inspiration") === q ? "selected" : ""}>${FREQ_LABELS[q]}</option>`).join("")}</select></label>` : ""}
         <div class="grid rc-meta">
           <label class="field">Personer ${field("servings", r.servings, 'type="number" min="1" max="50"')}</label>
           <label class="field">Min. aktiv ${field("active_minutes", r.active_minutes, 'type="number" min="0" max="600"')}</label>
@@ -3243,6 +3299,7 @@ class Rema1000Panel extends HTMLElement {
         ${targets}
         <div class="dialog-bottom wrap">
           <button class="btn primary" data-action="rc-save" ${busy ? "disabled" : ""}>${r.id ? "Gem" : "Gem i samlingen"}</button>
+          ${r.rema_slug && !r.id ? `<button class="btn" data-action="rc-rema-save" ${busy ? "disabled" : ""} title="Gem varerne på REMA-opskriften, uden at den kommer i samlingen">Gem</button>` : ""}
           ${r.id || r.rema_slug ? `<button class="btn" data-action="rc-plan" ${busy ? "disabled" : ""}>${aiLabel("Tilføj til madplan")}</button>` : ""}
           ${r.id ? `<button class="btn danger" data-action="rc-delete" ${busy ? "disabled" : ""}>Slet</button>` : ""}
           <span class="spacer"></span>
@@ -3729,16 +3786,40 @@ class Rema1000Panel extends HTMLElement {
     return localDay(cat.upcoming?.valid_to || cat.current?.valid_to || "");
   }
 
+  // A day of the next plan as the settings' Faste dage have it.
+  _defaultKind(iso) {
+    const weekday = (new Date(`${iso}T12:00:00`).getDay() + 6) % 7;
+    const fixed = (this._state?.settings?.fixed_days || []).find((f) => Number(f.weekday) === weekday);
+    return fixed ? { kind: fixedKindOf(fixed), text: fixed.text || "" } : { kind: "ai", text: "" };
+  }
+
+  // What a day of the next plan is this week: chosen here, or as the settings have it.
+  _kindOf(iso) {
+    if (this._dayKinds[iso]) return this._dayKinds[iso];
+    if (this._picks[iso]) return { kind: "pick", text: "" };
+    if (this._skip.has(iso)) return { kind: "skip", text: "" };
+    return this._defaultKind(iso);
+  }
+
   _generateControls(label = "Lav ny madplan") {
     const generating = this._state?.status?.state === "generating";
     const skip = this._planDates()
       .map((iso) => {
         const pick = this._picks[iso];
-        const skipped = this._skip.has(iso);
-        return `<div class="pickday ${pick ? "picked" : ""} ${skipped ? "skipped" : ""}"><b>${esc(dateLabel(iso))}</b><label class="check skipday"><input type="checkbox" data-bind="skip" value="${iso}" ${skipped ? "checked" : ""}> Spring over</label>
-          ${skipped ? "" : pick
-            ? `<span class="pick-chip"><button class="link" data-action="pick-open" data-arg="${iso}" title="Skift retten">${esc(pick.dish)}</button><button class="icon-btn" data-action="pick-remove" data-arg="${iso}" aria-label="Fjern ${esc(pick.dish)}">${CLOSE_ICON}</button></span>`
-            : `<button class="btn small pick-btn" data-action="pick-open" data-arg="${iso}" title="Vælg selv retten til ${esc(dateLabel(iso).toLowerCase())}">Vælg ret</button>`}</div>`;
+        const k = this._kindOf(iso);
+        const options = Object.entries(DAY_KIND_LABELS)
+          .map(([key, l]) => `<option value="${key}" ${k.kind === key ? "selected" : ""}>${l}</option>`)
+          .join("");
+        const extra =
+          k.kind === "pick"
+            ? pick
+              ? `<span class="pick-chip"><button class="link" data-action="pick-open" data-arg="${iso}" title="Skift retten">${esc(pick.dish)}</button><button class="icon-btn" data-action="pick-remove" data-arg="${iso}" aria-label="Fjern ${esc(pick.dish)}">${CLOSE_ICON}</button></span>`
+              : `<button class="btn small primary pick-btn" data-action="pick-open" data-arg="${iso}">Find ret i opskrifter</button>`
+            : k.kind === "fixed"
+              ? `<input type="text" class="grow" data-bind="daykindtext" data-field="${iso}" value="${esc(k.text || "")}" placeholder="Fx Pizza">`
+              : "";
+        return `<div class="pickday ${pick && k.kind === "pick" ? "picked" : ""} ${k.kind === "skip" ? "skipped" : ""}"><b>${esc(dateLabel(iso))}</b>
+          <select data-bind="daykind" data-field="${iso}" aria-label="Hvad er ${esc(dateLabel(iso).toLowerCase())}">${options}</select>${extra}</div>`;
       })
       .join("");
     const note = this._state?.note;
@@ -3758,10 +3839,14 @@ class Rema1000Panel extends HTMLElement {
     </div>
     ${skip ? (() => {
       const dates = this._planDates();
-      const tailored = dates.filter((iso) => this._skip.has(iso) || this._picks[iso]).length;
+      const tailored = dates.filter((iso) => {
+        const k = this._kindOf(iso);
+        const d = this._defaultKind(iso);
+        return k.kind !== d.kind || (k.kind === "fixed" && k.text !== d.text) || (k.kind === "pick" && this._picks[iso]);
+      }).length;
       const open = tailored || this._folds?.has("days");
       return `<details class="fold" data-fold="days" ${open ? "open" : ""}><summary>Tilpas dagene${tailored ? ` <span class="badge">${tailored} ${tailored === 1 ? "dag" : "dage"}</span>` : ""}</summary>
-        <p class="muted small">AI'en vælger retterne. Du kan selv vælge en ret eller springe en dag over.</p><div class="skipdays">${skip}</div></details>`;
+        <p class="muted small">Dagene er som under Faste dage i indstillingerne – ændr dem for netop denne uge. En rugbrødsdag laves der ikke mad, og der købes ikke noget til.</p><div class="skipdays">${skip}</div></details>`;
     })() : ""}
     <div class="row wrap skipgo">
       <button class="btn primary" data-action="generate" ${generating || this._busy ? "disabled" : ""}>
@@ -3886,7 +3971,7 @@ class Rema1000Panel extends HTMLElement {
       <div class="card">
         <div class="row between wrap">
           <div>
-            <h1>${esc(title)}</h1>
+            <h1 class="plan-title">${esc(title)} <button class="help-q" data-action="plan-help" aria-expanded="${this._planHelp ? "true" : "false"}" aria-label="Hjælp" title="Hjælp">?</button></h1>
             <p class="muted">${esc(period)}${esc(avis)}${skipped.length ? `<br>Springes over: ${skipped.map((d) => `<button class="link" data-action="day-restore" data-arg="${esc(d.planId)}|${esc(d.date)}" title="Tag dagen tilbage i madplanen">${esc(dateLabel(d.date))}</button>`).join(", ")} <span class="small">(tryk for at tage dagen tilbage)</span>` : ""}</p>
           </div>
           <div class="price ${over ? "over" : ""}">
@@ -3908,30 +3993,24 @@ class Rema1000Panel extends HTMLElement {
             ? `<div class="banner warn">${waiting.length === 1 ? "1 ny ret venter" : `${waiting.length} nye retter venter`} på godkendelse: ${waiting.map((d) => esc(d.dish)).join(", ")}. Listen sendes først, når de er godkendt eller skiftet ud – tryk på retten.</div>`
             : "";
         })()}
+        ${this._planHelp ? '<p class="muted small help-text">Tryk på en ret for at se opskriften eller skifte den ud. 👍, 👎 og ♥ gemmer retten i opskriftsamlingen – tryk igen for at fortryde.</p>' : ""}
         <div class="days">${days}</div>
-        <div class="help-row">
-          ${this._planHelp ? '<p class="muted small help-text">Tryk på en ret for at se opskriften eller skifte den ud. 👍, 👎 og ♥ gemmer retten i opskriftsamlingen – tryk igen for at fortryde.</p>' : ""}
-          <button class="help-q" data-action="plan-help" aria-expanded="${this._planHelp ? "true" : "false"}" aria-label="Hjælp" title="Hjælp">?</button>
-        </div>
-        <div class="row wrap actions">
+        ${checklist || plan.deviations ? `<details class="plan-checks"><summary>Krav-tjekliste</summary><ul class="checklist">${checklist}</ul>${plan.deviations ? `<p class="muted">${esc(plan.deviations)}</p>` : ""}</details>` : ""}
+        <div class="plan-actions">
           ${(() => {
             const left = plan.shopping.filter((line) => !line.buy_from && !line.buy_at && !line.sent).length;
-            return `<button class="btn primary" data-action="send" ${this._busy || !left ? "disabled" : ""}>
+            return `<button class="btn primary send-main" data-action="send" ${this._busy || !left ? "disabled" : ""}>
               ${left ? (plan.status === "sent" ? `Send ${left} nye varer til ${this._listName()}` : `Send til ${this._listName()}`) : "Sendt ✓"}</button>`;
           })()}
           ${plan.shopping.some((line) => line.buy_from)
-            ? `<span class="muted small">+ ${plan.shopping.filter((line) => line.buy_from).length} varer købes senere – se Indkøb</span>`
+            ? `<p class="muted small later">+ ${plan.shopping.filter((line) => line.buy_from).length} varer købes senere – se Indkøb</p>`
             : ""}
-          <button class="btn" data-action="tab" data-arg="shopping">Se indkøbsliste</button>
-          <button class="btn" data-action="open-day" data-arg="">Start madlavning</button>
-          ${this._state.mealie?.available ? `<button class="btn" data-action="mealie-sync" ${this._busy ? "disabled" : ""}>Sæt ugen i Mealie-kalenderen</button>` : ""}
+          <div class="plan-more">
+            <button class="btn" data-action="tab" data-arg="shopping">Se indkøbsliste</button>
+            <button class="btn" data-action="open-day" data-arg="">Start madlavning</button>
+            ${this._state.mealie?.available ? `<button class="btn" data-action="mealie-sync" ${this._busy ? "disabled" : ""}>Sæt ugen i Mealie-kalenderen</button>` : ""}
+          </div>
         </div>
-        ${checklist || plan.deviations ? `<details><summary>Krav-tjekliste</summary><ul class="checklist">${checklist}</ul>${plan.deviations ? `<p class="muted">${esc(plan.deviations)}</p>` : ""}</details>` : ""}
-      </div>
-      <div class="card">
-        <h2>Det skal AI'en huske</h2>
-        <p class="muted small">Faste ønsker til alle madplaner – skriv eller diktér. De kan også rettes under Indstillinger.</p>
-        ${this._rulesHtml()}
       </div>
       <div class="card">
         <h2>Ny madplan</h2>
@@ -4116,7 +4195,7 @@ class Rema1000Panel extends HTMLElement {
       <h2 class="flush">REMA 1000's opskrifter</h2>
       <p class="muted small">${rr.total ? `${rr.total} ${searching ? `opskrifter med "${esc(rr.query)}"` : "opskrifter"}. ` : ""}Ingredienserne er koblet til REMA's varer, så indkøbslisten får de rigtige varer – også dem på tilbud.</p>
       ${this._rrCatalogLine()}
-      <div class="row wrap">
+      <div class="row wrap rr-search">
         <input class="grow" type="search" data-bind="rrquery" value="${esc(this._rrQuery ?? rr.query)}" placeholder="Søg fx frikadeller, laks eller spinatpandekager" enterkeyhint="search">
         <button class="btn" data-action="rr-search" ${rr.loading ? "disabled" : ""}>Søg</button>
         ${clearBtn("rrquery")}
@@ -4248,7 +4327,7 @@ class Rema1000Panel extends HTMLElement {
   }
 
   _recipesView() {
-    const seg = `<div class="seg subnav fit">
+    const seg = `<div class="seg subnav scroll">
         <button class="${this._recipesSub === "week" ? "active" : ""}" data-action="recipes-sub" data-arg="week">Ugens<span class="wide"> opskrifter</span></button>
         <button class="${this._recipesSub === "collection" ? "active" : ""}" data-action="recipes-sub" data-arg="collection"><span class="wide">Opskriftsamling</span><span class="narrow">Samling</span>${this._state.recipes?.length ? ` (${this._state.recipes.length})` : ""}</button>
         ${this._hasPrices() ? `<button class="${this._recipesSub === "offers" ? "active" : ""}" data-action="recipes-sub" data-arg="offers">Tilbud<span class="wide">sretter</span></button>` : ""}
@@ -5047,11 +5126,15 @@ class Rema1000Panel extends HTMLElement {
       .join("");
     const fixed = f.fixed_days
       .map(
-        (d, i) => `<div class="row wrap rowitem">
+        (d, i) => {
+          const kind = fixedKindOf(d);
+          return `<div class="row wrap rowitem">
           ${weekdaySelect(`fixed_days.${i}.weekday`, d.weekday)}
-          <input class="grow" type="text" data-path="fixed_days.${i}.text" value="${esc(d.text)}" placeholder="Fx Rugbrødsdag">
+          <select data-path="fixed_days.${i}.kind">${FIXED_KINDS.map((k) => `<option value="${k}" ${kind === k ? "selected" : ""}>${DAY_KIND_LABELS[k]}</option>`).join("")}</select>
+          ${kind === "fixed" ? `<input class="grow" type="text" data-path="fixed_days.${i}.text" value="${esc(d.text)}" placeholder="Fx Pizza">` : ""}
           <button class="btn small danger" data-action="remove-row" data-arg="fixed_days|${i}">Fjern</button>
-        </div>`
+        </div>`;
+        }
       )
       .join("");
     const musts = f.must_haves
@@ -5154,25 +5237,11 @@ class Rema1000Panel extends HTMLElement {
         <h3>Ingen rester disse dage</h3>
         <div class="checks">${WEEKDAYS.map((d, i) => check("no_leftover_weekdays", String(i), { [String(i)]: d })).join("")}</div>
         <h3>Faste dage</h3>
+        <p class="muted small">Gælder hver uge og kan ændres for en enkelt uge under Tilpas dagene. Restedag: resten af en ret fra dagen før. Rugbrødsdag: der laves ikke mad, og der købes ikke noget til. Vegetardag: en vegetarret. Fast ret: AI'en laver den ret, I skriver.</p>
         ${fixed}
         <button class="btn small" data-action="add-row" data-arg="fixed_days">+ Tilføj fast dag</button>
         <label class="field">Ønsker til maden <textarea data-path="wishes" rows="2">${esc(f.wishes)}</textarea></label>
-        `) + card(`        <h2 class="flush">Familiens favoritter</h2>
-        <p class="muted small">Favoritter gemmes med det samme, når du tilføjer, retter eller sletter.</p>
-        <p class="muted">Beskriv retten, fx “Ovnbagt laks med citronskiver, frisk spinatpasta med pesto og broccoli”.</p>
-        <textarea data-bind="newfav" data-field="text" rows="2" placeholder="Ret">${esc(this._newFav.text)}</textarea>
-        <div class="row wrap">
-          <select data-bind="newfav" data-field="frequency">${opts.frequencies.map((q) => `<option value="${q}" ${this._newFav.frequency === q ? "selected" : ""}>${FREQ_LABELS[q]}</option>`).join("")}</select>
-          <button class="btn primary small" data-action="add-fav">Tilføj</button>
-        </div>
-        <ul class="favs">${favs || "<li class='muted'>Ingen favoritter endnu.</li>"}</ul>
-        `) + card(`        <h2 class="flush">Retter familien ikke kan lide</h2>
-        <p class="muted">Retter, der aldrig skal på madplanen, fx “Fiskefrikadeller” eller “Gryderetter med kål”.</p>
-        <textarea data-bind="newdislike" rows="2" placeholder="Ret">${esc(this._newDislike)}</textarea>
-        <div class="row wrap">
-          <button class="btn primary small" data-action="add-dislike" ${this._busy ? "disabled" : ""}>Tilføj</button>
-        </div>
-        <ul class="favs">${dislikes || "<li class='muted'>Ingen endnu.</li>"}</ul>
+        <p class="muted small">Favoritretter og retter, I ikke kan lide, styres under Opskrifter: ♥ gør en ret til favorit (og under den vælger I, hvor tit den skal på madplanen), 👎 betyder, at den aldrig kommer på.</p>
         `),
       shopping: () => card(`<h2 class="flush">Det har I allerede hjemme</h2>
         <p class="muted small">Disse basisvarer kommer ikke på indkøbslisten. Adskil varerne med komma.</p>
@@ -5504,6 +5573,7 @@ const STYLE = `
   .rc-sugg-item .price { font-weight: 700; white-space: nowrap; } .rc-sugg-item .price.sale { color: var(--rema-sale); }
   @media (max-width: 600px) { .rc-prod, .rc-sugg { margin-left: 0; } }
   .cand-swaps { margin: 0; padding-left: 16px; }
+  .rr-search { margin-bottom: 12px; }
   .rc-missing { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: -2px; margin-bottom: 10px; }
   .rc-prod .check.inline { display: inline-flex; gap: 4px; margin-left: 8px; }
   .rc-photo { width: 100%; max-height: 260px; object-fit: cover; border-radius: 12px; margin: 4px 0 10px; }
@@ -5586,6 +5656,14 @@ const STYLE = `
   .watch-deals .ev-price s { display: block; font-weight: 400; }
   .watch-quiet .chip { margin: 2px; }
   .fav-row img, .fav-row .noimg { width: 36px; height: 36px; object-fit: contain; border-radius: 6px; background: #fff; flex: none; }
+  .plan-title { display: flex; align-items: center; gap: 8px; }
+  .plan-title .help-q { font-size: 13px; }
+  .plan-checks { margin: 8px 0 4px; }
+  .plan-actions { display: grid; gap: 8px; margin-top: 12px; }
+  .plan-actions .send-main { width: 100%; justify-content: center; }
+  .plan-actions .later { margin: 0; }
+  .plan-more { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+  .plan-more .btn { justify-content: center; }
   .help-row { display: flex; align-items: flex-start; justify-content: flex-end; gap: 8px; margin: 6px 0; }
   .help-row .help-text { flex: 1; margin: 2px 0; }
   .help-q { flex: none; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--divider-color); background: none; cursor: pointer;
@@ -5685,6 +5763,9 @@ const STYLE = `
     font-size: 14px; font-weight: 500; cursor: pointer; }
   .seg button.active { background: var(--rema-accent); color: var(--rema-on-accent); }
   .seg .narrow { display: none; }
+  .seg.scroll { display: flex; max-width: 100%; overflow-x: auto; gap: 4px; scrollbar-width: none; }
+  .seg.scroll::-webkit-scrollbar { display: none; }
+  .seg.scroll button { flex: none; white-space: nowrap; padding: 7px 14px; }
   @media (max-width: 600px) {
     .seg.fit { display: flex; max-width: 100%; }
     .seg.fit button { flex: 1 1 0; min-width: 0; padding: 7px 6px; white-space: nowrap; }

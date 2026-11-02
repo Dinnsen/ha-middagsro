@@ -171,7 +171,25 @@ def clean_recipe(raw: dict[str, Any], existing: dict[str, Any] | None = None) ->
         "updated": _now(),
         "times_planned": _int(old.get("times_planned"), 100000),
         "last_planned": old.get("last_planned"),
+        **_favorite_fields(raw, old, favorite),
     }
+
+
+FREQUENCIES = ("weekly", "biweekly", "monthly", "on_offer", "inspiration")
+
+
+def _favorite_fields(raw: dict[str, Any], old: dict[str, Any], favorite: bool) -> dict[str, Any]:
+    """A favourite's how often (weekly …), and when it was last on a plan."""
+    if not favorite:
+        return {}
+    frequency = raw.get("frequency", old.get("frequency"))
+    out: dict[str, Any] = {
+        "frequency": frequency if frequency in FREQUENCIES else "inspiration",
+        "last_used": old.get("last_used") or raw.get("last_used"),
+    }
+    if fav_id := old.get("fav_id") or raw.get("fav_id"):
+        out["fav_id"] = str(fav_id)[:20]  # the id the favourite had before it was a recipe
+    return out
 
 
 def _rema_fields(raw: dict[str, Any], old: dict[str, Any]) -> dict[str, Any]:
@@ -349,6 +367,7 @@ def prompt_recipes(store: RemaPlanStore, avoid: list[str] | None = None) -> list
             key=lambda r: (not r["favorite"], r.get("last_planned") or ""),
         )
         if matches_any(r["name"], avoid or []) is None
+        and (r["ingredients"] or r["steps"])  # a name alone is a favourite, not a recipe
     ]
     return chosen[:PROMPT_RECIPES]
 

@@ -33,17 +33,21 @@ from .budget import plan_budget
 from .chains import CHAINS, ChainError, ChainOffers, runs_on
 from .const import DOMAIN
 from .dishes import (
+    DAY_TEXTS,
     SWAP_MARKS,
     TEXT_TYPE,
     check_plan,
     day_wishes,
+    fixed_kind,
+    fixed_on,
     fixed_rest_dates,
     food_conflicts,
     household_portions,
     is_cooked,
-    is_rest_text,
     matches_any,
+    plan_day_kinds,
     same_dish,
+    veg_dates,
 )
 from .errors import _failed, _invalid
 from .ingredients import CATALOG, catalogue_entry, spec_for
@@ -277,12 +281,12 @@ def _num(value: Any, default: float | None = None) -> float | None:
 def fixed_day_text(settings: dict[str, Any], day: dict[str, Any]) -> str | None:
     """What the family fixed for this weekday ("Spaghetti og kødsovs"), if it is such a day."""
     try:
-        weekday = date.fromisoformat(str(day.get("date"))).weekday()
+        when = date.fromisoformat(str(day.get("date")))
     except ValueError:
         return None
     for fixed in settings.get("fixed_days") or []:
         text = str(fixed.get("text") or "").strip()
-        if text and fixed.get("weekday") == weekday and not is_rest_text(text):
+        if text and fixed_kind(fixed) == "fixed" and fixed_on(fixed, when):
             return text
     return None
 
@@ -463,10 +467,17 @@ def build_prompt(
             )
     else:
         out.append("- Ingen restedage; hver dag er en ny ret.")
+    for day in veg_dates(s, dates):
+        out.append(
+            f"- {WEEKDAYS_DA[day.weekday()]} {day.isoformat()}: en vegetarret (fast vegetardag, "
+            'type "vegetar" – tæller med i vegetarretterne).'
+        )
     for fixed in s["fixed_days"]:
-        matching = [d for d in dates if d.weekday() == fixed["weekday"]]
+        if fixed_kind(fixed) not in ("rest", "fixed"):
+            continue
+        matching = [d for d in dates if fixed_on(fixed, d)]
         for day in matching:
-            if is_rest_text(fixed["text"]):
+            if fixed_kind(fixed) == "rest":
                 out.append(
                     f"- {WEEKDAYS_DA[day.weekday()]} {day.isoformat()}: {fixed['text']} "
                     '(fast restedag, type "rester": resten af en ret fra en dag før, der laves i '
@@ -1040,6 +1051,29 @@ def link_favorites(
             day["recipe_id"] = recipe["id"]
 
 
+def written_day(day: date, text: str) -> dict[str, Any]:
+    """A day with the family's own words and no dinner to make ("Rugbrødsdag")."""
+    return {
+        "date": day.isoformat(),
+        "weekday": WEEKDAYS_DA[day.weekday()],
+        "dish": text,
+        "type": TEXT_TYPE,
+        "favorite_id": None,
+        "uses_leftovers_from": None,
+        "makes_leftovers": False,
+        "servings": None,
+        "active_minutes": 0,
+        "total_minutes": 0,
+        "ingredients": [],
+        "steps": [],
+        "tip": "",
+        "mealie": None,
+        "recipe_id": None,
+        "uses": [],
+        "nutrition": None,
+    }
+
+
 def new_dish_days(plan: dict[str, Any], settings: dict[str, Any]) -> list[dict[str, Any]]:
     """The dinners that are none of the family's or REMA's recipes (cooked, not a fixed day)."""
     return [
@@ -1339,6 +1373,7 @@ class MealPlanner(ProductMatcher):
         self.mealie = MealieLink(hass)
         self.chains = ChainOffers(hass)
         self.rema_catalog = RemaRecipeCatalog(hass, entry_id, client)
+        self.rema_catalog.pantry_of = lambda: str(self.store.settings.get("pantry") or "")
         self.rema_recipes = RemaRecipes(self)
         self.sites = RecipeSites(hass)
         # Bilka ToGo's prices (the shop's own search when the family shops in Bilka).
@@ -1418,6 +1453,7 @@ class MealPlanner(ProductMatcher):
         skip: set[date] | None = None,
         surprise: bool = False,
         picks: dict[str, dict[str, Any]] | None = None,
+        day_kinds: dict[str, Any] | None = None,
     ) -> None:
         """Start making a plan in the background. Days in skip get no dinner.
 
@@ -1435,7 +1471,7 @@ class MealPlanner(ProductMatcher):
             raise _invalid("no_ai_task")
         self._set_status("generating", "Laver madplan …")
         self._task = self.hass.async_create_background_task(
-            self._async_run(start, send, skip or set(), surprise, picks or {}),
+            self._async_run(start, send, skip or set(), surprise, picks or {}, day_kinds=day_kinds),
             name=f"{DOMAIN} meal plan",
         )
 
@@ -1482,10 +1518,11 @@ class MealPlanner(ProductMatcher):
         surprise: bool = False,
         picks: dict[str, dict[str, Any]] | None = None,
         base_id: str | None = None,
+        day_kinds: dict[str, Any] | None = None,
     ) -> None:
         try:
             plan = await self.async_generate(
-                start, skip, surprise=surprise, picks=picks, base_id=base_id
+                start, skip, surprise=surprise, picks=picks, base_id=base_id, day_kinds=day_kinds
             )
             if send:
                 await self._async_send_when_ready(plan)
@@ -1911,7 +1948,9 @@ class MealPlanner(ProductMatcher):
                 or day.get("recipe_id")
                 or day.get("mealie")
                 or day.get("recipe_error")
-                or fixed_day_text(self.store.settings, day)  # the family's own simple dish
+                or fixed_day_text(
+                    {"fixed_days": plan.get("fixed_days", self.store.settings["fixed_days"])}, day
+                )  # the family's own simple dish
             ):
                 continue
             added = 0
@@ -1982,6 +2021,7 @@ class MealPlanner(ProductMatcher):
         surprise: bool = False,
         picks: dict[str, dict[str, Any]] | None = None,
         base_id: str | None = None,
+        day_kinds: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Make, price and store a plan. Returns the plan.
 
@@ -1991,6 +2031,27 @@ class MealPlanner(ProductMatcher):
         """
         base = self.store.get_plan(base_id) if base_id else None
         settings = self.store.settings
+        # What each day is: the fixed days, or what the family chose for this week.
+        window = [start + timedelta(days=i) for i in range(settings["days"])]
+        if day_kinds is None and base is not None:
+            day_kinds = base.get("day_kinds")
+        kinds = plan_day_kinds(settings, window, day_kinds)
+        rye = [
+            d for d in window if kinds[d.isoformat()]["kind"] == "rye" and d not in (skip or set())
+        ]
+        skip = {
+            *(skip or set()),
+            *rye,
+            *(d for d in window if kinds[d.isoformat()]["kind"] == "skip"),
+        }
+        settings = {
+            **settings,
+            "fixed_days": [
+                {"date": iso, "weekday": date.fromisoformat(iso).weekday(), **kind}
+                for iso, kind in kinds.items()
+                if kind["kind"] in ("rest", "fixed", "veg")
+            ],
+        }
         dates = plan_dates(start, settings["days"], skip)
         # Not past the last avis that is out: those days' prices aren't known yet.
         end = self.avis_end(start)
@@ -2106,7 +2167,18 @@ class MealPlanner(ProductMatcher):
         if problems:
             _LOGGER.info("The plan still breaks %d rule(s): %s", len(problems), "; ".join(problems))
         best["budget"] = settings["budget"]
-        best["skipped"] = [d.isoformat() for d in skipped]
+        best["skipped"] = [d.isoformat() for d in skipped if d not in rye]
+        best["day_kinds"] = {iso: k for iso, k in kinds.items() if k["kind"] != "ai"}
+        best["fixed_days"] = settings["fixed_days"]
+        if rye:
+            # Rye bread: no dinner is made, and nothing is bought for it.
+            best["days"] = sorted(
+                [
+                    *(d for d in best["days"] if date.fromisoformat(d["date"]) not in rye),
+                    *(written_day(d, DAY_TEXTS["rye"]) for d in rye),
+                ],
+                key=lambda d: d["date"],
+            )
         if base is not None:
             # An update keeps the days the family wrote themselves, and the skipped
             # days that can be taken back.

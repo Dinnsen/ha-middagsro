@@ -422,6 +422,13 @@ async def ws_favorite_delete(
         vol.Optional("start_date"): vol.Any(str, None),
         vol.Optional("skip_dates"): [str],
         vol.Optional("surprise", default=False): bool,
+        # {date: {kind: ai|pick|skip|rest|rye|veg|fixed, text}}: what each day is this week
+        vol.Optional("days"): {
+            str: {
+                vol.Required("kind"): vol.In(["ai", "pick", "skip", "rest", "rye", "veg", "fixed"]),
+                vol.Optional("text"): vol.Any(str, None),
+            }
+        },
         # {date: {dish, source: collection|rema|mealie, recipe_id | slug, type}}
         vol.Optional("picks"): {
             str: {
@@ -448,6 +455,7 @@ async def ws_generate(
         skip=skip,
         surprise=msg["surprise"],
         picks=msg.get("picks"),
+        day_kinds=msg.get("days"),
     )
     connection.send_result(msg["id"], planner.status)
 
@@ -1214,8 +1222,32 @@ async def ws_recipe_save(
     """Add a recipe to the collection, or save changes to one."""
     data = _entry(hass, msg).runtime_data
     recipe = await async_save_recipe(data.store, msg["recipe"])
+    if recipe.get("rema_slug"):
+        # One of REMA's: the family's products are kept on REMA's recipe too.
+        await data.planner.rema_catalog.async_save_links(recipe["rema_slug"], recipe["ingredients"])
     data.planner._notify()
     connection.send_result(msg["id"], recipe)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/rema_recipes/save_links",
+        ENTRY: str,
+        vol.Required("slug"): str,
+        vol.Required("ingredients"): list,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_rema_save_links(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Keep the family's products for one of REMA's recipes (not in the collection)."""
+    catalog = _entry(hass, msg).runtime_data.planner.rema_catalog
+    if msg["slug"] not in catalog.recipes:
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key="recipe_not_found")
+    await catalog.async_save_links(msg["slug"], msg["ingredients"])
+    connection.send_result(msg["id"], {"ready": catalog.is_ready(catalog.recipes[msg["slug"]])})
 
 
 @websocket_api.websocket_command(
@@ -1830,6 +1862,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_recipe_links,
         ws_candidates,
         ws_recipe_save,
+        ws_rema_save_links,
         ws_recipe_delete,
         ws_recipe_rate,
         ws_recipe_rate_day,

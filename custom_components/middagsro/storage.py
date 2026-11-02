@@ -15,7 +15,7 @@ from homeassistant.util import dt as dt_util
 
 from .chains import CHAINS
 from .const import DOMAIN, SITE_IDS
-from .dishes import dish_key, matches_any
+from .dishes import DAY_TEXTS, dish_key, fixed_kind, matches_any
 
 STORE_VERSION = 1
 MAX_PLANS = 52
@@ -83,7 +83,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "recipe_sites_in_plan": False,  # offer their recipes to the AI when planning
     "ha_todo_entity": "",  # another shop than REMA: sent items also go on this to-do list
     "no_leftover_weekdays": [],  # "0".."6" (monday..sunday): never leftovers those days
-    "fixed_days": [{"weekday": 3, "text": "Rugbrødsdag (kun denne ene dag med rugbrød)"}],
+    "fixed_days": [{"weekday": 3, "kind": "rye", "text": "Rugbrødsdag"}],
     "max_cook_minutes_weekday": 30,
     "no_repeat_weeks": 3,
     "pantry": "salt, peber, olie, smør, mel, sukker, eddike",
@@ -234,11 +234,18 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
         settings[key] = _clamp(settings[key], 0, 100, default)
     settings["kcal_min"] = _clamp(settings["kcal_min"], 100, 3000, 600)
     settings["kcal_max"] = max(settings["kcal_min"], _clamp(settings["kcal_max"], 100, 3000, 800))
-    settings["fixed_days"] = [
-        {"weekday": _clamp(item.get("weekday"), 0, 6, 0), "text": str(item.get("text") or "")[:300]}
-        for item in settings["fixed_days"] or []
-        if isinstance(item, dict) and str(item.get("text") or "").strip()
-    ][:14]
+    fixed_days = []
+    for item in settings["fixed_days"] or []:
+        if not isinstance(item, dict):
+            continue
+        kind = fixed_kind(item)
+        text = str(item.get("text") or "").strip()[:300] if kind == "fixed" else DAY_TEXTS[kind]
+        if kind == "fixed" and not text:
+            continue  # a fixed dish without a name
+        fixed_days.append(
+            {"weekday": _clamp(item.get("weekday"), 0, 6, 0), "kind": kind, "text": text}
+        )
+    settings["fixed_days"] = fixed_days[:14]
     return settings
 
 
@@ -279,7 +286,6 @@ class RemaPlanStore:
             hass, STORE_VERSION, f"{DOMAIN}.{entry_id}.mealplans"
         )
         self.settings: dict[str, Any] = copy.deepcopy(DEFAULT_SETTINGS)
-        self.favorites: list[dict[str, Any]] = []
         self.plans: list[dict[str, Any]] = []
         self.freezer_plans: list[dict[str, Any]] = []
         self.note = ""  # the family's wishes for the next plan only
@@ -307,7 +313,6 @@ class RemaPlanStore:
         """Load from disk."""
         data = await self._store.async_load() or {}
         self.settings = clean_settings(data.get("settings") or {})
-        self.favorites = list(data.get("favorites") or [])
         self.plans = list(data.get("plans") or [])
         self.freezer_plans = list(data.get("freezer_plans") or [])
         self.note = str(data.get("note") or "")
@@ -336,6 +341,75 @@ class RemaPlanStore:
         self.seen = [str(n) for n in data.get("seen") or [] if isinstance(n, str)][:50]
         for plan in [*self.plans, *self.freezer_plans]:
             ensure_line_ids(plan)
+        # The favourite dishes and the dishes they don't like are recipes now.
+        self._adopt_favorites(data.get("favorites") or [])
+        self._adopt_dislikes()
+
+    # ------------------------------------------------------------- favourites (recipes)
+
+    @property
+    def favorites(self) -> list[dict[str, Any]]:
+        """The favourite dishes: the collection's ♥ recipes, oldest first, with how often."""
+        return [
+            {
+                "id": r.get("fav_id") or r["id"],
+                "text": r["name"],
+                "frequency": r.get("frequency") or "inspiration",
+                "last_used": r.get("last_used"),
+            }
+            for r in reversed(self.recipes)
+            if r.get("favorite")
+        ]
+
+    @favorites.setter
+    def favorites(self, value: list[dict[str, Any]]) -> None:
+        """Favourites given as a list (as saved before they were recipes) become recipes."""
+        self._adopt_favorites(list(value or []))
+
+    def _adopt_favorites(self, old: list[Any]) -> None:
+        """Favourites saved before they were recipes become ♥ recipes (by name if the
+        collection has the dish), keeping their id, how often and when last used."""
+        from .recipes import clean_recipe, find_by_name  # noqa: PLC0415
+
+        for fav in old:
+            if not isinstance(fav, dict) or not str(fav.get("text") or "").strip():
+                continue
+            text = str(fav["text"]).strip()
+            recipe = find_by_name(self, text)
+            if recipe is not None and recipe.get("favorite"):
+                continue  # already one (saved as recipes before)
+            fields = {
+                "favorite": True,
+                "frequency": fav.get("frequency"),
+                "last_used": fav.get("last_used"),
+                "fav_id": fav.get("id"),
+            }
+            if recipe is None:
+                self.recipes.insert(
+                    0, clean_recipe({"name": text[:300], "source": "favorite", **fields})
+                )
+            else:
+                recipe.update(clean_recipe(fields, recipe))
+
+    def _adopt_dislikes(self) -> None:
+        """A dish in the settings' list of dishes they don't like is a 👎 recipe; the
+        list is then the 👎 recipes' names (for plans made before this version)."""
+        from .recipes import clean_recipe, find_by_name  # noqa: PLC0415
+
+        for name in self.settings.get("disliked_dishes") or []:
+            text = str(name or "").strip()
+            if not text:
+                continue
+            recipe = find_by_name(self, text)
+            if recipe is None:
+                self.recipes.insert(
+                    0, clean_recipe({"name": text[:300], "source": "dislike", "rating": "dislike"})
+                )
+            elif recipe.get("rating") != "dislike":
+                recipe.update(clean_recipe({"rating": "dislike", "favorite": False}, recipe))
+        self.settings["disliked_dishes"] = [
+            r["name"] for r in self.recipes if r.get("rating") == "dislike"
+        ][:100]
 
     async def async_save(self) -> None:
         """Write to disk."""
@@ -441,6 +515,7 @@ class RemaPlanStore:
         since = self.settings.get("budget_since")
         old = {key: self.settings.get(key) for key in PLAN_SETTINGS}
         self.settings = clean_settings(raw)
+        self._adopt_dislikes()
         if old != {key: self.settings.get(key) for key in PLAN_SETTINGS}:
             self.settings_changed = dt_util.now().isoformat()
         if self.settings["monthly_budget"] and not before:
@@ -472,23 +547,38 @@ class RemaPlanStore:
             raise ServiceValidationError(
                 translation_domain=DOMAIN, translation_key="favorite_text_required"
             )
+        from .recipes import clean_recipe, find_by_name  # noqa: PLC0415
+
         frequency = favorite.get("frequency")
         if frequency not in FAVORITE_FREQUENCIES:
             frequency = "inspiration"
-        if fav_id := favorite.get("id"):
-            for existing in self.favorites:
-                if existing["id"] == fav_id:
-                    existing.update(text=text, frequency=frequency)
-                    await self.async_save()
-                    return existing
-        new = {"id": uuid.uuid4().hex[:10], "text": text, "frequency": frequency, "last_used": None}
-        self.favorites.append(new)
+        recipe = self._favorite_recipe(favorite.get("id")) or find_by_name(self, text)
+        if recipe is None:
+            recipe = clean_recipe(
+                {"name": text[:300], "source": "favorite", "favorite": True, "frequency": frequency}
+            )
+            self.recipes.insert(0, recipe)
+        else:
+            recipe.update(
+                clean_recipe({"name": text[:300], "favorite": True, "frequency": frequency}, recipe)
+            )
         await self.async_save()
-        return new
+        return next(f for f in self.favorites if f["id"] == (recipe.get("fav_id") or recipe["id"]))
+
+    def _favorite_recipe(self, fav_id: Any) -> dict[str, Any] | None:
+        if not fav_id:
+            return None
+        return next(
+            (r for r in self.recipes if fav_id in (r.get("fav_id"), r["id"]) and r.get("favorite")),
+            None,
+        )
 
     async def async_delete_favorite(self, fav_id: str) -> None:
         """Delete a favourite dish."""
-        self.favorites = [f for f in self.favorites if f["id"] != fav_id]
+        from .recipes import clean_recipe  # noqa: PLC0415
+
+        if (recipe := self._favorite_recipe(fav_id)) is not None:
+            recipe.update(clean_recipe({"favorite": False}, recipe))
         await self.async_save()
 
     def favorites_due(
@@ -616,9 +706,9 @@ class RemaPlanStore:
         plans.insert(0, plan)
         del plans[MAX_PLANS:]
         used = {day.get("favorite_id") for day in plan.get("days", []) if day.get("favorite_id")}
-        for fav in self.favorites:
-            if fav["id"] in used:
-                fav["last_used"] = plan["start_date"]
+        for recipe in self.recipes:
+            if recipe.get("favorite") and (recipe.get("fav_id") or recipe["id"]) in used:
+                recipe["last_used"] = plan["start_date"]
         await self.async_save()
 
     async def async_mark_sent(self, plan_id: str, part: str = "main") -> None:

@@ -2,6 +2,18 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.14.0b7] - 2026-11-02
+
+### Added
+- **What each day is, as a dropdown:** in *Tilpas dagene* each day is *AI vælger*, *Vælg selv ret* (with *Find ret i opskrifter*), *Spring over*, *Restedag*, *Rugbrødsdag*, *Vegetardag* or *Fast ret* (a dish you name). The days start as *Faste dage* in the settings have them, and are changed for that week only; *Opdater madplan* keeps the week's choices. *Faste dage* in the settings have the same choices. A rye bread day is on the plan with nothing made and nothing bought; a vegetarian day gets a vegetarian dinner. Fixed days saved before are read by their words (Rester: a leftovers day, Rugbrødsdag: rye bread, others: a fixed dish).
+- **Favourites and dislikes are the recipes':** ♥ makes a recipe a favourite, and under it you choose how often it should be on the plan (every week, every 2nd week …); 👎 keeps it off. The lists *Familiens favoritter* and *Retter familien ikke kan lide* are gone from the settings: what was in them is in the recipe collection, as ♥ and 👎 recipes (a favourite with a name only is a wish to the AI until it has ingredients). A 👎 recipe can't be chosen for a day.
+- **Gem on one of REMA's recipes:** the products you choose for its items are kept on REMA's recipe, without putting it in the collection; *Gem i samlingen* saves it in both places.
+
+### Changed
+- **Klar is by your pantry:** a REMA recipe whose item without a product is one of your basic items (risvineddike when eddike is in the house) is ready.
+- The plan's buttons are tidied: the list is sent with the one wide button, *Se indkøbsliste* and *Start madlavning* below it, the help (?) by the title and the requirement checklist under the days. *Det skal AI'en huske* is only in the settings.
+- The Opskrifter menu scrolls instead of crowding, and the REMA search has room above the categories. *Overrask os* asks first.
+
 ## [2.14.0b6] - 2026-11-01
 
 ### Added

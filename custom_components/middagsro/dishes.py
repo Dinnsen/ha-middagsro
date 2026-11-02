@@ -418,14 +418,69 @@ def is_rest_text(text: str) -> bool:
     return bool(_REST_WORD.search(str(text or "")))
 
 
+# What a fixed day is: leftovers, rye bread (nothing made, nothing bought), a
+# vegetarian dinner, no dinner at home, or a dish the family names ("Pizza").
+DAY_KINDS = ("rest", "rye", "veg", "skip", "fixed")
+DAY_TEXTS = {"rest": "Rester", "rye": "Rugbrødsdag", "veg": "Vegetardag", "skip": ""}
+_RYE_WORD = re.compile(r"\brugbrød", re.IGNORECASE)
+
+
+def fixed_kind(fixed: dict[str, Any]) -> str:
+    """The kind of a fixed day; one saved before there were kinds, by its words."""
+    kind = fixed.get("kind")
+    if kind in DAY_KINDS:
+        return str(kind)
+    text = str(fixed.get("text") or "")
+    if is_rest_text(text):
+        return "rest"
+    return "rye" if _RYE_WORD.search(text) else "fixed"
+
+
+def fixed_on(fixed: dict[str, Any], day: date) -> bool:
+    """Is a fixed day this date: its own date (one week's choice), or its weekday?"""
+    if fixed.get("date"):
+        return str(fixed["date"]) == day.isoformat()
+    return fixed.get("weekday") == day.weekday()
+
+
 def fixed_rest_dates(settings: dict[str, Any], dates: list[date]) -> list[date]:
     """The plan's days that are a fixed leftovers day (they count as leftover days)."""
-    weekdays = {
-        fixed.get("weekday")
-        for fixed in settings.get("fixed_days") or []
-        if is_rest_text(str(fixed.get("text") or ""))
-    }
-    return [d for d in dates if d.weekday() in weekdays]
+    rests = [f for f in settings.get("fixed_days") or [] if fixed_kind(f) == "rest"]
+    return [d for d in dates if any(fixed_on(f, d) for f in rests)]
+
+
+def plan_day_kinds(
+    settings: dict[str, Any], window: list[date], chosen: dict[str, Any] | None = None
+) -> dict[str, dict[str, str]]:
+    """What each day of a plan is: the fixed days of the settings, with what the
+    family chose for this week instead ("ai", "pick" or a fixed kind)."""
+    out: dict[str, dict[str, str]] = {}
+    for day in window:
+        iso = day.isoformat()
+        fixed = next(
+            (f for f in settings.get("fixed_days") or [] if f.get("weekday") == day.weekday()),
+            None,
+        )
+        kind = (
+            {"kind": fixed_kind(fixed), "text": str(fixed.get("text") or "")}
+            if fixed
+            else {"kind": "ai", "text": ""}
+        )
+        wanted = (chosen or {}).get(iso)
+        if isinstance(wanted, dict) and wanted.get("kind") in (*DAY_KINDS, "ai", "pick"):
+            name = str(wanted["kind"])
+            text = str(wanted.get("text") or "").strip()[:300]
+            kind = {"kind": name, "text": text if name == "fixed" else DAY_TEXTS.get(name, "")}
+        if kind["kind"] == "fixed" and not kind["text"]:
+            kind = {"kind": "ai", "text": ""}
+        out[iso] = kind
+    return out
+
+
+def veg_dates(settings: dict[str, Any], dates: list[date]) -> list[date]:
+    """The plan's days that must be a vegetarian dinner."""
+    vegs = [f for f in settings.get("fixed_days") or [] if fixed_kind(f) == "veg"]
+    return [d for d in dates if any(fixed_on(f, d) for f in vegs)]
 
 
 # Dishes made of meat in pieces that simmer, never of minced meat: "Klassisk dansk
@@ -512,10 +567,20 @@ def check_plan(
     rest_days: set[str] = set()
     for fixed in settings.get("fixed_days") or []:
         text = str(fixed.get("text") or "")
+        kind = fixed_kind(fixed)
         for day in days:
-            if date.fromisoformat(day["date"]).weekday() != fixed.get("weekday"):
+            if not fixed_on(fixed, date.fromisoformat(day["date"])):
                 continue
-            if is_rest_text(text):
+            if kind == "veg":
+                if day.get("type") != "vegetar" and not day.get("uses_leftovers_from"):
+                    problems.append(
+                        f"{day['weekday']} {day['date']}: skal være en vegetarret (fast "
+                        f'vegetardag), ikke "{day["dish"]}"'
+                    )
+                continue
+            if kind not in ("rest", "fixed"):
+                continue
+            if kind == "rest":
                 rest_days.add(day["date"])
                 if not (day.get("uses_leftovers_from") or _IS_LEFTOVERS.match(day["dish"])):
                     problems.append(

@@ -24,6 +24,7 @@ from homeassistant.util import dt as dt_util
 
 from .api import RemaError, parse_time
 from .const import DOMAIN
+from .linking import links
 from .rema_recipes import (
     VEGETARIAN_TAG,
     _ingredients,
@@ -100,8 +101,9 @@ def entry_from(entity: dict[str, Any], rank: int, now: datetime) -> dict[str, An
     }
 
 
-def card(entry: dict[str, Any], now: datetime) -> dict[str, Any]:
-    """A recipe card, priced now (as rema_recipes.summary has it)."""
+def card(entry: dict[str, Any], now: datetime, ready: bool | None = None) -> dict[str, Any]:
+    """A recipe card, priced now (as rema_recipes.summary has it); ``ready`` as the
+    family's pantry and their own links have it."""
     on_offer = 0
     cost = 0.0
     for prices in entry.get("prices", {}).values():
@@ -119,7 +121,7 @@ def card(entry: dict[str, Any], now: datetime) -> dict[str, Any]:
         "ingredients": len(entry["recipe"].get("ingredients") or []),
         "on_offer": on_offer,
         "cost": round(cost, 2),
-        "ready": bool(entry.get("ready")),
+        "ready": bool(entry.get("ready")) if ready is None else ready,
     }
 
 
@@ -145,6 +147,10 @@ class RemaRecipeCatalog:
         self._task: asyncio.Task[None] | None = None
         self._unsubs: list[Callable[[], None]] = []
         self.pause = PAGE_PAUSE
+        # The family's own products for an ingredient of a recipe ("Gem"): slug ->
+        # ingredient name -> {product, basic, exact}. Kept when the recipes are read again.
+        self.links: dict[str, dict[str, dict[str, Any]]] = {}
+        self.pantry_of: Callable[[], str] = lambda: ""  # the family's basic items
 
     async def async_load(self) -> None:
         """Load what was read before."""
@@ -155,9 +161,70 @@ class RemaRecipeCatalog:
             if isinstance(entry, dict) and isinstance(entry.get("recipe"), dict)
         }
         self.swept = data.get("swept") if isinstance(data.get("swept"), str) else None
+        self.links = {
+            str(slug): {str(k): v for k, v in found.items() if isinstance(v, dict)}
+            for slug, found in (data.get("links") or {}).items()
+            if isinstance(found, dict)
+        }
 
     async def _async_save(self) -> None:
-        await self._store.async_save({"recipes": self.recipes, "swept": self.swept})
+        await self._store.async_save(
+            {"recipes": self.recipes, "swept": self.swept, "links": self.links}
+        )
+
+    def ingredients(self, entry: dict[str, Any]) -> list[dict[str, Any]]:
+        """A recipe's ingredients with the family's own links on them."""
+        own = self.links.get(entry["slug"]) or {}
+        out = []
+        for item in entry["recipe"].get("ingredients") or []:
+            change = own.get(str(item.get("name") or "").lower())
+            if change is None:
+                out.append(item)
+                continue
+            merged = {k: v for k, v in item.items() if k not in ("product", "basic", "exact")}
+            merged.update({k: v for k, v in change.items() if v})
+            out.append(merged)
+        return out
+
+    def is_ready(self, entry: dict[str, Any]) -> bool:
+        """Does every item that is bought have a product, by the family's pantry?"""
+        return bool(links({"ingredients": self.ingredients(entry)}, self.pantry_of())["ready"])
+
+    async def async_save_links(self, slug: str, ingredients: list[Any]) -> None:
+        """Keep the family's products for a recipe's ingredients (where they differ
+        from REMA's), so the recipe is theirs as they linked it."""
+        entry = self.recipes.get(slug)
+        if entry is None:
+            return
+        base = {
+            str(i.get("name") or "").lower(): i for i in entry["recipe"].get("ingredients") or []
+        }
+        own: dict[str, dict[str, Any]] = {}
+        for item in ingredients:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").lower()
+            if name not in base:
+                continue
+            product = item.get("product") if isinstance(item.get("product"), dict) else None
+            change = {
+                "product": product,
+                "basic": bool(item.get("basic")),
+                "exact": bool(item.get("exact")),
+            }
+            old = base[name]
+            same = (
+                (product or {}).get("id") == (old.get("product") or {}).get("id")
+                and change["basic"] == bool(old.get("basic"))
+                and not change["exact"]
+            )
+            if not same:
+                own[name] = change
+        if own:
+            self.links[slug] = own
+        else:
+            self.links.pop(slug, None)
+        await self._async_save()
 
     @property
     def complete(self) -> bool:
@@ -168,7 +235,7 @@ class RemaRecipeCatalog:
         """For the panel: how many, how many ready, and when."""
         return {
             "count": len(self.recipes),
-            "ready": sum(1 for e in self.recipes.values() if e.get("ready")),
+            "ready": sum(1 for e in self.recipes.values() if self.is_ready(e)),
             "swept": self.swept,
             "running": self.running,
             "pages": self.pages,
@@ -259,7 +326,7 @@ class RemaRecipeCatalog:
         now = dt_util.utcnow()
         chunk = entries[(page - 1) * per_page : page * per_page]
         return {
-            "recipes": [card(e, now) for e in chunk],
+            "recipes": [card(e, now, self.is_ready(e)) for e in chunk],
             "page": page,
             "last_page": last,
             "total": total,
@@ -271,5 +338,6 @@ class RemaRecipeCatalog:
         if entry is None:
             return None
         recipe: dict[str, Any] = copy.deepcopy(entry["recipe"])
+        recipe["ingredients"] = copy.deepcopy(self.ingredients(entry))
         recipe["id"] = None
         return recipe
