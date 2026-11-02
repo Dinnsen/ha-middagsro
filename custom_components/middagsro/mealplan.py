@@ -2086,10 +2086,10 @@ class MealPlanner(ProductMatcher):
         note = str(base.get("note") or "").strip() if base else self.store.note.strip()
         own = [] if surprise else prompt_recipes(self.store, recent)
         candidates: list[dict[str, Any]] | None = None
-        # The family's own recipe for a favourite: the plan uses it is.
+        # The family's own recipe for a favourite: the plan uses it is (not a surprise).
         links = {
             fav["id"]: recipe
-            for fav in [*due, *optional]
+            for fav in ([] if surprise else [*due, *optional])
             if (recipe := favorite_recipe(self.store, fav["text"])) is not None
         }
         disliked = disliked_names(self.store)

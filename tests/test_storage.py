@@ -78,7 +78,7 @@ def test_clean_settings_limits_and_types() -> None:
     assert settings["disliked_dishes"][0] == "Fiskefrikadeller"
     assert len(settings["disliked_dishes"][1]) == 300
     assert len(settings["disliked_dishes"]) == 50
-    assert settings["fixed_days"] == [{"weekday": 3, "text": "Rugbrødsdag"}]
+    assert settings["fixed_days"] == [{"weekday": 3, "kind": "rye", "text": "Rugbrødsdag"}]
     assert "unknown_key" not in settings
 
 
@@ -110,7 +110,7 @@ async def test_favorites(hass: HomeAssistant, hass_storage: dict[str, Any]) -> N
     with pytest.raises(ServiceValidationError):
         await store.async_save_favorite({"text": "  "})
 
-    monthly["last_used"] = "2026-10-01"
+    next(r for r in store.recipes if r["name"] == "Lasagne")["last_used"] = "2026-10-01"
     due, optional = store.favorites_due(date(2026, 10, 18))
     assert [f["id"] for f in due] == [weekly["id"]]
     assert {f["id"] for f in optional} == {monthly["id"], offer["id"], unknown["id"]}

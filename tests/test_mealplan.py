@@ -149,7 +149,7 @@ def test_prompt_with_every_rule() -> None:
             "milk_organic": True,
             "produce_organic": True,
             "must_haves": [{"name": "Kaffe", "amount": 1}],
-            "fixed_days": [{"weekday": 3, "text": "Rugbrødsdag"}],
+            "fixed_days": [{"weekday": 3, "kind": "fixed", "text": "Rugbrødsdag"}],
         }
     )
     dates = mp.plan_dates(START, 7, {SKIP})
@@ -1073,7 +1073,7 @@ async def test_generation_guards(
     with pytest.raises(ServiceValidationError):
         await planner.async_generate(START, every_day)
 
-    async def forever(*args: Any) -> None:
+    async def forever(*args: Any, **kwargs: Any) -> None:
         await asyncio.Event().wait()
 
     with patch.object(planner, "_async_run", side_effect=forever):

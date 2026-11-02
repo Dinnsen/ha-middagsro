@@ -367,7 +367,6 @@ def prompt_recipes(store: RemaPlanStore, avoid: list[str] | None = None) -> list
             key=lambda r: (not r["favorite"], r.get("last_planned") or ""),
         )
         if matches_any(r["name"], avoid or []) is None
-        and (r["ingredients"] or r["steps"])  # a name alone is a favourite, not a recipe
     ]
     return chosen[:PROMPT_RECIPES]
 

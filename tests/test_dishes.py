@@ -264,8 +264,8 @@ async def test_generate_keeps_rules_and_own_recipes(
     assert (lines["Lasagneplader"]["amount"], lines["Lasagneplader"]["unit"]) == (370, "g")
     assert all(line.get("recipe") for line in (lines["Løg"], lines["Pesto"]))
     assert "Salt og olie" not in lines and "Revet ost" not in lines
-    assert store.favorites[1]["last_used"] == "2026-10-18"
-    assert store.recipes[0]["times_planned"] == 1
+    assert next(f for f in store.favorites if f["id"] == "lasagne")["last_used"] == "2026-10-18"
+    assert rc.find_recipe(store, "r-lasagne")["times_planned"] == 1  # type: ignore[index]
 
 
 async def test_generate_tells_what_it_could_not_fix(
@@ -404,7 +404,7 @@ def test_fixed_day_texts() -> None:
     """The default rye-bread thursday passes for rye bread, and for a day the AI calls fixed."""
     settings = {
         "leftover_days": 0,
-        "fixed_days": [{"weekday": 3, "text": "Rugbrødsdag (kun denne ene dag med rugbrød)"}],
+        "fixed_days": [{"weekday": 3, "kind": "fixed", "text": "Rugbrød med æg og leverpostej"}],
     }
     thursday = _day("2026-10-29", "Rugbrød med æg og leverpostej")
     assert ds.check_plan({"days": [thursday]}, settings, recent=[], due_ids=set()) == []

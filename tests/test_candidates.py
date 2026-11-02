@@ -136,7 +136,9 @@ async def test_the_weeks_dinners(
     double = copy.deepcopy(entry)
     assert entry is not None and disliked is not None and double is not None
     double["slug"] = "dobbelt"
-    unready = {**copy.deepcopy(entry), "slug": "y", "ready": False}
+    unready = copy.deepcopy(entry)
+    unready["slug"] = "y"
+    unready["recipe"]["ingredients"].append({"name": "galangarod", "amount": "1 stk"})
     planner.rema_catalog.recipes = {e["slug"]: e for e in (entry, disliked, double, unready)}
     planner._async_offers = AsyncMock(  # type: ignore[method-assign]
         return_value=(
