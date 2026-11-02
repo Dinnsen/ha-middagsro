@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.14.0b9] - 2026-11-02
+
+### Fixed
+- **Røget laks became a salmon fillet on offer, "Hakkebøf med bacon" bacon:** an item made from a thing (smoked, pulled …) or made with something ("… med bacon") is never swapped for an offer.
+
 ## [2.14.0b8] - 2026-11-02
 
 ### Fixed

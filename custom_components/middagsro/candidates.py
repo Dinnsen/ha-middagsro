@@ -152,7 +152,13 @@ def offer_swap(
     product holds: an item that may be another of its kind (not exact, not made
     without meat), whose own product is not on offer, and when the offer is cheaper."""
     name = str(ingredient.get("name") or "")
-    if on_offer or ingredient.get("exact") or _MEAT_FREE.search(name):
+    if (
+        on_offer
+        or ingredient.get("exact")
+        or _MEAT_FREE.search(name)
+        or _PROCESSED.search(name)  # røget laks is not a salmon fillet
+        or re.search(r"\bmed\b", name, re.IGNORECASE)  # "hakkebøf med bacon" is no bacon
+    ):
         return None
     kind = _kind(name)
     found = swap_price(ingredient.get("product") or {}, offers.get(kind, [])) if kind else None
