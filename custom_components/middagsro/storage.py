@@ -369,14 +369,14 @@ class RemaPlanStore:
     def _adopt_favorites(self, old: list[Any]) -> None:
         """Favourites saved before they were recipes become ♥ recipes (by name if the
         collection has the dish), keeping their id, how often and when last used."""
-        from .recipes import clean_recipe, favorite_recipe, find_by_name  # noqa: PLC0415
+        from .recipes import clean_recipe, find_by_name  # noqa: PLC0415
 
         for fav in old:
             if not isinstance(fav, dict) or not str(fav.get("text") or "").strip():
                 continue
             text = str(fav["text"]).strip()
-            # The collection's recipe for the dish, when it has one.
-            recipe = find_by_name(self, text) or favorite_recipe(self, text)
+            # The collection's recipe by that name, when it has one; else a ♥ name.
+            recipe = find_by_name(self, text)
             if recipe is not None and recipe.get("fav_id"):
                 continue  # adopted before
             fields = {
