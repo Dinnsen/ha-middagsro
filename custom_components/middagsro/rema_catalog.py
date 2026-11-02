@@ -187,7 +187,11 @@ class RemaRecipeCatalog:
         return out
 
     def is_ready(self, entry: dict[str, Any]) -> bool:
-        """Does every item that is bought have a product, by the family's pantry?"""
+        """Does every item that is bought have a product, by the family's pantry? Ready
+        by REMA (an item without a product is one REMA leaves off the list) is ready,
+        unless the family changed its items."""
+        if entry.get("ready") and entry["slug"] not in self.links:
+            return True
         return bool(links({"ingredients": self.ingredients(entry)}, self.pantry_of())["ready"])
 
     async def async_save_links(self, slug: str, ingredients: list[Any]) -> None:

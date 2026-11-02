@@ -2,6 +2,11 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.14.0b8] - 2026-11-02
+
+### Fixed
+- **REMA recipes that were Klar lost it in 2.14.0b7:** an item REMA leaves off the shopping list (water, and the like) has no product, and was counted as missing. A recipe REMA has with every product is ready, unless you changed its products yourselves.
+
 ## [2.14.0b7] - 2026-11-02
 
 ### Added
