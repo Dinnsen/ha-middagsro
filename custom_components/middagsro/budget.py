@@ -3,7 +3,8 @@
 The month's amount is spread over its days (5.000 kr. in October is 161 kr. a
 day), so a week is seven days' worth, also a week that runs into the next month.
 What a week doesn't use goes on to the next week of the same month (and what it
-overspends is taken from them); a new month starts afresh on the 1st.
+overspends is taken from them); a new month starts afresh on the 1st. A family
+can enter an amount a week instead: then every day is a seventh of it.
 """
 
 from __future__ import annotations
@@ -153,9 +154,19 @@ async def async_delete(store: RemaPlanStore, purchase_id: str) -> None:
 # ------------------------------------------------------------------ the sums
 
 
-def daily_rate(monthly: float, day: date) -> float:
-    """The budget for one day: the month's amount over its days."""
+def daily_rate(monthly: float, day: date, weekly: float = 0) -> float:
+    """The budget for one day: a weekly amount over seven days, or the month's
+    amount over its days."""
+    if weekly:
+        return weekly / 7
     return monthly / monthrange(day.year, day.month)[1]
+
+
+def store_rate(store: RemaPlanStore, day: date) -> float:
+    """The family's budget for one day, as they entered it (a week or a month)."""
+    settings = store.settings
+    weekly = settings.get("weekly_budget") if settings.get("budget_period") == "week" else 0
+    return daily_rate(float(settings.get("monthly_budget") or 0), day, float(weekly or 0))
 
 
 def week_start(day: date, start_weekday: int) -> date:
@@ -204,8 +215,7 @@ def since(store: RemaPlanStore) -> date:
 
 def budget_between(store: RemaPlanStore, first: date, last: date) -> float:
     """The budget for the days from one date to another (none before it was kept)."""
-    monthly = float(store.settings["monthly_budget"])
-    return sum(daily_rate(monthly, d) for d in _days(max(first, since(store)), last))
+    return sum(store_rate(store, d) for d in _days(max(first, since(store)), last))
 
 
 def week_numbers(store: RemaPlanStore, start: date, ledger: Ledger) -> dict[str, float]:
@@ -277,7 +287,9 @@ def summary(store: RemaPlanStore, today: date | None = None) -> dict[str, Any] |
     start_weekday = store.settings["start_weekday"]
     return {
         "monthly": monthly,
-        "daily": round(daily_rate(monthly, today), 2),
+        "period": store.settings.get("budget_period", "month"),
+        "weekly": store.settings.get("weekly_budget", 0),
+        "daily": round(store_rate(store, today), 2),
         "week": _week(store, ledger, today, start_weekday),
         "month": _month(store, ledger, today),
         "weeks": _weeks(store, ledger, today, start_weekday),
@@ -319,7 +331,6 @@ def _week(store: RemaPlanStore, ledger: Ledger, today: date, start_weekday: int)
 
 
 def _month(store: RemaPlanStore, ledger: Ledger, today: date) -> dict[str, Any]:
-    monthly = float(store.settings["monthly_budget"])
     first = today.replace(day=1)
     last = first.replace(day=monthrange(first.year, first.month)[1])
     spent = ledger.spent(first, today)
@@ -327,7 +338,7 @@ def _month(store: RemaPlanStore, ledger: Ledger, today: date) -> dict[str, Any]:
     # The family's own pace: the last eight weeks (or what there is), else the budget's.
     begin = max(today - timedelta(days=55), ledger.first or today, since(store))
     known = (today - begin).days + 1
-    rate = ledger.spent(begin, today) / known if known >= 14 else daily_rate(monthly, today)
+    rate = ledger.spent(begin, today) / known if known >= 14 else store_rate(store, today)
     coming = planned(store, today + timedelta(days=1), last)
     days_left = (last - today).days
     forecast = spent + max(rate * days_left, coming)
@@ -500,14 +511,14 @@ async def async_book(planner: MealPlanner, raw: Any) -> dict[str, Any]:
     store = planner.store
     if not store.settings.get("monthly_budget"):
         raise _invalid("no_monthly_budget")
-    await async_add(store, raw)
+    purchase = await async_add(store, raw)
     if (week := crossed(store)) is not None:
         await store.async_save()
         await _async_tell(planner, *week_message(week))
     planner._notify()
     data = summary(store)
     assert data is not None
-    return data
+    return {**data, "booked": purchase["id"]}  # the panel can undo it
 
 
 async def _async_tell(planner: MealPlanner, title: str, message: str) -> None:

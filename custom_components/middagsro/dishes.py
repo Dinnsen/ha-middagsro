@@ -96,6 +96,37 @@ def _generic(word: str) -> bool:
     return any(stem == g or stem.startswith(g) for g in _GENERIC)
 
 
+# Mains a family has most weeks: chicken with potatoes one week and chicken with
+# rice the next are two dinners. With one of these in common, the sides must be too.
+_STAPLES = ("kylling", "kalkun", "svinekød", "oksekød", "hakket", "hakkekød", "flæsk")
+
+
+def _staple(word: str) -> bool:
+    return any(_same_word(word, staple, False) for staple in _STAPLES)
+
+
+def _sides(name: str) -> set[str]:
+    """The sides of a dinner that say something (not pasta, potatoes or rice, nor
+    the main again: "Ris med kylling" has none)."""
+    parts = _SIDES.split(_LEFTOVERS.sub("", name or ""), maxsplit=1)
+    if len(parts) < 2:
+        return set()
+    return {
+        _stem(w)
+        for w in _tokens(parts[1])
+        if len(w) > 2
+        and w not in _NEUTRAL_WORDS
+        and w not in _HOW
+        and not _generic(w)
+        and not _staple(w)
+    }
+
+
+def _shared(a: str, b: str, strict: bool = False) -> set[str]:
+    key_a, key_b = dish_key(a, not strict), dish_key(b, not strict)
+    return {x for x in key_a for y in key_b if _same_word(x, y, strict)}
+
+
 def same_dish(a: str, b: str, strict: bool = False) -> bool:
     """Are two dinners the same dish ("Laks med pasta" and "Ovnbagt laks med ris")?
 
@@ -112,7 +143,24 @@ def same_dish(a: str, b: str, strict: bool = False) -> bool:
     # Only the pasta in common, and each has its own main: different dinners.
     if all(_generic(x) for x in shared):
         return not (key_a - shared and key_b - shared)
+    if not strict and all(_staple(x) for x in shared):
+        # "Stegt kyllingebryst med pandestegte kartofler og gnavegrønt" is not
+        # "Dansk kylling med ovnbagte kartofler og gulerødder".
+        sides_a, sides_b = _sides(a), _sides(b)
+        return any(_same_word(x, y, False) for x in sides_a for y in sides_b) or not (
+            sides_a and sides_b
+        )
     return True
+
+
+def repeated_main(dish: str, earlier: str) -> str:
+    """The main a dish has in common with an earlier one, as the dish writes it
+    ("laks"), for telling the AI what not to choose."""
+    shared = _shared(dish, earlier)
+    for word in _tokens(dish):
+        if _stem(word) in shared:
+            return word
+    return next(iter(sorted(shared)), "")
 
 
 def matches_any(name: str, names: list[str], strict: bool = False) -> str | None:
@@ -227,31 +275,236 @@ def household_portions(settings: dict[str, Any]) -> float:
     return round(total, 1) or 2.0
 
 
+# ------------------------------------------------------------------ what the family can't eat
+
+# Words in an ingredient's name that mean it has the allergen, or is what the
+# family avoids; a word a product name starts with (or is) counts, so "fløde"
+# is in "piskefløde" and "ost" in "flødeost". The "unless" words say the name
+# is something else after all ("kokosmælk" is no milk, "risnudler" no wheat).
+_FOOD_WORDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "gluten": (
+        ("mel", "hvede", "pasta", "spaghetti", "penne", "lasagne", "nudler", "brød", "boller", "bulgur",
+         "couscous", "rasp", "panko", "tortilla", "wrap", "pita", "kiks", "øl", "byg", "rug", "seitan",
+         "havregryn", "sojasauce", "soja", "durum", "semulje", "croutoner", "tærtedej", "butterdej"),
+        ("glutenfri", "ris", "glas", "boghvede", "majs", "kikærte", "mandel", "kartoffel", "tamari", "sojabønne"),
+    ),
+    "lactose": (
+        ("mælk", "fløde", "smør", "ost", "yoghurt", "skyr", "creme fraiche", "cremefraiche", "fraiche", "kvark",
+         "hytteost", "parmesan", "mozzarella", "feta", "is", "ymer", "kærnemælk", "flødeis", "chokolade"),
+        ("laktosefri", "mælkefri", "kokos", "havre", "mandel", "soja", "ris", "plante", "veganske", "vegansk", "mørk"),
+    ),
+    "milk": (
+        ("mælk", "fløde", "smør", "ost", "yoghurt", "skyr", "creme fraiche", "cremefraiche", "fraiche", "kvark",
+         "hytteost", "parmesan", "mozzarella", "feta", "is", "ymer", "kærnemælk", "flødeis", "chokolade", "valle",
+         "kasein", "laktosefri"),
+        ("mælkefri", "kokos", "havre", "mandel", "soja", "ris", "plante", "veganske", "vegansk", "mørk"),
+    ),
+    "egg": (("æg", "mayonnaise", "mayo", "remoulade", "bearnaise", "hollandaise", "aioli"), ("æggefri", "vegansk")),
+    "nuts": (
+        ("nødder", "nød", "mandel", "mandler", "hasselnød", "valnød", "cashew", "pistacie", "pekan", "marcipan",
+         "nougat", "pesto", "nutella", "nøddesmør"),
+        ("muskat", "kokos", "jordnød", "peanut"),
+    ),
+    "peanuts": (("peanut", "jordnød", "satay"), ()),
+    "soy": (("soja", "soya", "tofu", "edamame", "miso", "tempeh", "teriyaki", "hoisin"), ()),
+    "sesame": (("sesam", "tahin", "hummus"), ()),
+    "celery": (("selleri", "bladselleri", "knoldselleri"), ()),
+    "mustard": (("sennep", "dijon"), ()),
+    "fish": (
+        ("fisk", "laks", "torsk", "tun", "sej", "rødspætte", "makrel", "sild", "fiskesauce", "ansjos", "kuller",
+         "hoki", "ørred", "worcestershire", "fiskefrikadeller"),
+        (),
+    ),
+    "shellfish": (("rejer", "reje", "krebs", "hummer", "krabbe", "jomfruhummer", "scampi", "skaldyr"), ()),
+    "molluscs": (("muslinger", "musling", "østers", "blæksprutte", "calamari", "snegle"), ()),
+    "lupin": (("lupin",), ()),
+    "meat": (
+        ("kød", "okse", "svin", "gris", "kylling", "kalkun", "lam", "bacon", "pølse", "skinke", "fars", "bøf",
+         "kotelet", "mørbrad", "and", "flæsk", "frikadeller", "kebab", "pepperoni", "salami", "chorizo", "medister",
+         "spareribs", "nakke", "culotte", "entrecote", "roastbeef", "leverpostej", "kødboller", "hakkebøf"),
+        ("vegetar", "vegansk", "plante", "kødfri", "sojakød"),
+    ),
+    "pork": (
+        ("svin", "gris", "bacon", "skinke", "flæsk", "medister", "spareribs", "nakke", "svinekød", "pølse",
+         "kotelet", "mørbrad", "pepperoni", "salami", "chorizo", "leverpostej"),
+        ("okse", "kylling", "kalkun", "lamme", "kalve"),
+    ),
+    "beef": (("okse", "bøf", "oksekød", "hakkebøf", "entrecote", "culotte", "roastbeef", "kalv"), ("svine", "kyllinge")),
+    "spicy": (("chili", "jalapeño", "jalapeno", "sriracha", "cayenne", "sambal", "harissa", "stærk", "peberfrugt"), ("sød", "sweet")),
+}  # fmt: skip
+_FOOD_WORDS["animal_products"] = (
+    _FOOD_WORDS["meat"][0] + _FOOD_WORDS["fish"][0] + _FOOD_WORDS["shellfish"][0] + _FOOD_WORDS["egg"][0]
+    + _FOOD_WORDS["milk"][0] + ("honning", "gelatine", "husblas"),
+    ("vegansk", "plante", "kokos", "havre", "mandel", "soja", "ris", "mælkefri", "æggefri"),
+)  # fmt: skip
+_FOOD_WORDS["spicy"] = (_FOOD_WORDS["spicy"][0], ("sød", "sweet", "mild", "peberfrugt"))
+_FOOD_LABELS = {
+    "gluten": "allergi over for gluten", "lactose": "laktoseintolerans", "milk": "mælkeallergi",
+    "egg": "ægallergi", "nuts": "nøddeallergi", "peanuts": "jordnøddeallergi", "soy": "sojaallergi",
+    "sesame": "sesamallergi", "celery": "selleriallergi", "mustard": "sennepsallergi",
+    "fish": "fiskeallergi", "shellfish": "skaldyrsallergi", "molluscs": "allergi over for bløddyr",
+    "lupin": "lupinallergi", "meat": "ikke kød", "pork": "ikke svinekød", "beef": "ikke oksekød",
+    "animal_products": "vegansk mad", "spicy": "ikke stærk mad",
+}  # fmt: skip
+
+
+def _has_food_word(name: str, words: tuple[str, ...], unless: tuple[str, ...]) -> str | None:
+    """The word of the list that the name has (as a word or the end of one), unless
+    a word says the thing is something else."""
+    low = name.lower()
+    tokens = _tokens(name)
+    if any(u in low for u in unless):
+        return None
+    for word in words:
+        if " " in word:
+            if word in low:
+                return word
+            continue
+        for token in tokens:
+            if token == word or (
+                len(word) > 2 and (token.endswith(word) or token.startswith(word))
+            ):
+                return word
+    return None
+
+
+# Gluten and lactose have a free-from version of most things (REMA's GLUTENFRI
+# and LAKTOSEFRI products are preferred when the list is priced), so pasta or
+# milk in a dish is not a conflict for them; a milk-protein allergy is.
+_FREE_FROM_HANDLED = {"gluten", "lactose"}
+
+
+def food_conflicts(names: list[str], settings: dict[str, Any]) -> list[tuple[str, str]]:
+    """The ingredients the family can't have, with the rule each breaks:
+    ("fløde", "mælkeallergi"). Allergies first, then what they avoid."""
+    rules = [
+        ("allergy", a) for a in settings.get("allergies") or [] if a not in _FREE_FROM_HANDLED
+    ] + [("avoid", a) for a in settings.get("avoid") or []]
+    found: list[tuple[str, str]] = []
+    for name in names:
+        for _kind, key in rules:
+            lists = _FOOD_WORDS.get(key)
+            if (
+                lists
+                and _has_food_word(name, lists[0], lists[1])
+                and (name, _FOOD_LABELS[key]) not in found
+            ):
+                found.append((name, _FOOD_LABELS[key]))
+    return found
+
+
 # ------------------------------------------------------------------ checking a plan
 
 
+# A day the family wrote themselves ("Spiser ude", "Skolefest"): no dinner is made.
+TEXT_TYPE = "egen"
+
+
 def is_cooked(day: dict[str, Any]) -> bool:
-    """A day a dinner is made on (not leftovers, not emptied)."""
+    """A day a dinner is made on (not leftovers, not emptied, not a day written by hand)."""
     return (
         not day.get("uses_leftovers_from")
-        and day.get("type") not in ("rester", "tom")
+        and day.get("type") not in ("rester", "tom", TEXT_TYPE)
         and bool(day.get("dish"))
     )
 
 
+_REST_WORD = re.compile(r"\brest(?:er|erne|e|edag|emad|e-?dag|e-?aften)?\b", re.IGNORECASE)
+
+
 def is_rest_text(text: str) -> bool:
-    """A fixed day that is leftovers ("Rester", "Restedag", "rester fra ugen")."""
-    return "rest" in str(text or "").lower()
+    """A fixed day that is leftovers ("Rester", "Restedag", "rester fra ugen"),
+    not a day at a restaurant."""
+    return bool(_REST_WORD.search(str(text or "")))
+
+
+# What a fixed day is: leftovers, rye bread (nothing made, nothing bought), a
+# vegetarian dinner, no dinner at home, or a dish the family names ("Pizza").
+DAY_KINDS = ("rest", "rye", "veg", "skip", "fixed")
+DAY_TEXTS = {"rest": "Rester", "rye": "Rugbrødsdag", "veg": "Vegetardag", "skip": ""}
+_RYE_WORD = re.compile(r"\brugbrød", re.IGNORECASE)
+
+
+def fixed_kind(fixed: dict[str, Any]) -> str:
+    """The kind of a fixed day; one saved before there were kinds, by its words."""
+    kind = fixed.get("kind")
+    if kind in DAY_KINDS:
+        return str(kind)
+    text = str(fixed.get("text") or "")
+    if is_rest_text(text):
+        return "rest"
+    return "rye" if _RYE_WORD.search(text) else "fixed"
+
+
+def fixed_on(fixed: dict[str, Any], day: date) -> bool:
+    """Is a fixed day this date: its own date (one week's choice), or its weekday?"""
+    if fixed.get("date"):
+        return str(fixed["date"]) == day.isoformat()
+    return fixed.get("weekday") == day.weekday()
 
 
 def fixed_rest_dates(settings: dict[str, Any], dates: list[date]) -> list[date]:
     """The plan's days that are a fixed leftovers day (they count as leftover days)."""
-    weekdays = {
-        fixed.get("weekday")
-        for fixed in settings.get("fixed_days") or []
-        if is_rest_text(str(fixed.get("text") or ""))
-    }
-    return [d for d in dates if d.weekday() in weekdays]
+    rests = [f for f in settings.get("fixed_days") or [] if fixed_kind(f) == "rest"]
+    return [d for d in dates if any(fixed_on(f, d) for f in rests)]
+
+
+def plan_day_kinds(
+    settings: dict[str, Any], window: list[date], chosen: dict[str, Any] | None = None
+) -> dict[str, dict[str, str]]:
+    """What each day of a plan is: the fixed days of the settings, with what the
+    family chose for this week instead ("ai", "pick" or a fixed kind)."""
+    out: dict[str, dict[str, str]] = {}
+    for day in window:
+        iso = day.isoformat()
+        fixed = next(
+            (f for f in settings.get("fixed_days") or [] if f.get("weekday") == day.weekday()),
+            None,
+        )
+        kind = (
+            {"kind": fixed_kind(fixed), "text": str(fixed.get("text") or "")}
+            if fixed
+            else {"kind": "ai", "text": ""}
+        )
+        wanted = (chosen or {}).get(iso)
+        if isinstance(wanted, dict) and wanted.get("kind") in (*DAY_KINDS, "ai", "pick"):
+            name = str(wanted["kind"])
+            text = str(wanted.get("text") or "").strip()[:300]
+            kind = {"kind": name, "text": text if name == "fixed" else DAY_TEXTS.get(name, "")}
+        if kind["kind"] == "fixed" and not kind["text"]:
+            kind = {"kind": "ai", "text": ""}
+        out[iso] = kind
+    return out
+
+
+def veg_dates(settings: dict[str, Any], dates: list[date]) -> list[date]:
+    """The plan's days that must be a vegetarian dinner."""
+    vegs = [f for f in settings.get("fixed_days") or [] if fixed_kind(f) == "veg"]
+    return [d for d in dates if any(fixed_on(f, d) for f in vegs)]
+
+
+# Dishes made of meat in pieces that simmer, never of minced meat: "Klassisk dansk
+# gullasch" of hakket oksekød became meatballs in paprika sauce.
+_NOT_MINCED = ("gullasch", "goulash", "gulasch", "stroganoff", "bourguignon", "oksegryde",
+               "kalvegryde", "osso")  # fmt: skip
+_MINCED = ("hakket", "hakkede", "hakkekød", "fars")
+REPEAT_MARK = "fra de seneste uger"
+MINCED_MARK = "laves af kød i tern"
+# The problems Middagsro swaps a day for itself when the AI keeps them (mealplan).
+SWAP_MARKS = (REPEAT_MARK, MINCED_MARK)
+
+
+def minced_for_pieces(plan: dict[str, Any], day: dict[str, Any]) -> str | None:
+    """The minced meat on a day whose dish is made of meat in pieces, if any."""
+    dish = set(_tokens(str(day.get("dish") or "")))
+    if not any(word.startswith(kind) for word in dish for kind in _NOT_MINCED):
+        return None
+    uses = {str(name).lower() for name in day.get("uses") or []}
+    for line in plan.get("shopping") or []:
+        name = str(line.get("name") or "")
+        if name.lower() in uses and set(_tokens(name)) & set(_MINCED):
+            return name
+    return None
 
 
 def check_plan(
@@ -285,9 +538,16 @@ def check_plan(
         if day.get("favorite_id") in due_ids or in_text(dish, note):
             continue
         if (earlier := matches_any(dish, recent)) is not None:
+            main = repeated_main(dish, earlier)
             problems.append(
-                f'{day["weekday"]} {day["date"]}: "{dish}" gentager "{earlier}" fra de '
-                "seneste uger – vælg en helt anden hovedret"
+                f'{day["weekday"]} {day["date"]}: "{dish}" gentager "{earlier}" {REPEAT_MARK} '
+                "– vælg en helt anden hovedret" + (f", uden {main}" if main else "")
+            )
+    for day in cooked:
+        if (minced := minced_for_pieces(plan, day)) is not None:
+            problems.append(
+                f'{day["weekday"]} {day["date"]}: "{day["dish"]}" {MINCED_MARK}, ikke af '
+                f'"{minced}" – brug oksekød i tern, eller vælg en ret til det hakkede kød'
             )
     for day in cooked:
         if (bad := matches_any(day["dish"], disliked or [], strict=True)) is not None:
@@ -307,10 +567,20 @@ def check_plan(
     rest_days: set[str] = set()
     for fixed in settings.get("fixed_days") or []:
         text = str(fixed.get("text") or "")
+        kind = fixed_kind(fixed)
         for day in days:
-            if date.fromisoformat(day["date"]).weekday() != fixed.get("weekday"):
+            if not fixed_on(fixed, date.fromisoformat(day["date"])):
                 continue
-            if is_rest_text(text):
+            if kind == "veg":
+                if day.get("type") != "vegetar" and not day.get("uses_leftovers_from"):
+                    problems.append(
+                        f"{day['weekday']} {day['date']}: skal være en vegetarret (fast "
+                        f'vegetardag), ikke "{day["dish"]}"'
+                    )
+                continue
+            if kind not in ("rest", "fixed"):
+                continue
+            if kind == "rest":
                 rest_days.add(day["date"])
                 if not (day.get("uses_leftovers_from") or _IS_LEFTOVERS.match(day["dish"])):
                     problems.append(
@@ -356,6 +626,22 @@ def check_plan(
             problems.append(
                 f"{day['weekday']} {day['date']}: rester af {source}, men den dag laver ikke "
                 "dobbelt portion (makes_leftovers)"
+            )
+    # What the family can't eat: in no dish, and on no line of the list.
+    lines_by_name = {
+        str(line.get("name") or "").lower(): line for line in plan.get("shopping") or []
+    }
+    for day in cooked:
+        names = [str(i.get("name") or "") for i in day.get("ingredients") or []]
+        names += [
+            name
+            for name in day.get("uses") or []
+            if name.lower() in lines_by_name and name not in names
+        ]
+        for ingredient, rule in food_conflicts(names, settings):
+            problems.append(
+                f'{day["weekday"]} {day["date"]}: "{day["dish"]}" bruger {ingredient}, men '
+                f"familien har {rule} – lav retten uden, eller vælg en anden ret"
             )
     vegetarian = sum(1 for d in cooked if d.get("type") == "vegetar")
     low, high = settings.get("min_vegetarian") or 0, settings.get("max_vegetarian") or 0

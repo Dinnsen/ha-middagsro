@@ -427,6 +427,25 @@ def parse_nutrition(entries: Any) -> dict[str, float]:
     return out if "kcal" in out else {}
 
 
+# A week's avis runs about a week (sunday to saturday); a "Meget mere" avis runs
+# for weeks, without offers of its own.
+WEEK_AVIS_MAX_DAYS = 10
+
+
+def is_week_avis(catalog: Catalog, catalogs: list[Catalog]) -> bool:
+    """Can this avis be a week's avis (the current one, or next week's)?
+
+    Not an insert (indstik) inside another avis's week, not an avis with no
+    offers, and not one that runs for weeks ("Meget Mere REMA 1000", 4 to 25
+    November, no offers): that one must never start next week's plan.
+    """
+    if catalog.offer_count == 0 or is_insert(catalog, catalogs):
+        return False
+    if catalog.valid_from is not None and catalog.valid_to is not None:
+        return (catalog.valid_to - catalog.valid_from).days <= WEEK_AVIS_MAX_DAYS
+    return True
+
+
 def is_insert(catalog: Catalog, catalogs: list[Catalog]) -> bool:
     """An insert (indstik): a smaller avis inside another avis's week.
 

@@ -1,0 +1,1035 @@
+{
+ "version": 1,
+ "shop": "REMA 1000",
+ "recorded": "2026-10-30",
+ "plan": 45,
+ "searches": {
+  "kvark": [],
+  "kalkun": [
+   {
+    "id": 410823,
+    "name": "KALKUN BACON",
+    "underline": "100 GR. / DEN GRØNNE SLAGTER",
+    "department": "Køl",
+    "category": "Bacon & toppings",
+    "price": 16.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 169.5,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 410201,
+    "name": "KALKUNBRYST",
+    "underline": "120 GR. / REMA 1000",
+    "department": "Køl",
+    "category": "Pålæg",
+    "price": 14.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 124.58,
+    "is_organic": false,
+    "labels": [
+     "REMA1000",
+     "Nøglehul"
+    ]
+   },
+   {
+    "id": 190282,
+    "name": "POÉSIE KALKUN",
+    "underline": "85 GR. / VITAKRAFT",
+    "department": "Husholdning",
+    "category": "Kattemad",
+    "price": 8.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 105.29,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 410514,
+    "name": "KYLLINGEFRIKADELLER",
+    "underline": "200 GR. / REMA 1000",
+    "department": "Køl",
+    "category": "Færdigretter",
+    "price": 19.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 99.75,
+    "is_organic": false,
+    "labels": [
+     "REMA1000",
+     "Bedre dyrevelfærd 1"
+    ]
+   },
+   {
+    "id": 411641,
+    "name": "KALKUNSPEGEPØLSE",
+    "underline": "100 GR. / 3-STJERNET",
+    "department": "Køl",
+    "category": "Pålæg",
+    "price": 19.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 199.5,
+    "is_organic": false,
+    "labels": []
+   }
+  ],
+  "stegt kalkunkød i mindre tern": [
+   {
+    "id": 410875,
+    "name": "BACON I TERN",
+    "underline": "200 GR. / REMA 1000, 2-PK.",
+    "department": "Køl",
+    "category": "Bacon & toppings",
+    "price": 12.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 64.75,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 411809,
+    "name": "STEGT KYLLINGEBRYST",
+    "underline": "80 GR. / REMA 1000, TYNDSKÅRET",
+    "department": "Køl",
+    "category": "Pålæg",
+    "price": 16.03,
+    "compare_unit": "kg",
+    "compare_unit_price": 200.38,
+    "is_organic": false,
+    "labels": [
+     "REMA1000",
+     "Nøglehul"
+    ]
+   },
+   {
+    "id": 41726,
+    "name": "AVOCADO I TERN",
+    "underline": "200 GR. / REMA 1000, ØKO.",
+    "department": "Frost",
+    "category": "Grøntsager, frugt & bær",
+    "price": 16.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 84.75,
+    "is_organic": true,
+    "labels": [
+     "REMA1000",
+     "Økologi",
+     "Nøglehul"
+    ]
+   },
+   {
+    "id": 411626,
+    "name": "SALAMI M/MINDRE FEDT",
+    "underline": "110 GR. / 3-STJERNET",
+    "department": "Køl",
+    "category": "Pålæg",
+    "price": 14.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 135.91,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 411556,
+    "name": "STEGT TOFU",
+    "underline": "200 GR. / CITRONGRÆS & CHILI",
+    "department": "Køl",
+    "category": "Plantebaserede produkter",
+    "price": 17.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 89.75,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 419929,
+    "name": "STEGT KYLLING",
+    "underline": "150 GR. / ROSE, INDERFILET M/BBQ",
+    "department": "Køl",
+    "category": "Pålæg",
+    "price": 20.88,
+    "compare_unit": "kg",
+    "compare_unit_price": 139.2,
+    "is_organic": false,
+    "labels": [
+     "Nøglehul",
+     "Dansk",
+     "Bedre dyrevelfærd 1"
+    ]
+   },
+   {
+    "id": 401024,
+    "name": "SKINKE I TERN",
+    "underline": "300 GR. / FRILANDSGRIS",
+    "department": "Kød, fisk & fjerkræ",
+    "category": "Gris",
+    "price": 29,
+    "compare_unit": "kg",
+    "compare_unit_price": 96.67,
+    "is_organic": false,
+    "labels": [
+     "Avisvare",
+     "Nøglehul",
+     "Dansk",
+     "Bedre dyrevelfærd 3"
+    ]
+   },
+   {
+    "id": 404926,
+    "name": "KYLLINGEBRYST I TERN",
+    "underline": "250 GR. / REMA 1000",
+    "department": "Kød, fisk & fjerkræ",
+    "category": "Kylling",
+    "price": 34.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 139.8,
+    "is_organic": false,
+    "labels": [
+     "Nøglehul",
+     "Dansk",
+     "Bedre dyrevelfærd 1"
+    ]
+   },
+   {
+    "id": 405031,
+    "name": "VILDSVIN I TERN",
+    "underline": "300 GR. / REMA 1000",
+    "department": "Kød, fisk & fjerkræ",
+    "category": "Vildt",
+    "price": 39,
+    "compare_unit": "kg",
+    "compare_unit_price": 130,
+    "is_organic": false,
+    "labels": [
+     "Avisvare",
+     "Nøglehul"
+    ]
+   },
+   {
+    "id": 405032,
+    "name": "KRONDYRKØD I TERN",
+    "underline": "300 GR. / REMA 1000",
+    "department": "Kød, fisk & fjerkræ",
+    "category": "Vildt",
+    "price": 49,
+    "compare_unit": "kg",
+    "compare_unit_price": 163.33,
+    "is_organic": false,
+    "labels": [
+     "Nøglehul"
+    ]
+   },
+   {
+    "id": 405238,
+    "name": "UNGKVÆG I TERN",
+    "underline": "300 GR. / DANSK UNGKVÆG",
+    "department": "Kød, fisk & fjerkræ",
+    "category": "Oksekød",
+    "price": 44.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 149.83,
+    "is_organic": false,
+    "labels": [
+     "Nøglehul",
+     "Dansk"
+    ]
+   },
+   {
+    "id": 410817,
+    "name": "KYLLING TERN",
+    "underline": "150 GR. / REMA1000, 2-PK.",
+    "department": "Køl",
+    "category": "Bacon & toppings",
+    "price": 19.05,
+    "compare_unit": "kg",
+    "compare_unit_price": 127,
+    "is_organic": false,
+    "labels": [
+     "REMA1000",
+     "Nøglehul"
+    ]
+   },
+   {
+    "id": 455637,
+    "name": "SALATOST I TERN 45+",
+    "underline": "200 GR. / REMA 1000",
+    "department": "Ost m.v.",
+    "category": "Madlavningsost m.v.",
+    "price": 15.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 79.75,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 30320,
+    "name": "STEGTE SILD",
+    "underline": "250 GR. / FISKEMANDENS, MED APPELSIN",
+    "department": "Køl",
+    "category": "Fisk, sild & skaldyr",
+    "price": 29.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 119.8,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 30322,
+    "name": "STEGTE SILD",
+    "underline": "250 GR. / FISKEMANDENS",
+    "department": "Køl",
+    "category": "Fisk, sild & skaldyr",
+    "price": 28.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 115.8,
+    "is_organic": false,
+    "labels": [
+     "MSC"
+    ]
+   }
+  ],
+  "chili": [
+   {
+    "id": 306386,
+    "name": "CHILI MIX",
+    "underline": "70 GR. / LAND/KL.: SE VAREN",
+    "department": "Frugt & grønt",
+    "category": "Krydderurter & smagsforstærkere",
+    "price": 13,
+    "compare_unit": "kg",
+    "compare_unit_price": 185.71,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 120040,
+    "name": "CHILI MAYO",
+    "underline": "255 GR. / INSPIRING FOOD",
+    "department": "Kolonial",
+    "category": "Ketchup, remoulade, mayonnaise m.v.",
+    "price": 15.73,
+    "compare_unit": "kg",
+    "compare_unit_price": 61.69,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 40920,
+    "name": "CHILI CON CARNE",
+    "underline": "450 GR. / LÆKKERT & NEMT",
+    "department": "Frost",
+    "category": "Grøntsager, frugt & bær",
+    "price": 13.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 31,
+    "is_organic": false,
+    "labels": [
+     "REMA1000",
+     "Nøglehul"
+    ]
+   },
+   {
+    "id": 120046,
+    "name": "STÆRK CHILISAUCE",
+    "underline": "210 GR. / INSPIRING FOOD",
+    "department": "Kolonial",
+    "category": "Saucer & nem mad",
+    "price": 9.5,
+    "compare_unit": "kg",
+    "compare_unit_price": 45.24,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 101965,
+    "name": "SØD CHILI SAUCE",
+    "underline": "500 ML. / REMA 1000",
+    "department": "Kolonial",
+    "category": "Saucer & nem mad",
+    "price": 16.95,
+    "compare_unit": "ltr",
+    "compare_unit_price": 33.9,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 110052,
+    "name": "SWEET CHILI",
+    "underline": "430 GR. / REMA 1000 DRESSING",
+    "department": "Kolonial",
+    "category": "Dressing",
+    "price": 12.74,
+    "compare_unit": "kg",
+    "compare_unit_price": 29.63,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 90910,
+    "name": "STØDT CHILI",
+    "underline": "70 GR. / REMA 1000",
+    "department": "Kolonial",
+    "category": "Krydderier",
+    "price": 7.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 113.57,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 108338,
+    "name": "HAKKEDE TOMATER",
+    "underline": "400 GR. / REMA 1000 M/CHILI",
+    "department": "Kolonial",
+    "category": "Konserves & survarer",
+    "price": 7.92,
+    "compare_unit": "kg",
+    "compare_unit_price": 19.8,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 100173,
+    "name": "HVIDLØG I CHILI",
+    "underline": "290 GR. / REMA 1000",
+    "department": "Kolonial",
+    "category": "Konserves & survarer",
+    "price": 17.8,
+    "compare_unit": "kg",
+    "compare_unit_price": 61.38,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 102809,
+    "name": "TORTILLA CHIPS CHILI",
+    "underline": "200 GR. / TEX MEX",
+    "department": "Kolonial",
+    "category": "Tex mex",
+    "price": 7.91,
+    "compare_unit": "kg",
+    "compare_unit_price": 39.55,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 110023,
+    "name": "CHEDDAR/CHILI MAYO",
+    "underline": "210 GR. / REMA 1000",
+    "department": "Kolonial",
+    "category": "Ketchup, remoulade, mayonnaise m.v.",
+    "price": 14.12,
+    "compare_unit": "kg",
+    "compare_unit_price": 67.24,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 120229,
+    "name": "CHILI CON CARNE MIX",
+    "underline": "50 GR. / REMA 1000",
+    "department": "Kolonial",
+    "category": "Saucer & nem mad",
+    "price": 7.01,
+    "compare_unit": "kg",
+    "compare_unit_price": 140.2,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 107912,
+    "name": "KIDNEY BØNNER",
+    "underline": "410 GR. / REMA 1000 CHILISAUCE",
+    "department": "Kolonial",
+    "category": "Tex mex",
+    "price": 8.15,
+    "compare_unit": "kg",
+    "compare_unit_price": 19.88,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 411556,
+    "name": "STEGT TOFU",
+    "underline": "200 GR. / CITRONGRÆS & CHILI",
+    "department": "Køl",
+    "category": "Plantebaserede produkter",
+    "price": 17.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 89.75,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 110502,
+    "name": "CHILI BEARNAISE",
+    "underline": "410 GR. / REMA 1000 SAUCE",
+    "department": "Kolonial",
+    "category": "Saucer & nem mad",
+    "price": 16.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 41.34,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   }
+  ],
+  "rød chili": [
+   {
+    "id": 100831,
+    "name": "RØD KARRYPASTA",
+    "underline": "110 GR. / INSPIRING FOOD",
+    "department": "Kolonial",
+    "category": "Saucer & nem mad",
+    "price": 11.91,
+    "compare_unit": "kg",
+    "compare_unit_price": 108.27,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 108648,
+    "name": "RØD PESTO",
+    "underline": "130 GR. / REMA 1000",
+    "department": "Kolonial",
+    "category": "Saucer & nem mad",
+    "price": 7.16,
+    "compare_unit": "kg",
+    "compare_unit_price": 55.08,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 413314,
+    "name": "RØD PESTO",
+    "underline": "130 GR. / REMA 1000",
+    "department": "Køl",
+    "category": "Dressing & saucer",
+    "price": 16.8,
+    "compare_unit": "kg",
+    "compare_unit_price": 129.23,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 100516,
+    "name": "RØD PESTO",
+    "underline": "90 GR. / REMA 1000 ØKOLOGISK",
+    "department": "Kolonial",
+    "category": "Konserves & survarer",
+    "price": 10.61,
+    "compare_unit": "kg",
+    "compare_unit_price": 117.89,
+    "is_organic": true,
+    "labels": [
+     "REMA1000",
+     "Økologi"
+    ]
+   },
+   {
+    "id": 40830,
+    "name": "RØD SMOOTHIE",
+    "underline": "200 GR. / REMA 1000, ØKO.",
+    "department": "Frost",
+    "category": "Grøntsager, frugt & bær",
+    "price": 12,
+    "compare_unit": "kg",
+    "compare_unit_price": 60,
+    "is_organic": true,
+    "labels": [
+     "Avisvare",
+     "REMA1000",
+     "Økologi",
+     "Nøglehul"
+    ]
+   },
+   {
+    "id": 50506,
+    "name": "KARAT",
+    "underline": "400 GR. / ORIGINAL",
+    "department": "Drikkevarer",
+    "category": "Kaffe",
+    "price": 57,
+    "compare_unit": "kg",
+    "compare_unit_price": 142.5,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 241526,
+    "name": "VARIATION BOX",
+    "underline": "30 GR. / PICKWICK, RØD",
+    "department": "Drikkevarer",
+    "category": "Te",
+    "price": 16.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 565,
+    "is_organic": false,
+    "labels": [
+     "Rainforest Alliance"
+    ]
+   },
+   {
+    "id": 450182,
+    "name": "PRIMA DONNA",
+    "underline": "220 GR. / RØD, LAGRET",
+    "department": "Ost m.v.",
+    "category": "Hård ost",
+    "price": 35,
+    "compare_unit": "kg",
+    "compare_unit_price": 159.09,
+    "is_organic": false,
+    "labels": [
+     "Avisvare"
+    ]
+   },
+   {
+    "id": 510601,
+    "name": "SMIRNOFF 37,5%",
+    "underline": "70 CL. / VODKA, RØD",
+    "department": "Kiosk",
+    "category": "Spiritus",
+    "price": 137.89,
+    "compare_unit": "ltr",
+    "compare_unit_price": 196.99,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 561852,
+    "name": "BALI SHAG PUNG",
+    "underline": "34 GR. / RØD VIRGINIA",
+    "department": "Kiosk",
+    "category": "Pibetobak",
+    "price": 112,
+    "compare_unit": "kg",
+    "compare_unit_price": 3294.12,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 458292,
+    "name": "RØD CHEDDAR",
+    "underline": "200 GR. / KILMEADEN, MILD",
+    "department": "Ost m.v.",
+    "category": "Hård ost",
+    "price": 22.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 114.75,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 521375,
+    "name": "PRINCE RØD",
+    "underline": "20 STK. / HARDBOX",
+    "department": "Kiosk",
+    "category": "Cigaretter",
+    "price": 70,
+    "compare_unit": "stk",
+    "compare_unit_price": 3.5,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 521403,
+    "name": "CECIL RØD",
+    "underline": "20 STK.",
+    "department": "Kiosk",
+    "category": "Cigaretter",
+    "price": 77,
+    "compare_unit": "stk",
+    "compare_unit_price": 3.85,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 521410,
+    "name": "VIKING RØD",
+    "underline": "20 STK. / FRA HOUSE OF PRINCE",
+    "department": "Kiosk",
+    "category": "Cigaretter",
+    "price": 60,
+    "compare_unit": "stk",
+    "compare_unit_price": 3,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 521450,
+    "name": "SKJOLD RØD",
+    "underline": "20 STK. / HARDBOX",
+    "department": "Kiosk",
+    "category": "Cigaretter",
+    "price": 61,
+    "compare_unit": "stk",
+    "compare_unit_price": 3.05,
+    "is_organic": false,
+    "labels": []
+   }
+  ],
+  "barbecue sauce original": [
+   {
+    "id": 110238,
+    "name": "BBQ SAUCE",
+    "underline": "370 GR. / REMA 1000",
+    "department": "Kolonial",
+    "category": "Dressing",
+    "price": 17.16,
+    "compare_unit": "kg",
+    "compare_unit_price": 46.38,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 77984,
+    "name": "BARBECUE CHIPS",
+    "underline": "250 GR. / REMA 1000",
+    "department": "Kolonial",
+    "category": "Chips og snacks",
+    "price": 11.7,
+    "compare_unit": "kg",
+    "compare_unit_price": 46.8,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 413434,
+    "name": "BEARNAISE SAUCE",
+    "underline": "325 GR. / K-SALAT",
+    "department": "Køl",
+    "category": "Dressing & saucer",
+    "price": 21.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 67.54,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 114706,
+    "name": "BEARNAISE SAUCE",
+    "underline": "80 GR. / REMA 1000 PULVER",
+    "department": "Kolonial",
+    "category": "Saucer & nem mad",
+    "price": 11.5,
+    "compare_unit": "kg",
+    "compare_unit_price": 143.75,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 29210,
+    "name": "MORNAYSAUCE 10%",
+    "underline": "0.5 LTR. / KAROLINES KØKKEN",
+    "department": "Kolonial",
+    "category": "Saucer & nem mad",
+    "price": 19.22,
+    "compare_unit": "ltr",
+    "compare_unit_price": 38.44,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 29211,
+    "name": "LET MORNAYSAUCE 4%",
+    "underline": "0.5 LTR. / KAROLINES KØKKEN",
+    "department": "Kolonial",
+    "category": "Saucer & nem mad",
+    "price": 19.22,
+    "compare_unit": "ltr",
+    "compare_unit_price": 38.44,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 110502,
+    "name": "CHILI BEARNAISE",
+    "underline": "410 GR. / REMA 1000 SAUCE",
+    "department": "Kolonial",
+    "category": "Saucer & nem mad",
+    "price": 16.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 41.34,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 120182,
+    "name": "BRUN SOVS MIX",
+    "underline": "50 GR. / REMA 1000",
+    "department": "Kolonial",
+    "category": "Saucer & nem mad",
+    "price": 8,
+    "compare_unit": "kg",
+    "compare_unit_price": 160,
+    "is_organic": false,
+    "labels": [
+     "Avisvare",
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 108875,
+    "name": "PASTA SAUCE",
+    "underline": "480 GR. / REMA 1000",
+    "department": "Kolonial",
+    "category": "Saucer & nem mad",
+    "price": 12.92,
+    "compare_unit": "kg",
+    "compare_unit_price": 26.92,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 120192,
+    "name": "PASSATA DI POMODORO",
+    "underline": "680 GR. / CUCINA",
+    "department": "Kolonial",
+    "category": "Saucer & nem mad",
+    "price": 15.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 23.46,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 413405,
+    "name": "CITRON SAUCE",
+    "underline": "250 ML. / JENSENS KØKKEN",
+    "department": "Køl",
+    "category": "Dressing & saucer",
+    "price": 17.69,
+    "compare_unit": "ltr",
+    "compare_unit_price": 70.76,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 413412,
+    "name": "FAVORIT SAUCE",
+    "underline": "250 ML. / JENSENS KØKKEN",
+    "department": "Køl",
+    "category": "Dressing & saucer",
+    "price": 16.69,
+    "compare_unit": "ltr",
+    "compare_unit_price": 66.76,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 413416,
+    "name": "WHISKY SAUCE",
+    "underline": "250 ML. / JENSENS KØKKEN",
+    "department": "Køl",
+    "category": "Dressing & saucer",
+    "price": 16.69,
+    "compare_unit": "ltr",
+    "compare_unit_price": 66.76,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 108852,
+    "name": "TOMATSAUCE",
+    "underline": "400 GR. / CUCINA BASILIKUM",
+    "department": "Kolonial",
+    "category": "Saucer & nem mad",
+    "price": 19.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 49.88,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 108853,
+    "name": "TOMATSAUCE",
+    "underline": "400 GR. / CUCINA HVIDLØG",
+    "department": "Kolonial",
+    "category": "Saucer & nem mad",
+    "price": 19.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 49.88,
+    "is_organic": false,
+    "labels": []
+   }
+  ],
+  "pineapple salsa": [
+   {
+    "id": 510440,
+    "name": "PINEAPPLE 4%",
+    "underline": "27.5 CL. / BREEZER",
+    "department": "Drikkevarer",
+    "category": "Ready to drink",
+    "price": 14.95,
+    "compare_unit": "ltr",
+    "compare_unit_price": 54.36,
+    "is_organic": false,
+    "labels": []
+   },
+   {
+    "id": 102810,
+    "name": "SALSASAUCE MEDIUM",
+    "underline": "315 GR. / TEX MEX",
+    "department": "Kolonial",
+    "category": "Tex mex",
+    "price": 10.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 34.76,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   },
+   {
+    "id": 102803,
+    "name": "SALSASAUCE HOT",
+    "underline": "315 GR. / TEX MEX",
+    "department": "Kolonial",
+    "category": "Tex mex",
+    "price": 10.95,
+    "compare_unit": "kg",
+    "compare_unit_price": 34.76,
+    "is_organic": false,
+    "labels": [
+     "REMA1000"
+    ]
+   }
+  ]
+ },
+ "products": [
+  {
+   "id": 306386,
+   "name": "CHILI MIX",
+   "underline": "70 GR. / LAND/KL.: SE VAREN",
+   "department": null,
+   "category": null,
+   "price": 13,
+   "compare_unit": "kg",
+   "compare_unit_price": 185.71,
+   "is_organic": false,
+   "labels": []
+  },
+  {
+   "id": 110238,
+   "name": "BBQ SAUCE",
+   "underline": "370 GR. / REMA 1000",
+   "department": null,
+   "category": null,
+   "price": 17.16,
+   "compare_unit": "kg",
+   "compare_unit_price": 46.38,
+   "is_organic": false,
+   "labels": [
+    "REMA1000"
+   ]
+  },
+  {
+   "id": 102810,
+   "name": "SALSASAUCE MEDIUM",
+   "underline": "315 GR. / TEX MEX",
+   "department": null,
+   "category": null,
+   "price": 10.95,
+   "compare_unit": "kg",
+   "compare_unit_price": 34.76,
+   "is_organic": false,
+   "labels": [
+    "REMA1000"
+   ]
+  }
+ ],
+ "cases": [
+  {
+   "name": "Kvark",
+   "amount": 640,
+   "unit": "g",
+   "search": "kvark",
+   "category": "Mejeri",
+   "expect": "none"
+  },
+  {
+   "name": "Stegt kalkunkød i mindre tern",
+   "amount": 480,
+   "unit": "g",
+   "search": "kalkun",
+   "category": "Kød",
+   "expect": "none"
+  },
+  {
+   "name": "Rød chili, hakket",
+   "amount": 1,
+   "unit": "stk",
+   "search": "chili",
+   "category": "Frugt & grønt",
+   "expect": "unknown",
+   "not": [
+    306386
+   ]
+  },
+  {
+   "name": "Barbecue Sauce Original",
+   "amount": 80,
+   "unit": "ml",
+   "search": "Barbecue Sauce Original",
+   "category": "Kolonial",
+   "expect": [
+    110238
+   ],
+   "packages": null
+  },
+  {
+   "name": "Pineapple Salsa",
+   "amount": 1,
+   "unit": "pk",
+   "search": "Pineapple Salsa",
+   "category": "Kolonial",
+   "expect": [
+    102810
+   ],
+   "packages": null
+  }
+ ]
+}

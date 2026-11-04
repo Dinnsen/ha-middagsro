@@ -208,6 +208,18 @@
     "recipe_failed": {
       "message": "Opskriften kunne ikke skrives: {error}"
     },
+    "day_not_skipped": {
+      "message": "Dagen er ikke sprunget over."
+    },
+    "day_text_required": {
+      "message": "Skriv, hvad der skal stå på dagen."
+    },
+    "new_dishes_waiting": {
+      "message": "Godkend de nye retter, før listen sendes: {dishes}. Tryk på retten og vælg Godkend – eller skift den ud."
+    },
+    "day_not_new": {
+      "message": "Retten er ikke en ny ret, der venter på godkendelse."
+    },
     "day_not_found": {
       "message": "Dagen findes ikke i madplanen."
     },
@@ -324,6 +336,15 @@
     },
     "plan_already_sent": {
       "message": "Madplanens indkøbsliste er allerede sendt, så den kan ikke opdateres. Lav en ny madplan i stedet."
+    },
+    "review_needed": {
+      "message": "{count} skal tjekkes, før listen sendes – se den gule boks øverst på indkøbslisten."
+    },
+    "product_required": {
+      "message": "Vælg en vare først."
+    },
+    "unknown_action": {
+      "message": "Ukendt handling: {action}"
     }
   },
   "issues": {

@@ -25,7 +25,7 @@ import re
 import socket
 import tempfile
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 import uuid
 
 import aiohttp
@@ -117,6 +117,8 @@ def _ingredient(item: Any) -> dict[str, Any] | None:
             out["product"] = product
         if item.get("basic"):
             out["basic"] = True
+        if item.get("exact"):
+            out["exact"] = True  # always this product, not another of its kind
         return out
     if isinstance(item, str) and item.strip():
         return split_ingredient(item)
@@ -169,7 +171,25 @@ def clean_recipe(raw: dict[str, Any], existing: dict[str, Any] | None = None) ->
         "updated": _now(),
         "times_planned": _int(old.get("times_planned"), 100000),
         "last_planned": old.get("last_planned"),
+        **_favorite_fields(raw, old, favorite),
     }
+
+
+FREQUENCIES = ("weekly", "biweekly", "monthly", "on_offer", "inspiration")
+
+
+def _favorite_fields(raw: dict[str, Any], old: dict[str, Any], favorite: bool) -> dict[str, Any]:
+    """A favourite's how often (weekly …), and when it was last on a plan."""
+    if not favorite:
+        return {}
+    frequency = raw.get("frequency", old.get("frequency"))
+    out: dict[str, Any] = {
+        "frequency": frequency if frequency in FREQUENCIES else "inspiration",
+        "last_used": old.get("last_used") or raw.get("last_used"),
+    }
+    if fav_id := old.get("fav_id") or raw.get("fav_id"):
+        out["fav_id"] = str(fav_id)[:20]  # the id the favourite had before it was a recipe
+    return out
 
 
 def _rema_fields(raw: dict[str, Any], old: dict[str, Any]) -> dict[str, Any]:
@@ -307,7 +327,7 @@ async def async_rate_day(
     if plan is None or picked is None:
         raise _invalid("day_not_found")
     day = cooked_day(plan, picked)
-    if not day.get("dish") or day.get("type") == "tom":
+    if not day.get("dish") or day.get("type") in ("tom", "egen"):
         raise _invalid("recipe_name_required")
     recipe = find_recipe(store, day.get("recipe_id")) or find_by_name(store, day["dish"])
     if recipe is None:
@@ -621,17 +641,26 @@ def page_session(hass: HomeAssistant) -> aiohttp.ClientSession:
 
 
 async def async_fetch_page(hass: HomeAssistant, url: str) -> str:
-    """Read a recipe page."""
+    """Read a recipe page.
+
+    Redirects are followed one at a time, each checked like the first address,
+    so a page can't send us to Home Assistant itself or the home network.
+    """
     url = _check_url(url)
-    await _check_public(hass, urlparse(url).hostname or "")
     session = page_session(hass)
     try:
-        async with session.get(
-            url, headers=HEADERS, timeout=TIMEOUT, allow_redirects=True, max_redirects=5
-        ) as resp:
-            if resp.status >= 400:
-                raise _invalid("recipe_link_failed", error=f"HTTP {resp.status}")
-            return await async_read_body(resp, PAGE_LIMIT)
+        for _hop in range(6):
+            await _check_public(hass, urlparse(url).hostname or "")
+            async with session.get(
+                url, headers=HEADERS, timeout=TIMEOUT, allow_redirects=False
+            ) as resp:
+                if resp.status in (301, 302, 303, 307, 308) and resp.headers.get("Location"):
+                    url = _check_url(urljoin(url, resp.headers["Location"]))
+                    continue
+                if resp.status >= 400:
+                    raise _invalid("recipe_link_failed", error=f"HTTP {resp.status}")
+                return await async_read_body(resp, PAGE_LIMIT)
+        raise _invalid("recipe_link_failed", error="for mange omdirigeringer")
     except (aiohttp.ClientError, TimeoutError) as err:
         raise _invalid("recipe_link_failed", error=str(err) or err.__class__.__name__) from err
 

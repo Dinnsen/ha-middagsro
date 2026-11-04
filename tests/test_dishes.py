@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.middagsro import dishes as ds, mealplan as mp, recipes as rc
+from custom_components.middagsro import dishes as ds, matching, mealplan as mp, recipes as rc
 from homeassistant.core import HomeAssistant
 
 from .conftest import make_plan, make_product
@@ -103,7 +103,7 @@ def test_check_plan() -> None:
     )
     assert problems == [
         'søndag 2026-10-25: "Ovnbagt laks med pasta" gentager "Laks med ris" fra de seneste uger '
-        "– vælg en helt anden hovedret",
+        "– vælg en helt anden hovedret, uden laks",
         # Kyllingefrikadeller are not the disliked fiskefrikadeller ...
         'lørdag 2026-10-31: "Fiskefrikadeller" er en variant af "Fiskefrikadeller med remoulade", '
         "som familien ikke kan lide",
@@ -264,8 +264,8 @@ async def test_generate_keeps_rules_and_own_recipes(
     assert (lines["Lasagneplader"]["amount"], lines["Lasagneplader"]["unit"]) == (370, "g")
     assert all(line.get("recipe") for line in (lines["Løg"], lines["Pesto"]))
     assert "Salt og olie" not in lines and "Revet ost" not in lines
-    assert store.favorites[1]["last_used"] == "2026-10-18"
-    assert store.recipes[0]["times_planned"] == 1
+    assert next(f for f in store.favorites if f["id"] == "lasagne")["last_used"] == "2026-10-18"
+    assert rc.find_recipe(store, "r-lasagne")["times_planned"] == 1  # type: ignore[index]
 
 
 async def test_generate_tells_what_it_could_not_fix(
@@ -297,7 +297,7 @@ async def test_recipe_lines_and_product_kinds(
     line = mp.recipe_line({"name": "laksefilet", "amount": "1,2 kg"}, 0.4)
     assert line.pop("id")
     assert line == {
-        "name": "Laksefilet", "amount": 480, "unit": "g", "search": "laksefilet",
+        "name": "Laksefilet", "amount": 480, "unit": "g", "search": "laks", "key": "laks",
         "category": "Fisk", "offer": None, "must_have": False, "product_id": None, "recipe": True,
     }  # fmt: skip
     assert mp.recipe_line({"name": "fløde", "amount": "2,5 dl"}, 1.0)["amount"] == 250
@@ -329,21 +329,29 @@ async def test_recipe_lines_and_product_kinds(
     pizza = make_product(2, "KEBAB PIZZA", 20.0, underline="484 GR.", department="Frost",
                          category="Pizza")  # fmt: skip
     line = {"name": "Kebab", "search": "kebab", "amount": 500, "unit": "g", "category": "Frost"}
-    assert mp.kind_penalty(line, pizza, ["kebab"]) == 5.0
-    assert mp.kind_penalty(line, kebab, ["kebab"]) == 0.0
-    assert mp.kind_penalty({"name": "Pizza", "search": "pizza"}, pizza, ["pizza"]) == 0.0
+    assert matching.kind_penalty(line, pizza, ["kebab"]) == 5.0
+    assert matching.kind_penalty(line, kebab, ["kebab"]) == 0.0
+    assert matching.kind_penalty({"name": "Pizza", "search": "pizza"}, pizza, ["pizza"]) == 0.0
     candidates, _penalty = planner._candidates(line, [pizza, kebab], "kebab")
-    assert [p.id for p in candidates] == [pizza.id, kebab.id]  # both fit by name ...
+    assert [p.id for p in candidates] == [kebab.id]  # the pizza shelf is never the kebab
     fresh = make_product(3, "BROCCOLI", 12.0, underline="1 STK.", department="Frugt & grønt")
     frozen = make_product(4, "BROCCOLI", 10.0, underline="400 GR. / ØKO.", department="Frost",
                           is_organic=True)  # fmt: skip
     produce = {"name": "Broccoli", "search": "broccoli", "amount": 2, "unit": "stk",
                "category": "Frugt & grønt"}  # fmt: skip
-    assert mp.kind_penalty(produce, frozen, ["broccoli"]) == 5.0
-    assert mp.kind_penalty(produce, fresh, ["broccoli"]) == 0.0
-    assert mp.kind_penalty({**produce, "search": "frossen broccoli"}, fresh, ["broccoli"]) == 5.0
-    assert mp.kind_penalty({**produce, "search": "frossen broccoli"}, frozen, ["broccoli"]) == 0.0
-    assert mp.kind_penalty({"name": "Frisk spinat", "search": "spinat"}, frozen, ["spinat"]) == 5.0
+    assert matching.kind_penalty(produce, frozen, ["broccoli"]) == 5.0
+    assert matching.kind_penalty(produce, fresh, ["broccoli"]) == 0.0
+    assert (
+        matching.kind_penalty({**produce, "search": "frossen broccoli"}, fresh, ["broccoli"]) == 5.0
+    )
+    assert (
+        matching.kind_penalty({**produce, "search": "frossen broccoli"}, frozen, ["broccoli"])
+        == 0.0
+    )
+    assert (
+        matching.kind_penalty({"name": "Frisk spinat", "search": "spinat"}, frozen, ["spinat"])
+        == 5.0
+    )
 
     # ... but the pizza costs five times as much in the choice, so the kebab is chosen.
     mock_client.async_search_products.side_effect = None
@@ -396,7 +404,7 @@ def test_fixed_day_texts() -> None:
     """The default rye-bread thursday passes for rye bread, and for a day the AI calls fixed."""
     settings = {
         "leftover_days": 0,
-        "fixed_days": [{"weekday": 3, "text": "Rugbrødsdag (kun denne ene dag med rugbrød)"}],
+        "fixed_days": [{"weekday": 3, "kind": "fixed", "text": "Rugbrød med æg og leverpostej"}],
     }
     thursday = _day("2026-10-29", "Rugbrød med æg og leverpostej")
     assert ds.check_plan({"days": [thursday]}, settings, recent=[], due_ids=set()) == []
@@ -537,9 +545,46 @@ def test_amounts_follow_the_recipes() -> None:
 
 def test_compound_search_words() -> None:
     """ "Cæsardressing" finds REMA's "CÆSAR DRESSING"."""
-    assert mp.name_fit(["cæsardressing"], "CÆSAR DRESSING") == (1, 1.15)
-    assert mp.name_fit(["cæsardressing"], "ITALIANO DRESSING")[0] == 0
-    assert "cæsar dressing" in mp.search_queries(
+    assert matching.name_fit(["cæsardressing"], "CÆSAR DRESSING") == (1, 1.15)
+    assert matching.name_fit(["cæsardressing"], "ITALIANO DRESSING")[0] == 0
+    assert "cæsar dressing" in matching.search_queries(
         {"search": "Cæsardressing", "name": "Cæsardressing"}
     )
-    assert mp.search_queries({"search": "pesto", "name": "Grøn pesto"}) == ["pesto", "Grøn pesto"]
+    assert matching.search_queries({"search": "pesto", "name": "Grøn pesto"}) == [
+        "pesto",
+        "Grøn pesto",
+    ]
+
+
+def test_staple_mains_with_other_sides_are_other_dinners() -> None:
+    """Chicken with potatoes and chicken with other potatoes are two dinners when
+    the sides differ; with the same sides, or none, they are the same."""
+    week45 = "Stegt kyllingebryst med pandestegte kartofler og gnavegrønt"
+    assert not ds.same_dish(week45, "Dansk kylling med ovnbagte lammefjordskartofler og gulerødder")
+    assert ds.same_dish("Kylling i karry med ris", "Kylling i karry med ris og salat")
+    assert ds.same_dish("Kylling", "Stegt kylling")
+    assert ds.same_dish("Kyllingefrikadeller med ovnbagte kartofler", "Kyllingefrikadeller")
+    assert ds.repeated_main("Ovnbagt laks med fettuccine spinat pasta", LAKS) == "laks"
+    assert ds.repeated_main("Tacos", "Lasagne") == ""
+
+
+def test_gullasch_is_not_made_of_minced_meat() -> None:
+    """ "Klassisk dansk gullasch" with hakket oksekød is meatballs in paprika sauce:
+    the AI is told, and Middagsro swaps the day if it keeps it."""
+    plan = {
+        "days": [
+            _day("2026-11-02", "Klassisk dansk gullasch med kartoffelmos",
+                 uses=["Hakket oksekød", "Kartofler"]),
+            _day("2026-11-03", "Gullasch af oksekød i tern", uses=["Gullaschkød"]),
+            _day("2026-11-04", "Spaghetti bolognese", uses=["Hakket oksekød"]),
+        ],
+        "shopping": [
+            {"name": "Hakket oksekød"}, {"name": "Kartofler"}, {"name": "Gullaschkød"},
+        ],
+    }  # fmt: skip
+    assert ds.minced_for_pieces(plan, plan["days"][0]) == "Hakket oksekød"
+    assert ds.minced_for_pieces(plan, plan["days"][1]) is None
+    assert ds.minced_for_pieces(plan, plan["days"][2]) is None
+    problems = ds.check_plan(plan, {"max_cook_minutes_weekday": 0}, recent=[], due_ids=set())
+    assert any(ds.MINCED_MARK in p and "Hakket oksekød" in p for p in problems)
+    assert all(mark in ds.SWAP_MARKS for mark in (ds.MINCED_MARK, ds.REPEAT_MARK))

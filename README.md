@@ -64,7 +64,8 @@ Ingredients and steps in large type. Tick them off as you go, start a **timer** 
 
 <img src="docs/images/shopping.png" alt="Shopping list with REMA products, offers, organic labels and prices" width="100%">
 
-- For each ingredient, **the cheapest REMA product** that meets your rules is found. Products from the offers, organic products and weekly fixed items are labelled.
+- For each ingredient, **the cheapest REMA product that really is the ingredient** is found: an ingredient catalogue and REMA's own department and category decide what a product may be (cup noodles are never nudler, a can of pepper strips never a fresh peberfrugt), and your rules decide among those. Products from the offers, organic products and weekly fixed items are labelled.
+- **Usikre varer:** when Middagsro is not sure, the line is marked *Tjek* or *Usikker*, and a yellow box at the top of the list shows the products it could be – keep, choose another, search, or leave the line out. By default the list waits for that check before it is sent (*Indstillinger → Indkøb → Usikre varer*). A product you keep, choose or swap in yourself is remembered for that ingredient (*Jeres valg*) and used in the next plans; one you leave out is never taken for it again.
 - Price per product, number of packs and the total against the budget. With a [food budget](#food-budget-økonomi), sending a list that costs more than the week has left asks first.
 - **Send til REMA-listen** puts everything on your primary list in the REMA 1000 app. Items without a safe match are added as text. Sent items leave Middagsro's basket, so the next send only has what was added since – nothing ends up twice in the app. **Genskab seneste kurv** puts the last sent items back if something went wrong. The REMA logo next to an item puts just that item on the REMA list right away.
 - Search the basket for any REMA product – also the offers in REMA's avis, including *partivarer* that are only sold in the shops.
@@ -323,6 +324,7 @@ The settings apply every time a meal plan is made and are stored per REMA 1000 a
 | **Wishes for the food** (*Ønsker til maden*) | Free text for the AI. | Healthy and child-friendly |
 | **Pantry** (*Basisvarer*) | What you always have and don't buy (salt, oil, flour …). | Salt, pepper, oil etc. |
 | **Fixed weekly items** (*Faste varer hver uge*) | Search REMA's range and pick a product (or write free text) that always goes on the list. Optionally, a fixed item that is already on the REMA list (not bought) is not sent again. | – |
+| **Uncertain items** (*Usikre varer*) | What a send does with items Middagsro is not sure about and nobody has checked: wait for the check (an automatic send at 02:00 goes without them), send them as chosen, or leave them out. | Wait for the check |
 | **We also shop late in the week** (*Vi handler også sidst på ugen*) | Some offers only start on Thursday. Off, the meal plan only uses offers that run on the shopping day. On, it may use them in dishes from that day; the shopping list is split into the shopping day and Thursday, each sent on its own. | Off |
 | **Automation** (*Automatik*) | Make next week's plan when the new offers come out, and optionally send it to the REMA list. It is sent at 02:00 on the shopping day (Thursday's items at 02:00 on Thursday), when REMA has the week's products and prices. | Off |
 | **What the AI must remember** (*Det skal AI'en huske*) | Standing points for every plan, e.g. "always fresh broccoli with salmon". Also on the front page, typed or dictated. | – |
@@ -426,7 +428,7 @@ The entity IDs depend on the account's name and your language; find them under *
 - The **shopping list** is fetched from REMA 1000 every **2 minutes**, so changes in the app show up quickly in Home Assistant. Changes from Home Assistant are sent at once.
 - The **offer catalogues** (current and next week) are fetched every **3 hours** from Tjek, which REMA 1000 uses for its offers.
 - Prices for the meal plan are those of the plan's first day, so a plan for next week uses next week's prices and offers. REMA's prices for a week end before the avis does; until the week turns on Sunday, the week's prices still count.
-- The **meal plan** is only made when you ask for it (or automatically when next week's offers are out, if turned on). It usually takes 1–2 minutes: the AI plans, the integration finds and prices the products by your rules, and finally the recipes are written.
+- The **meal plan** is only made when you ask for it (or automatically when next week's offers are out, if turned on). It usually takes 1–2 minutes: the AI plans, the plan is checked against your rules (and the AI corrects it, up to two more times), the integration finds and prices the products by your rules, the recipes are written, and the AI is asked once about the products it is unsure of.
 - Plans, settings and favourite dishes are stored in Home Assistant and included in backups.
 - If the integration loses its connection to REMA 1000, the entities become unavailable and come back by themselves. If the login is no longer valid, Home Assistant asks you to log in again.
 
@@ -435,8 +437,8 @@ The entity IDs depend on the account's name and your language; find them under *
 - Only REMA 1000 **Denmark** and only your **primary** shopping list (the one the app shows).
 - The panel, meal plans and recipes are in Danish.
 - Prices are REMA's web prices and can differ from the shop. Offers outside the catalogue (e.g. local in-store offers) are not known.
-- Some ingredients have no safe REMA product (e.g. fresh herbs). They go on the list as text and are not counted in the price.
-- The AI can make mistakes. Check recipes and allergens before you cook.
+- Some ingredients have no safe REMA product (e.g. a cut of beef REMA doesn't sell). They are marked for your check, go on the list as text if you send them anyway, and are not counted in the price.
+- The AI can make mistakes. Dishes, recipes and extra items are checked against your allergies and avoided foods by word lists, but check recipes and allergens before you cook.
 - The integration uses non-public calls and may stop working if REMA 1000 changes its site.
 
 ## Troubleshooting

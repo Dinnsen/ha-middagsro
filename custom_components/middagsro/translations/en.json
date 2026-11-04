@@ -208,6 +208,18 @@
     "recipe_failed": {
       "message": "The recipe could not be written: {error}"
     },
+    "day_not_skipped": {
+      "message": "That day is not skipped."
+    },
+    "day_text_required": {
+      "message": "Write what the day should say."
+    },
+    "new_dishes_waiting": {
+      "message": "Approve the new dishes before the list is sent: {dishes}. Tap the dish and choose Approve, or swap it."
+    },
+    "day_not_new": {
+      "message": "That dish is not a new dish waiting for approval."
+    },
     "day_not_found": {
       "message": "That day is not in the meal plan."
     },
@@ -324,6 +336,15 @@
     },
     "plan_already_sent": {
       "message": "The meal plan's shopping list has already been sent, so it can't be updated. Make a new meal plan instead."
+    },
+    "review_needed": {
+      "message": "{count} must be checked before the list is sent – see the yellow box at the top of the shopping list."
+    },
+    "product_required": {
+      "message": "Choose a product first."
+    },
+    "unknown_action": {
+      "message": "Unknown action: {action}"
     }
   },
   "issues": {
