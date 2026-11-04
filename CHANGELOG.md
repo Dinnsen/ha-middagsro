@@ -2,6 +2,25 @@
 
 All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
 
+## [2.14.0] - 2026-11-04
+
+Everything from the betas 2.12.0b1 to 2.14.0b9 (the sections below), tested on a real household's plans.
+
+### Added
+- **The plan is built on recipes:** the AI chooses the week's dinners among the ready recipes that use the avis – yours and all of REMA's dinner recipes, kept in Home Assistant – and the shopping list is worked out from the recipes' linked products. At most two new dishes, approved before the list is sent.
+- **Ugens tilbudsretter:** the week's cheapest dinners from the avis, priced per person, with what they save and which offers they use.
+- **Recipes linked to REMA's products once** (*Find varer*, *Klar*, *Mangler N varer*, *Altid præcis denne*), and readiness counted with your basic items.
+- **What each day is, as a dropdown** in *Tilpas dagene* and *Faste dage*: AI vælger, Vælg selv ret, Spring over, Restedag, Rugbrødsdag, Vegetardag or Fast ret. *Skriv på dagen* for a day without dinner, and skipped days can be taken back.
+- **Favourites and dislikes are the recipes'** (♥ with how often, 👎 never chosen); the old lists are moved into the collection by themselves.
+- **Usikre varer – a check before the list is sent**, with Middagsro remembering your choices, *Har det* and *Forkert vare*, an ingredient catalogue, REMA's shelf deciding what a product is, allergies checked, and Bilka for what REMA isn't sure of.
+- **The food budget per week or per month**, and purchases that can be changed or deleted.
+
+### Changed
+- Matching of ingredients to products rebuilt and measured (`amounts.py`, `matching.py`, `matcher.py`, a shared product table), amounts counted in base units, one line per thing.
+
+### Fixed
+- Items from a removed dish are taken off REMA's list again; the old-plan banner after deleting a newer plan; plans for next week made from an avis without offers; and the many product errors listed in the betas.
+
 ## [2.14.0b9] - 2026-11-02
 
 ### Fixed
