@@ -12,6 +12,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.middagsro.api import RemaAuthError, RemaConnectionError, ShoppingList
+from custom_components.middagsro.bilka import BilkaError
 from custom_components.middagsro.const import DOMAIN
 from custom_components.middagsro.nemlig import (
     NEMLIG_ID,
@@ -298,7 +299,7 @@ async def test_store_client(hass: HomeAssistant, aioclient_mock: AiohttpClientMo
     assert [p.id for p in await store.async_get_products([5062510])] == [5062510]
     aioclient_mock.post(f"{SITE}/webapi/basket/AddToBasket", json=basket(1))
     aioclient_mock.get(f"{SITE}/webapi/basket/GetBasket", json=basket(1))
-    with pytest.raises(NemligError, match=r"Nemlig\.com-vare"):
+    with pytest.raises(BilkaError, match=r"Nemlig\.com-vare"):
         await store.async_create_item(1, amount=1, name="Agurk")
     assert await store.async_create_item(1, amount=1, product_id=2301199) == {"id": 2301199}
 
