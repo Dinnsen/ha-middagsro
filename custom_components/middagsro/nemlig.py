@@ -140,6 +140,9 @@ def to_offer(item: dict[str, Any], start: datetime, end: datetime) -> Offer | No
     campaign = item.get("Campaign") or {}
     pieces = int(campaign.get("MinQuantity") or 0)
     total = _num(campaign.get("CampaignPrice") or campaign.get("TotalPrice"))
+    price: float | None
+    quantity: str | None
+    description: str | None
     if pieces > 1 and total:
         price, quantity = total, f"{pieces} stk."
         description = f"{pieces} for {total:.2f} kr. · {item.get('Description') or ''}".strip(" ·")
