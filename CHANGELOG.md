@@ -1,6 +1,17 @@
 # Changelog
 
-All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
+All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
+
+## Unreleased
+
+### Added
+- Delete freezer plans from their overview or the open plan, with confirmation. Cart contents and ingredient inventory are retained.
+- **Spisekammer:** shared ingredient quantities for weekly and freezer plans. Shopping shows omitted amounts; usage is confirmed per dish and deducted once. Freezer portion changes recalculate shopping before cooking or cart transfer.
+- Switch installed shops from the panel, carry the current plan or start a new one, and optionally remember the choice. Carried plans get the destination shop's products/prices while retaining sent-item flags.
+- Customize desktop navigation and the four phone shortcuts, including their order. Preferences are saved per browser; remaining pages stay available under **Mere**.
+
+### Fixed
+- Budget booking uses labelled, equally sized amount/date inputs and a separate submit row on narrow cards.
 
 ## [2.14.0] - 2026-11-04
 

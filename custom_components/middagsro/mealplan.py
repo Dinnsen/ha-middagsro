@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+import copy
 from datetime import date, datetime, timedelta
 import json
 import logging
@@ -51,6 +52,7 @@ from .dishes import (
 )
 from .errors import _failed, _invalid
 from .ingredients import CATALOG, catalogue_entry, spec_for
+from .inventory import apply_inventory, inventory, prompt_items
 from .matcher import ProductMatcher
 from .matching import (
     SEARCH_CONCURRENCY,
@@ -398,6 +400,7 @@ def build_prompt(
         "",
         "KRAV – SKAL OVERHOLDES:",
     ]
+    out.append(prompt_items(s.get("_freezer_inventory") or []))
     if s.get("rules"):
         out.append(
             "- FAMILIENS FASTE REGLER – gælder forud for alt andet i denne besked, også for "
@@ -1251,6 +1254,8 @@ def fit_amounts(plan: dict[str, Any]) -> list[str]:
                     needs[base[0]] = needs.get(base[0], 0) + base[1]
         if not needs:
             continue
+        for unit, amount in (line.get("freezer_taken") or {}).items():
+            needs[unit] = max(0, needs.get(unit, 0) - amount)
         product = line.get("product") or {}
         size = package_size(product.get("underline")) if product else None
         packages = int(line.get("packages") or 1)
@@ -1454,6 +1459,7 @@ class MealPlanner(ProductMatcher):
         surprise: bool = False,
         picks: dict[str, dict[str, Any]] | None = None,
         day_kinds: dict[str, Any] | None = None,
+        use_freezer: bool = False,
     ) -> None:
         """Start making a plan in the background. Days in skip get no dinner.
 
@@ -1471,7 +1477,15 @@ class MealPlanner(ProductMatcher):
             raise _invalid("no_ai_task")
         self._set_status("generating", "Laver madplan …")
         self._task = self.hass.async_create_background_task(
-            self._async_run(start, send, skip or set(), surprise, picks or {}, day_kinds=day_kinds),
+            self._async_run(
+                start,
+                send,
+                skip or set(),
+                surprise,
+                picks or {},
+                day_kinds=day_kinds,
+                use_freezer=use_freezer,
+            ),
             name=f"{DOMAIN} meal plan",
         )
 
@@ -1519,10 +1533,17 @@ class MealPlanner(ProductMatcher):
         picks: dict[str, dict[str, Any]] | None = None,
         base_id: str | None = None,
         day_kinds: dict[str, Any] | None = None,
+        use_freezer: bool = False,
     ) -> None:
         try:
             plan = await self.async_generate(
-                start, skip, surprise=surprise, picks=picks, base_id=base_id, day_kinds=day_kinds
+                start,
+                skip,
+                surprise=surprise,
+                picks=picks,
+                base_id=base_id,
+                day_kinds=day_kinds,
+                use_freezer=use_freezer,
             )
             if send:
                 await self._async_send_when_ready(plan)
@@ -2022,6 +2043,7 @@ class MealPlanner(ProductMatcher):
         picks: dict[str, dict[str, Any]] | None = None,
         base_id: str | None = None,
         day_kinds: dict[str, Any] | None = None,
+        use_freezer: bool = False,
     ) -> dict[str, Any]:
         """Make, price and store a plan. Returns the plan.
 
@@ -2073,6 +2095,10 @@ class MealPlanner(ProductMatcher):
             "min_vegetarian": min(settings["min_vegetarian"], len(dates)),
             "max_vegetarian": min(settings["max_vegetarian"], len(dates)),
         }
+        freezer_items = (
+            inventory(self.hass).items if use_freezer or (base or {}).get("use_freezer") else []
+        )
+        settings["_freezer_inventory"] = freezer_items
         # With a monthly food budget, the plan may cost what is left of its week.
         if (left := plan_budget(self.store, dates[0])) is not None:
             settings["budget"] = left
@@ -2215,6 +2241,21 @@ class MealPlanner(ProductMatcher):
             await self.store.async_set_note("")
         if picks:
             best = await self._async_put_picks(best, picks)
+        if freezer_items:
+            candidate = copy.deepcopy(best)
+            candidate["use_freezer"] = True
+            if apply_inventory(candidate, freezer_items):
+                partial = [line for line in candidate["shopping"] if line.get("freezer_taken")]
+                for line in partial:
+                    line.pop("buy_at", None)
+                await self._async_price_lines(partial, offers, self.price_time(start), late)
+                candidate["total"] = plan_total(candidate["shopping"])
+                candidate["over_budget"] = (
+                    bool(candidate["budget"]) and candidate["total"] > candidate["budget"]
+                )
+            best.clear()
+            best.update(candidate)
+            await self.store.async_save()
         self._notify()
         return best
 

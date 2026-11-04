@@ -51,13 +51,14 @@ const TAB_ICONS = {
   recipes: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7.5c-1.6-1.6-4.3-2.3-8-2.2v12.5c3.7-.1 6.4.6 8 2.2 1.6-1.6 4.3-2.3 8-2.2V5.3c-3.7-.1-6.4.6-8 2.2zM12 7.5V20"/></svg>',
   shopping: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2.2l2.3 10.3a1 1 0 0 0 1 .7h8.9a1 1 0 0 0 1-.8L20 8H6.3"/><circle cx="9.5" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/></svg>',
   favorites: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z"/></svg>',
+  inventory: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h16v12H4zM3 4h18v4H3zM9 12h6"/></svg>',
   health: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>',
   history: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
   settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>',
   budget: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h14.5a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18V6.5A1.5 1.5 0 0 1 5.5 5H17"/><path d="M16 12.5h4v3h-4a1.5 1.5 0 0 1 0-3z"/></svg>',
 };
-// On a phone the bottom bar shows the first tabs; the rest sit behind "Mere".
-const EXTRA_TABS = new Set(["budget", "health", "history", "settings"]);
+const NAV_STORAGE = "middagsro.navigation.v1";
+const PHONE_TABS = ["plan", "recipes", "shopping", "favorites"];
 const MORE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>';
 const CLOSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 // Shown on every button that asks the AI for something.
@@ -134,6 +135,7 @@ const TABS = [
   ["favorites", "Favoritter"],
   ["budget", "Økonomi"],
   ["health", "Sundhed"],
+  ["inventory", "Spisekammer"],
   ["history", "Historik"],
   ["settings", "Indstillinger"],
 ];
@@ -267,6 +269,7 @@ class Rema1000Panel extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._tab = "plan";
+    this._navigation = this._readNavigation();
     this._state = null;
     this._plan = null; // the plan being viewed (latest unless chosen in history)
     this._viewingLatest = true;
@@ -473,7 +476,7 @@ class Rema1000Panel extends HTMLElement {
   // ------------------------------------------------------------------ data
 
   async _ws(type, data = {}) {
-    const entry = this._state?.entry_id ? { entry_id: this._state.entry_id } : {};
+    const entry = type !== "middagsro/state" && this._state?.entry_id ? { entry_id: this._state.entry_id } : {};
     return this._hass.callWS({ type, ...entry, ...data });
   }
 
@@ -481,7 +484,14 @@ class Rema1000Panel extends HTMLElement {
     const before = this._signature();
     try {
       const state = await this._ws("middagsro/state", refresh ? { refresh: true } : {});
+      if (this._state && state.entry_id !== this._state.entry_id) {
+        location.reload(); // discard account-specific caches before showing another shop
+        return;
+      }
+      const first = !this._state;
       this._state = state;
+      if (first && state.start_new_plan) { this._viewingLatest = false; this._plan = null; }
+      else if (first && state.switched_plan?.kind === "freezer") { this._viewingLatest = false; this._plan = state.switched_plan; }
       this._error = null;
       this._loadedAt = Date.now();
       if (!this._startDate || !this._startDateTouched) this._startDate = state.default_start;
@@ -683,7 +693,8 @@ class Rema1000Panel extends HTMLElement {
     const dy = t.clientY - start.y;
     if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2 || Date.now() - start.time > 700) return;
     if (getSelection()?.toString()) return;
-    const keys = TABS.map(([key]) => key);
+    const primary = this._navigation[matchMedia("(max-width: 700px)").matches ? "mobile" : "desktop"];
+    const keys = [...primary, ...TABS.map(([key]) => key).filter(key => !primary.includes(key))];
     const next = keys[keys.indexOf(this._tab) + (dx < 0 ? 1 : -1)];
     this._goTab(next, dx < 0 ? 1 : -1);
   }
@@ -693,6 +704,9 @@ class Rema1000Panel extends HTMLElement {
     if (!el) return;
     const { action, arg } = el.dataset;
     const actions = {
+      "store-switch-copy": () => this._performStoreSwitch(this._modal.target, "copy", this._modal.remember),
+      "store-switch-new": () => this._performStoreSwitch(this._modal.target, "new", this._modal.remember),
+      "store-switch-ask": () => this._run(() => this._ws("middagsro/store/ask"), "Du bliver spurgt ved næste butiksskift."),
       tab: () => {
         this._moreOpen = false;
         this._chain = null;
@@ -707,6 +721,44 @@ class Rema1000Panel extends HTMLElement {
         this._moreOpen = !this._moreOpen;
         this._render();
       },
+      "nav-open": () => {
+        this._moreOpen = false;
+        this._modal = { kind: "navigation", screen: matchMedia("(max-width: 700px)").matches ? "mobile" : "desktop", draft: { desktop: [...this._navigation.desktop], mobile: [...this._navigation.mobile] } };
+        this._render();
+        this._renderModal();
+      },
+      "nav-screen": () => { if (this._modal?.kind === "navigation") { this._modal.screen = arg; this._renderModal(); } },
+      "nav-move": () => {
+        const [screen, key, step] = String(arg).split("|");
+        const list = this._modal?.draft?.[screen];
+        if (!list) return;
+        const at = list.indexOf(key), to = at + Number(step);
+        if (at >= 0 && to >= 0 && to < list.length) [list[at], list[to]] = [list[to], list[at]];
+        this._renderModal();
+      },
+      "nav-reset": () => { this._modal.draft = this._defaultNavigation(); this._renderModal(); },
+      "nav-save": () => this._saveNavigation(),
+      "inventory-save": () => this._run(async () => {
+        const d = this._inventoryDraft || {};
+        await this._ws("middagsro/inventory/edit", { item_id: d.id || null, name: d.name || "", amount: Number(String(d.amount || "").replace(",", ".")), unit: d.unit || "g" });
+        this._inventoryDraft = {};
+      }, "Spisekammeret er gemt."),
+      "inventory-edit": () => { this._inventoryDraft = { ...(this._state.freezer_inventory || []).find(i => i.id === arg) }; this._render(); },
+      "inventory-cancel": () => { this._inventoryDraft = {}; this._render(); },
+      "inventory-delete": () => this._run(async () => { await this._ws("middagsro/inventory/delete", { item_id: arg }); if (this._inventoryDraft?.id === arg) this._inventoryDraft = {}; }, "Råvaren er fjernet."),
+      "inventory-consume-open": () => {
+        const [planId, groupId] = String(arg || "").split("|");
+        const plan = this._planOf(planId) || this._plan;
+        const group = (plan?.freezer_groups || []).find(g => g.id === groupId);
+        this._modal = { kind: "inventory-consume", plan, group, selected: new Set((group?.items || plan?.freezer_used || []).map(i => i.id)) };
+        this._renderModal();
+      },
+      "inventory-consume": () => this._run(async () => {
+        const m = this._modal;
+        if (!m || m.kind !== "inventory-consume") return;
+        await this._ws("middagsro/inventory/consume", { plan_id: m.plan.id, ...(m.group ? { group_id: m.group.id, item_ids: [...m.selected] } : {}) });
+        this._modal = null; this._renderModal();
+      }, "Forbruget er registreret."),
       "fav-refresh": () => this._loadFavs(true),
       "fav-week": () => {
         if (arg === this._favWeek) return;
@@ -802,6 +854,7 @@ class Rema1000Panel extends HTMLElement {
         () => this._ws("middagsro/freezer/generate", {
           count: Number(arg),
           note: (this._freezerNote ?? this._state?.freezer_note ?? "").slice(0, 2000),
+          use_freezer: this._useFreezerBatch !== false,
         }),
         "Fryserplanen laves. Åbn den nedenfor, når den er klar."
       ),
@@ -950,13 +1003,15 @@ class Rema1000Panel extends HTMLElement {
         this._render();
       },
       "delete-plan": () => {
-        if (!confirm("Slet denne madplan fra historikken?")) return;
+        const freezer = this._plan?.id === arg && this._plan.kind === "freezer"
+          || (this._state?.freezer_plans || []).some(p => p.id === arg);
+        if (!confirm(freezer ? "Slet denne fryserplan? Varer i kurven og Spisekammerets beholdning ændres ikke." : "Slet denne madplan fra historikken?")) return;
         this._run(async () => {
           await this._ws("middagsro/plan/delete", { plan_id: arg });
           if (this._plan?.id === arg) {
             this._viewingLatest = true;
           }
-        }, "Madplanen er slettet.");
+        }, freezer ? "Fryserplanen er slettet." : "Madplanen er slettet.");
       },
       "send-line": () => {
         const line = (this._plan?.shopping || []).find((l) => l.id === arg);
@@ -1673,6 +1728,38 @@ class Rema1000Panel extends HTMLElement {
   _onInput(ev) {
     const el = ev.target;
     const ds = el.dataset;
+    if (ds.bind === "store-choice") {
+      if (ev.type !== "change") return;
+      const target = el.value;
+      el.value = this._state.entry_id;
+      this._openStoreSwitch(target);
+      return;
+    }
+    if (ds.bind === "remember-store-switch") {
+      if (this._modal?.kind === "store-switch") this._modal.remember = el.checked;
+      return;
+    }
+    if (ds.bind === "navigation") {
+      if (ev.type !== "change") return;
+      const list = this._modal?.draft?.[ds.screen];
+      if (!list) return;
+      const at = list.indexOf(ds.key);
+      if (el.checked && at < 0 && (ds.screen !== "mobile" || list.length < 4)) list.push(ds.key);
+      else if (!el.checked && at >= 0) list.splice(at, 1);
+      this._renderModal();
+      return;
+    }
+    if (ds.bind === "inventory-used") {
+      const selected = this._modal?.selected;
+      if (selected) { if (el.checked) selected.add(ds.id); else selected.delete(ds.id); }
+      return;
+    }
+    if (ds.bind === "use-freezer-batch") { this._useFreezerBatch = el.checked; return; }
+    if (ds.bind === "use-freezer") { this._useFreezer = el.checked; return; }
+    if (ds.bind === "inventory-field") {
+      this._inventoryDraft = { ...this._inventoryDraft, [ds.field]: el.value };
+      return;
+    }
     if (ds.bind === "freezer-note") {
       this._freezerNote = el.value;
       return;
@@ -1940,6 +2027,7 @@ class Rema1000Panel extends HTMLElement {
       skip_dates: dates.filter((d) => kinds[d].kind === "skip"),
       surprise,
       days: Object.fromEntries(dates.map((d) => [d, { kind: kinds[d].kind === "pick" && !this._picks[d] ? "ai" : kinds[d].kind, text: kinds[d].text || "" }])),
+      use_freezer: this._useFreezer !== false,
       picks: Object.fromEntries(Object.entries(this._picks).filter(([d]) => kinds[d]?.kind === "pick")),
     });
     this._skip.clear();
@@ -3313,6 +3401,119 @@ class Rema1000Panel extends HTMLElement {
     if (node) node.innerHTML = this._statusHtml();
   }
 
+  _defaultNavigation() {
+    return { desktop: TABS.map(([key]) => key), mobile: [...PHONE_TABS] };
+  }
+
+  _readNavigation() {
+    const defaults = this._defaultNavigation();
+    try {
+      const saved = JSON.parse(localStorage.getItem(NAV_STORAGE) || "null");
+      const clean = values => Array.isArray(values) ? [...new Set(values.filter(key => TABS.some(([id]) => id === key)))] : [];
+      const desktop = clean(saved?.desktop), mobile = clean(saved?.mobile);
+      return { desktop: desktop.length ? desktop : defaults.desktop, mobile: mobile.length === 4 ? mobile : defaults.mobile };
+    } catch { return defaults; }
+  }
+
+  _renderNavigation() {
+    const nav = this.shadowRoot.querySelector("nav.tabs");
+    if (!nav) return;
+    const signature = JSON.stringify(this._navigation);
+    if (nav.dataset.signature === signature) return;
+    const { desktop, mobile } = this._navigation;
+    const classes = key => `${desktop.includes(key) ? " desktop-primary" : ""}${mobile.includes(key) ? " mobile-primary" : ""}`;
+    const style = key => `--desktop-order:${desktop.indexOf(key)};--mobile-order:${mobile.indexOf(key)}`;
+    nav.innerHTML = TABS.map(([key, label]) => `<button class="tab${classes(key)}" style="${style(key)}" data-action="tab" data-arg="${key}">${TAB_ICONS[key] || ""}<span>${label}</span></button>`).join("")
+      + `<button class="tab more ${desktop.length === TABS.length ? "no-desktop-extra" : ""}" data-action="more" aria-expanded="false"></button><button class="tab customize" data-action="nav-open">Tilpas menu</button>`;
+    this.shadowRoot.querySelector(".more-sheet").innerHTML = TABS.map(([key, label]) => `<button class="more-item${classes(key)}" data-action="tab" data-arg="${key}">${TAB_ICONS[key] || ""}<span>${label}</span></button>`).join("")
+      + '<button class="more-item" data-action="nav-open">Tilpas menu</button>';
+    nav.dataset.signature = signature;
+  }
+
+  _navigationModal() {
+    const m = this._modal;
+    const section = (screen, title, help) => {
+      const selected = m.draft[screen];
+      const ordered = [...selected, ...TABS.map(([key]) => key).filter(key => !selected.includes(key))];
+      return `<section><h3>${title}</h3><p class="muted small">${help}</p>${ordered.map(key => {
+        const index = selected.indexOf(key), checked = index >= 0;
+        const label = TABS.find(([id]) => id === key)[1];
+        return `<div class="nav-option"><label class="check"><input type="checkbox" data-bind="navigation" data-screen="${screen}" data-key="${key}" ${checked ? "checked" : ""} ${screen === "mobile" && !checked && selected.length >= 4 ? "disabled" : ""}>${label}</label>${checked ? `<button class="btn small" data-action="nav-move" data-arg="${screen}|${key}|-1" aria-label="Flyt ${label} op på ${screen === "mobile" ? "telefon" : "computer"}" ${index === 0 ? "disabled" : ""}>↑</button><button class="btn small" data-action="nav-move" data-arg="${screen}|${key}|1" aria-label="Flyt ${label} ned på ${screen === "mobile" ? "telefon" : "computer"}" ${index === selected.length - 1 ? "disabled" : ""}>↓</button>` : ""}</div>`;
+      }).join("")}</section>`;
+    };
+    return `<div class="scrim" data-action="modal-close"></div><div class="dialog wide" role="dialog" aria-modal="true" aria-label="Tilpas menu"><div class="dialog-top"><h2>Tilpas menu</h2><button class="btn" data-action="modal-close">Luk</button></div><p>Vælg genveje og rækkefølge. Alle andre sider kan stadig åbnes under “Mere”. Valgene gemmes i denne browser.</p>${`<div class="seg fit"><button data-action="nav-screen" data-arg="desktop" class="${m.screen === "desktop" ? "active" : ""}">Computer</button><button data-action="nav-screen" data-arg="mobile" class="${m.screen === "mobile" ? "active" : ""}">Telefon</button></div>`}${m.screen === "mobile" ? section("mobile", `Telefon · ${m.draft.mobile.length} af 4 valgt`, "Vælg præcis fire. Fjern et flueben for at vælge et andet punkt.") : section("desktop", "Computer", "Vælg mindst ét menupunkt.")}<div class="dialog-bottom wrap"><button class="btn primary" data-action="nav-save" ${m.draft.mobile.length !== 4 || !m.draft.desktop.length ? "disabled" : ""}>Gem menu</button><button class="btn" data-action="nav-reset">Gendan standard</button><button class="btn" data-action="modal-close">Annuller</button></div></div>`;
+  }
+
+  _saveNavigation() {
+    const draft = this._modal?.draft;
+    if (!draft || !draft.desktop.length || draft.mobile.length !== 4) return;
+    this._navigation = { desktop: [...draft.desktop], mobile: [...draft.mobile] };
+    let message = "Menuen er gemt i denne browser.";
+    try { localStorage.setItem(NAV_STORAGE, JSON.stringify(this._navigation)); }
+    catch { message = "Menuen er ændret, men browseren kunne ikke gemme den til næste besøg."; }
+    this._modal = null;
+    this._render();
+    this._renderModal();
+    this._say(message);
+  }
+
+  _storeChooser() {
+    const stores = this._state?.stores || [];
+    if (stores.length < 2) return "";
+    const pref = this._state.store_switch_preference;
+    return `<div class="store-chooser"><label class="field">Vi handler i
+      <select data-bind="store-choice" aria-label="Vælg butik" ${this._busy ? "disabled" : ""}>
+      ${stores.map(store => `<option value="${esc(store.entry_id)}" ${store.entry_id === this._state.entry_id ? "selected" : ""}>${esc(store.name)}${store.pickup ? ` · ${esc(store.pickup)}` : ""}</option>`).join("")}</select></label>
+      <div class="muted small">Vælg mellem jeres tilføjede butikker. Kurven ændres først, når du sender varer.
+      ${pref && pref !== "ask" ? `<br>${pref === "copy" ? "Madplanen følger med ved skift." : "Et butiksskift åbner en ny madplan."} <button class="link" data-action="store-switch-ask">Spørg mig igen</button>` : ""}</div></div>`;
+  }
+
+  _openStoreSwitch(target) {
+    if (this._busy || target === this._state.entry_id) return;
+    if (this._dirty) return this._say("Gem eller fortryd dine indstillingsændringer, før du skifter butik.");
+    if (Object.values(this._timers || {}).some(end => end > Date.now())) return this._say("Afslut madlavningens timere, før du skifter butik.");
+    const store = this._state.stores.find(store => store.entry_id === target);
+    if (!store) return;
+    const pref = this._state.store_switch_preference;
+    if (pref === "new" || (pref === "copy" && this._plan)) return this._performStoreSwitch(target, pref, true);
+    this._modal = { kind: "store-switch", target, name: store.name, remember: false, busy: false };
+    this._renderModal();
+  }
+
+  _storeSwitchModal(modal) {
+    return `<div class="scrim" ${modal.busy ? "" : 'data-action="modal-close"'}></div>
+      <div class="dialog" role="dialog" aria-modal="true" aria-label="Skift butik">
+      <h2>Skift til ${esc(modal.name)}</h2>
+      <p>Vil du tage madplanen med eller starte en ny til denne butik?</p>
+      <div class="store-switch-actions">
+        <button class="btn primary" data-action="store-switch-copy" ${modal.busy || !this._plan ? "disabled" : ""}>Tag madplanen med</button>
+        <p class="muted small">Opskrifterne beholdes, og vi finder den nye butiks varer og priser. Allerede sendte varer sendes ikke igen.</p>
+        <button class="btn" data-action="store-switch-new" ${modal.busy ? "disabled" : ""}>Start en ny madplan</button>
+        <p class="muted small">Du vælger selv startdag og laver planen bagefter. Tidligere planer bliver i historikken.</p>
+      </div>
+      <p class="muted small">Familie, allergier, basisvarer og madønsker følger med. Øvrige butiksindstillinger beholdes. Skiftet gælder også Middagsros dashboardkort.</p>
+      <label class="check"><input type="checkbox" data-bind="remember-store-switch" ${modal.remember ? "checked" : ""} ${modal.busy ? "disabled" : ""}> Husk valget ved fremtidige butiksskift</label>
+      <p class="muted small">Du kan altid vælge “Spørg mig igen”.</p>
+      <div class="dialog-bottom"><button class="btn" data-action="modal-close" ${modal.busy ? "disabled" : ""}>Annullér</button>${modal.busy ? '<span class="spinner small"></span><span>Skifter butik …</span>' : ""}</div></div>`;
+  }
+
+  async _performStoreSwitch(target, action, remember) {
+    this._busy = true;
+    if (this._modal) this._modal.busy = true;
+    this._renderModal();
+    this._renderBusy();
+    try {
+      await this._ws("middagsro/store/switch", { target_entry_id: target, action, remember: !!remember, plan_id: action === "copy" ? this._plan?.id || null : null });
+      location.reload();
+    } catch (err) {
+      this._busy = false;
+      if (this._modal) this._modal.busy = false;
+      this._renderModal();
+      this._renderBusy();
+      this._say(`Butikken kunne ikke skiftes: ${err?.message || err}`);
+    }
+  }
+
   _statusHtml() {
     const status = this._state?.status;
     if (!status) return "";
@@ -3341,6 +3542,7 @@ class Rema1000Panel extends HTMLElement {
           shopping: () => this._shoppingView(),
           favorites: () => this._favoritesView(),
           budget: () => this._budgetView(),
+          inventory: () => `<div class="card"><h1>Spisekammer</h1><p class="muted">Hold styr på råvarerne, I allerede har hjemme.</p></div>${this._inventoryCard(true)}`,
           health: () => this._healthView(),
           history: () => this._historyView(),
           settings: () => this._settingsView(),
@@ -3358,13 +3560,6 @@ class Rema1000Panel extends HTMLElement {
     const root = this.shadowRoot;
     // The toolbar and tabs are built once, so their horizontal scroll survives.
     if (!root.querySelector("#content")) {
-      const tabs = TABS.map(
-        ([key, label]) =>
-          `<button class="tab${EXTRA_TABS.has(key) ? " extra" : ""}" data-action="tab" data-arg="${key}">${TAB_ICONS[key] || ""}<span>${label}</span></button>`
-      ).join("");
-      const extra = TABS.filter(([key]) => EXTRA_TABS.has(key))
-        .map(([key, label]) => `<button class="more-item" data-action="tab" data-arg="${key}">${TAB_ICONS[key] || ""}<span>${label}</span></button>`)
-        .join("");
       root.innerHTML = `
         <style>${STYLE}</style>
         <div id="top"></div>
@@ -3375,13 +3570,14 @@ class Rema1000Panel extends HTMLElement {
           <span id="timerchip" class="timer-chip" data-action="tab" data-arg="recipes"></span>
           <span id="busy"></span>
         </div>
-        <nav class="tabs">${tabs}<button class="tab more" data-action="more" aria-expanded="false"></button></nav>
+        <nav class="tabs" aria-label="Middagsro"></nav>
         <div class="more-scrim" data-action="more" hidden></div>
-        <div class="more-sheet" hidden>${extra}</div>
+        <div class="more-sheet" hidden></div>
         <main id="content"></main>
         <div id="modal"></div>
         <div id="toast" role="status" aria-live="polite"></div>`;
     }
+    this._renderNavigation();
     const menu = root.querySelector("ha-menu-button");
     if (menu) {
       menu.hass = this._hass;
@@ -3390,7 +3586,7 @@ class Rema1000Panel extends HTMLElement {
     root.querySelectorAll(".tab, .more-item").forEach((tab) => tab.classList.toggle("active", tab.dataset.arg === this._tab));
     const more = root.querySelector(".tab.more");
     if (more) {
-      more.classList.toggle("active", this._moreOpen || EXTRA_TABS.has(this._tab));
+      more.classList.toggle("active", this._moreOpen || !this._navigation[matchMedia("(max-width: 700px)").matches ? "mobile" : "desktop"].includes(this._tab));
       more.setAttribute("aria-expanded", String(!!this._moreOpen));
       more.innerHTML = this._moreOpen ? `${CLOSE_ICON}<span>Luk</span>` : `${MORE_ICON}<span>Mere</span>`;
     }
@@ -3407,7 +3603,7 @@ class Rema1000Panel extends HTMLElement {
       focused && root.querySelector("#content")?.contains(focused) && focused.matches("input, textarea, select")
         ? { key: this._fieldKey(focused), start: focused.selectionStart, end: focused.selectionEnd, scroll: focused.scrollTop }
         : null;
-    root.querySelector("#content").innerHTML = `<div id="status">${this._statusHtml()}</div>${body}`;
+    root.querySelector("#content").innerHTML = `${this._embed ? "" : this._storeChooser()}<div id="status">${this._statusHtml()}</div>${body}`;
     this._renderToast();
     if (keep?.key) {
       const again = [...root.querySelectorAll("#content input, #content textarea, #content select")].find((el) => this._fieldKey(el) === keep.key);
@@ -3446,6 +3642,17 @@ class Rema1000Panel extends HTMLElement {
   _renderModal() {
     const node = this.shadowRoot.querySelector("#modal");
     if (!node) return;
+    if (this._modal?.kind === "navigation") { node.innerHTML = this._navigationModal(); return; }
+    if (this._modal?.kind === "inventory-consume") {
+      const m = this._modal;
+      const items = m.group?.items || m.plan?.freezer_used || [];
+      node.innerHTML = `<div class="scrim" data-action="modal-close"></div><div class="dialog" role="dialog" aria-modal="true" aria-label="Bekræft råvarer brugt"><h2>${m.group?.day_id ? "Er retten lavet?" : "Er råvarerne brugt?"}</h2>${m.group ? `<p><b>${esc(m.group.dish)}</b></p>` : ""}<p>Markér de råvarer fra lageret, du faktisk brugte. Fjern fluebenet, hvis du brugte noget andet. Kun de markerede mængder trækkes fra.</p>${items.map(i => `<label class="check"><input type="checkbox" data-bind="inventory-used" data-id="${esc(i.id)}" ${m.selected.has(i.id) ? "checked" : ""}>${esc(i.name)} · ${i.amount} ${esc(i.unit)}</label>`).join("")}<div class="row wrap"><button class="btn primary" data-action="inventory-consume" ${this._busy ? "disabled" : ""}>Bekræft forbrug</button><button class="btn" data-action="modal-close">Ikke nu</button></div></div>`;
+      return;
+    }
+    if (this._modal?.kind === "store-switch") {
+      node.innerHTML = this._storeSwitchModal(this._modal);
+      return;
+    }
     if (this._modal?.kind === "notice") {
       node.innerHTML = `<div class="scrim" data-action="notice-close"></div>
         <div class="dialog" role="dialog" aria-modal="true" aria-label="Nyt i Middagsro">
@@ -3848,6 +4055,7 @@ class Rema1000Panel extends HTMLElement {
       return `<details class="fold" data-fold="days" ${open ? "open" : ""}><summary>Tilpas dagene${tailored ? ` <span class="badge">${tailored} ${tailored === 1 ? "dag" : "dage"}</span>` : ""}</summary>
         <p class="muted small">Dagene er som under Faste dage i indstillingerne – ændr dem for netop denne uge. En rugbrødsdag laves der ikke mad, og der købes ikke noget til.</p><div class="skipdays">${skip}</div></details>`;
     })() : ""}
+    ${(this._state?.freezer_inventory || []).length ? `<label class="check"><input type="checkbox" data-bind="use-freezer" ${this._useFreezer !== false ? "checked" : ""}> Brug råvarer fra spisekammeret i denne madplan</label><p class="muted small">Prioritér spisekammerets indhold. Kun manglende mængder købes; du bekræfter selv forbruget bagefter.</p>` : ""}
     <div class="row wrap skipgo">
       <button class="btn primary" data-action="generate" ${generating || this._busy ? "disabled" : ""}>
         ${generating ? "Laves …" : aiLabel(label)}
@@ -3855,6 +4063,36 @@ class Rema1000Panel extends HTMLElement {
       <button class="btn surprise" data-action="surprise" ${generating || this._busy ? "disabled" : ""}
         title="Retter I aldrig har fået – fra andre køkkener og med overraskende smage">${SURPRISE_ICON}Overrask os</button>
     </div>`;
+  }
+
+  _inventoryCard(open = false) {
+    const items = this._state?.freezer_inventory || [];
+    const d = this._inventoryDraft || {};
+    return `<details class="card fold" data-fold="inventory" ${open || this._folds?.has("inventory") ? "open" : ""}>
+      <summary><span class="fold-title">Råvarer på lager</span> <span class="badge">${items.length}</span></summary>
+      <p class="muted small">Fælles lager for alle butikker. Skriv råvaren, fx hakket oksekød, og den samlede mængde. Råvarerne bruges automatisk til nye madplaner, medmindre du slår det fra.</p>
+      ${items.map(i => `<div class="row wrap"><span class="spacer">${esc(i.name)} · ${i.amount} ${esc(i.unit)}</span><button class="btn small" data-action="inventory-edit" data-arg="${esc(i.id)}">Ret</button><button class="btn small" data-action="inventory-delete" data-arg="${esc(i.id)}" ${this._busy ? "disabled" : ""}>Fjern</button></div>`).join("") || '<p class="muted">Spisekammeret er tomt.</p>'}
+      <div class="row wrap inventory-fields">
+        <label class="field">Råvare <input data-bind="inventory-field" data-field="name" maxlength="120" value="${esc(d.name || "")}" placeholder="Fx hakket oksekød"></label>
+        <label class="field">Mængde <input data-bind="inventory-field" data-field="amount" type="number" min="0.001" max="100000" step="any" value="${esc(d.amount ?? "")}" placeholder="800"></label>
+        <label class="field">Enhed <select data-bind="inventory-field" data-field="unit">${["g", "kg", "ml", "l", "stk"].map(u => `<option ${u === (d.unit || "g") ? "selected" : ""}>${u}</option>`).join("")}</select></label>
+      </div><div class="row wrap"><button class="btn" data-action="inventory-save" ${this._busy ? "disabled" : ""}>${d.id ? "Gem mængde" : "Tilføj råvare"}</button>${d.id ? '<button class="btn" data-action="inventory-cancel">Annuller</button>' : ""}</div>
+      <p class="muted small">Lageret reserveres ikke af en madplan. Tryk “Retten er lavet” ved den enkelte ret for at bekræfte forbruget. Ret lageret her, hvis du bruger noget til andet. Nye lagerændringer gælder nye madplaner.</p>
+    </details>`;
+  }
+
+  _inventoryUsage(plan, day = null, shopping = false) {
+    const used = plan?.freezer_used || [];
+    if (!used.length) return "";
+    const groups = (plan.freezer_groups || []).filter(g => !day || g.day_id === day.inventory_id);
+    const consumed = (this._state?.freezer_consumed || []).includes(plan.id);
+    const confirmed = this._state?.freezer_confirmed || {};
+    const list = items => `<ul>${items.map(i => `<li>${esc(i.name)}: ${i.amount} ${esc(i.unit)}</li>`).join("")}</ul>`;
+    if (!groups.length && day) return "";
+    return `<div class="banner"><b>${shopping ? "Ikke på indkøbslisten – fra spisekammeret" : "Fra spisekammeret"}</b>
+      <p class="small">${shopping ? "Disse mængder har I allerede. Hvis lageret kun dækker en del, købes resten." : "Disse mængder er ikke lagt på indkøbslisten. Opskriften viser den fulde mængde."}</p>
+      ${groups.length ? groups.map(g => `<div><b>${esc(g.dish)}</b>${list(g.items)}${consumed || confirmed[g.id] ? `<p class="small">${consumed || confirmed[g.id]?.items?.length ? "Forbruget er registreret ✓" : "Bekræftet: råvarerne blev ikke brugt fra lageret."}</p>` : shopping ? "" : `<button class="btn small" data-action="inventory-consume-open" data-arg="${esc(plan.id)}|${esc(g.id)}" ${this._busy ? "disabled" : ""}>${g.day_id ? "Retten er lavet" : "Registrér forbrug"}</button>`}</div>`).join("") : `${list(used)}${consumed ? "Forbruget er registreret ✓" : shopping ? "" : `<button class="btn" data-action="inventory-consume-open" data-arg="${esc(plan.id)}" ${this._busy ? "disabled" : ""}>Registrér forbrug</button>`}`}
+      ${!shopping && !consumed ? '<p class="muted small">Lageret ændres først, når du bekræfter forbruget.</p>' : ""}</div>`;
   }
 
   // Månedens frysermad, folded away under the weekly plan.
@@ -3874,13 +4112,15 @@ class Rema1000Panel extends HTMLElement {
       <p class="muted">Én maddag, flere aftener med nem mad. Lav en separat plan, og vælg bagefter portioner for hver ret.</p>
       <label class="field">Ønsker til fryserretterne <textarea data-bind="freezer-note" rows="2" maxlength="2000" placeholder="Fx gryderetter med kylling, ingen svampe">${esc(this._freezerNote ?? this._state?.freezer_note ?? "")}</textarea></label>
       <p class="muted small">Bruges kun til fryserplanen – ugens madplan har sine egne ønsker.</p>
+      ${(this._state?.freezer_inventory || []).length ? `<label class="check"><input type="checkbox" data-bind="use-freezer-batch" ${this._useFreezerBatch !== false ? "checked" : ""}> Brug råvarer fra spisekammeret til fryserretterne</label>` : ""}
       <div class="row wrap">${[4, 5].map(n => `<button class="btn" data-action="freezer-generate" data-arg="${n}" ${busy ? "disabled" : ""}>${aiLabel(`Lav en plan med ${n} retter`)}</button>`).join("")}</div>
-      ${plans.length ? `<h3>Dine fryserplaner</h3><div class="batch-plans">${plans.map(p => `<button class="setting-row" data-action="freezer-open" data-arg="${esc(p.id)}"><span class="setting-text"><b>${esc(p.title)}</b><span class="muted small">${p.dishes?.length || ""} retter · ${kr(p.total)}</span></span><span class="chev" aria-hidden="true">›</span></button>`).join("")}</div>` : '<p class="muted small">Når planen er klar, kan du åbne den her. Den ændrer ikke ugens madplan.</p>'}
+      ${plans.length ? `<h3>Dine fryserplaner</h3><div class="batch-plans">${plans.map(p => `<div class="batch-plan-row"><button class="setting-row" data-action="freezer-open" data-arg="${esc(p.id)}"><span class="setting-text"><b>${esc(p.title)}</b><span class="muted small">${p.dishes?.length || ""} retter · ${kr(p.total)}</span></span><span class="chev" aria-hidden="true">›</span></button><button class="btn small danger" data-action="delete-plan" data-arg="${esc(p.id)}" aria-label="Slet fryserplan: ${esc(p.title)}" ${busy ? "disabled" : ""}>Slet</button></div>`).join("")}</div>` : '<p class="muted small">Når planen er klar, kan du åbne den her. Den ændrer ikke ugens madplan.</p>'}
     </section>`;
   }
 
   _freezerView(plan) {
-    const locked = plan.portions_locked || plan.shopping.some(l => l.sent);
+    const consumed = (this._state?.freezer_consumed || []).includes(plan.id) || (plan.freezer_groups || []).some(g => Object.hasOwn(this._state?.freezer_confirmed || {}, g.id));
+    const locked = plan.portions_locked || plan.sent_at || plan.shopping.some(l => l.sent) || consumed || plan.days.some(d => Object.hasOwn(this._state?.freezer_confirmed || {}, d.inventory_group_id));
     const portions = day => {
       const values = [...new Set([4, 8, 12, 16, 20, 24, 32, 40, day.servings])].sort((a, b) => a - b);
       return `<label class="field batch-portions">Antal portioner <select data-bind="freezer-portions" data-date="${day.date}" aria-label="Portioner til ${esc(day.dish)}" ${locked || this._busy ? "disabled" : ""}>${values.map(n => `<option value="${n}" ${n === day.servings ? "selected" : ""}>${n} portioner</option>`).join("")}</select></label>`;
@@ -3890,13 +4130,14 @@ class Rema1000Panel extends HTMLElement {
       <ol class="batch-steps" aria-label="Sådan bruger du fryserplanen"><li>Retterne er valgt</li><li ${!locked ? 'aria-current="step"' : ""}>Vælg portioner</li><li ${locked ? 'aria-current="step"' : ""}>Gennemgå indkøb</li></ol>
       <p>Hvor meget vil I lave af hver ret? Vælg fx 16 portioner. Opskrift og indkøbsliste opdateres automatisk.</p>
       <p class="muted small">Familiens portionsprocent bruges ikke her. Ris og pasta til spisedagen købes separat.</p>
-      ${locked ? '<div class="banner info">Portionsvalget er låst, fordi overførsel til indkøbskurven er startet.</div>' : ""}
+      ${locked ? '<div class="banner info">Portionsvalget er låst, fordi overførsel er startet eller lagerforbrug er bekræftet.</div>' : ""}
+      ${this._inventoryUsage(plan)}
       <div class="batch-dishes">${plan.days.map((day, i) => `<article class="batch-dish"><div class="batch-dish-name"><span class="batch-number" aria-hidden="true">${i + 1}</span><h2>${esc(day.dish)}</h2></div>${portions(day)}
         ${day.tip ? `<p class="muted">${esc(day.tip)}</p>` : ""}
         <button class="btn small" data-action="open-day" data-arg="${esc(plan.id)}|${day.date}" aria-label="Se opskrift på ${esc(day.dish)}">Se opskrift</button></article>`).join("")}</div>
       <details><summary>Fordeling i fryseposer</summary><p class="muted small">Fordel den færdige ret i fx 400 g poser. Antallet afhænger af rettens færdige vægt og beregnes ikke automatisk.</p></details>
       <div class="batch-footer"><div><span class="muted small">Anslået indkøb i alt</span><strong>${kr(plan.total)}</strong></div><button class="btn primary" data-action="tab" data-arg="shopping">Se indkøbsliste →</button></div>
-      <button class="link" data-action="view-latest">‹ Til ugens madplan</button>
+      <div class="row between wrap"><button class="link" data-action="view-latest">‹ Til ugens madplan</button><button class="btn small danger" data-action="delete-plan" data-arg="${esc(plan.id)}" ${this._busy ? "disabled" : ""}>Slet fryserplan</button></div>
     </div>${this._freezerControls()}`;
   }
 
@@ -3994,6 +4235,7 @@ class Rema1000Panel extends HTMLElement {
             : "";
         })()}
         ${this._planHelp ? '<p class="muted small help-text">Tryk på en ret for at se opskriften eller skifte den ud. 👍, 👎 og ♥ gemmer retten i opskriftsamlingen – tryk igen for at fortryde.</p>' : ""}
+        ${this._inventoryUsage(plan)}
         <div class="days">${days}</div>
         ${checklist || plan.deviations ? `<details class="plan-checks"><summary>Krav-tjekliste</summary><ul class="checklist">${checklist}</ul>${plan.deviations ? `<p class="muted">${esc(plan.deviations)}</p>` : ""}</details>` : ""}
         <div class="plan-actions">
@@ -4401,6 +4643,7 @@ class Rema1000Panel extends HTMLElement {
         </div>
         <p class="muted">${plan.kind === "freezer" ? "Fryserret" : esc(dateLabel(day.date))}${day.servings ? ` · ${day.servings} ${plan.kind === "freezer" ? "portioner" : "personer"}` : ""}${day.active_minutes ? ` · ${day.active_minutes} min aktiv` : ""}${day.total_minutes ? ` · ${day.total_minutes} min i alt` : ""}${type ? ` · ${esc(type)}` : ""}</p>
         ${leftovers}
+        ${this._inventoryUsage(plan, day)}
         ${day.nutrition
           ? `<p class="nutri">Pr. voksenportion: <b>${Math.round(day.nutrition.kcal)} kcal</b>${["protein_g", "carbs_g", "fat_g"]
               .filter((k) => day.nutrition[k] != null)
@@ -4613,7 +4856,7 @@ class Rema1000Panel extends HTMLElement {
           .map((i) => `<li class="${i.bought ? "bought" : ""}">${i.amount > 1 ? `${i.amount} × ` : ""}${esc(i.name)}</li>`)
           .join("")
       : "<li class='muted'>Listen er tom.</li>";
-    return `${this._olderBanner()}${planHtml}
+    return `${this._olderBanner()}${this._inventoryUsage(plan, null, true)}${planHtml}
       <div class="card">
         <div class="row between wrap">
           <h2>På ${this._listName()} lige nu${rema && this._isRema() ? ` (${esc(rema.name)})` : ""}</h2>
@@ -4872,8 +5115,8 @@ class Rema1000Panel extends HTMLElement {
     const sent = (this._plan?.shopping || []).filter((l) => l.sent && String(l.sent).slice(0, 10) === localToday());
     const suggestion = sent.reduce((sum, l) => sum + (Number(l.cost) || 0), 0);
     return `<div class="book">
-        <input type="text" inputmode="decimal" data-bind="book" data-field="amount" value="${esc(this._book.amount)}" placeholder="Beløb" aria-label="Beløb">
-        <input type="date" data-bind="book" data-field="date" value="${esc(this._book.date || localToday())}" max="${localToday()}" aria-label="Dato">
+        <label class="field">Beløb (kr.)<input type="text" inputmode="decimal" data-bind="book" data-field="amount" value="${esc(this._book.amount)}" placeholder="Fx 450" aria-label="Beløb"></label>
+        <label class="field">Dato<input type="date" data-bind="book" data-field="date" value="${esc(this._book.date || localToday())}" max="${localToday()}" aria-label="Dato"></label>
         <button class="btn primary" data-action="budget-book">Kontér</button>
       </div>
       <div class="book-stores">${chains.map(chip).join("")}</div>
@@ -5349,7 +5592,7 @@ class Rema1000Panel extends HTMLElement {
         <p class="muted small">${(this._state.watch || []).length} ting overvåges. Tilføj flere med klokken under Favoritter.</p>`),
       shop: () => {
         const shop = this._state.shop || { name: "REMA 1000", rema: true, rema_only: [] };
-        const how = `Butikken skiftes under <b>Indstillinger › Enheder og tjenester › Middagsro › ⋮ › Omkonfigurér</b>. Madplaner, opskrifter, budget og indstillinger beholdes.`;
+        const how = `Vælg mellem tilføjede butikker i <b>Vi handler i</b> øverst. Login og Bilka-varehus ændres under <b>Indstillinger › Enheder og tjenester › Middagsro › ⋮ › Omkonfigurér</b>.`;
         if (shop.rema) {
           return card(`        <h2 class="flush">I handler i REMA 1000</h2>
         <p>Middagsro er logget ind på jeres REMA 1000-konto: alle varer har en pris, REMA's opskrifter kan bruges, og indkøbslisten sendes til REMA-appen.</p>
@@ -5363,7 +5606,7 @@ class Rema1000Panel extends HTMLElement {
         <p>Madplanens varer sendes til kurven i BilkaToGo-appen og på hjemmesiden. Du gennemgår selv kurven, vælger afhentningstid og bestiller i BilkaToGo.</p>
         <p>Fundne varer sendes til kurven. Ingredienser uden match vises særskilt og bliver i Middagsro, så du kan vælge en vare eller tilføje dem selv. Kurven kan ikke afkrydses som en indkøbsliste.</p>
         <p class="muted small">${how} Vælg Bilka igen for at ændre varehus eller login.</p>
-        <a class="btn" href="/config/integrations/integration/middagsro" target="_top">Vælg butik, varehus eller login</a>`);
+        <a class="btn" href="/config/integrations/integration/middagsro" target="_top">Ret login eller varehus</a>`);
         }
         const todos = Object.keys(this._hass?.states || {})
           .filter((id) => id.startsWith("todo.") && !id.includes("middagsro"))
@@ -5410,6 +5653,7 @@ class Rema1000Panel extends HTMLElement {
           <div><h1>${esc(open.title)}</h1><p class="muted small">${esc(open.summary)}</p></div>
         </div>
         ${html[open.key]()}
+        ${open.key === "shop" ? '<p class="muted small">Skift mellem allerede tilføjede butikker i “Vi handler i” øverst på siden.</p>' : ""}
         ${open.form || this._dirty ? savebar : ""}`;
     }
     const row = (sec) => `<button class="setting-row" data-action="settings-section" data-arg="${sec.key}">
@@ -5484,8 +5728,22 @@ const STYLE = `
   .tab { border: none; background: none; color: var(--secondary-text-color); padding: 10px 14px; font-size: 15px; cursor: pointer;
     border-bottom: 3px solid transparent; white-space: nowrap; font-weight: 500; }
   .tab.active { color: var(--rema-accent); border-color: var(--rema-accent); }
-  .tab.more { display: none; }
+  .tab { order: var(--desktop-order, 20); }
+  .tab:not(.desktop-primary):not(.more):not(.customize) { display: none; }
+  .tab.more { display: flex; order: 21; }
+  .tab.more.no-desktop-extra { display: none; }
+  .tab.customize { order: 22; margin-left: auto; font-size: 13px; }
   .more-scrim, .more-sheet { display: none; }
+  .more-scrim:not([hidden]) { display: block; position: fixed; inset: 0; z-index: 4; }
+  .more-sheet:not([hidden]) { display: flex; flex-direction: column; position: fixed; right: 12px; top: calc(var(--header-height, 56px) + 50px); max-height: calc(100dvh - 140px); overflow-y: auto; z-index: 6; min-width: 210px; padding: 6px; border-radius: 16px; background: var(--rema-solid-card); border: 1px solid var(--divider-color); box-shadow: 0 8px 28px rgba(0,0,0,.22); }
+  .more-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: none; border-radius: 10px; background: none; color: var(--primary-text-color); font-size: 15px; text-align: left; cursor: pointer; }
+  .more-item.desktop-primary { display: none; }
+  .more-item svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+  .more-item.active { color: var(--rema-accent); background: var(--rema-tint); }
+  .nav-option { display: flex; gap: 8px; align-items: center; min-height: 44px; }
+  .nav-option .check { flex: 1; min-width: 0; }
+  .nav-option .btn { padding: 4px 10px; }
+  .nav-option + .nav-option { border-top: 1px solid var(--divider-color); }
   .credit { margin: 24px 0 0; text-align: center; font-size: 13px; color: var(--secondary-text-color); }
   .credit .gh-link { display: inline-flex; vertical-align: -3px; margin-left: 4px; padding: 2px; color: inherit; border-radius: 999px; }
   .credit .gh { width: 16px; height: 16px; display: block; }
@@ -5723,6 +5981,14 @@ const STYLE = `
   .chev { font-size: 22px; color: var(--secondary-text-color); }
   .settings-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
   .settings-head h1 { margin: 0; }
+  .inventory-fields .field { flex: 1; min-width: 100px; }
+  @media (max-width: 600px) { .inventory-fields .field:first-child { flex-basis: 100%; } }
+  .inventory-fields input, .inventory-fields select { box-sizing: border-box; width: 100%; min-width: 0; }
+  .store-chooser { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; padding: 12px 16px; margin-bottom: 16px; border: 1px solid var(--divider-color); border-radius: 12px; background: var(--rema-card); }
+  .store-chooser .field { margin: 0; min-width: 200px; }
+  .store-chooser > .small { flex: 1; min-width: 180px; }
+  .store-switch-actions { display: grid; gap: 8px; margin: 20px 0; }
+  .store-switch-actions p { margin: 0 0 12px; }
   .freezer-section { border-top: 1px solid var(--divider-color); margin-top: 24px; padding-top: 8px; text-align: left; }
   .freezer-section.flat { border-top: 0; margin-top: 4px; padding-top: 0; }
   details.fold > summary { cursor: pointer; font-weight: 600; padding: 6px 0; list-style-position: inside; }
@@ -5730,6 +5996,8 @@ const STYLE = `
   .freezer-card > summary .fold-title { font-size: 18px; font-weight: 700; }
   .pickday.skipped { opacity: .6; }
   .update-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+  .batch-plan-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; border-top: 1px solid var(--divider-color); }
+  .batch-plan-row .setting-text { overflow-wrap: anywhere; }
   .batch-plans .setting-row { grid-template-columns: 1fr auto; padding: 14px 8px; }
   .batch-steps { display: flex; flex-wrap: wrap; gap: 12px 28px; padding: 12px 12px 12px 32px; background: var(--rema-subtle); border-radius: 12px; color: var(--secondary-text-color); }
   .batch-steps [aria-current] { color: var(--rema-accent); font-weight: 700; }
@@ -5948,8 +6216,15 @@ const STYLE = `
   .budget-bar.over > span { background: var(--rema-sale, #d33); }
   .budget-bar > i { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--primary-text-color); }
   .budget-card .banner.small { font-size: 13px; margin: 8px 0; }
-  .book { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; gap: 8px; align-items: center; }
-  .book input { min-width: 0; width: 100%; box-sizing: border-box; }
+  #budget-book { container-type: inline-size; }
+  .book { margin-top: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: end; }
+  .book .field { margin: 0; min-width: 0; }
+  .book input { display: block; min-width: 0; min-inline-size: 0; max-width: 100%; width: 100%; height: 46px; box-sizing: border-box; font-size: 16px; }
+  .book input[type="date"] { appearance: none; -webkit-appearance: none; }
+  .book input::-webkit-date-and-time-value { text-align: left; }
+  .book > .btn { grid-column: 1 / -1; min-height: 46px; }
+  @container (max-width: 340px) { .book { grid-template-columns: minmax(0, 1fr); } }
+  @container (min-width: 480px) { .book { grid-template-columns: repeat(2, minmax(0, 1fr)) auto; } .book > .btn { grid-column: auto; } }
   .book-stores { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
   .book-stores .chip { padding: 4px 10px; font-size: 13px; }
   .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0 0 12px; }
@@ -6008,14 +6283,18 @@ const STYLE = `
       font-size: 10.5px; font-weight: 600; border-bottom: none; }
     .tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
     .tabs { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-    .tab.extra { display: none; }
-    .tab.more { display: flex; }
+    .tabs .tab { order: var(--mobile-order, 20); }
+    .tabs .tab:not(.mobile-primary):not(.more) { display: none; }
+    .tabs .tab.mobile-primary { display: flex; }
+    .tabs .tab.more { display: flex; order: 21; }
     .more-scrim:not([hidden]) { display: block; position: fixed; inset: 0; z-index: 4; }
     .more-sheet:not([hidden]) { display: flex; flex-direction: column; position: fixed; right: 8px; z-index: 6;
-      bottom: calc(var(--rema-tabbar) + 8px); min-width: 200px; padding: 6px; border-radius: 16px;
+      top: auto; bottom: calc(var(--rema-tabbar) + 8px); min-width: 200px; padding: 6px; border-radius: 16px;
       background: var(--rema-solid-card); border: 1px solid var(--divider-color); box-shadow: 0 8px 28px rgba(0, 0, 0, .22); }
     .more-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: none; border-radius: 10px;
       background: none; color: var(--primary-text-color); font-size: 16px; font-weight: 500; text-align: left; cursor: pointer; }
+    .more-item.desktop-primary { display: flex; }
+    .more-item.mobile-primary { display: none; }
     .more-item svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
     .more-item.active { color: var(--rema-accent); background: var(--rema-tint); }
     .tab svg { display: block; }
