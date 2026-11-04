@@ -171,7 +171,7 @@ const SETTINGS_SECTIONS = (panel) => {
   const shop = state.shop || { name: "REMA 1000", rema: true };
   return [
     { key: "shop", title: "Butik", form: !shop.rema,
-      summary: shop.rema ? "REMA 1000 · priser på alle varer og REMA-appens liste" : shop.bilka_cart ? `BilkaToGo · ${shop.pickup_name} · kurv i appen` : `${shop.name} · tilbudsavis og liste i Home Assistant` },
+      summary: shop.rema ? "REMA 1000 · priser på alle varer og REMA-appens liste" : shop.bilka_cart ? (shop.cart_name === "Nemlig.com" ? "Nemlig.com · priser på alle varer og kurven på nemlig.com" : `BilkaToGo · ${shop.pickup_name} · kurv i appen`) : `${shop.name} · tilbudsavis og liste i Home Assistant` },
     { key: "plan", title: "Ugens madplan", form: true,
       summary: `${f.days} dage fra ${WEEKDAYS[f.start_weekday].toLowerCase()} · ${f.monthly_budget ? "budget efter madbudgettet" : `budget ${f.budget} kr.`}${f.auto_generate ? " · laves automatisk" : ""}` },
     { key: "ai", title: "AI til madplanen", form: true,
@@ -898,7 +898,7 @@ class Rema1000Panel extends HTMLElement {
           () => this._ws("middagsro/send", { plan_id: this._plan?.id, part }),
           this._isRema()
             ? part === "late" ? `Varerne til ${this._lateDayName()} er sendt til REMA 1000-appen.` : "Indkøbslisten er sendt til REMA 1000-appen."
-            : this._state?.shop?.bilka_cart ? "De fundne varer er sendt til BilkaToGo-kurven. Eventuelle manglende varer vises under Indkøb." : part === "late" ? `Varerne til ${this._lateDayName()} er sat på indkøbslisten.` : "Varerne er sat på indkøbslisten."
+            : this._state?.shop?.bilka_cart ? `De fundne varer er sendt til ${this._listName()}. Eventuelle manglende varer vises under Indkøb.` : part === "late" ? `Varerne til ${this._lateDayName()} er sat på indkøbslisten.` : "Varerne er sat på indkøbslisten."
         );
       },
       "budget-store": () => {
@@ -3053,7 +3053,7 @@ class Rema1000Panel extends HTMLElement {
 
   // "REMA-listen" (the list in the REMA app), or "indkøbslisten" with another shop.
   _listName() {
-    return this._isRema() ? "REMA-listen" : this._state?.shop?.bilka_cart ? "BilkaToGo-kurven" : "indkøbslisten";
+    return this._isRema() ? "REMA-listen" : this._state?.shop?.bilka_cart ? `${this._state.shop.cart_name || "BilkaToGo"}-kurven` : "indkøbslisten";
   }
 
   _shopName() {
@@ -4846,7 +4846,7 @@ class Rema1000Panel extends HTMLElement {
           </div>
         </div>
         ${sentCount
-          ? `<div class="banner info sent-banner"><span>✓ ${sentCount} ${sentCount === 1 ? "vare er sendt" : "varer er sendt"} til ${this._isRema() ? "REMA-appen" : this._state?.shop?.bilka_cart ? "BilkaToGo-kurven" : "indkøbslisten"}${plan.last_sent?.at ? ` ${esc(sentWhen(plan.last_sent.at))}` : ""} – kurven her har kun det, der ikke er sendt endnu.${onList ? ` ${onList} ${onList === 1 ? "fast vare stod" : "faste varer stod"} der allerede og blev ikke sendt igen.` : ""}</span>
+          ? `<div class="banner info sent-banner"><span>✓ ${sentCount} ${sentCount === 1 ? "vare er sendt" : "varer er sendt"} til ${this._isRema() ? "REMA-appen" : this._state?.shop?.bilka_cart ? this._listName() : "indkøbslisten"}${plan.last_sent?.at ? ` ${esc(sentWhen(plan.last_sent.at))}` : ""} – kurven her har kun det, der ikke er sendt endnu.${onList ? ` ${onList} ${onList === 1 ? "fast vare stod" : "faste varer stod"} der allerede og blev ikke sendt igen.` : ""}</span>
               ${plan.last_sent ? `<button class="btn small" data-action="send-restore" ${this._busy ? "disabled" : ""}>Genskab seneste kurv</button>` : ""}</div>`
           : ""}
         ${missingProducts.length ? `<div class="banner warn"><div><b>${missingProducts.length} ${missingProducts.length === 1 ? "vare mangler" : "varer mangler"} et match</b>
@@ -5638,6 +5638,14 @@ class Rema1000Panel extends HTMLElement {
         <p class="muted">Handler I et andet sted – Netto, føtex, Lidl, Bilka, 365discount, MENY, Coop eller andre – kan I vælge den butik i stedet. Så bygges madplanen på dens tilbudsavis, og indkøbslisten ligger i Home Assistant.</p>
         <p class="muted small">${how}</p>
         <a class="btn" href="/config/integrations/integration/middagsro" target="_top">Åbn Middagsro under Enheder og tjenester</a>`);
+        }
+        if (shop.bilka_cart && shop.cart_name === "Nemlig.com") {
+          return card(`<h2 class="flush">I handler med Nemlig.com</h2>
+        <p>Middagsro er logget ind på jeres Nemlig.com-konto: madplanen bygges på Nemligs tilbud, og alle varer har jeres Nemlig-pris.</p>
+        <p>Madplanens varer sendes til kurven på nemlig.com og i Nemlig-appen. Du gennemgår selv kurven, vælger leveringstid og bestiller på nemlig.com.</p>
+        <p>Fundne varer sendes til kurven. Ingredienser uden match vises særskilt og bliver i Middagsro, så du kan vælge en vare eller tilføje dem selv.</p>
+        <p class="muted small">${how}</p>
+        <a class="btn" href="/config/integrations/integration/middagsro" target="_top">Ret login</a>`);
         }
         if (shop.bilka_cart) {
           return card(`<h2 class="flush">I handler med BilkaToGo</h2>

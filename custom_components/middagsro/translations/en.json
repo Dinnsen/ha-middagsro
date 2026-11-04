@@ -97,6 +97,30 @@
         "data": {
           "bilka_pickup": "Bilka pickup store"
         }
+      },
+      "nemlig": {
+        "title": "Nemlig.com: log in",
+        "description": "Log in with your Nemlig.com account. The meal plan is made from Nemlig's offers, every item has your Nemlig price, and the shopping list is sent to your basket on nemlig.com (you choose the delivery time and order yourself).\n\nNot available with Nemlig.com:\n{missing}",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        },
+        "data_description": {
+          "email": "The e-mail you log in to nemlig.com with.",
+          "password": "Kept in Home Assistant and sent only to nemlig.com."
+        }
+      },
+      "reconfigure_nemlig": {
+        "title": "Nemlig.com: log in",
+        "description": "Log in with your Nemlig.com account. The meal plan is made from Nemlig's offers, every item has your Nemlig price, and the shopping list is sent to your basket on nemlig.com (you choose the delivery time and order yourself).\n\nNot available with Nemlig.com:\n{missing}",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        },
+        "data_description": {
+          "email": "The e-mail you log in to nemlig.com with.",
+          "password": "Kept in Home Assistant and sent only to nemlig.com."
+        }
       }
     },
     "error": {

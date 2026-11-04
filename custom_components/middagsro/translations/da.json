@@ -97,6 +97,30 @@
         "data": {
           "bilka_pickup": "Bilka-varehus"
         }
+      },
+      "nemlig": {
+        "title": "Nemlig.com: log ind",
+        "description": "Log ind med jeres Nemlig.com-konto. Madplanen laves ud fra Nemligs tilbud, alle varer har jeres Nemlig-pris, og indkøbslisten sendes til kurven på nemlig.com (I vælger selv leveringstid og bestiller).\n\nVirker ikke med Nemlig.com:\n{missing}",
+        "data": {
+          "email": "E-mail",
+          "password": "Adgangskode"
+        },
+        "data_description": {
+          "email": "Den e-mail, I logger ind på nemlig.com med.",
+          "password": "Gemmes i Home Assistant og sendes kun til nemlig.com."
+        }
+      },
+      "reconfigure_nemlig": {
+        "title": "Nemlig.com: log ind",
+        "description": "Log ind med jeres Nemlig.com-konto. Madplanen laves ud fra Nemligs tilbud, alle varer har jeres Nemlig-pris, og indkøbslisten sendes til kurven på nemlig.com (I vælger selv leveringstid og bestiller).\n\nVirker ikke med Nemlig.com:\n{missing}",
+        "data": {
+          "email": "E-mail",
+          "password": "Adgangskode"
+        },
+        "data_description": {
+          "email": "Den e-mail, I logger ind på nemlig.com med.",
+          "password": "Gemmes i Home Assistant og sendes kun til nemlig.com."
+        }
       }
     },
     "error": {

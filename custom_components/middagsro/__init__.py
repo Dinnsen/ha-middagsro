@@ -29,10 +29,11 @@ from .favorites import FavoriteOffers
 from .inventory import inventory
 from .mealplan import MealPlanner
 from .migrate import async_migrate
+from .nemlig import NEMLIG_ID
 from .panel import async_register_panel, async_unregister_panel
 from .services import async_setup_services
 from .storage import STORE_VERSION, RemaPlanStore
-from .store_client import REMA, BilkaStoreClient, StoreClient, store_of
+from .store_client import REMA, BilkaStoreClient, NemligStoreClient, StoreClient, store_of
 from .store_selection import selection
 from .watch import CHECK_EVERY as WATCH_CHECK_EVERY, async_check as async_watch_check
 from .websocket import async_register_websocket
@@ -76,6 +77,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
             entry.data.get(CONF_EMAIL, ""),
             entry.data.get(CONF_PASSWORD, ""),
             entry.data.get(CONF_PICKUP, ""),
+        )
+    elif store_id == NEMLIG_ID:
+        client = NemligStoreClient(
+            hass, session, entry.entry_id, entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD]
         )
     else:
         client = StoreClient(hass, session, entry.entry_id, store_id)
@@ -196,6 +201,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> Non
         ("catalogs", STORAGE_VERSION),
         ("list", 1),
         ("bilka_transfers", 1),
+        ("nemlig_transfers", 1),
     ):
         await Store(hass, version, f"{DOMAIN}.{entry.entry_id}.{name}").async_remove()
 

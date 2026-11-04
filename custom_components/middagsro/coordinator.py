@@ -105,7 +105,10 @@ class RemaShoppingListCoordinator(DataUpdateCoordinator[ShoppingList]):
         cart = isinstance(self.client, BilkaStoreClient) and self.client.cart is not None
         async with self._change:
             if cart and any(not item.get("product_id") for item in items):
-                raise BilkaError("Vælg en BilkaToGo-vare til alle ingredienser, før listen sendes")
+                raise BilkaError(
+                    f"Vælg en {getattr(self.client, 'cart_label', 'BilkaToGo')}-vare til alle "
+                    "ingredienser, før listen sendes"
+                )
             shopping_list = await self.client.async_get_primary_list()
             # BilkaToGo: written one by one, confirmed together with one read of the cart.
             pending: list[dict[str, Any]] = []
@@ -147,8 +150,9 @@ class RemaShoppingListCoordinator(DataUpdateCoordinator[ShoppingList]):
                     if self.mirror is not None and added:
                         await self.mirror(added)
             if len(added) < len(items):
+                label = getattr(self.client, "cart_label", "Butikken")
                 raise BilkaError(
-                    "BilkaToGo bekræftede ikke alle varer i kurven. Send listen igen for resten"
+                    f"{label} bekræftede ikke alle varer i kurven. Send listen igen for resten"
                 )
 
     async def async_take_items(self, items: list[dict[str, Any]]) -> int:

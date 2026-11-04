@@ -2,6 +2,11 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.15.0b2] - 2026-11-04
+
+### Added
+- **Nemlig.com as your shop** (#67): choose *Nemlig.com* when adding Middagsro (or under *Omkonfigurér*) and log in with the Nemlig account. The week's offers are Nemlig's offer page (Ugens Priskup, Skarp pris, Dagstilbud …, mix offers as "3 for 48 kr."), every item gets your Nemlig price and product, and the shopping list is sent to your basket on nemlig.com – absolute quantities, confirmed against the basket, never sent twice. Middagsro never chooses a delivery time and never orders. The password is kept in Home Assistant and sent only to nemlig.com.
+
 ## [2.15.0b1] - 2026-11-04
 
 ### Added

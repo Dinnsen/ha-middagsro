@@ -218,6 +218,7 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
             **(
                 {
                     "bilka_cart": True,
+                    "cart_name": getattr(data.client, "cart_label", "BilkaToGo"),
                     "pickup_name": getattr(getattr(data.client, "cart", None), "pickup_name", ""),
                 }
                 if getattr(data.client, "cart", None) is not None
