@@ -2,13 +2,16 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
-## Unreleased
+## [2.15.0b1] - 2026-11-04
 
 ### Added
-- Delete freezer plans from their overview or the open plan, with confirmation. Cart contents and ingredient inventory are retained.
-- **Spisekammer:** shared ingredient quantities for weekly and freezer plans. Shopping shows omitted amounts; usage is confirmed per dish and deducted once. Freezer portion changes recalculate shopping before cooking or cart transfer.
-- Switch installed shops from the panel, carry the current plan or start a new one, and optionally remember the choice. Carried plans get the destination shop's products/prices while retaining sent-item flags.
-- Customize desktop navigation and the four phone shortcuts, including their order. Preferences are saved per browser; remaining pages stay available under **Mere**.
+- **Køb ind til en ret, du selv skriver** (#70): in a day's menu, *Skriv selv* has *Køb ind til retten* – the AI writes the dish's items on the shopping list and makes the recipe, as *Skift ret* does – next to *Ingen madlavning* (Spiser ude, take-away), which buys nothing.
+- **The quick + REMA-listen buttons can go to another to-do list** (#45): under *Indstillinger › Butik*, choose the to-do list that *Tilbud og priser* and the search's avis offers put things on (Bring!, Home Assistant's shopping list …). The meal plan's list is still sent to the REMA app.
+- From PR #69 by @nagels:
+  - Delete freezer plans from their overview or the open plan, with confirmation. Cart contents and ingredient inventory are retained.
+  - **Spisekammer:** shared ingredient quantities for weekly and freezer plans. Shopping shows omitted amounts; usage is confirmed per dish and deducted once. Freezer portion changes recalculate shopping before cooking or cart transfer.
+  - Switch installed shops from the panel, carry the current plan or start a new one, and optionally remember the choice. Carried plans get the destination shop's products/prices while retaining sent-item flags.
+  - Customize desktop navigation and the four phone shortcuts, including their order. Preferences are saved per browser; remaining pages stay available under **Mere**.
 
 ### Fixed
 - Budget booking uses labelled, equally sized amount/date inputs and a separate submit row on narrow cards.

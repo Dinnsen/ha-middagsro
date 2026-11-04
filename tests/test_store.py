@@ -215,6 +215,10 @@ def test_todo_setting() -> None:
     assert clean_settings({"ha_todo_entity": "todo.familie"})["ha_todo_entity"] == "todo.familie"
     assert clean_settings({"ha_todo_entity": "light.stue"})["ha_todo_entity"] == ""
     assert clean_settings({})["ha_todo_entity"] == ""
+    assert (
+        clean_settings({"quick_todo_entity": "todo.familie"})["quick_todo_entity"] == "todo.familie"
+    )
+    assert clean_settings({"quick_todo_entity": "sensor.x"})["quick_todo_entity"] == ""
 
 
 async def test_items_without_prices(hass: HomeAssistant, netto: MockConfigEntry) -> None:

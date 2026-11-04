@@ -539,9 +539,28 @@ class Rema1000Panel extends HTMLElement {
     ]);
   }
 
-  // One product on the REMA list in the app; the meal plan's list is left as it is.
+  // The to-do list the quick "+ list" buttons put things on, when the family chose one.
+  _quickTodo() {
+    const id = this._state?.settings?.quick_todo_entity;
+    const state = id ? this._hass?.states?.[id] : null;
+    return state ? { id, name: state.attributes?.friendly_name || id } : null;
+  }
+
+  _quickLabel() {
+    const todo = this._quickTodo();
+    return todo ? `+ ${todo.name}` : "+ REMA-listen";
+  }
+
+  // One product on the REMA list in the app (or the to-do list chosen for the quick
+  // button); the meal plan's list is left as it is.
   _addToRemaList(productId, name) {
+    const todo = this._quickTodo();
+    if (todo) return this._addToTodo(todo, name);
     this._run(() => this._ws("middagsro/list/add", { product_id: Number(productId), amount: 1 }), `${name} er sat på ${this._listName()}.`);
+  }
+
+  _addToTodo(todo, name) {
+    this._run(() => this._hass.callService("todo", "add_item", { item: name }, { entity_id: todo.id }), `${name} er sat på ${todo.name}.`);
   }
 
   // A toast is its own little render: it never redraws the page under the user's fingers.
@@ -1633,6 +1652,13 @@ class Rema1000Panel extends HTMLElement {
       "mealie-sync": () =>
         this._run(() => this._ws("middagsro/mealie/sync", { plan_id: this._plan.id }), "Ugen er sat i Mealie-kalenderen."),
       "swap-pick": () => this._swapPick(Number(arg)),
+      "day-own-dish": () => {
+        const m = this._modal;
+        const dish = String(m?.text || "").trim();
+        if (!m || m.busy) return;
+        if (!dish) return this._say("Skriv navnet på retten, fx Tacos.");
+        this._swapPick(-1, { dish });
+      },
       "pantry-open": () => this._pantryOpen(),
       "plan-rematch": () =>
         this._editPlan(
@@ -1685,6 +1711,8 @@ class Rema1000Panel extends HTMLElement {
         const offer = this._shopSearch.main?.offers?.[Number(arg)];
         if (!offer) return;
         this._shopSearch.main = { query: "", results: [], offers: [], loading: false };
+        const todo = this._quickTodo();
+        if (todo) return this._addToTodo(todo, offer.heading);
         this._run(() => this._ws("middagsro/chains/rema_add", { offer, plan_id: null }), `${offer.heading} er sat på REMA-listen.`);
       },
       "shop-add-list": () => {
@@ -2168,11 +2196,11 @@ class Rema1000Panel extends HTMLElement {
     this._renderModal();
   }
 
-  async _swapPick(idx) {
+  async _swapPick(idx, own = null) {
     const m = this._modal;
-    const option = m?.options?.[idx];
+    const option = own || m?.options?.[idx];
     if (!option || m.busy) return;
-    m.busy = "swap";
+    m.busy = own ? "own" : "swap";
     m.picked = idx;
     m.error = null;
     this._renderModal();
@@ -2891,9 +2919,9 @@ class Rema1000Panel extends HTMLElement {
           ${plan
             ? `<span class="ev-btns">
                 <button class="btn small" data-action="ev-rema" data-arg="${esc(p.id)}" ${this._busy ? "disabled" : ""} title="På madplanens indkøbsliste">+ Indkøb</button>
-                <button class="btn small" data-action="ev-rema-list" data-arg="${esc(p.id)}" ${this._busy ? "disabled" : ""} title="Direkte på REMA-listen i appen">+ REMA-listen</button>
+                <button class="btn small" data-action="ev-rema-list" data-arg="${esc(p.id)}" ${this._busy ? "disabled" : ""} title="Direkte på ${esc(this._quickTodo()?.name || "REMA-listen i appen")}">${esc(this._quickLabel())}</button>
               </span>`
-            : `<button class="btn small" data-action="ev-rema-list" data-arg="${esc(p.id)}" ${this._busy ? "disabled" : ""}>+ REMA-listen</button>`}
+            : `<button class="btn small" data-action="ev-rema-list" data-arg="${esc(p.id)}" ${this._busy ? "disabled" : ""}>${esc(this._quickLabel())}</button>`}
         </li>`
       )
       .join("");
@@ -3793,11 +3821,13 @@ class Rema1000Panel extends HTMLElement {
              ${m.busy === "options" ? '<span class="spinner small"></span> Finder retter …' : aiLabel(m.dish ? "Skift retten – tre forslag" : "Find en ret – tre forslag")}</button>
            ${this._isRema() ? `<button class="btn" data-action="day-rema" ${busy ? "disabled" : ""}>Vælg en REMA-opskrift</button>` : ""}
          </div>
-         <label class="field">Skriv selv – ingen madlavning den dag
-           <div class="row wrap">
-             <input class="grow" type="text" data-bind="daytext" value="${esc(m.text || "")}" maxlength="120" placeholder="Fx Spiser ude, Skolefest eller Mormor laver mad" enterkeyhint="done">
-             <button class="btn" data-action="day-text" ${busy ? "disabled" : ""}>${m.written ? "Ret teksten" : "Skriv på dagen"}</button>
-           </div></label>
+         <label class="field">Skriv selv
+           <input type="text" data-bind="daytext" value="${esc(m.text || "")}" maxlength="120" placeholder="Fx Tacos – eller Spiser ude, Skolefest" enterkeyhint="done"></label>
+         <div class="row wrap">
+           <button class="btn" data-action="day-own-dish" ${busy ? "disabled" : ""} title="AI'en skriver rettens varer på indkøbslisten og laver opskriften">${m.busy === "own" ? '<span class="spinner small"></span> Finder varer …' : aiLabel("Køb ind til retten")}</button>
+           <button class="btn" data-action="day-text" ${busy ? "disabled" : ""} title="Ingen madlavning den dag – der købes ikke ind">${m.written ? "Ret teksten" : "Ingen madlavning"}</button>
+         </div>
+         <p class="muted small">Køb ind til retten: en ret, I selv vælger. Ingen madlavning: Spiser ude, take-away og lignende.</p>
          <div class="row wrap dialog-actions">
            ${m.dish ? `<button class="btn danger" data-action="day-clear" data-arg="delete" ${busy ? "disabled" : ""}>${m.written ? "Fjern teksten" : "Slet retten"}</button>` : ""}
            <button class="btn danger" data-action="day-clear" data-arg="skip" ${busy ? "disabled" : ""}>Spring dagen over</button>
@@ -3947,7 +3977,7 @@ class Rema1000Panel extends HTMLElement {
               ${o.image ? `<img src="${esc(o.image)}" alt="">` : ""}
               <span><b>${esc(o.heading)}</b><span class="muted">${esc([o.description, o.price != null ? kr(o.price) : ""].filter(Boolean).join(" · "))}</span></span>
               <span class="badge offer">Avis</span><span class="add">+ Tilføj</span></button>
-              ${this._isRema() ? `<button class="btn small to-rema" data-action="shop-offer-add-list" data-arg="${i}" ${this._busy ? "disabled" : ""} title="Direkte på REMA-listen i appen, ikke på madplanens liste">+ REMA-listen</button>` : ""}</div>`
+              ${this._isRema() ? `<button class="btn small to-rema" data-action="shop-offer-add-list" data-arg="${i}" ${this._busy ? "disabled" : ""} title="Direkte på ${esc(this._quickTodo()?.name || "REMA-listen i appen")}, ikke på madplanens liste">${esc(this._quickLabel())}</button>` : ""}</div>`
           )
           .join("")}`
       : "";
@@ -5593,9 +5623,18 @@ class Rema1000Panel extends HTMLElement {
       shop: () => {
         const shop = this._state.shop || { name: "REMA 1000", rema: true, rema_only: [] };
         const how = `Vælg mellem tilføjede butikker i <b>Vi handler i</b> øverst. Login og Bilka-varehus ændres under <b>Indstillinger › Enheder og tjenester › Middagsro › ⋮ › Omkonfigurér</b>.`;
+        const todos = Object.keys(this._hass?.states || {})
+          .filter((id) => id.startsWith("todo.") && !id.includes("middagsro"))
+          .sort();
         if (shop.rema) {
           return card(`        <h2 class="flush">I handler i REMA 1000</h2>
         <p>Middagsro er logget ind på jeres REMA 1000-konto: alle varer har en pris, REMA's opskrifter kan bruges, og indkøbslisten sendes til REMA-appen.</p>
+        <label class="field">Knappen + REMA-listen ved tilbud og priser lægger varen på
+          <select data-path="quick_todo_entity">
+            <option value="" ${f.quick_todo_entity ? "" : "selected"}>REMA-listen i appen</option>
+            ${todos.map((id) => `<option value="${esc(id)}" ${f.quick_todo_entity === id ? "selected" : ""}>${esc(this._hass.states[id].attributes?.friendly_name || id)}</option>`).join("")}
+          </select></label>
+        <p class="muted small">Madplanens indkøbsliste sendes stadig til REMA-appen.</p>
         <p class="muted">Handler I et andet sted – Netto, føtex, Lidl, Bilka, 365discount, MENY, Coop eller andre – kan I vælge den butik i stedet. Så bygges madplanen på dens tilbudsavis, og indkøbslisten ligger i Home Assistant.</p>
         <p class="muted small">${how}</p>
         <a class="btn" href="/config/integrations/integration/middagsro" target="_top">Åbn Middagsro under Enheder og tjenester</a>`);
@@ -5608,9 +5647,6 @@ class Rema1000Panel extends HTMLElement {
         <p class="muted small">${how} Vælg Bilka igen for at ændre varehus eller login.</p>
         <a class="btn" href="/config/integrations/integration/middagsro" target="_top">Ret login eller varehus</a>`);
         }
-        const todos = Object.keys(this._hass?.states || {})
-          .filter((id) => id.startsWith("todo.") && !id.includes("middagsro"))
-          .sort();
         return card(`        <h2 class="flush">I handler i ${esc(shop.name)}</h2>
         <p>${shop.prices
           ? `Madplanen bygges på ${esc(genitive(shop.name))} tilbudsavis, og alle varer har deres pris fra ${esc(shop.name)} ToGo – webshoppens priser, som ligger tæt på butikkens.`

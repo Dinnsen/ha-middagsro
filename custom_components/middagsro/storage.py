@@ -82,6 +82,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "recipe_sites": [],  # sites.SITES ids the family searches and plans from
     "recipe_sites_in_plan": False,  # offer their recipes to the AI when planning
     "ha_todo_entity": "",  # another shop than REMA: sent items also go on this to-do list
+    "quick_todo_entity": "",  # the quick "+ REMA-listen" buttons: this to-do list instead
     "no_leftover_weekdays": [],  # "0".."6" (monday..sunday): never leftovers those days
     "fixed_days": [{"weekday": 3, "kind": "rye", "text": "Rugbrødsdag"}],
     "max_cook_minutes_weekday": 30,
@@ -176,6 +177,8 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
     settings["recipe_sites_in_plan"] = bool(settings["recipe_sites_in_plan"])
     todo = str(settings.get("ha_todo_entity") or "").strip()
     settings["ha_todo_entity"] = todo if re.fullmatch(r"todo\.[a-z0-9_]+", todo) else ""
+    quick = str(settings.get("quick_todo_entity") or "").strip()
+    settings["quick_todo_entity"] = quick if re.fullmatch(r"todo\.[a-z0-9_]+", quick) else ""
     settings["max_cook_minutes_weekday"] = _clamp(settings["max_cook_minutes_weekday"], 5, 300, 30)
     settings["no_repeat_weeks"] = _clamp(settings["no_repeat_weeks"], 0, 52, 3)
     if settings["organic"] not in ORGANIC_MODES:
