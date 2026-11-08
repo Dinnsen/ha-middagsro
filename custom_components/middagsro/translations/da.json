@@ -370,6 +370,9 @@
     },
     "unknown_action": {
       "message": "Ukendt handling: {action}"
+    },
+    "leftovers_no_source": {
+      "message": "Der er ingen ret før denne dag at spise rester af."
     }
   },
   "issues": {

@@ -370,6 +370,9 @@
     },
     "unknown_action": {
       "message": "Unknown action: {action}"
+    },
+    "leftovers_no_source": {
+      "message": "There is no dinner before this day to eat the leftovers of."
     }
   },
   "issues": {

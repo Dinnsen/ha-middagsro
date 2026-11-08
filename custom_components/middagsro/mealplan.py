@@ -821,7 +821,7 @@ def build_recipe_prompt(
         )
     if day.get("makes_leftovers"):
         out.append(
-            "Lav dobbelt portion – halvdelen spises som rester dagen efter. Mængderne skal "
+            "Lav dobbelt portion – halvdelen spises som rester en anden dag. Mængderne skal "
             "dække begge dage."
         )
     allergies = [ALLERGY_DA[a] for a in s["allergies"]]

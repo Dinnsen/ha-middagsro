@@ -4,6 +4,12 @@ All notable changes to Middagsro. Versions follow `custom_components/middagsro/m
 
 ## [2.15.0b3] - 2026-11-08
 
+### Added
+- **Change any day of the plan as freely as in Ny madplan:** a day's menu now asks what the day is – *Ret*, *Restedag*, *Ingen madlavning* or *Spring over* – like *Tilpas dagene* does before the plan is made. *Ret*: three AI suggestions (optionally only vegetarian), a dish from the collection, REMA's recipes or Mealie, or one you write yourself. *Restedag*: choose which earlier day's dinner the day eats – that dinner is cooked in a double portion, its recipe and the shopping list follow, and the day's own dish and items leave the list. *Ingen madlavning*: Spiser ude, Take-away, Rugbrødsdag or your own text.
+
+### Changed
+- **A leftovers day changes on its own:** choosing a new dish for, say, Thursday's leftovers of Monday puts the dish on Thursday – Monday keeps its dish and cooks one portion. Changing Monday's dish from Thursday is still possible (*Skift … i stedet*), and the leftovers follow it. A leftovers day that is skipped or given a text lets go of its food day too.
+
 ### Fixed
 - **Nemlig.com login through the waiting room** (#67): Nemlig.com sends every new session to its Queue-it waiting room, which normally sends it straight back with a token the site exchanges for an accept cookie. Middagsro gave up at the first redirect ("Nemlig.com har kø lige nu") every time; it now follows the waiting room the way a browser does – only between nemlig.com and queue-it.net – keeps the cookie exactly as the site set it, and goes through again if a later call is sent there. Only a real queue (or a check that needs a browser) stops the login.
 - A Nemlig.com queue is shown as its own message in the login form instead of the generic "Kunne ikke få forbindelse".

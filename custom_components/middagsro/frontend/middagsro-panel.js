@@ -1091,6 +1091,7 @@ class Rema1000Panel extends HTMLElement {
           if (r) pick = { dish: r.name, source, slug: r.slug };
         }
         if (!pick) return;
+        if (m.target) return this._pickForDay(m, pick);
         this._picks[m.date] = pick;
         this._dayKinds[m.date] = { kind: "pick", text: "" };
         this._skip.delete(m.date);
@@ -1514,8 +1515,68 @@ class Rema1000Panel extends HTMLElement {
         const day = plan?.days.find((d) => d.date === date);
         if (!day) return;
         const written = day.type === "egen";
-        this._modal = { kind: "day", planId, date, dish: day.dish, written, newDish: !!day.new_dish, text: written ? day.dish : "", leftovers: !!day.uses_leftovers_from || day.type === "rester" };
+        const leftovers = !!day.uses_leftovers_from || day.type === "rester";
+        const food = leftovers ? this._foodDay(plan, day) : null;
+        const section = leftovers ? "rest" : written ? "text" : "dish";
+        this._modal = {
+          kind: "day", planId, date, dish: day.dish, written, newDish: !!day.new_dish, text: written ? day.dish : "",
+          leftovers, food: food?.date || null, source: food?.date || null, section, mode: "day", vegetarian: day.type === "vegetar",
+        };
         this._renderModal();
+      },
+      // The day's menu: what the day is (a dinner, leftovers, no cooking, skipped).
+      "day-section": () => {
+        const m = this._modal;
+        if (m?.kind !== "day" || m.busy) return;
+        Object.assign(m, { section: arg, options: null, error: null, mode: "day" });
+        this._renderModal();
+      },
+      "day-veg": () => {
+        const m = this._modal;
+        if (m?.kind !== "day" || m.busy) return;
+        m.vegetarian = !m.vegetarian;
+        this._renderModal();
+      },
+      "day-chip": () => {
+        const m = this._modal;
+        if (m?.kind !== "day" || m.busy) return;
+        m.text = arg;
+        this._renderModal();
+      },
+      "day-source-swap": () => {
+        const m = this._modal;
+        if (m?.kind !== "day" || m.busy) return;
+        m.mode = "source";
+        this._swapOptions();
+      },
+      "day-pick": () => {
+        const m = this._modal;
+        if (m?.kind !== "day" || m.busy) return;
+        this._modal = { kind: "pick", date: m.date, tab: "collection", query: "", rema: null, mealie: null, target: { planId: m.planId, date: m.date } };
+        this._renderModal();
+      },
+      "day-leftovers": () => {
+        const m = this._modal;
+        if (m?.kind !== "day" || m.busy) return;
+        const plan = this._planOf(m.planId);
+        const food = plan?.days.find((d) => d.date === m.source);
+        if (!food) return this._say("Vælg den dag, resterne er fra.");
+        if (m.dish && !m.leftovers && !m.written && !confirm(`Gør ${dateLabel(m.date).toLowerCase()} til rester af ${food.dish}? ${m.dish} og dens egne varer fjernes.`)) return;
+        m.busy = "rest";
+        this._renderModal();
+        this._ws("middagsro/day/leftovers", { plan_id: m.planId, date: m.date, source: m.source })
+          .then(async (plan) => {
+            if (!this._viewingLatest && this._plan?.id === plan.id) this._plan = plan;
+            this._modal = null;
+            this._renderModal();
+            await this._load();
+            this._say(`${dateLabel(m.date)} er rester af ${food.dish} – den laves i dobbelt portion, og indkøbslisten er rettet.`);
+          })
+          .catch((err) => {
+            m.busy = null;
+            m.error = err?.message || String(err);
+            this._renderModal();
+          });
       },
       "day-text": () => {
         const m = this._modal;
@@ -1855,6 +1916,10 @@ class Rema1000Panel extends HTMLElement {
       this._soon("pickq", () => this._renderModal());
       return;
     }
+    if (ds.bind === "daysource") {
+      if (this._modal?.kind === "day") this._modal.source = el.value;
+      return;
+    }
     if (ds.bind === "daytext") {
       if (this._modal?.kind === "day") this._modal.text = el.value;
       return;
@@ -2180,6 +2245,45 @@ class Rema1000Panel extends HTMLElement {
     this._render();
   }
 
+  // The day whose dinner a leftovers day eats.
+  _foodDay(plan, day) {
+    const days = plan?.days || [];
+    return (
+      days.find((d) => d.date === day.uses_leftovers_from) ||
+      [...days].reverse().find((d) => d.date < day.date && !d.uses_leftovers_from && !["rester", "tom", "egen"].includes(d.type) && d.dish) ||
+      null
+    );
+  }
+
+  // The days a day can eat the leftovers of: earlier days with a dinner.
+  _foodDays(plan, date) {
+    return (plan?.days || []).filter((d) => d.date < date && d.dish && !d.uses_leftovers_from && !["rester", "tom", "egen"].includes(d.type));
+  }
+
+  async _pickForDay(m, pick) {
+    const { planId, date } = m.target;
+    m.busy = true;
+    m.error = null;
+    this._renderModal();
+    try {
+      const plan =
+        pick.source === "collection"
+          ? await this._ws("middagsro/recipes/plan", { recipe_id: pick.recipe_id, plan_id: planId, date })
+          : pick.source === "rema"
+            ? await this._ws("middagsro/rema_recipes/plan", { slug: pick.slug, plan_id: planId, date })
+            : await this._ws("middagsro/swap", { plan_id: planId, date, option: { dish: pick.dish, mealie: pick.slug } });
+      if (!this._viewingLatest && this._plan?.id === plan.id) this._plan = plan;
+      this._modal = null;
+      this._renderModal();
+      await this._load();
+      this._say(`${pick.dish} er sat på ${dateLabel(date).toLowerCase()} – indkøbslisten og opskriften er lavet om.`);
+    } catch (err) {
+      m.busy = false;
+      m.error = err?.message || String(err);
+      this._renderModal();
+    }
+  }
+
   async _swapOptions() {
     const m = this._modal;
     if (!m || m.busy) return;
@@ -2187,8 +2291,10 @@ class Rema1000Panel extends HTMLElement {
     m.error = null;
     this._renderModal();
     try {
-      const result = await this._ws("middagsro/swap/options", { plan_id: m.planId, date: m.date });
-      Object.assign(m, { date: result.date, dish: result.dish, options: result.options });
+      const result = await this._ws("middagsro/swap/options", {
+        plan_id: m.planId, date: m.date, leftovers: m.mode || "day", vegetarian: !!m.vegetarian,
+      });
+      Object.assign(m, { options: result.options, optionsFor: result.dish, optionsDate: result.date });
     } catch (err) {
       m.error = err?.message || String(err);
     }
@@ -2205,7 +2311,7 @@ class Rema1000Panel extends HTMLElement {
     m.error = null;
     this._renderModal();
     try {
-      const plan = await this._ws("middagsro/swap", { plan_id: m.planId, date: m.date, option });
+      const plan = await this._ws("middagsro/swap", { plan_id: m.planId, date: m.date, option, leftovers: m.mode || "day" });
       if (!this._viewingLatest && this._plan?.id === plan.id) this._plan = plan;
       this._modal = null;
       this._renderModal();
@@ -3792,9 +3898,13 @@ class Rema1000Panel extends HTMLElement {
 
   _dayModal(m) {
     const busy = !!m.busy;
+    const dis = busy ? "disabled" : "";
+    const plan = this._planOf(m.planId);
+    const food = m.food ? plan?.days.find((d) => d.date === m.food) : null;
+    const foodName = food ? `${dateLabel(food.date).split(" ")[0].toLowerCase()}ens ${food.dish}` : "";
     const options = (m.options || [])
       .map(
-        (o, i) => `<button class="option" data-action="swap-pick" data-arg="${i}" ${busy ? "disabled" : ""}>
+        (o, i) => `<button class="option" data-action="swap-pick" data-arg="${i}" ${dis}>
           <span class="option-dish"><b>${esc(o.dish)}</b>${o.type === "vegetar" ? ' <span class="badge eco">Vegetar</span>' : ""}${o.mealie ? ' <span class="badge mealie">Mealie</span>' : ""}</span>
           ${o.why ? `<span class="muted small">${esc(o.why)}</span>` : ""}
           <span class="muted small">${o.active_minutes ? `${o.active_minutes} min aktiv` : ""}${o.total_minutes ? ` · ${o.total_minutes} min i alt` : ""}</span>
@@ -3802,64 +3912,91 @@ class Rema1000Panel extends HTMLElement {
         </button>`
       )
       .join("");
-    const body = m.options
-      ? `<p class="muted small">Vælg en ret. Indkøbslisten og opskriften bliver lavet om${m.leftovers ? ", også for resterne" : ""}.</p>
-         <div class="options">${options}</div>
-         <div class="row wrap dialog-actions">
-           <button class="btn" data-action="swap-options" ${busy ? "disabled" : ""}>
-             ${m.busy === "options" ? '<span class="spinner small"></span> Finder andre retter …' : aiLabel("Tre nye forslag")}</button>
-           <span class="spacer"></span>
-           <button class="btn" data-action="modal-close" ${busy ? "disabled" : ""}>Annullér</button>
-         </div>`
-      : `${m.newDish ? `<div class="banner warn small"><div>En ny ret, der ikke var blandt ugens opskrifter. Godkend den, så kommer den i opskriftsamlingen, og listen kan sendes – eller skift den ud.</div>
-           <div class="row wrap"><button class="btn primary small" data-action="day-approve" ${busy ? "disabled" : ""}>Godkend retten</button></div></div>` : ""}
-         ${m.leftovers ? '<p class="muted small">Det er rester – skifter du, skiftes retten, de er rester af.</p>' : ""}
-         <div class="row wrap dialog-actions">
-           ${m.dish && !m.written ? `<button class="btn" data-action="day-recipe" ${busy ? "disabled" : ""}>Se opskriften</button>` : ""}
-           ${this._mealieButton(m.planId, m.date)}
-           <button class="btn primary" data-action="swap-options" ${busy ? "disabled" : ""}>
-             ${m.busy === "options" ? '<span class="spinner small"></span> Finder retter …' : aiLabel(m.dish ? "Skift retten – tre forslag" : "Find en ret – tre forslag")}</button>
-           ${this._isRema() ? `<button class="btn" data-action="day-rema" ${busy ? "disabled" : ""}>Vælg en REMA-opskrift</button>` : ""}
-         </div>
-         <label class="field">Skriv selv
-           <input type="text" data-bind="daytext" value="${esc(m.text || "")}" maxlength="120" placeholder="Fx Tacos – eller Spiser ude, Skolefest" enterkeyhint="done"></label>
-         <div class="row wrap">
-           <button class="btn" data-action="day-own-dish" ${busy ? "disabled" : ""} title="AI'en skriver rettens varer på indkøbslisten og laver opskriften">${m.busy === "own" ? '<span class="spinner small"></span> Finder varer …' : aiLabel("Køb ind til retten")}</button>
-           <button class="btn" data-action="day-text" ${busy ? "disabled" : ""} title="Ingen madlavning den dag – der købes ikke ind">${m.written ? "Ret teksten" : "Ingen madlavning"}</button>
-         </div>
-         <p class="muted small">Køb ind til retten: en ret, I selv vælger. Ingen madlavning: Spiser ude, take-away og lignende.</p>
-         <div class="row wrap dialog-actions">
-           ${m.dish ? `<button class="btn danger" data-action="day-clear" data-arg="delete" ${busy ? "disabled" : ""}>${m.written ? "Fjern teksten" : "Slet retten"}</button>` : ""}
-           <button class="btn danger" data-action="day-clear" data-arg="skip" ${busy ? "disabled" : ""}>Spring dagen over</button>
-           <span class="spacer"></span>
-           <button class="btn" data-action="modal-close" ${busy ? "disabled" : ""}>Luk</button>
-         </div>`;
+    if (m.options) {
+      const forFood = m.mode === "source" && food;
+      return `
+      <div class="scrim" data-action="modal-close"></div>
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="day-title">
+        <h2 id="day-title">${forFood ? `Ny ret ${esc(dateLabel(food.date).toLowerCase())}` : `Ret til ${esc(dateLabel(m.date).toLowerCase())}`}</h2>
+        <p class="muted small">${forFood ? `Erstatter ${esc(food.dish)} – resterne ${esc(dateLabel(m.date).toLowerCase())} følger med.` : m.leftovers ? `Laves ${esc(dateLabel(m.date).toLowerCase())} i stedet for resterne.` : "Vælg en ret. Indkøbslisten og opskriften bliver lavet om."}</p>
+        ${m.error ? `<div class="banner error">${esc(m.error)}</div>` : ""}
+        <div class="options">${options}</div>
+        <div class="row wrap dialog-actions">
+          <button class="btn" data-action="swap-options" ${dis}>
+            ${m.busy === "options" ? '<span class="spinner small"></span> Finder andre retter …' : aiLabel("Tre nye forslag")}</button>
+          <span class="spacer"></span>
+          <button class="btn" data-action="day-section" data-arg="dish" ${dis}>Tilbage</button>
+        </div>
+      </div>`;
+    }
+    const sections = [["dish", "Ret"], ["rest", "Restedag"], ["text", "Ingen madlavning"], ["skip", "Spring over"]];
+    const seg = `<div class="seg fit day-kinds" role="tablist" aria-label="Hvad er dagen">${sections
+      .map(([k, l]) => `<button role="tab" class="${m.section === k ? "active" : ""}" aria-selected="${m.section === k}" data-action="day-section" data-arg="${k}" ${dis}>${l}</button>`)
+      .join("")}</div>`;
+    let body = "";
+    if (m.section === "dish") {
+      body = `${m.leftovers && food ? `<div class="banner info small"><div>Dagen er rester af ${esc(foodName)}. Vælger du en ret her, laves den ${esc(dateLabel(m.date).toLowerCase())}, og ${esc(food.dish)} laves i én portion.
+          <div class="row wrap"><button class="btn small" data-action="day-source-swap" ${dis}>${m.busy === "options" && m.mode === "source" ? '<span class="spinner small"></span> Finder retter …' : `Skift ${esc(food.dish)} i stedet`}</button></div></div></div>` : ""}
+        ${m.newDish ? `<div class="banner warn small"><div>En ny ret, der ikke var blandt ugens opskrifter. Godkend den, så kommer den i opskriftsamlingen, og listen kan sendes – eller skift den ud.
+          <div class="row wrap"><button class="btn primary small" data-action="day-approve" ${dis}>Godkend retten</button></div></div></div>` : ""}
+        <div class="row wrap">
+          <button class="btn primary" data-action="swap-options" ${dis}>
+            ${m.busy === "options" && m.mode !== "source" ? '<span class="spinner small"></span> Finder retter …' : aiLabel(m.dish && !m.leftovers && !m.written ? "Skift retten – tre forslag" : "Find en ret – tre forslag")}</button>
+          <button class="btn" data-action="day-pick" ${dis}>Vælg i opskrifter</button>
+        </div>
+        <label class="check"><input type="checkbox" data-action="day-veg" ${m.vegetarian ? "checked" : ""} ${dis}> Kun vegetarretter</label>
+        <label class="field">Skriv selv en ret
+          <input type="text" data-bind="daytext" value="${esc(m.written ? "" : m.text || "")}" maxlength="120" placeholder="Fx Tacos" enterkeyhint="done"></label>
+        <div class="row wrap">
+          <button class="btn" data-action="day-own-dish" ${dis} title="AI'en skriver rettens varer på indkøbslisten og laver opskriften">${m.busy === "own" ? '<span class="spinner small"></span> Finder varer …' : aiLabel("Køb ind til retten")}</button>
+        </div>
+        ${m.dish && !m.written && !m.leftovers ? `<div class="row wrap dialog-actions">
+          <button class="btn" data-action="day-recipe" ${dis}>Se opskriften</button>
+          ${this._mealieButton(m.planId, m.date)}
+          <span class="spacer"></span>
+          <button class="btn danger" data-action="day-clear" data-arg="delete" ${dis}>Slet retten</button></div>` : ""}`;
+    } else if (m.section === "rest") {
+      const foods = this._foodDays(plan, m.date);
+      body = foods.length
+        ? `<p class="muted small">Dagen spiser resten af en tidligere ret. Den ret laves i dobbelt portion – opskriften og indkøbslisten bliver rettet${m.dish && !m.leftovers && !m.written ? `, og ${esc(m.dish)} med dens egne varer fjernes` : ""}.</p>
+          <label class="field">Rester af
+            <select data-bind="daysource">${foods
+              .map((d) => `<option value="${esc(d.date)}" ${d.date === (m.source || foods[foods.length - 1].date) ? "selected" : ""}>${esc(dateLabel(d.date))}: ${esc(d.dish)}</option>`)
+              .join("")}</select></label>
+          <div class="row wrap dialog-actions">
+            ${m.leftovers ? `<button class="btn" data-action="day-recipe" ${dis}>Se opskriften</button>` : ""}
+            <span class="spacer"></span>
+            <button class="btn primary" data-action="day-leftovers" ${dis}>${m.busy === "rest" ? '<span class="spinner small"></span> Retter madplanen …' : m.leftovers ? "Gem" : "Gør til restedag"}</button>
+          </div>`
+        : '<p class="muted">Der er ingen ret før denne dag at spise rester af. Flyt dagen, eller vælg en ret til en tidligere dag først.</p>';
+    } else if (m.section === "text") {
+      const chips = ["Spiser ude", "Take-away", "Rugbrødsdag", "Skolefest"]
+        .map((t) => `<button class="chip ${m.text === t ? "active" : ""}" data-action="day-chip" data-arg="${esc(t)}" ${dis}>${esc(t)}</button>`)
+        .join("");
+      body = `<p class="muted small">Der laves ingen aftensmad, og der købes ikke ind til dagen${m.dish && !m.written && !m.leftovers ? ` – ${esc(m.dish)} og dens egne varer fjernes` : ""}.</p>
+        <div class="row wrap chips">${chips}</div>
+        <label class="field">Hvad sker der
+          <input type="text" data-bind="daytext" value="${esc(m.text || "")}" maxlength="120" placeholder="Fx Spiser ude" enterkeyhint="done"></label>
+        <div class="row wrap dialog-actions">
+          ${m.written ? `<button class="btn danger" data-action="day-clear" data-arg="delete" ${dis}>Fjern teksten</button>` : ""}
+          <span class="spacer"></span>
+          <button class="btn primary" data-action="day-text" ${dis}>${m.written ? "Gem teksten" : "Ingen madlavning"}</button>
+        </div>`;
+    } else {
+      body = `<p class="muted small">Dagen tages ud af madplanen: ingen aftensmad, og ${m.dish && !m.written && !m.leftovers ? `${esc(m.dish)}s egne varer fjernes fra indkøbslisten` : "der købes ikke ind til den"}. Du kan tage den tilbage under madplanen.</p>
+        <div class="row wrap dialog-actions"><span class="spacer"></span>
+          <button class="btn danger" data-action="day-clear" data-arg="skip" ${dis}>Spring dagen over</button></div>`;
+    }
     return `
       <div class="scrim" data-action="modal-close"></div>
       <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="day-title">
-        <h2 id="day-title">${esc(m.dish || "Ingen ret")}</h2>
-        <p class="muted">${esc(dateLabel(m.date))}</p>
+        <div class="dialog-top"><div><h2 id="day-title">${esc(m.dish || "Ingen ret")}</h2>
+          <p class="muted">${esc(dateLabel(m.date))}</p></div>
+          <button class="icon-btn close" data-action="modal-close" aria-label="Luk" ${dis}>${CLOSE_ICON}</button></div>
         ${m.error ? `<div class="banner error">${esc(m.error)}</div>` : ""}
+        ${seg}
         ${body}
       </div>`;
-  }
-
-  // Choose the dish for a day of the next plan: the collection, REMA's recipes or Mealie.
-  async _pickLoad(source) {
-    const m = this._modal;
-    if (m?.kind !== "pick") return;
-    m[source] = { loading: true, recipes: m[source]?.recipes || [] };
-    this._renderModal();
-    try {
-      const data =
-        source === "rema"
-          ? await this._ws("middagsro/rema_recipes/list", m.query.trim() ? { query: m.query.trim() } : {})
-          : await this._ws("middagsro/mealie/recipes");
-      if (this._modal === m) m[source] = { loading: false, recipes: data.recipes || [] };
-    } catch (err) {
-      if (this._modal === m) m[source] = { loading: false, recipes: [], error: err?.message || String(err) };
-    }
-    if (this._modal === m) this._renderModal();
   }
 
   _pickModal(m) {
@@ -3867,7 +4004,7 @@ class Rema1000Panel extends HTMLElement {
     const tabs = [["collection", '<span class="wide">Opskriftsamling</span><span class="narrow">Samling</span>']];
     if (this._isRema()) tabs.push(["rema", 'REMA<span class="wide">-opskrifter</span>']);
     if (this._state.mealie?.available) tabs.push(["mealie", "Mealie"]);
-    if ((this._state.settings.recipe_sites || []).length) tabs.push(["sites", "Madsider"]);
+    if ((this._state.settings.recipe_sites || []).length && !m.target) tabs.push(["sites", "Madsider"]);
     const row = (source, id, name, meta) => `<li class="pick-row"><div class="what"><b>${esc(name)}</b>${meta ? `<span class="muted small">${esc(meta)}</span>` : ""}</div>
       <button class="btn small primary" data-action="pick-choose" data-arg="${source}|${esc(id)}">Vælg</button></li>`;
     let body = "";
@@ -3916,8 +4053,9 @@ class Rema1000Panel extends HTMLElement {
           <input class="grow" type="search" data-bind="pickq" value="${esc(m.query)}" placeholder="${m.tab === "rema" ? "Søg i REMA's opskrifter" : m.tab === "sites" ? "Søg på madsiderne" : "Søg"}">
           ${m.tab === "rema" || m.tab === "sites" ? `<button class="btn" data-action="pick-search">Søg</button>` : ""}
         </div>
-        <p class="muted small">Madplanen bygges omkring den valgte ret, og dens varer kommer på indkøbslisten.</p>
-        ${body}
+        <p class="muted small">${m.target ? "Retten sættes på dagen, dens varer kommer på indkøbslisten, og opskriften følger med." : "Madplanen bygges omkring den valgte ret, og dens varer kommer på indkøbslisten."}</p>
+        ${m.error ? `<div class="banner error">${esc(m.error)}</div>` : ""}
+        ${m.busy ? '<p class="muted"><span class="spinner small"></span> Sætter retten på og finder varerne …</p>' : body}
         <div class="dialog-bottom"><button class="btn" data-action="modal-close">Luk</button></div>
       </div>`;
   }
@@ -5986,6 +6124,9 @@ const STYLE = `
   .dialog-top, .dialog-bottom { position: sticky; z-index: 1; background: var(--rema-solid-card); display: flex; align-items: center; gap: 8px; }
   .dialog-top { top: 0; padding: 14px 0 8px; margin-bottom: 4px; }
   .dialog-top h2 { margin: 0; flex: 1; font-size: 1.15rem; overflow-wrap: anywhere; }
+  .dialog-top > div { flex: 1; min-width: 0; }
+  .dialog-top > div p { margin: 2px 0 0; }
+  .day-kinds { margin: 4px 0 12px; }
   .dialog-top .close { width: 36px; height: 36px; background: var(--secondary-background-color); }
   .dialog-bottom { bottom: 0; justify-content: flex-end; padding: 10px 0 14px; margin-top: 8px; border-top: 1px solid var(--divider-color); }
   .cheaper { justify-self: start; width: fit-content; }

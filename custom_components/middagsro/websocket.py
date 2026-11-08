@@ -58,6 +58,7 @@ from .planedit import (
     async_restore_day,
     async_review_line,
     async_set_day_text,
+    async_set_leftovers,
     async_swap_dish,
     async_swap_options,
     cooked_day,
@@ -784,6 +785,9 @@ async def ws_list_clear(
         ENTRY: str,
         vol.Required("plan_id"): str,
         vol.Required("date"): str,
+        # A leftovers day: a dish for that day ("day"), or for the day it is from.
+        vol.Optional("leftovers", default="day"): vol.In(["day", "source"]),
+        vol.Optional("vegetarian", default=False): bool,
     }
 )
 @websocket_api.async_response
@@ -793,7 +797,9 @@ async def ws_swap_options(
 ) -> None:
     """Three other dishes the AI suggests for a day."""
     planner = _entry(hass, msg).runtime_data.planner
-    result = await async_swap_options(planner, msg["plan_id"], msg["date"])
+    result = await async_swap_options(
+        planner, msg["plan_id"], msg["date"], msg["leftovers"], msg["vegetarian"]
+    )
     connection.send_result(msg["id"], result)
 
 
@@ -804,6 +810,7 @@ async def ws_swap_options(
         vol.Required("plan_id"): str,
         vol.Required("date"): str,
         vol.Required("option"): dict,
+        vol.Optional("leftovers", default="day"): vol.In(["day", "source"]),
     }
 )
 @websocket_api.async_response
@@ -813,7 +820,9 @@ async def ws_swap(
 ) -> None:
     """Put the chosen dish on the day, with its shopping and recipe."""
     planner = _entry(hass, msg).runtime_data.planner
-    plan = await async_swap_dish(planner, msg["plan_id"], msg["date"], msg["option"])
+    plan = await async_swap_dish(
+        planner, msg["plan_id"], msg["date"], msg["option"], msg["leftovers"]
+    )
     connection.send_result(msg["id"], plan)
 
 
@@ -1026,6 +1035,26 @@ async def ws_day_text(
     """Write a day by hand ("Spiser ude", "Skolefest")."""
     planner = _entry(hass, msg).runtime_data.planner
     plan = await async_set_day_text(planner, msg["plan_id"], msg["date"], msg["text"])
+    connection.send_result(msg["id"], plan)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/day/leftovers",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("date"): str,
+        vol.Optional("source"): vol.Any(str, None),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_day_leftovers(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Make a day a leftovers day (of the day ``source``, or the nearest before)."""
+    planner = _entry(hass, msg).runtime_data.planner
+    plan = await async_set_leftovers(planner, msg["plan_id"], msg["date"], msg.get("source"))
     connection.send_result(msg["id"], plan)
 
 
@@ -1982,6 +2011,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_day_restore,
         ws_day_approve,
         ws_day_text,
+        ws_day_leftovers,
         ws_day_move,
         ws_recipe_scan,
         ws_sites_search,
