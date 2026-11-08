@@ -2,6 +2,11 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.16.0b2] - 2026-11-08
+
+### Fixed
+- *Læg overskud i spisekammeret* names an item by the ingredient ("piskefløde"), not the product ("PISKEFLØDE 36%"), so the next plans' recipes find it.
+
 ## [2.16.0b1] - 2026-11-08
 
 ### Added

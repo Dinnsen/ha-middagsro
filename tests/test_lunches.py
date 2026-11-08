@@ -348,11 +348,14 @@ def test_surplus_of_a_plan() -> None:
              "product": {"underline": "1 LTR."}},
             {"name": "Æg", "search": "æg", "amount": 2, "unit": "stk", "packages": 1,
              "product": {"underline": "10 STK."}},
+            {"name": "Piskefløde", "search": "PISKEFLØDE 36%", "key": "piskefløde",
+             "amount": 320, "unit": "ml", "packages": 2, "product": {"underline": "0.25 LTR."}},
         ]
     }  # fmt: skip
     assert surplus(plan) == [
         {"name": "basmati ris", "amount": 820.0, "unit": "g"},
         {"name": "æg", "amount": 8.0, "unit": "stk"},
+        {"name": "piskefløde", "amount": 180.0, "unit": "ml"},
     ]
     assert surplus({}) == []
 

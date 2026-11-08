@@ -373,7 +373,9 @@ def surplus(plan: dict[str, Any]) -> list[dict[str, Any]]:
         left = int(line.get("packages") or 1) * size[1] - need
         if left < max(1.0, size[1] * 0.05):
             continue  # what is left of a package is too little to keep track of
-        name = ingredient_name(str(line.get("search") or line["name"]))
+        # The catalogue's word for it ("piskefløde"), so recipes find it, not the
+        # product's name ("PISKEFLØDE 36%").
+        name = ingredient_name(str(line.get("key") or line.get("search") or line["name"]))
         if not name or is_tap_water(name):
             continue
         key = (ingredient_key(name), size[0])
