@@ -1256,8 +1256,8 @@ def fit_amounts(plan: dict[str, Any], lower: bool = False) -> list[str]:
         for day in plan.get("days") or []:
             if not is_cooked(day):
                 continue
-            if "uses" in day and line["name"].lower() not in {
-                str(name).lower() for name in day.get("uses") or []
+            if day.get("uses") and line["name"].lower() not in {
+                str(name).lower() for name in day["uses"]
             }:
                 continue  # the dish says what it uses, and this isn't it
             for ingredient in day.get("ingredients") or []:
