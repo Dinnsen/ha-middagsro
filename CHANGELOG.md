@@ -2,6 +2,26 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.15.0] - 2026-11-08
+
+Everything from the betas 2.15.0b1 to 2.15.0b7 (the sections below), tested on a real household's plans.
+
+### Added
+- **Nemlig.com as your shop** (#67): offers, your Nemlig prices and products, and the shopping list sent to your basket on nemlig.com. Login goes through Nemlig's Queue-it waiting room the way a browser does; a real queue is shown as its own message. Middagsro never chooses a delivery time and never orders.
+- **Change any day of the plan as freely as in Ny madplan:** a day's menu asks what the day is – *Ret*, *Restedag*, *Ingen madlavning* or *Spring over*. A dish can be an AI suggestion (optionally vegetarian), from the collection, REMA's recipes or Mealie, or written yourself – with *Køb ind til retten* (#70).
+- **The quick + REMA-listen buttons can go to another to-do list** (#45).
+- From PR #69 by @nagels: delete freezer plans, *Spisekammer* with shared ingredient quantities, switching shop from the panel, and customisable navigation and phone shortcuts.
+
+### Changed
+- **A leftovers day changes on its own:** a new dish on Thursday's leftovers day goes on Thursday, and Monday keeps its dish.
+- **Skipped days stay in the plan**, grey and marked *Springes over*, and can be changed back.
+
+### Fixed
+- **The shopping list follows the plan when days are changed by hand:** items no dinner uses leave the list, items named differently are matched to their line, missing items are added, and amounts follow the recipes – down as well as up, unless you set the amount yourself or it can't be counted.
+- Items bought in another chain are counted in that chain's package; baking potatoes and chicken breasts weigh what they do.
+- Turning the phone sideways and back no longer leaves the panel zoomed in with large text.
+- The REMA and Mealie pickers in a day's menu, the day menu's choices on a phone, and *Gør til restedag*.
+
 ## [2.15.0b7] - 2026-11-08
 
 ### Fixed
