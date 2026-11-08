@@ -1524,12 +1524,28 @@ class Rema1000Panel extends HTMLElement {
         };
         this._renderModal();
       },
+      "day-menu-skipped": () => {
+        const [planId, date] = String(arg).split("|");
+        this._modal = { kind: "day", planId, date, dish: "", skipped: true, section: "skip", mode: "day", text: "", vegetarian: false };
+        this._renderModal();
+      },
       // The day's menu: what the day is (a dinner, leftovers, no cooking, skipped).
       "day-section": () => {
         const m = this._modal;
         if (m?.kind !== "day" || m.busy) return;
         Object.assign(m, { section: arg, options: null, error: null, mode: "day" });
+        if (arg === "rest" && !m.source) {
+          const foods = this._foodDays(this._planOf(m.planId), m.date);
+          m.source = foods.length ? foods[foods.length - 1].date : null;
+        }
+        // A skipped day is taken back first: then it can be anything.
+        if (m.skipped && arg !== "skip") return this._dayBack(m, arg);
         this._renderModal();
+      },
+      "day-back": () => {
+        const m = this._modal;
+        if (m?.kind !== "day" || m.busy) return;
+        this._dayBack(m, null);
       },
       "day-veg": () => {
         const m = this._modal;
@@ -1559,8 +1575,13 @@ class Rema1000Panel extends HTMLElement {
         const m = this._modal;
         if (m?.kind !== "day" || m.busy) return;
         const plan = this._planOf(m.planId);
+        const foods = this._foodDays(plan, m.date);
+        if (!m.source && foods.length) m.source = foods[foods.length - 1].date;
         const food = plan?.days.find((d) => d.date === m.source);
-        if (!food) return this._say("Vælg den dag, resterne er fra.");
+        if (!food) {
+          m.error = "Vælg den dag, resterne er fra.";
+          return this._renderModal();
+        }
         if (m.dish && !m.leftovers && !m.written && !confirm(`Gør ${dateLabel(m.date).toLowerCase()} til rester af ${food.dish}? ${m.dish} og dens egne varer fjernes.`)) return;
         m.busy = "rest";
         this._renderModal();
@@ -2243,6 +2264,35 @@ class Rema1000Panel extends HTMLElement {
     if (this._hasPrices() && !search.results.length && !search.offers.length) this._say(`Ingen varer fundet for "${query}".`);
     search.loading = false;
     this._render();
+  }
+
+  // Take a skipped day back into the plan; then open its menu at a section (or close).
+  async _dayBack(m, section) {
+    m.busy = "back";
+    m.error = null;
+    this._renderModal();
+    try {
+      const plan = await this._ws("middagsro/day/restore", { plan_id: m.planId, date: m.date });
+      if (!this._viewingLatest && this._plan?.id === plan.id) this._plan = plan;
+      await this._load();
+      if (!section) {
+        this._modal = null;
+        this._renderModal();
+        return this._say(`${dateLabel(m.date)} er tilbage i madplanen.`);
+      }
+      const day = this._planOf(m.planId)?.days.find((d) => d.date === m.date);
+      const leftovers = !!day?.uses_leftovers_from || day?.type === "rester";
+      const foods = this._foodDays(this._planOf(m.planId), m.date);
+      Object.assign(m, {
+        busy: null, skipped: false, section, dish: day?.dish || "", written: day?.type === "egen", leftovers,
+        food: leftovers ? day.uses_leftovers_from : null,
+        source: (leftovers && day.uses_leftovers_from) || (foods.length ? foods[foods.length - 1].date : null),
+      });
+    } catch (err) {
+      m.busy = null;
+      m.error = err?.message || String(err);
+    }
+    this._renderModal();
   }
 
   // The day whose dinner a leftovers day eats.
@@ -3982,6 +4032,10 @@ class Rema1000Panel extends HTMLElement {
           <span class="spacer"></span>
           <button class="btn primary" data-action="day-text" ${dis}>${m.written ? "Gem teksten" : "Ingen madlavning"}</button>
         </div>`;
+    } else if (m.skipped) {
+      body = `<p class="muted small">Dagen springes over: ingen aftensmad, og der købes ikke ind til den. Vælg en af de andre muligheder ovenfor, eller tag dagen tilbage, som den var.</p>
+        <div class="row wrap dialog-actions"><span class="spacer"></span>
+          <button class="btn primary" data-action="day-back" ${dis}>${m.busy === "back" ? '<span class="spinner small"></span> Tager dagen tilbage …' : "Tag dagen tilbage"}</button></div>`;
     } else {
       body = `<p class="muted small">Dagen tages ud af madplanen: ingen aftensmad, og ${m.dish && !m.written && !m.leftovers ? `${esc(m.dish)}s egne varer fjernes fra indkøbslisten` : "der købes ikke ind til den"}. Du kan tage den tilbage under madplanen.</p>
         <div class="row wrap dialog-actions"><span class="spacer"></span>
@@ -3990,12 +4044,12 @@ class Rema1000Panel extends HTMLElement {
     return `
       <div class="scrim" data-action="modal-close"></div>
       <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="day-title">
-        <div class="dialog-top"><div><h2 id="day-title">${esc(m.dish || "Ingen ret")}</h2>
+        <div class="dialog-top"><div><h2 id="day-title">${esc(m.skipped ? "Springes over" : m.dish || "Ingen ret")}</h2>
           <p class="muted">${esc(dateLabel(m.date))}</p></div>
           <button class="icon-btn close" data-action="modal-close" aria-label="Luk" ${dis}>${CLOSE_ICON}</button></div>
         ${m.error ? `<div class="banner error">${esc(m.error)}</div>` : ""}
         ${seg}
-        ${body}
+        ${m.busy === "back" && m.section !== "skip" ? '<p class="muted"><span class="spinner small"></span> Tager dagen tilbage …</p>' : body}
       </div>`;
   }
 
@@ -4359,6 +4413,12 @@ class Rema1000Panel extends HTMLElement {
           <span class="meta">${day.total_minutes ? `${day.total_minutes} min` : ""}${type ? ` <span class="badge">${esc(type)}</span>` : ""}${day.mealie ? ' <span class="badge mealie">Mealie</span>' : ""}${day.new_dish ? ' <span class="badge doubt">Ny ret – godkend</span>' : ""}${owner.surprise ? ' <span class="badge surprise">Overraskelse</span>' : ""}</span>
         </button><span class="day-tools">${this._rateButtons(owner, day)}${this._moveButtons(owner, day, past)}</span></div>`;
     };
+    // A skipped day stays in the list, grey: tap it to take it back or make it something else.
+    const skippedRow = (planId, date) => `<div class="day-row skipped-day ${date < today ? "past" : ""}"><button class="day" data-action="day-menu-skipped" data-arg="${esc(planId)}|${date}">
+          <span class="date">${esc(dateLabel(date))}</span>
+          <span class="dish muted">Springes over – tryk for at ændre</span>
+          <span class="meta"><span class="badge">Springes over</span></span>
+        </button><span class="day-tools"></span></div>`;
     // The newest plan decides each date; this week and the coming days show as one plan.
     const timeline = this._timeline();
     let title = plan.title;
@@ -4370,7 +4430,7 @@ class Rema1000Panel extends HTMLElement {
     if (timeline) {
       const weeks = [...new Set(timeline.map((e) => e.week))];
       title = weeks.length > 1 ? `Madplan uge ${weeks[0]}–${weeks[weeks.length - 1]}` : `Madplan uge ${weeks[0]}`;
-      const shown = timeline.filter((e) => e.day);
+      const shown = timeline.filter((e) => e.day || e.skipped);
       period = shown.length ? `${dateLabel(shown[0].date)} – ${dateLabel(shown[shown.length - 1].date)}` : period;
       skipped = timeline.filter((e) => e.skipped && e.date >= today).map((e) => ({ planId: e.plan.id, date: e.date }));
       avis = "";
@@ -4381,11 +4441,17 @@ class Rema1000Panel extends HTMLElement {
         .map((e) => {
           const head = weeks.length > 1 && e.week !== week ? `<h3 class="week-head">Uge ${esc(e.week)}</h3>` : "";
           week = e.week;
-          return head + dayRow(e.plan, e.day);
+          return head + (e.day ? dayRow(e.plan, e.day) : skippedRow(e.plan.id, e.date));
         })
         .join("");
     } else {
-      days = plan.days.map((day) => dayRow(plan, day)).join("");
+      days = [
+        ...plan.days.map((day) => ({ date: day.date, html: dayRow(plan, day) })),
+        ...(plan.skipped || []).map((date) => ({ date, html: skippedRow(plan.id, date) })),
+      ]
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .map((d) => d.html)
+        .join("");
     }
     const checklist = (plan.checklist || [])
       .map((c) => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.requirement)}</li>`)
@@ -4399,7 +4465,7 @@ class Rema1000Panel extends HTMLElement {
         <div class="row between wrap">
           <div>
             <h1 class="plan-title">${esc(title)} <button class="help-q" data-action="plan-help" aria-expanded="${this._planHelp ? "true" : "false"}" aria-label="Hjælp" title="Hjælp">?</button></h1>
-            <p class="muted">${esc(period)}${esc(avis)}${skipped.length ? `<br>Springes over: ${skipped.map((d) => `<button class="link" data-action="day-restore" data-arg="${esc(d.planId)}|${esc(d.date)}" title="Tag dagen tilbage i madplanen">${esc(dateLabel(d.date))}</button>`).join(", ")} <span class="small">(tryk for at tage dagen tilbage)</span>` : ""}</p>
+            <p class="muted">${esc(period)}${esc(avis)}</p>
           </div>
           <div class="price ${over ? "over" : ""}">
             <span class="big">${kr(plan.total)}</span>
@@ -6143,6 +6209,7 @@ const STYLE = `
   .dialog-top { top: 0; padding: 14px 0 8px; margin-bottom: 4px; }
   .dialog-top h2 { margin: 0; flex: 1; font-size: 1.15rem; overflow-wrap: anywhere; }
   .dialog-top > div { flex: 1; min-width: 0; }
+  .day-row.skipped-day .day { opacity: 0.6; background: var(--rema-subtle); }
   .dialog-top > div p { margin: 2px 0 0; }
   /* What a day is: four equal choices, two by two on a phone, labels never on top of each other. */
   .dialog .seg.fit.day-kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;

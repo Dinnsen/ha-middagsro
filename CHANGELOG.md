@@ -2,6 +2,14 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.15.0b5] - 2026-11-08
+
+### Changed
+- **Skipped days stay in the plan**, grey and marked *Springes over* – also the days skipped under *Tilpas dagene* when the plan was made. Tap one to take it back as it was, or to make it a dinner, a leftovers day or a day without cooking right away.
+
+### Fixed
+- *Gør til restedag* did nothing until another day was chosen in the list: the nearest earlier dinner is now chosen from the start.
+
 ## [2.15.0b4] - 2026-11-08
 
 ### Fixed
