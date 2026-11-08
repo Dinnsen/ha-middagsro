@@ -345,6 +345,16 @@ def test_fit_amounts_lowers_after_a_change() -> None:
     assert second["packages"] == 2  # not used by the dish: its own amount
     first["packages"], first["packages_set"] = 4, True
     assert mp.fit_amounts(plan, lower=True) == []
+    # "2 stk" of something sold by weight with no weight per piece: never lowered.
+    beef = {
+        "days": [{"date": "2026-11-10", "dish": "Bøffer", "type": "normal", "uses": ["Oksekød"],
+                  "ingredients": [{"name": "oksekød", "amount": "400 g"},
+                                  {"name": "oksekød", "amount": "2 stk"}]}],
+        "shopping": [{"name": "Oksekød", "amount": 1, "unit": "kg", "packages": 3,
+                      "product": {"id": 3, "name": "OKSEKØD", "underline": "500 GR.", "price": 40}}],
+    }  # fmt: skip
+    assert mp.fit_amounts(beef, lower=True) == []
+    assert beef["shopping"][0]["packages"] == 3
     assert mp.chain_size({"chain_heading": "Mælk"}) is None
     assert mp.chain_size({"chain_heading": "Mælk", "amount": 2, "unit": "l"}) == ("ml", 2000)
 

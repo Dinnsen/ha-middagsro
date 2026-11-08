@@ -347,7 +347,7 @@ _ENTRIES: tuple[Entry, ...] = (
     _e("kødboller", (MEAT, READY), "frikadeller", "medister", "medisterpølse"),
     # --- poultry
     _e("kyllingebryst", POULTRY, "kyllingebrystfilet", "kyllingefilet", "kyllingebryster", "kyllingebryst i tern", "kyllingebryst i strimler",
-       not_words=("pålæg", "nudler", "cup", "salat", "sandwich", "wrap", "bouillon", "pulver", "pølse", "suppe", "barbecue", "bbq", "marineret", "stegt", "honning")),
+       piece_g=150, not_words=("pålæg", "nudler", "cup", "salat", "sandwich", "wrap", "bouillon", "pulver", "pølse", "suppe", "barbecue", "bbq", "marineret", "stegt", "honning")),
     _e("kyllingelår", POULTRY, "kyllingeoverlår", "kyllingeunderlår", "kyllinge lår", "hele kyllingelår", piece_g=250,
        not_words=("barbecue", "bbq", "marineret", "pålæg", "ovnklar", "krydret", "krydrede")),
     _e("hel kylling", POULTRY, "kylling hel", "kylling", piece_g=1200,

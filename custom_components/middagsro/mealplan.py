@@ -1296,7 +1296,10 @@ def fit_amounts(plan: dict[str, Any], lower: bool = False) -> list[str]:
         else:
             continue
         wanted = min(wanted, packages * 4)
-        if lower and wanted < packages and not line.get("packages_set"):
+        # Lowered only when every amount the dishes use was counted ("7 stk" of
+        # something sold by weight, with no weight per piece, was not).
+        counted = size is not None and set(needs) <= {size[0]}
+        if lower and counted and wanted < packages and not line.get("packages_set"):
             wanted = max(1, wanted)
         elif wanted <= packages:
             continue

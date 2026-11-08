@@ -2,6 +2,12 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.15.0b7] - 2026-11-08
+
+### Fixed
+- An amount the shopping list can't count in the package's unit ("7 stk" chicken breasts against packages sold by weight) no longer makes the list buy less: the amount is only lowered when every dish's amount could be counted.
+- Chicken breasts weigh about 150 g each, so "7 stk kyllingebryst" is counted as about 1 kg.
+
 ## [2.15.0b6] - 2026-11-08
 
 ### Fixed
