@@ -3999,6 +3999,24 @@ class Rema1000Panel extends HTMLElement {
       </div>`;
   }
 
+  // Choose the dish for a day of the next plan: the collection, REMA's recipes or Mealie.
+  async _pickLoad(source) {
+    const m = this._modal;
+    if (m?.kind !== "pick") return;
+    m[source] = { loading: true, recipes: m[source]?.recipes || [] };
+    this._renderModal();
+    try {
+      const data =
+        source === "rema"
+          ? await this._ws("middagsro/rema_recipes/list", m.query.trim() ? { query: m.query.trim() } : {})
+          : await this._ws("middagsro/mealie/recipes");
+      if (this._modal === m) m[source] = { loading: false, recipes: data.recipes || [] };
+    } catch (err) {
+      if (this._modal === m) m[source] = { loading: false, recipes: [], error: err?.message || String(err) };
+    }
+    if (this._modal === m) this._renderModal();
+  }
+
   _pickModal(m) {
     const query = m.query.trim().toLowerCase();
     const tabs = [["collection", '<span class="wide">Opskriftsamling</span><span class="narrow">Samling</span>']];
@@ -6126,7 +6144,14 @@ const STYLE = `
   .dialog-top h2 { margin: 0; flex: 1; font-size: 1.15rem; overflow-wrap: anywhere; }
   .dialog-top > div { flex: 1; min-width: 0; }
   .dialog-top > div p { margin: 2px 0 0; }
-  .day-kinds { margin: 4px 0 12px; }
+  /* What a day is: four equal choices, two by two on a phone, labels never on top of each other. */
+  .dialog .seg.fit.day-kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
+    width: 100%; max-width: 100%; box-sizing: border-box; margin: 4px 0 12px; border-radius: 16px; }
+  .dialog .seg.fit.day-kinds button { min-width: 0; white-space: normal; overflow-wrap: anywhere; line-height: 1.2;
+    padding: 9px 6px; border-radius: 12px; }
+  @media (max-width: 600px) {
+    .dialog .seg.fit.day-kinds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
   .dialog-top .close { width: 36px; height: 36px; background: var(--secondary-background-color); }
   .dialog-bottom { bottom: 0; justify-content: flex-end; padding: 10px 0 14px; margin-top: 8px; border-top: 1px solid var(--divider-color); }
   .cheaper { justify-self: start; width: fit-content; }

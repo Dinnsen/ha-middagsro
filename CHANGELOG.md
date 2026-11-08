@@ -2,6 +2,12 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.15.0b4] - 2026-11-08
+
+### Fixed
+- Choosing a dish from REMA's recipes or Mealie (in a day's menu and in *Tilpas dagene*) found nothing: the list was never loaded.
+- The day menu's four choices no longer lie on top of each other on a phone: two by two, with room for *Ingen madlavning*.
+
 ## [2.15.0b3] - 2026-11-08
 
 ### Added
