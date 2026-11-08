@@ -251,7 +251,9 @@ async def test_make_a_day_leftovers(
     assert "Persille" not in [line["name"] for line in plan["shopping"]]
     # The same again changes nothing; the nearest day before is the default.
     assert await pe.async_set_leftovers(planner, "p", "2026-10-20", "2026-10-18") is plan
-    plan = await pe.async_set_leftovers(planner, "p", "2026-10-20")
+    with patch("homeassistant.components.ai_task.async_generate_data", new=ai):
+        plan = await pe.async_set_leftovers(planner, "p", "2026-10-20")
+    assert "REMA 1000 opskrift 2026-10-19" in ai.prompts  # monday now cooks for two
     assert plan["days"][2]["uses_leftovers_from"] == "2026-10-19"
     assert plan["days"][1]["makes_leftovers"] is True
     assert sunday["makes_leftovers"] is False  # no day eats sunday's leftovers now
