@@ -2,6 +2,14 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.15.0b6] - 2026-11-08
+
+### Fixed
+- **The shopping list follows the plan when days are changed by hand:** after a new dish, a leftovers day, a skipped day or a day without cooking, items no dinner uses any more leave the list (not your weekly items, items you added, or items already sent), an item a dish names by another name is matched to its line ("KYLLINGEBRYSTFILET 450 GR." is the chicken already on the list), an item the AI named but left off is added, and the amounts follow the recipes – down as well as up, unless you set the amount yourself.
+- An item bought in another chain is counted in that chain's package: 1.5 kg potatoes is one 5 kg bag from Bilka, not three.
+- Bagekartofler weigh as baking potatoes (about 250 g each), not as small potatoes.
+- Turning the phone sideways and back no longer leaves the panel zoomed in with large text that can't be used: the text keeps its size in landscape, and a zoom the phone made itself is undone.
+
 ## [2.15.0b5] - 2026-11-08
 
 ### Changed

@@ -11,7 +11,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
-from custom_components.middagsro import planedit as pe
+from custom_components.middagsro import mealplan as mp, planedit as pe
 from custom_components.middagsro.api import RemaError
 import homeassistant.components.ai_task as ai_task_component  # noqa: F401 - patched in the tests
 from homeassistant.core import HomeAssistant
@@ -288,6 +288,65 @@ async def test_leftovers_day_skipped_or_written(
     await pe.async_clear_day(planner, "p", "2026-10-18")
     plan = await pe.async_restore_day(planner, "p", "2026-10-19")
     assert (plan["days"][1]["type"], plan["days"][1]["dish"]) == ("tom", "")
+
+
+async def test_sync_shopping_follows_the_plan(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """Lines no dinner uses leave the list; an item a dish names by another name
+    is its line; a forgotten item is added; basic items and the family's own stay."""
+    planner = init_integration.runtime_data.planner
+    store = init_integration.runtime_data.store
+    plan = store.get_plan("p")
+    assert plan is not None
+    sunday, _monday, tuesday = plan["days"]
+    sunday["uses"] = ["HAKKET OKSEKØD 500 GR", "Spaghetti", "Basilikum", "SALT M/ JOD"]
+    sunday["ingredients"] = [
+        {"name": "hakket oksekød", "amount": "500 g"},
+        {"name": "salt", "amount": "", "basic": True, "product": {"id": 1, "name": "SALT M/ JOD"}},
+    ]
+    tuesday["uses"] = []  # persille is no longer used
+    plan["shopping"].append({"name": "Gammel vare", "amount": 1, "unit": "pk", "search": "x",
+                             "category": "Andet", "sent": "2026-10-18T10:00"})  # fmt: skip
+    removed = await pe.async_sync_shopping(planner, plan)
+    names = [line["name"] for line in plan["shopping"]]
+    assert [line["name"] for line in removed] == ["Persille"]
+    assert "Basilikum" in names  # named by the dish, now on the list
+    assert "SALT M/ JOD" not in names  # the family has it
+    assert {"LETMÆLK", "Gammel vare"} <= set(names)  # the family's own, and sent
+    assert sunday["uses"] == ["Hakket oksekød", "Spaghetti", "Basilikum"]
+    plan = await pe.async_sync_plan(planner, "p")
+    assert plan["total"] == mp.plan_total(plan["shopping"])
+    with pytest.raises(ServiceValidationError):
+        await pe.async_sync_plan(planner, "nope")
+    # An older plan whose dishes don't say what they use: left alone.
+    old = make_plan("old2", start="2026-10-25")
+    assert await pe.async_sync_shopping(planner, old) == []
+
+
+def test_fit_amounts_lowers_after_a_change() -> None:
+    """A line shrinks to what the dishes use now, unless its packages were set by hand;
+    a line bought in another chain counts in that chain's package."""
+    plan = {
+        "days": [{"date": "2026-11-10", "dish": "Pølseret", "type": "normal", "uses": ["Kartofler"],
+                  "ingredients": [{"name": "kartofler", "amount": "1,5 kg"}]}],
+        "shopping": [
+            {"name": "Kartofler", "key": "kartofler", "amount": 5, "unit": "kg", "packages": 3, "cost": 75,
+             "buy_at": "93f13", "chain_price": 25, "chain_heading": "Kartofler (5 KG / SALLING)",
+             "product": {"id": 1, "name": "KARTOFLER", "underline": "1 KG.", "price": 10}},
+            {"name": "Kartofler i hånden", "key": "kartofler", "amount": 1, "unit": "kg", "packages": 2,
+             "product": {"id": 2, "name": "KARTOFLER", "underline": "1 KG.", "price": 10}},
+        ],
+    }  # fmt: skip
+    assert mp.fit_amounts(plan) == []  # never lower by default
+    assert mp.fit_amounts(plan, lower=True) == ["Kartofler"]
+    first, second = plan["shopping"]
+    assert (first["packages"], first["cost"]) == (1, 25)
+    assert second["packages"] == 2  # not used by the dish: its own amount
+    first["packages"], first["packages_set"] = 4, True
+    assert mp.fit_amounts(plan, lower=True) == []
+    assert mp.chain_size({"chain_heading": "Mælk"}) is None
+    assert mp.chain_size({"chain_heading": "Mælk", "amount": 2, "unit": "l"}) == ("ml", 2000)
 
 
 def test_release_source() -> None:

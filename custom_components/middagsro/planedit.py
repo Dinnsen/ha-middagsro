@@ -21,7 +21,8 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
 from .api import Offer, RemaError
-from .dishes import TEXT_TYPE, matches_any
+from .dishes import TEXT_TYPE, is_cooked, matches_any
+from .ingredients import spec_for
 from .matching import choice_key, noon
 from .mealie import MealieError
 from .mealplan import (
@@ -189,6 +190,118 @@ def _describe(line: dict[str, Any]) -> str:
     if line.get("amount") and line.get("unit") and line["unit"] != "pk":
         text += f" ({line['amount']:g} {line['unit']})"
     return text
+
+
+# ------------------------------------------------------------------ the list follows the plan
+
+
+def _key(name: str) -> str:
+    return spec_for(name).key
+
+
+def resolve_uses(plan: dict[str, Any], day: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """The shopping lines a dish's items are, by name or by what the thing is
+    ("KYLLINGEBRYSTFILET" is the line "Kyllingebryst"), and the items that are
+    on no line."""
+    lines = plan["shopping"]
+    by_name = {str(line["name"]).lower(): line for line in lines}
+    resolved: list[str] = []
+    missing: list[str] = []
+    for name in day.get("uses") or []:
+        line = by_name.get(str(name).lower())
+        if line is None:
+            key = _key(str(name))
+            line = next(
+                (
+                    candidate
+                    for candidate in lines
+                    if (candidate.get("key") or _key(candidate["name"])) == key
+                ),
+                None,
+            )
+        if line is None:
+            missing.append(str(name))
+        elif line["name"] not in resolved:
+            resolved.append(line["name"])
+    return resolved, missing
+
+
+async def async_sync_shopping(planner: MealPlanner, plan: dict[str, Any]) -> list[dict[str, Any]]:
+    """Make the shopping list follow the plan after a day was changed by hand.
+
+    Every dinner's items are on the list (an item the AI named but left off is
+    added), lines no dinner uses any more leave it (not the family's own: weekly
+    items, added items, items already sent or bought elsewhere), and the amounts
+    follow the recipes (down as well as up, unless set by hand). Only for plans
+    whose dishes say which items they use. Returns the lines removed.
+    """
+    cooked = [d for d in plan["days"] if is_cooked(d)]
+    if not cooked or not all("uses" in d for d in cooked):
+        return []
+    pantry = pantry_words(planner.store.settings["pantry"])
+    new_lines: list[dict[str, Any]] = []
+    for day in cooked:
+        resolved, missing = resolve_uses(plan, day)
+        # The recipe's basic items (salt, karry ...): the family has them.
+        basic = [
+            text.lower()
+            for ingredient in day.get("ingredients") or []
+            if ingredient.get("basic")
+            for text in (
+                str(ingredient.get("name") or ""),
+                str((ingredient.get("product") or {}).get("name") or ""),
+            )
+            if text
+        ]
+        for name in missing:
+            if any(_uses_item(item, name) for item in pantry) or any(
+                text in name.lower() for text in basic
+            ):
+                continue  # the family has it
+            line = planner._clean_line({"name": name, "search": name, "category": "Andet"})
+            if line is None:
+                continue
+            plan["shopping"].append(line)
+            new_lines.append(line)
+            resolved.append(line["name"])
+        day["uses"] = resolved
+    used = {str(name).lower() for d in cooked for name in d["uses"]}
+    removed = [
+        line
+        for line in plan["shopping"]
+        if str(line["name"]).lower() not in used
+        and not (
+            line.get("must_have")
+            or line.get("added")
+            or line.get("sent")
+            or line.get("pantry")
+            or line.get("bought")
+            or line.get("freezer_taken")
+        )
+    ]
+    if removed:
+        plan["shopping"] = [line for line in plan["shopping"] if line not in removed]
+    if new_lines:
+        offers = await _async_offers(planner, plan)
+        first = date.fromisoformat(plan["start_date"])
+        await planner._async_price_lines(
+            new_lines, offers, planner.price_time(first), late_offers(offers, first)
+        )
+    fit_amounts(plan, lower=True)
+    update_total(plan)
+    return removed
+
+
+async def async_sync_plan(planner: MealPlanner, plan_id: str) -> dict[str, Any]:
+    """Put the plan's shopping list right by hand (and take removed items off the shop's list)."""
+    plan = planner.store.get_plan(plan_id)
+    if plan is None:
+        raise _invalid("plan_not_found")
+    removed = await async_sync_shopping(planner, plan)
+    await planner.async_unlist(removed)
+    await planner.store.async_save()
+    planner._notify()
+    return plan
 
 
 # ------------------------------------------------------------------ swapping
@@ -621,7 +734,7 @@ async def async_swap_dish(
         if leftover.get("uses_leftovers_from") == day["date"]:
             leftover["dish"] = leftovers_dish(choice["dish"])
             await planner._async_recipe(leftover, plan)
-    fit_amounts(plan)
+    await planner.async_unlist(await async_sync_shopping(planner, plan))
     update_total(plan)
     await planner.store.async_save()
     await planner.async_mealie_sync(plan)
@@ -932,6 +1045,7 @@ async def async_clear_day(
         _empty(day)
         day["mealie"] = None
     await planner.async_unlist(removed["lines"])
+    await planner.async_unlist(await async_sync_shopping(planner, plan))
     update_total(plan)
     await planner.store.async_save()
     await planner.async_mealie_sync(plan)
@@ -1015,6 +1129,7 @@ async def async_set_day_text(
     _empty(day)
     day.update(dish=text, type=TEXT_TYPE, mealie=None, makes_leftovers=False)
     await planner.async_unlist(removed["lines"])
+    await planner.async_unlist(await async_sync_shopping(planner, plan))
     update_total(plan)
     await planner.store.async_save()
     await planner.async_mealie_sync(plan)
@@ -1060,7 +1175,7 @@ async def async_set_leftovers(
             await planner._async_recipe(source, plan)  # for two dinners
         except HomeAssistantError as err:
             _LOGGER.warning("The recipe for %s could not be made again: %s", source["dish"], err)
-        fit_amounts(plan)
+    await planner.async_unlist(await async_sync_shopping(planner, plan))
     update_total(plan)
     await planner.store.async_save()
     await planner.async_mealie_sync(plan)
@@ -1255,6 +1370,7 @@ async def async_edit_line(
     elif packages is not None:
         count = max(1, min(99, packages))
         line["packages"] = count
+        line["packages_set"] = True  # the family's amount: the plan's changes keep it
         item = line.get("product") or line.get("avis_item") or {}
         price = item.get("price")
         line["cost"] = round(count * price, 2) if price else None

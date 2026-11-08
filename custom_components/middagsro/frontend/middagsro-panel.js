@@ -448,15 +448,36 @@ class Rema1000Panel extends HTMLElement {
 
   connectedCallback() {
     document.addEventListener("visibilitychange", this._onVisibility);
-    // No zooming: pinch (Safari's gesture events) and two-finger touches.
-    this._noZoom = (ev) => ev.preventDefault();
+    // No zooming: pinch (Safari's gesture events) and two-finger touches -
+    // except back out of a zoom the phone made itself (turning it, say).
+    const zoomed = () => (window.visualViewport?.scale || 1) > 1.01;
+    this._noZoom = (ev) => {
+      if (!zoomed()) ev.preventDefault();
+    };
     this._noPinch = (ev) => {
-      if (ev.touches?.length > 1) ev.preventDefault();
+      if (ev.touches?.length > 1 && !zoomed()) ev.preventDefault();
+    };
+    // Turned sideways and back, iOS may leave the page zoomed in with larger text:
+    // the viewport is reset to its normal scale.
+    this._unzoom = () => {
+      setTimeout(() => {
+        if (!zoomed()) return;
+        const meta = document.querySelector('meta[name="viewport"]');
+        if (!meta) return;
+        const content = meta.getAttribute("content") || "width=device-width, initial-scale=1";
+        meta.setAttribute("content", `${content.replace(/,?\s*maximum-scale=[^,]*/g, "")}, maximum-scale=1`);
+        setTimeout(() => meta.setAttribute("content", content), 400);
+      }, 350);
     };
     // Not inside a dashboard card: the dashboard decides about zooming there.
     if (!this._embed) {
       document.addEventListener("gesturestart", this._noZoom, { passive: false });
       document.addEventListener("touchmove", this._noPinch, { passive: false });
+      window.addEventListener("orientationchange", this._unzoom);
+      window.visualViewport?.addEventListener("resize", this._unzoom);
+      // Landscape must not enlarge the text (iOS text autosizing).
+      document.documentElement.style.setProperty("-webkit-text-size-adjust", "100%");
+      document.documentElement.style.setProperty("text-size-adjust", "100%");
     }
     this._tick = setInterval(() => this._tickTimers(), 1000);
     if (this._hass && !this._state) this._load();
@@ -467,6 +488,10 @@ class Rema1000Panel extends HTMLElement {
     document.removeEventListener("visibilitychange", this._onVisibility);
     document.removeEventListener("gesturestart", this._noZoom);
     document.removeEventListener("touchmove", this._noPinch);
+    if (this._unzoom) {
+      window.removeEventListener("orientationchange", this._unzoom);
+      window.visualViewport?.removeEventListener("resize", this._unzoom);
+    }
     this._stopDictation?.();
     clearInterval(this._tick);
     clearTimeout(this._poll);
@@ -5949,6 +5974,7 @@ class Rema1000Panel extends HTMLElement {
 const STYLE = `
   /* No double-tap zoom; 16 px inputs so a phone doesn't zoom in on them. */
   :host, button, input, select, textarea, .day, .line { touch-action: manipulation; }
+  :host { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   /* Inside a dashboard card or its pop-up: the page only, on the card's own surface. */
   :host([embed]) { min-height: 0; background: none; }
   :host([embed]) .toolbar, :host([embed]) .tabs, :host([embed]) .more-scrim, :host([embed]) .more-sheet, :host([embed]) .credit { display: none !important; }

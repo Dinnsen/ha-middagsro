@@ -61,6 +61,7 @@ from .planedit import (
     async_set_leftovers,
     async_swap_dish,
     async_swap_options,
+    async_sync_plan,
     cooked_day,
     pantry_needs,
 )
@@ -1039,6 +1040,19 @@ async def ws_day_text(
 
 
 @websocket_api.websocket_command(
+    {vol.Required("type"): "middagsro/plan/sync", ENTRY: str, vol.Required("plan_id"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_plan_sync(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Make the shopping list follow the plan's dinners."""
+    planner = _entry(hass, msg).runtime_data.planner
+    connection.send_result(msg["id"], await async_sync_plan(planner, msg["plan_id"]))
+
+
+@websocket_api.websocket_command(
     {
         vol.Required("type"): "middagsro/day/leftovers",
         ENTRY: str,
@@ -2012,6 +2026,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_day_approve,
         ws_day_text,
         ws_day_leftovers,
+        ws_plan_sync,
         ws_day_move,
         ws_recipe_scan,
         ws_sites_search,

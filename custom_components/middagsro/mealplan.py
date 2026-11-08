@@ -1227,13 +1227,26 @@ def _names_match(line: dict[str, Any], ingredient: dict[str, Any]) -> bool:
     return all(found(w) for w in wanted)
 
 
-def fit_amounts(plan: dict[str, Any]) -> list[str]:
+def chain_size(line: dict[str, Any]) -> tuple[str, float] | None:
+    """The package size of an item bought in another chain ("Kartofler (5 KG / SALLING)")."""
+    heading = str(line.get("chain_heading") or "")
+    if "(" in heading and (size := package_size(heading[heading.rfind("(") + 1 :].rstrip(")"))):
+        return size
+    if line.get("amount") and line.get("unit") in ("g", "kg", "ml", "l", "dl"):
+        return to_base(float(line["amount"]), line["unit"])
+    return None
+
+
+def fit_amounts(plan: dict[str, Any], lower: bool = False) -> list[str]:
     """Buy as much as the recipes use: a line's packages grow when the dishes need more.
 
     The overview's amounts are the AI's first guess; the recipes are written
     afterwards, for the household, and two dishes may share a line. Only lines
     with a REMA product of a known size (or in grams/millilitres) are raised,
-    never more than fourfold, and never lowered. Returns the lines changed.
+    never more than fourfold. A dish that names the lines it uses counts only
+    for those. With ``lower`` (after the plan was changed by hand) a line also
+    shrinks to what the dishes now use, unless its packages were set by hand.
+    Returns the lines changed.
     """
     changed: list[str] = []
     for line in plan.get("shopping") or []:
@@ -1243,6 +1256,10 @@ def fit_amounts(plan: dict[str, Any]) -> list[str]:
         for day in plan.get("days") or []:
             if not is_cooked(day):
                 continue
+            if "uses" in day and line["name"].lower() not in {
+                str(name).lower() for name in day.get("uses") or []
+            }:
+                continue  # the dish says what it uses, and this isn't it
             for ingredient in day.get("ingredients") or []:
                 if not _names_match(line, ingredient):
                     continue
@@ -1258,6 +1275,8 @@ def fit_amounts(plan: dict[str, Any]) -> list[str]:
             needs[unit] = max(0, needs.get(unit, 0) - amount)
         product = line.get("product") or {}
         size = package_size(product.get("underline")) if product else None
+        if line.get("buy_at"):
+            size = chain_size(line) or size  # bought in the other chain, in its package
         packages = int(line.get("packages") or 1)
         per_package = pieces_per_package(size, line_spec(line).piece_g)
         if "stk" in needs and per_package and size:
@@ -1277,7 +1296,11 @@ def fit_amounts(plan: dict[str, Any]) -> list[str]:
         else:
             continue
         wanted = min(wanted, packages * 4)
-        if wanted > packages:
+        if lower and wanted < packages and not line.get("packages_set"):
+            wanted = max(1, wanted)
+        elif wanted <= packages:
+            continue
+        if wanted != packages:
             line["packages"] = wanted
             if line.get("buy_at") and line.get("chain_price") is not None:
                 line["cost"] = round(wanted * float(line["chain_price"]), 2)
