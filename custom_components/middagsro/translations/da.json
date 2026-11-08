@@ -128,7 +128,8 @@
       "invalid_auth": "Forkert e-mail eller adgangskode.",
       "unknown": "Uventet fejl. Se loggen for detaljer.",
       "invalid_pickup": "Vælg et tilgængeligt Bilka-varehus.",
-      "missing_login": "Udfyld både e-mail og adgangskode – eller lad begge være tomme for at bruge Bilka uden login."
+      "missing_login": "Udfyld både e-mail og adgangskode – eller lad begge være tomme for at bruge Bilka uden login.",
+      "nemlig_queue": "Nemlig.com's kø (Queue-it) lukkede ikke Middagsro ind. Det sker, når der er travlt eller når Nemlig beder om et browsertjek – prøv igen om lidt."
     },
     "abort": {
       "already_configured": "Denne REMA 1000-konto eller butik er allerede sat op.",

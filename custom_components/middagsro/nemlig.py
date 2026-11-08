@@ -11,6 +11,12 @@ Uses the webshop's own calls, as the browser makes them (unofficial, like REMA
 - ``basket/AddToBasket`` sets a product's quantity in the basket (an absolute
   quantity, 0 removes it) and answers with the whole basket.
 
+Nemlig.com sits behind a Queue-it waiting room: a session without its accept
+cookie is sent to ``nemlig.queue-it.net``, which (when there is no real queue)
+sends it straight back with a ``queueittoken`` that the site exchanges for the
+cookie. The client follows that the way a browser does, and only between the
+two sites; a real queue or a check that needs a browser is reported as such.
+
 The password stays in the config entry; tokens and cookies live only in memory.
 Middagsro never chooses a delivery time and never places an order.
 """
@@ -66,6 +72,16 @@ _HEADERS = {
     "version": "11.236.2",
     "device-size": "desktop",
 }
+# What a browser sends for a page (the waiting room answers pages, not API calls).
+_PAGE_HEADERS = {
+    "User-Agent": _HEADERS["User-Agent"],
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": _HEADERS["Accept-Language"],
+}
+_SITE_HOSTS = {"www.nemlig.com", "nemlig.com"}
+_QUEUE_HOST = re.compile(r"(^|\.)queue-it\.net$", re.IGNORECASE)
+_REDIRECTS = (301, 302, 303, 307, 308)
+MAX_HOPS = 10
 # Product groups on the offer page that are not the week's offers.
 _NOT_OFFERS = re.compile(r"favorit|madspild|sponsor|gave|inspiration|nyhed", re.IGNORECASE)
 _UNIT = re.compile(r"kr\.?\s*/\s*([a-zæøå]+)", re.IGNORECASE)
@@ -73,6 +89,23 @@ _UNIT = re.compile(r"kr\.?\s*/\s*([a-zæøå]+)", re.IGNORECASE)
 
 class NemligError(RemaApiError):
     """Nemlig.com could not be used."""
+
+
+class NemligQueueError(NemligError):
+    """Nemlig.com's waiting room (Queue-it) did not let the session in."""
+
+
+def _queue_url(location: str) -> bool:
+    return bool(_QUEUE_HOST.search(URL(location).host or ""))
+
+
+def new_session_kwargs() -> dict[str, Any]:
+    """What a Nemlig.com session needs: cookies sent as the site set them.
+
+    Queue-it's accept cookie holds "=" and "&"; quoted (aiohttp's default) the
+    site would not recognise it and send the session back to the queue.
+    """
+    return {"cookie_jar": aiohttp.CookieJar(quote_cookie=False)}
 
 
 def _num(value: Any) -> float | None:
@@ -259,6 +292,43 @@ class NemligClient:
         cookie = self.session.cookie_jar.filter_cookies(URL(SITE)).get("XSRF-TOKEN")
         return cookie.value if cookie else None
 
+    async def _async_pass_queue(self, url: str = f"{SITE}/") -> None:
+        """Open a Nemlig.com page the way a browser does, through the waiting room.
+
+        Redirects are followed one at a time, and only between Nemlig.com and
+        Queue-it: the site sends the session to the queue, the queue sends it
+        back with a token, and the site sets its accept cookie for the token.
+        A page from the queue itself is a real queue (or a check that needs a
+        browser): Middagsro can't wait in it.
+        """
+        for _hop in range(MAX_HOPS):
+            target = URL(url)
+            host = (target.host or "").lower()
+            queue = bool(_QUEUE_HOST.search(host))
+            if target.scheme != "https" or (host not in _SITE_HOSTS and not queue):
+                raise NemligError("Nemlig.com sendte videre til en ukendt side")
+            try:
+                async with self.session.get(
+                    target, headers=_PAGE_HEADERS, timeout=TIMEOUT, allow_redirects=False
+                ) as response:
+                    status = response.status
+                    location = response.headers.get("Location", "")
+                    await response.read()
+            except (aiohttp.ClientError, TimeoutError):
+                raise RemaConnectionError("Could not reach Nemlig.com") from None
+            if status in _REDIRECTS and location:
+                url = str(target.join(URL(location)))
+                continue
+            if queue:
+                raise NemligQueueError(
+                    "Nemlig.com har kø lige nu (Queue-it lukkede ikke Middagsro ind). "
+                    "Prøv igen om lidt"
+                )
+            if status >= 400:
+                raise NemligError(f"Nemlig.com answered HTTP {status}")
+            return
+        raise NemligQueueError("Nemlig.com's kø sendte frem og tilbage. Prøv igen om lidt")
+
     async def _raw(
         self,
         method: str,
@@ -269,34 +339,43 @@ class NemligClient:
         auth: bool = True,
         xsrf: bool = False,
     ) -> Any:
-        headers = {**_HEADERS, "X-Correlation-Id": str(uuid.uuid4())}
-        if auth and self._token:
-            headers["Authorization"] = f"Bearer {self._token}"
-        if xsrf and (token := self._xsrf()):
-            headers["X-XSRF-TOKEN"] = token
-        try:
-            async with self.session.request(
-                method,
-                url,
-                params=params,
-                json=body,
-                headers=headers,
-                timeout=TIMEOUT,
-                allow_redirects=False,
-            ) as response:
-                if response.status in (301, 302, 303, 307):
-                    where = response.headers.get("Location", "")
-                    if "queue-it" in where.lower():
-                        raise NemligError("Nemlig.com har kø lige nu. Prøv igen om lidt")
-                    raise NemligError(f"Nemlig.com sendte videre (HTTP {response.status})")
-                if response.status in (401, 403):
-                    raise RemaAuthError("Nemlig.com authentication was rejected")
-                if response.status >= 400:
-                    raise NemligError(f"Nemlig.com answered HTTP {response.status}")
-                return await response.json(content_type=None)
-        except (aiohttp.ClientError, TimeoutError, ValueError):
-            # Never expose request URLs, credentials or response bodies.
-            raise RemaConnectionError("Could not reach Nemlig.com") from None
+        for attempt in (0, 1):
+            headers = {**_HEADERS, "X-Correlation-Id": str(uuid.uuid4())}
+            if auth and self._token:
+                headers["Authorization"] = f"Bearer {self._token}"
+            if xsrf and (token := self._xsrf()):
+                headers["X-XSRF-TOKEN"] = token
+            try:
+                async with self.session.request(
+                    method,
+                    url,
+                    params=params,
+                    json=body,
+                    headers=headers,
+                    timeout=TIMEOUT,
+                    allow_redirects=False,
+                ) as response:
+                    status = response.status
+                    location = response.headers.get("Location", "")
+                    if status in (401, 403):
+                        raise RemaAuthError("Nemlig.com authentication was rejected")
+                    if status < 300 or status >= 400:
+                        if status >= 400:
+                            raise NemligError(f"Nemlig.com answered HTTP {status}")
+                        return await response.json(content_type=None)
+            except (aiohttp.ClientError, TimeoutError, ValueError):
+                # Never expose request URLs, credentials or response bodies.
+                raise RemaConnectionError("Could not reach Nemlig.com") from None
+            if not (status in _REDIRECTS and location and _queue_url(location)):
+                raise NemligError(f"Nemlig.com sendte videre (HTTP {status})")
+            if attempt:
+                raise NemligQueueError(
+                    "Nemlig.com har kø lige nu (Queue-it lukkede ikke Middagsro ind). "
+                    "Prøv igen om lidt"
+                )
+            # The accept cookie ran out: through the waiting room once more, then again.
+            await self._async_pass_queue()
+        raise AssertionError("unreachable")  # pragma: no cover
 
     async def _async_token(self, *, force: bool = False) -> str:
         if not force and self._token and time.monotonic() - self._token_at < TOKEN_TTL:
@@ -316,17 +395,9 @@ class NemligClient:
                 return self.user_id
             self._logged_in = False
             self._token = None
-            # The front page gives the session its cookies (and the XSRF token).
-            try:
-                async with self.session.get(
-                    f"{SITE}/", headers=_HEADERS, timeout=TIMEOUT, allow_redirects=False
-                ) as response:
-                    where = response.headers.get("Location", "")
-                    if "queue-it" in where.lower():
-                        raise NemligError("Nemlig.com har kø lige nu. Prøv igen om lidt")
-                    await response.read()
-            except (aiohttp.ClientError, TimeoutError):
-                raise RemaConnectionError("Could not reach Nemlig.com") from None
+            # The front page gives the session its cookies (the waiting room's
+            # accept cookie and the XSRF token).
+            await self._async_pass_queue()
             await self._async_token(force=True)
             try:
                 answer = await self._raw(

@@ -2,6 +2,12 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.15.0b3] - 2026-11-08
+
+### Fixed
+- **Nemlig.com login through the waiting room** (#67): Nemlig.com sends every new session to its Queue-it waiting room, which normally sends it straight back with a token the site exchanges for an accept cookie. Middagsro gave up at the first redirect ("Nemlig.com har kø lige nu") every time; it now follows the waiting room the way a browser does – only between nemlig.com and queue-it.net – keeps the cookie exactly as the site set it, and goes through again if a later call is sent there. Only a real queue (or a check that needs a browser) stops the login.
+- A Nemlig.com queue is shown as its own message in the login form instead of the generic "Kunne ikke få forbindelse".
+
 ## [2.15.0b2] - 2026-11-04
 
 ### Added

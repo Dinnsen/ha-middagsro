@@ -9,7 +9,10 @@ from unittest.mock import AsyncMock, patch
 import aiohttp
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
+from pytest_homeassistant_custom_component.test_util.aiohttp import (
+    AiohttpClientMocker,
+    AiohttpClientMockResponse,
+)
 
 from custom_components.middagsro.api import RemaAuthError, RemaConnectionError, ShoppingList
 from custom_components.middagsro.bilka import BilkaError
@@ -20,7 +23,9 @@ from custom_components.middagsro.nemlig import (
     SITE,
     NemligClient,
     NemligError,
+    NemligQueueError,
     basket_items,
+    new_session_kwargs,
     offer_groups,
     to_offer,
     to_product,
@@ -103,6 +108,13 @@ def login_mocks(aioclient_mock: AiohttpClientMocker, uid: str = "2630735") -> No
     aioclient_mock.get(f"{SITE}/webapi/Token", json={"access_token": "token", "expires_in": 300})
     aioclient_mock.post(f"{SITE}/webapi/login", json={"RedirectUrl": "/", "MergeSuccessful": True})
     aioclient_mock.get(f"{SITE}/webapi/user/GetCurrentUser", json={"DebitorId": uid})
+
+
+QUEUE = (
+    "https://nemlig.queue-it.net/?c=nemlig&e=nemligprod&t=https%3A%2F%2Fwww.nemlig.com%2F"
+    "&kupver=cloudflare-4.2.2"
+)
+BACK = f"{SITE}/?queueittoken=e_nemligprod~q_1~ts_1~rt_safetynet~h_abc"
 
 
 def client(hass: HomeAssistant) -> NemligClient:
@@ -228,22 +240,100 @@ async def test_login_rejected_and_errors(
     with pytest.raises(RemaConnectionError):
         await nemlig.async_login()
     aioclient_mock.clear_requests()
-    aioclient_mock.get(f"{SITE}/", status=302, headers={"Location": "https://nemlig.queue-it.net/"})
-    with pytest.raises(NemligError, match="kø"):
+    # A real queue: the waiting room answers with its page.
+    aioclient_mock.get(f"{SITE}/", status=302, headers={"Location": QUEUE})
+    aioclient_mock.get(QUEUE, text="<html>Du er i kø</html>")
+    with pytest.raises(NemligQueueError, match="kø"):
         await nemlig.async_login()
     aioclient_mock.clear_requests()
     aioclient_mock.get(f"{SITE}/webapi/Token", status=302, headers={"Location": "/other"})
     with pytest.raises(NemligError, match="videre"):
         await nemlig._async_token(force=True)
     aioclient_mock.clear_requests()
-    aioclient_mock.get(
-        f"{SITE}/webapi/Token", status=302, headers={"Location": "https://x.queue-it.net"}
-    )
-    with pytest.raises(NemligError, match="kø"):
-        await nemlig._async_token(force=True)
-    aioclient_mock.clear_requests()
     aioclient_mock.get(f"{SITE}/webapi/Token", exc=TimeoutError())
     with pytest.raises(RemaConnectionError):
+        await nemlig._async_token(force=True)
+
+
+async def test_login_passes_the_waiting_room(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Front page -> Queue-it -> back with a token -> the page: then the login goes on."""
+    nemlig = client(hass)
+    aioclient_mock.get(BACK, status=302, headers={"Location": "/"})
+    aioclient_mock.get(QUEUE, status=302, headers={"Location": BACK})
+    front = 0
+
+    async def front_page(method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
+        nonlocal front
+        front += 1
+        if front == 1:  # no accept cookie yet
+            return AiohttpClientMockResponse(method, url, status=302, headers={"Location": QUEUE})
+        return AiohttpClientMockResponse(method, url, text="<html></html>")
+
+    aioclient_mock.get(f"{SITE}/", side_effect=front_page)
+    aioclient_mock.get(f"{SITE}/webapi/Token", json={"access_token": "token"})
+    aioclient_mock.post(f"{SITE}/webapi/login", json={"RedirectUrl": "/"})
+    aioclient_mock.get(f"{SITE}/webapi/user/GetCurrentUser", json={"DebitorId": "2630735"})
+    assert await nemlig.async_login() == 2630735
+    pages = [
+        (c[1].host, c[1].path, "queueittoken" in c[1].query)
+        for c in aioclient_mock.mock_calls
+        if c[0] == "GET"
+    ][:4]
+    assert pages == [
+        ("www.nemlig.com", "/", False),
+        ("nemlig.queue-it.net", "/", False),
+        ("www.nemlig.com", "/", True),
+        ("www.nemlig.com", "/", False),
+    ]
+    # Browser-like for the pages, and never anywhere but Nemlig.com and Queue-it.
+    assert aioclient_mock.mock_calls[1][3]["Accept"].startswith("text/html")
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{SITE}/", status=302, headers={"Location": "https://evil.example/"})
+    with pytest.raises(NemligError, match="ukendt side"):
+        await nemlig.async_login(force=True)
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{SITE}/", status=302, headers={"Location": QUEUE})
+    aioclient_mock.get(QUEUE, status=302, headers={"Location": f"{SITE}/"})
+    with pytest.raises(NemligQueueError, match="frem og tilbage"):
+        await nemlig.async_login(force=True)
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{SITE}/", status=503)
+    with pytest.raises(NemligError, match="HTTP 503"):
+        await nemlig.async_login(force=True)
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{SITE}/", status=302, headers={"Location": QUEUE})
+    aioclient_mock.get(QUEUE, exc=aiohttp.ClientError("secret"))
+    with pytest.raises(RemaConnectionError):
+        await nemlig.async_login(force=True)
+    assert new_session_kwargs()["cookie_jar"]._quote_cookie is False
+
+
+async def test_api_call_sent_to_the_queue_passes_it_again(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """An API call sent to the waiting room (the cookie ran out) goes through it and again."""
+    nemlig = client(hass)
+    calls = 0
+
+    async def token(method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return AiohttpClientMockResponse(method, url, status=302, headers={"Location": QUEUE})
+        return AiohttpClientMockResponse(method, url, json={"access_token": "fresh"})
+
+    aioclient_mock.get(f"{SITE}/webapi/Token", side_effect=token)
+    aioclient_mock.get(f"{SITE}/", text="<html></html>")
+    assert await nemlig._async_token(force=True) == "fresh"
+    assert calls == 2
+    # Still sent there after passing: a real queue.
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{SITE}/webapi/Token", status=302, headers={"Location": QUEUE})
+    aioclient_mock.get(f"{SITE}/", text="<html></html>")
+    with pytest.raises(NemligQueueError):
         await nemlig._async_token(force=True)
 
 
@@ -340,7 +430,7 @@ async def test_config_flow(hass: HomeAssistant, mock_panel: Any) -> None:
 @pytest.mark.parametrize(
     ("error", "expected"),
     [(RemaAuthError("x"), "invalid_auth"), (NemligError("x"), "cannot_connect"),
-     (RuntimeError("x"), "unknown")],
+     (NemligQueueError("x"), "nemlig_queue"), (RuntimeError("x"), "unknown")],
 )  # fmt: skip
 async def test_config_flow_errors(
     hass: HomeAssistant, mock_panel: Any, error: Exception, expected: str

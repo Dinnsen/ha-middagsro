@@ -24,7 +24,7 @@ from .bilka import BILKA_ID, BilkaSearch
 from .bilka_cart import CONF_PICKUP, CONF_PICKUP_NAME, CONF_PRICE_STORE, BilkaCart
 from .const import DOMAIN
 from .migrate import MIGRATE_FROM, old_entries
-from .nemlig import NEMLIG_ID, NemligClient
+from .nemlig import NEMLIG_ID, NemligClient, NemligQueueError, new_session_kwargs
 from .schema import vol
 from .store_client import CONF_STORE, REMA, STORES, rema_only, store_name, store_of
 
@@ -116,11 +116,14 @@ class RemaConfigFlow(ConfigFlow, domain=DOMAIN):
         self, email: str, password: str
     ) -> tuple[int | None, dict[str, str]]:
         """Log in to Nemlig.com with a session of its own (its cookies stay apart)."""
-        session = async_create_clientsession(self.hass, auto_cleanup=False)
+        session = async_create_clientsession(self.hass, auto_cleanup=False, **new_session_kwargs())
         try:
             return await NemligClient(session, email, password).async_login(), {}
         except RemaAuthError:
             return None, {"base": "invalid_auth"}
+        except NemligQueueError as err:
+            _LOGGER.warning("Nemlig.com login failed: %s", err)
+            return None, {"base": "nemlig_queue"}
         except RemaError as err:
             _LOGGER.warning("Nemlig.com login failed: %s", err)
             return None, {"base": "cannot_connect"}

@@ -128,7 +128,8 @@
       "invalid_auth": "Wrong e-mail or password.",
       "unknown": "Unexpected error. See the log for details.",
       "invalid_pickup": "Choose an available Bilka pickup store.",
-      "missing_login": "Fill in both e-mail and password – or leave both empty to use Bilka without a login."
+      "missing_login": "Fill in both e-mail and password – or leave both empty to use Bilka without a login.",
+      "nemlig_queue": "Nemlig.com's waiting room (Queue-it) did not let Middagsro in. This happens when the shop is busy or asks for a browser check – try again in a little while."
     },
     "abort": {
       "already_configured": "This REMA 1000 account or shop is already set up.",
