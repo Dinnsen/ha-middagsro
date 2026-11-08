@@ -397,13 +397,6 @@
         "late": "Late in the week",
         "all": "All"
       }
-    },
-    "pantry_place": {
-      "options": {
-        "køleskab": "Fridge",
-        "fryser": "Freezer",
-        "skab": "Cupboard"
-      }
     }
   },
   "services": {

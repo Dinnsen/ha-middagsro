@@ -135,7 +135,6 @@ add_to_pantry:
     place:
       selector:
         select:
-          translation_key: pantry_place
           options:
             - køleskab
             - fryser

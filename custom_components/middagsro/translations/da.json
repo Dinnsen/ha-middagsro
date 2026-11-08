@@ -397,13 +397,6 @@
         "late": "Sidst på ugen",
         "all": "Alle"
       }
-    },
-    "pantry_place": {
-      "options": {
-        "køleskab": "Køleskab",
-        "fryser": "Fryser",
-        "skab": "Skab"
-      }
     }
   },
   "services": {

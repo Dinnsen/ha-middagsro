@@ -74,7 +74,10 @@ def test_clean_settings_limits_and_types() -> None:
         {"role": "child", "age": 120, "sex": "female"},
         {"role": "adult", "age": 30, "sex": "other"},
     ]
-    assert settings["must_haves"] == [{"name": "Kaffe", "product_id": 123, "amount": 99}]
+    assert settings["must_haves"] == [
+        {"name": "Kaffe", "product_id": 123, "amount": 99, "group": "", "mode": "packs",
+         "use": 0.0, "unit": "stk"}
+    ]  # fmt: skip
     assert settings["disliked_dishes"][0] == "Fiskefrikadeller"
     assert len(settings["disliked_dishes"][1]) == 300
     assert len(settings["disliked_dishes"]) == 50
