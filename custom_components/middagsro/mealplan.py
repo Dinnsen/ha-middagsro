@@ -2101,8 +2101,9 @@ class MealPlanner(ProductMatcher):
             ],
         }
         dates = plan_dates(start, settings["days"], skip)
-        # Offers must cover the shopping day, not every day a dinner is eaten.
-        # Keep the configured period and price it with the known shopping-day offers.
+        # The avis must cover the shopping day (this refuses a start no avis covers yet),
+        # not every day a dinner is eaten: the whole period is planned and priced with
+        # the offers known on the shopping day (#72).
         self.avis_end(start)
         if not dates:
             raise _invalid("all_days_skipped")
