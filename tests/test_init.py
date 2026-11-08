@@ -148,5 +148,5 @@ async def test_auto_generate_on_new_catalogue(
     start.assert_called_once()
     start_date = start.call_args.args[0]
     assert start_date.isoformat() == "2026-10-18"  # the Sunday the next avis starts
-    assert start.call_args.kwargs == {"send": True, "full_period": True}
+    assert start.call_args.kwargs == {"send": True}
     assert UPCOMING.valid_from is not None
