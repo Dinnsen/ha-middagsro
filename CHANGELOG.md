@@ -5,7 +5,7 @@ All notable changes to Middagsro. Versions follow `custom_components/middagsro/m
 ## Unreleased
 
 ### Fixed
-- Automatic meal plans cover the configured number of days even when the published offer page ends during the week (#72). The plan uses known shopping-day prices and offers; unpublished offers are not assumed. Updating the plan retains its full period. Manual plans keep their existing offer-page limit.
+- Manual and automatic meal plans cover the configured number of days even when the published offer page ends during the week (#72). The date picker shows the whole period, and plans use known shopping-day prices and offers without assuming unpublished offers. Updating a plan retains its full period.
 
 ## [2.15.0b2] - 2026-11-04
 
