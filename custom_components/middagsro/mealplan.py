@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+import copy
 from datetime import date, datetime, timedelta
 import json
 import logging
@@ -51,6 +52,7 @@ from .dishes import (
 )
 from .errors import _failed, _invalid
 from .ingredients import CATALOG, catalogue_entry, spec_for
+from .inventory import apply_inventory, inventory, prompt_items
 from .matcher import ProductMatcher
 from .matching import (
     SEARCH_CONCURRENCY,
@@ -398,6 +400,7 @@ def build_prompt(
         "",
         "KRAV – SKAL OVERHOLDES:",
     ]
+    out.append(prompt_items(s.get("_freezer_inventory") or []))
     if s.get("rules"):
         out.append(
             "- FAMILIENS FASTE REGLER – gælder forud for alt andet i denne besked, også for "
@@ -818,7 +821,7 @@ def build_recipe_prompt(
         )
     if day.get("makes_leftovers"):
         out.append(
-            "Lav dobbelt portion – halvdelen spises som rester dagen efter. Mængderne skal "
+            "Lav dobbelt portion – halvdelen spises som rester en anden dag. Mængderne skal "
             "dække begge dage."
         )
     allergies = [ALLERGY_DA[a] for a in s["allergies"]]
@@ -1224,13 +1227,26 @@ def _names_match(line: dict[str, Any], ingredient: dict[str, Any]) -> bool:
     return all(found(w) for w in wanted)
 
 
-def fit_amounts(plan: dict[str, Any]) -> list[str]:
+def chain_size(line: dict[str, Any]) -> tuple[str, float] | None:
+    """The package size of an item bought in another chain ("Kartofler (5 KG / SALLING)")."""
+    heading = str(line.get("chain_heading") or "")
+    if "(" in heading and (size := package_size(heading[heading.rfind("(") + 1 :].rstrip(")"))):
+        return size
+    if line.get("amount") and line.get("unit") in ("g", "kg", "ml", "l", "dl"):
+        return to_base(float(line["amount"]), line["unit"])
+    return None
+
+
+def fit_amounts(plan: dict[str, Any], lower: bool = False) -> list[str]:
     """Buy as much as the recipes use: a line's packages grow when the dishes need more.
 
     The overview's amounts are the AI's first guess; the recipes are written
     afterwards, for the household, and two dishes may share a line. Only lines
     with a REMA product of a known size (or in grams/millilitres) are raised,
-    never more than fourfold, and never lowered. Returns the lines changed.
+    never more than fourfold. A dish that names the lines it uses counts only
+    for those. With ``lower`` (after the plan was changed by hand) a line also
+    shrinks to what the dishes now use, unless its packages were set by hand.
+    Returns the lines changed.
     """
     changed: list[str] = []
     for line in plan.get("shopping") or []:
@@ -1240,6 +1256,10 @@ def fit_amounts(plan: dict[str, Any]) -> list[str]:
         for day in plan.get("days") or []:
             if not is_cooked(day):
                 continue
+            if day.get("uses") and line["name"].lower() not in {
+                str(name).lower() for name in day["uses"]
+            }:
+                continue  # the dish says what it uses, and this isn't it
             for ingredient in day.get("ingredients") or []:
                 if not _names_match(line, ingredient):
                     continue
@@ -1251,8 +1271,12 @@ def fit_amounts(plan: dict[str, Any]) -> list[str]:
                     needs[base[0]] = needs.get(base[0], 0) + base[1]
         if not needs:
             continue
+        for unit, amount in (line.get("freezer_taken") or {}).items():
+            needs[unit] = max(0, needs.get(unit, 0) - amount)
         product = line.get("product") or {}
         size = package_size(product.get("underline")) if product else None
+        if line.get("buy_at"):
+            size = chain_size(line) or size  # bought in the other chain, in its package
         packages = int(line.get("packages") or 1)
         per_package = pieces_per_package(size, line_spec(line).piece_g)
         if "stk" in needs and per_package and size:
@@ -1272,7 +1296,14 @@ def fit_amounts(plan: dict[str, Any]) -> list[str]:
         else:
             continue
         wanted = min(wanted, packages * 4)
-        if wanted > packages:
+        # Lowered only when every amount the dishes use was counted ("7 stk" of
+        # something sold by weight, with no weight per piece, was not).
+        counted = size is not None and set(needs) <= {size[0]}
+        if lower and counted and wanted < packages and not line.get("packages_set"):
+            wanted = max(1, wanted)
+        elif wanted <= packages:
+            continue
+        if wanted != packages:
             line["packages"] = wanted
             if line.get("buy_at") and line.get("chain_price") is not None:
                 line["cost"] = round(wanted * float(line["chain_price"]), 2)
@@ -1454,6 +1485,7 @@ class MealPlanner(ProductMatcher):
         surprise: bool = False,
         picks: dict[str, dict[str, Any]] | None = None,
         day_kinds: dict[str, Any] | None = None,
+        use_freezer: bool = False,
     ) -> None:
         """Start making a plan in the background. Days in skip get no dinner.
 
@@ -1471,7 +1503,15 @@ class MealPlanner(ProductMatcher):
             raise _invalid("no_ai_task")
         self._set_status("generating", "Laver madplan …")
         self._task = self.hass.async_create_background_task(
-            self._async_run(start, send, skip or set(), surprise, picks or {}, day_kinds=day_kinds),
+            self._async_run(
+                start,
+                send,
+                skip or set(),
+                surprise,
+                picks or {},
+                day_kinds=day_kinds,
+                use_freezer=use_freezer,
+            ),
             name=f"{DOMAIN} meal plan",
         )
 
@@ -1519,10 +1559,17 @@ class MealPlanner(ProductMatcher):
         picks: dict[str, dict[str, Any]] | None = None,
         base_id: str | None = None,
         day_kinds: dict[str, Any] | None = None,
+        use_freezer: bool = False,
     ) -> None:
         try:
             plan = await self.async_generate(
-                start, skip, surprise=surprise, picks=picks, base_id=base_id, day_kinds=day_kinds
+                start,
+                skip,
+                surprise=surprise,
+                picks=picks,
+                base_id=base_id,
+                day_kinds=day_kinds,
+                use_freezer=use_freezer,
             )
             if send:
                 await self._async_send_when_ready(plan)
@@ -2022,6 +2069,7 @@ class MealPlanner(ProductMatcher):
         picks: dict[str, dict[str, Any]] | None = None,
         base_id: str | None = None,
         day_kinds: dict[str, Any] | None = None,
+        use_freezer: bool = False,
     ) -> dict[str, Any]:
         """Make, price and store a plan. Returns the plan.
 
@@ -2073,6 +2121,10 @@ class MealPlanner(ProductMatcher):
             "min_vegetarian": min(settings["min_vegetarian"], len(dates)),
             "max_vegetarian": min(settings["max_vegetarian"], len(dates)),
         }
+        freezer_items = (
+            inventory(self.hass).items if use_freezer or (base or {}).get("use_freezer") else []
+        )
+        settings["_freezer_inventory"] = freezer_items
         # With a monthly food budget, the plan may cost what is left of its week.
         if (left := plan_budget(self.store, dates[0])) is not None:
             settings["budget"] = left
@@ -2215,6 +2267,21 @@ class MealPlanner(ProductMatcher):
             await self.store.async_set_note("")
         if picks:
             best = await self._async_put_picks(best, picks)
+        if freezer_items:
+            candidate = copy.deepcopy(best)
+            candidate["use_freezer"] = True
+            if apply_inventory(candidate, freezer_items):
+                partial = [line for line in candidate["shopping"] if line.get("freezer_taken")]
+                for line in partial:
+                    line.pop("buy_at", None)
+                await self._async_price_lines(partial, offers, self.price_time(start), late)
+                candidate["total"] = plan_total(candidate["shopping"])
+                candidate["over_budget"] = (
+                    bool(candidate["budget"]) and candidate["total"] > candidate["budget"]
+                )
+            best.clear()
+            best.update(candidate)
+            await self.store.async_save()
         self._notify()
         return best
 

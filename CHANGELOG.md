@@ -1,6 +1,85 @@
 # Changelog
 
-All notable changes to REMA 1000 for Home Assistant. The version is the one in `custom_components/rema1000/manifest.json`; a new version on `main` is released by itself with its section below as notes.
+All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
+
+## [2.15.0] - 2026-11-08
+
+Everything from the betas 2.15.0b1 to 2.15.0b7 (the sections below), tested on a real household's plans.
+
+### Added
+- **Nemlig.com as your shop** (#67): offers, your Nemlig prices and products, and the shopping list sent to your basket on nemlig.com. Login goes through Nemlig's Queue-it waiting room the way a browser does; a real queue is shown as its own message. Middagsro never chooses a delivery time and never orders.
+- **Change any day of the plan as freely as in Ny madplan:** a day's menu asks what the day is – *Ret*, *Restedag*, *Ingen madlavning* or *Spring over*. A dish can be an AI suggestion (optionally vegetarian), from the collection, REMA's recipes or Mealie, or written yourself – with *Køb ind til retten* (#70).
+- **The quick + REMA-listen buttons can go to another to-do list** (#45).
+- From PR #69 by @nagels: delete freezer plans, *Spisekammer* with shared ingredient quantities, switching shop from the panel, and customisable navigation and phone shortcuts.
+
+### Changed
+- **A leftovers day changes on its own:** a new dish on Thursday's leftovers day goes on Thursday, and Monday keeps its dish.
+- **Skipped days stay in the plan**, grey and marked *Springes over*, and can be changed back.
+
+### Fixed
+- **The shopping list follows the plan when days are changed by hand:** items no dinner uses leave the list, items named differently are matched to their line, missing items are added, and amounts follow the recipes – down as well as up, unless you set the amount yourself or it can't be counted.
+- Items bought in another chain are counted in that chain's package; baking potatoes and chicken breasts weigh what they do.
+- Turning the phone sideways and back no longer leaves the panel zoomed in with large text.
+- The REMA and Mealie pickers in a day's menu, the day menu's choices on a phone, and *Gør til restedag*.
+
+## [2.15.0b7] - 2026-11-08
+
+### Fixed
+- An amount the shopping list can't count in the package's unit ("7 stk" chicken breasts against packages sold by weight) no longer makes the list buy less: the amount is only lowered when every dish's amount could be counted.
+- Chicken breasts weigh about 150 g each, so "7 stk kyllingebryst" is counted as about 1 kg.
+
+## [2.15.0b6] - 2026-11-08
+
+### Fixed
+- **The shopping list follows the plan when days are changed by hand:** after a new dish, a leftovers day, a skipped day or a day without cooking, items no dinner uses any more leave the list (not your weekly items, items you added, or items already sent), an item a dish names by another name is matched to its line ("KYLLINGEBRYSTFILET 450 GR." is the chicken already on the list), an item the AI named but left off is added, and the amounts follow the recipes – down as well as up, unless you set the amount yourself.
+- An item bought in another chain is counted in that chain's package: 1.5 kg potatoes is one 5 kg bag from Bilka, not three.
+- Bagekartofler weigh as baking potatoes (about 250 g each), not as small potatoes.
+- Turning the phone sideways and back no longer leaves the panel zoomed in with large text that can't be used: the text keeps its size in landscape, and a zoom the phone made itself is undone.
+
+## [2.15.0b5] - 2026-11-08
+
+### Changed
+- **Skipped days stay in the plan**, grey and marked *Springes over* – also the days skipped under *Tilpas dagene* when the plan was made. Tap one to take it back as it was, or to make it a dinner, a leftovers day or a day without cooking right away.
+
+### Fixed
+- *Gør til restedag* did nothing until another day was chosen in the list: the nearest earlier dinner is now chosen from the start.
+
+## [2.15.0b4] - 2026-11-08
+
+### Fixed
+- Choosing a dish from REMA's recipes or Mealie (in a day's menu and in *Tilpas dagene*) found nothing: the list was never loaded.
+- The day menu's four choices no longer lie on top of each other on a phone: two by two, with room for *Ingen madlavning*.
+
+## [2.15.0b3] - 2026-11-08
+
+### Added
+- **Change any day of the plan as freely as in Ny madplan:** a day's menu now asks what the day is – *Ret*, *Restedag*, *Ingen madlavning* or *Spring over* – like *Tilpas dagene* does before the plan is made. *Ret*: three AI suggestions (optionally only vegetarian), a dish from the collection, REMA's recipes or Mealie, or one you write yourself. *Restedag*: choose which earlier day's dinner the day eats – that dinner is cooked in a double portion, its recipe and the shopping list follow, and the day's own dish and items leave the list. *Ingen madlavning*: Spiser ude, Take-away, Rugbrødsdag or your own text.
+
+### Changed
+- **A leftovers day changes on its own:** choosing a new dish for, say, Thursday's leftovers of Monday puts the dish on Thursday – Monday keeps its dish and cooks one portion. Changing Monday's dish from Thursday is still possible (*Skift … i stedet*), and the leftovers follow it. A leftovers day that is skipped or given a text lets go of its food day too.
+
+### Fixed
+- **Nemlig.com login through the waiting room** (#67): Nemlig.com sends every new session to its Queue-it waiting room, which normally sends it straight back with a token the site exchanges for an accept cookie. Middagsro gave up at the first redirect ("Nemlig.com har kø lige nu") every time; it now follows the waiting room the way a browser does – only between nemlig.com and queue-it.net – keeps the cookie exactly as the site set it, and goes through again if a later call is sent there. Only a real queue (or a check that needs a browser) stops the login.
+- A Nemlig.com queue is shown as its own message in the login form instead of the generic "Kunne ikke få forbindelse".
+
+## [2.15.0b2] - 2026-11-04
+
+### Added
+- **Nemlig.com as your shop** (#67): choose *Nemlig.com* when adding Middagsro (or under *Omkonfigurér*) and log in with the Nemlig account. The week's offers are Nemlig's offer page (Ugens Priskup, Skarp pris, Dagstilbud …, mix offers as "3 for 48 kr."), every item gets your Nemlig price and product, and the shopping list is sent to your basket on nemlig.com – absolute quantities, confirmed against the basket, never sent twice. Middagsro never chooses a delivery time and never orders. The password is kept in Home Assistant and sent only to nemlig.com.
+
+## [2.15.0b1] - 2026-11-04
+
+### Added
+- **Køb ind til en ret, du selv skriver** (#70): in a day's menu, *Skriv selv* has *Køb ind til retten* – the AI writes the dish's items on the shopping list and makes the recipe, as *Skift ret* does – next to *Ingen madlavning* (Spiser ude, take-away), which buys nothing.
+- **The quick + REMA-listen buttons can go to another to-do list** (#45): under *Indstillinger › Butik*, choose the to-do list that *Tilbud og priser* and the search's avis offers put things on (Bring!, Home Assistant's shopping list …). The meal plan's list is still sent to the REMA app.
+- From PR #69 by @nagels:
+  - Delete freezer plans from their overview or the open plan, with confirmation. Cart contents and ingredient inventory are retained.
+  - **Spisekammer:** shared ingredient quantities for weekly and freezer plans. Shopping shows omitted amounts; usage is confirmed per dish and deducted once. Freezer portion changes recalculate shopping before cooking or cart transfer.
+  - Switch installed shops from the panel, carry the current plan or start a new one, and optionally remember the choice. Carried plans get the destination shop's products/prices while retaining sent-item flags.
+  - Customize desktop navigation and the four phone shortcuts, including their order. Preferences are saved per browser; remaining pages stay available under **Mere**.
+
+### Fixed
+- Budget booking uses labelled, equally sized amount/date inputs and a separate submit row on narrow cards.
 
 ## [2.14.0] - 2026-11-04
 

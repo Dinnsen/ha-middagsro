@@ -11,7 +11,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
-from custom_components.middagsro import planedit as pe
+from custom_components.middagsro import mealplan as mp, planedit as pe
 from custom_components.middagsro.api import RemaError
 import homeassistant.components.ai_task as ai_task_component  # noqa: F401 - patched in the tests
 from homeassistant.core import HomeAssistant
@@ -77,11 +77,11 @@ def storage_contents() -> dict[str, Any]:
 async def test_swap_options(
     hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock, ai_task: str
 ) -> None:
-    """Three other dishes; for a leftovers day, for the day it is from."""
+    """Three other dishes; for a leftovers day, if asked, for the day it is from."""
     planner = init_integration.runtime_data.planner
     ai = FakeAI(options=OPTIONS)
     with patch("homeassistant.components.ai_task.async_generate_data", new=ai):
-        result = await pe.async_swap_options(planner, "p", "2026-10-19")
+        result = await pe.async_swap_options(planner, "p", "2026-10-19", leftovers="source")
     assert result["date"] == "2026-10-18"  # monday is sunday's leftovers
     assert result["dish"] == "Spaghetti bolognese"
     # The kyllingewok is already on the week (tuesday): not a suggestion.
@@ -142,6 +142,7 @@ async def test_swap_dish(
             "p",
             "2026-10-19",
             {"dish": "Kyllingewok", "type": "normal", "total_minutes": 25},
+            leftovers="source",
         )
     names = {line["name"]: line for line in plan["shopping"]}
     # Hakket oksekød and spaghetti were only for the old dish; persille is shared.
@@ -185,6 +186,191 @@ async def test_swap_dish_in_an_older_plan(
     assert "remove:" in ai.prompts["REMA 1000 ny ret"][0]
     assert "Ugens tilbud" not in ai.prompts["REMA 1000 ny ret"][0]  # no avis
     assert (plan["days"][2]["dish"], plan["days"][2]["steps"]) == ("Fiskefrikadeller", [])
+
+
+async def test_a_leftovers_day_gets_a_dish_of_its_own(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock, ai_task: str
+) -> None:
+    """Changing monday (sunday's leftovers) changes monday only: sunday cooks one portion."""
+    planner = init_integration.runtime_data.planner
+    ai = FakeAI(options=OPTIONS)
+    with patch("homeassistant.components.ai_task.async_generate_data", new=ai):
+        result = await pe.async_swap_options(planner, "p", "2026-10-19", vegetarian=True)
+    assert (result["date"], result["dish"]) == ("2026-10-19", "Rester af spaghetti bolognese")
+    prompt = ai.prompts["REMA 1000 andre retter"][0]
+    assert "mangler aftensmad mandag 2026-10-19" in prompt
+    assert "dobbelt portion" not in prompt
+    assert "SKAL være vegetarretter" in prompt
+    assert "Spaghetti bolognese" in prompt  # not sunday's dish again
+
+    items = {"add": [{"name": "Røde linser", "amount": 250, "unit": "g", "search": "røde linser",
+                      "category": "Kolonial"}], "uses": ["Røde linser"]}  # fmt: skip
+    ai = FakeAI(items=items)
+    with patch("homeassistant.components.ai_task.async_generate_data", new=ai):
+        plan = await pe.async_swap_dish(planner, "p", "2026-10-19", {"dish": "Linsegryde"})
+    sunday, monday, _tuesday = plan["days"]
+    assert (sunday["dish"], sunday["makes_leftovers"]) == ("Spaghetti bolognese", False)
+    assert (monday["dish"], monday["type"], monday["uses_leftovers_from"]) == (
+        "Linsegryde",
+        "normal",
+        None,
+    )
+    assert monday["uses"] == ["Røde linser"]
+    names = [line["name"] for line in plan["shopping"]]
+    assert "Hakket oksekød" in names and "Røde linser" in names  # sunday's items stay
+    prompt = ai.prompts["REMA 1000 ny ret"][0]
+    assert 'Aftensmaden 2026-10-19 bliver "Linsegryde"' in prompt
+    assert "remove:" not in prompt
+
+
+async def test_make_a_day_leftovers(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock, ai_task: str
+) -> None:
+    """Tuesday becomes the leftovers of sunday: its own items go, sunday cooks for two days."""
+    planner = init_integration.runtime_data.planner
+    store = init_integration.runtime_data.store
+    plan = store.get_plan("p")
+    assert plan is not None
+    # Sunday cooks once, monday is a dish of its own.
+    plan["days"][1].update(dish="Omelet", type="normal", uses_leftovers_from=None, uses=[])
+    plan["days"][0]["makes_leftovers"] = False
+    ai = FakeAI()
+    with patch("homeassistant.components.ai_task.async_generate_data", new=ai):
+        plan = await pe.async_set_leftovers(planner, "p", "2026-10-20", "2026-10-18")
+    sunday, _monday, tuesday = plan["days"]
+    assert (tuesday["type"], tuesday["uses_leftovers_from"], tuesday["dish"]) == (
+        "rester",
+        "2026-10-18",
+        "Rester af spaghetti bolognese",
+    )
+    assert tuesday["steps"][0]["text"].startswith("Varm resten af Spaghetti bolognese")
+    assert sunday["makes_leftovers"] is True
+    assert "REMA 1000 opskrift 2026-10-18" in ai.prompts  # sunday's recipe, for two dinners
+    assert "dobbelt portion" in ai.prompts["REMA 1000 opskrift 2026-10-18"][0]
+    # Persille was only tuesday's: off the list.
+    assert "Persille" not in [line["name"] for line in plan["shopping"]]
+    # The same again changes nothing; the nearest day before is the default.
+    assert await pe.async_set_leftovers(planner, "p", "2026-10-20", "2026-10-18") is plan
+    with patch("homeassistant.components.ai_task.async_generate_data", new=ai):
+        plan = await pe.async_set_leftovers(planner, "p", "2026-10-20")
+    assert "REMA 1000 opskrift 2026-10-19" in ai.prompts  # monday now cooks for two
+    assert plan["days"][2]["uses_leftovers_from"] == "2026-10-19"
+    assert plan["days"][1]["makes_leftovers"] is True
+    assert sunday["makes_leftovers"] is False  # no day eats sunday's leftovers now
+    for day, source in (
+        ("2026-10-18", None),
+        ("2026-10-20", "2026-10-21"),
+        ("2026-10-20", "2026-10-20"),
+    ):
+        with pytest.raises(ServiceValidationError) as err:
+            await pe.async_set_leftovers(planner, "p", day, source)
+        assert err.value.translation_key == "leftovers_no_source"
+
+
+async def test_leftovers_day_skipped_or_written(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """A leftovers day that is skipped or written lets go of its food day; taken back, it holds on."""
+    planner = init_integration.runtime_data.planner
+    plan = await pe.async_clear_day(planner, "p", "2026-10-19", skip=True)
+    assert plan["days"][0]["makes_leftovers"] is False
+    plan = await pe.async_restore_day(planner, "p", "2026-10-19")
+    sunday, monday, _ = plan["days"]
+    assert (monday["uses_leftovers_from"], sunday["makes_leftovers"]) == ("2026-10-18", True)
+    plan = await pe.async_set_day_text(planner, "p", "2026-10-19", "Spiser ude")
+    sunday, monday, _ = plan["days"]
+    assert (monday["dish"], monday["uses_leftovers_from"]) == ("Spiser ude", None)
+    assert sunday["makes_leftovers"] is False
+    # Skipped as leftovers, then the food day goes: taken back as a day to fill.
+    plan["days"][1].update(type="rester", uses_leftovers_from="2026-10-18", dish="Rester")
+    plan["days"][0]["makes_leftovers"] = True
+    await pe.async_clear_day(planner, "p", "2026-10-19", skip=True)
+    await pe.async_clear_day(planner, "p", "2026-10-18")
+    plan = await pe.async_restore_day(planner, "p", "2026-10-19")
+    assert (plan["days"][1]["type"], plan["days"][1]["dish"]) == ("tom", "")
+
+
+async def test_sync_shopping_follows_the_plan(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """Lines no dinner uses leave the list; an item a dish names by another name
+    is its line; a forgotten item is added; basic items and the family's own stay."""
+    planner = init_integration.runtime_data.planner
+    store = init_integration.runtime_data.store
+    plan = store.get_plan("p")
+    assert plan is not None
+    sunday, _monday, tuesday = plan["days"]
+    sunday["uses"] = ["HAKKET OKSEKØD 500 GR", "Spaghetti", "Basilikum", "SALT M/ JOD"]
+    sunday["ingredients"] = [
+        {"name": "hakket oksekød", "amount": "500 g"},
+        {"name": "salt", "amount": "", "basic": True, "product": {"id": 1, "name": "SALT M/ JOD"}},
+    ]
+    tuesday["uses"] = []  # persille is no longer used
+    plan["shopping"].append({"name": "Gammel vare", "amount": 1, "unit": "pk", "search": "x",
+                             "category": "Andet", "sent": "2026-10-18T10:00"})  # fmt: skip
+    removed = await pe.async_sync_shopping(planner, plan)
+    names = [line["name"] for line in plan["shopping"]]
+    assert [line["name"] for line in removed] == ["Persille"]
+    assert "Basilikum" in names  # named by the dish, now on the list
+    assert "SALT M/ JOD" not in names  # the family has it
+    assert {"LETMÆLK", "Gammel vare"} <= set(names)  # the family's own, and sent
+    assert sunday["uses"] == ["Hakket oksekød", "Spaghetti", "Basilikum"]
+    plan = await pe.async_sync_plan(planner, "p")
+    assert plan["total"] == mp.plan_total(plan["shopping"])
+    with pytest.raises(ServiceValidationError):
+        await pe.async_sync_plan(planner, "nope")
+    # An older plan whose dishes don't say what they use: left alone.
+    old = make_plan("old2", start="2026-10-25")
+    assert await pe.async_sync_shopping(planner, old) == []
+
+
+def test_fit_amounts_lowers_after_a_change() -> None:
+    """A line shrinks to what the dishes use now, unless its packages were set by hand;
+    a line bought in another chain counts in that chain's package."""
+    plan = {
+        "days": [{"date": "2026-11-10", "dish": "Pølseret", "type": "normal", "uses": ["Kartofler"],
+                  "ingredients": [{"name": "kartofler", "amount": "1,5 kg"}]}],
+        "shopping": [
+            {"name": "Kartofler", "key": "kartofler", "amount": 5, "unit": "kg", "packages": 3, "cost": 75,
+             "buy_at": "93f13", "chain_price": 25, "chain_heading": "Kartofler (5 KG / SALLING)",
+             "product": {"id": 1, "name": "KARTOFLER", "underline": "1 KG.", "price": 10}},
+            {"name": "Kartofler i hånden", "key": "kartofler", "amount": 1, "unit": "kg", "packages": 2,
+             "product": {"id": 2, "name": "KARTOFLER", "underline": "1 KG.", "price": 10}},
+        ],
+    }  # fmt: skip
+    assert mp.fit_amounts(plan) == []  # never lower by default
+    assert mp.fit_amounts(plan, lower=True) == ["Kartofler"]
+    first, second = plan["shopping"]
+    assert (first["packages"], first["cost"]) == (1, 25)
+    assert second["packages"] == 2  # not used by the dish: its own amount
+    first["packages"], first["packages_set"] = 4, True
+    assert mp.fit_amounts(plan, lower=True) == []
+    # "2 stk" of something sold by weight with no weight per piece: never lowered.
+    beef = {
+        "days": [{"date": "2026-11-10", "dish": "Bøffer", "type": "normal", "uses": ["Oksekød"],
+                  "ingredients": [{"name": "oksekød", "amount": "400 g"},
+                                  {"name": "oksekød", "amount": "2 stk"}]}],
+        "shopping": [{"name": "Oksekød", "amount": 1, "unit": "kg", "packages": 3,
+                      "product": {"id": 3, "name": "OKSEKØD", "underline": "500 GR.", "price": 40}}],
+    }  # fmt: skip
+    assert mp.fit_amounts(beef, lower=True) == []
+    assert beef["shopping"][0]["packages"] == 3
+    assert mp.chain_size({"chain_heading": "Mælk"}) is None
+    assert mp.chain_size({"chain_heading": "Mælk", "amount": 2, "unit": "l"}) == ("ml", 2000)
+
+
+def test_release_source() -> None:
+    """Only the last leftovers day lets the food day cook one portion."""
+    plan = make_plan("p", start="2026-10-18")
+    sunday, monday, tuesday = plan["days"]
+    tuesday.update(type="rester", uses_leftovers_from="2026-10-18")
+    assert pe.release_source(plan, monday) is None  # tuesday still eats them
+    assert sunday["makes_leftovers"] is True
+    assert pe.release_source(plan, tuesday) is sunday
+    assert sunday["makes_leftovers"] is False
+    assert pe.release_source(plan, sunday) is None
+    lonely = {"date": "2026-10-01", "type": "rester"}
+    assert pe.release_source({"days": [lonely]}, lonely) is None
 
 
 def test_cooked_day_and_total() -> None:

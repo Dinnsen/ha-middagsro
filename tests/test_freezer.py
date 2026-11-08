@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from custom_components.middagsro.freezer import async_generate, async_portions, build_prompt
+from custom_components.middagsro.inventory import inventory
 from custom_components.middagsro.storage import RemaPlanStore
 
 from .conftest import make_plan
@@ -229,3 +230,80 @@ async def test_background_failure_logged(
     record = next(r for r in caplog.records if "freezer plan" in r.getMessage())
     assert record.levelname == level
     assert planner.status["state"] == "error"
+
+
+async def test_pantry_quantities_recalculate_without_double_subtraction(hass, init_integration):
+    planner = init_integration.runtime_data.planner
+    stock = inventory(hass)
+    await stock.async_edit(None, "Hakket oksekød", 800, "g")
+    with patch.object(planner, "_async_ask_ai", AsyncMock(return_value=answer())) as ask:
+        plan = await async_generate(planner, 4, use_freezer=True)
+    assert "RÅVARER I SPISEKAMMERET" in ask.call_args.args[0]
+    assert plan["shopping"][0]["amount"] == 800
+    original_groups = {g["day_id"]: g["id"] for g in plan["freezer_groups"]}
+    first = plan["days"][0]
+    assert first["ingredients"][0]["amount"] == "400 g"
+    await async_portions(planner, plan["id"], first["date"], 16)
+    assert plan["shopping"][0]["amount"] == 2000
+    assert sum(i["amount"] for i in plan["freezer_used"]) == 800
+    assert stock.items[0]["amount"] == 800
+    await async_portions(planner, plan["id"], first["date"], 4)
+    assert plan["shopping"][0]["amount"] == 800
+    assert {g["day_id"]: g["id"] for g in plan["freezer_groups"]} == original_groups
+    group = plan["freezer_groups"][0]
+    await stock.async_consume(plan, group["id"], [stock.items[0]["id"]])
+    assert stock.items[0]["amount"] == 400
+    before = copy.deepcopy(plan)
+    with pytest.raises(ValueError, match="lagerforbrug"):
+        await async_portions(planner, plan["id"], first["date"], 16)
+    assert plan == before
+
+
+async def test_pantry_can_cover_every_batch_ingredient(hass, init_integration):
+    planner = init_integration.runtime_data.planner
+    stock = inventory(hass)
+    await stock.async_edit(None, "Hakket oksekød", 3600, "g")
+    with patch.object(planner, "_async_ask_ai", AsyncMock(return_value=answer())):
+        plan = await async_generate(planner, 4, use_freezer=True)
+    assert plan["shopping"] == [] and plan["total"] == 0
+    assert len(plan["freezer_groups"]) == 4
+    first = plan["days"][0]
+    await async_portions(planner, plan["id"], first["date"], 16)
+    assert plan["shopping"] == []
+    await async_portions(planner, plan["id"], first["date"], 32)
+    assert plan["shopping"][0]["amount"] == 800
+    assert plan["freezer_used"][0]["amount"] == 3600
+    assert stock.items[0]["amount"] == 3600
+
+
+async def test_batch_pantry_opt_out_and_snapshot(hass, init_integration):
+    planner = init_integration.runtime_data.planner
+    stock = inventory(hass)
+    await stock.async_edit(None, "Hakket oksekød", 800, "g")
+    with patch.object(planner, "_async_ask_ai", AsyncMock(return_value=answer())) as ask:
+        no_stock = await async_generate(planner, 4, use_freezer=False)
+        assert "RÅVARER I SPISEKAMMERET" not in ask.call_args.args[0]
+        assert no_stock["shopping"][0]["amount"] == 1600
+        assert not no_stock.get("freezer_used")
+        plan = await async_generate(planner, 4, use_freezer=True)
+    await stock.async_edit(stock.items[0]["id"], "Hakket oksekød", 3000, "g")
+    await async_portions(planner, plan["id"], plan["days"][0]["date"], 16)
+    assert plan["shopping"][0]["amount"] == 2000  # use the original 800 g snapshot
+    assert stock.items[0]["amount"] == 3000
+
+
+async def test_batch_websocket_accepts_pantry(hass, init_integration, hass_ws_client, ai_task):
+    stock = inventory(hass)
+    await stock.async_edit(None, "Hakket oksekød", 800, "g")
+    planner = init_integration.runtime_data.planner
+    client = await hass_ws_client(hass)
+    with patch.object(planner, "_async_ask_ai", AsyncMock(return_value=answer())):
+        await client.send_json(
+            {"id": 1, "type": "middagsro/freezer/generate", "count": 4, "use_freezer": True}
+        )
+        assert (await client.receive_json())["success"]
+        await planner._task
+    plan = planner.store.freezer_plans[0]
+    assert plan["use_freezer"]
+    assert plan["shopping"][0]["amount"] == 800
+    assert stock.items[0]["amount"] == 800

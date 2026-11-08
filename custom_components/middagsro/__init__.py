@@ -26,12 +26,15 @@ from .coordinator import (
     RemaShoppingListCoordinator,
 )
 from .favorites import FavoriteOffers
+from .inventory import inventory
 from .mealplan import MealPlanner
 from .migrate import async_migrate
+from .nemlig import NEMLIG_ID, new_session_kwargs
 from .panel import async_register_panel, async_unregister_panel
 from .services import async_setup_services
 from .storage import STORE_VERSION, RemaPlanStore
-from .store_client import REMA, BilkaStoreClient, StoreClient, store_of
+from .store_client import REMA, BilkaStoreClient, NemligStoreClient, StoreClient, store_of
+from .store_selection import selection
 from .watch import CHECK_EVERY as WATCH_CHECK_EVERY, async_check as async_watch_check
 from .websocket import async_register_websocket
 
@@ -50,6 +53,8 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the actions and the panel's websocket commands."""
+    await selection(hass).async_load()
+    await inventory(hass).async_load()
     async_setup_services(hass)
     async_register_websocket(hass)
     return True
@@ -59,8 +64,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
     """Set up Middagsro for a REMA 1000 account, or for another shop (no login)."""
     await async_migrate(hass, entry)
     # Own session so the login cookies of this account are kept apart.
-    session = async_create_clientsession(hass)
     store_id = store_of(entry.data)
+    session = async_create_clientsession(
+        hass, **(new_session_kwargs() if store_id == NEMLIG_ID else {})
+    )
     client: RemaClient
     if store_id == REMA:
         client = RemaClient(session, entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD])
@@ -72,6 +79,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
             entry.data.get(CONF_EMAIL, ""),
             entry.data.get(CONF_PASSWORD, ""),
             entry.data.get(CONF_PICKUP, ""),
+        )
+    elif store_id == NEMLIG_ID:
+        client = NemligStoreClient(
+            hass, session, entry.entry_id, entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD]
         )
     else:
         client = StoreClient(hass, session, entry.entry_id, store_id)
@@ -192,6 +203,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> Non
         ("catalogs", STORAGE_VERSION),
         ("list", 1),
         ("bilka_transfers", 1),
+        ("nemlig_transfers", 1),
     ):
         await Store(hass, version, f"{DOMAIN}.{entry.entry_id}.{name}").async_remove()
 

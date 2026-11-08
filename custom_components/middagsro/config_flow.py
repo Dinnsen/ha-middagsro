@@ -24,6 +24,7 @@ from .bilka import BILKA_ID, BilkaSearch
 from .bilka_cart import CONF_PICKUP, CONF_PICKUP_NAME, CONF_PRICE_STORE, BilkaCart
 from .const import DOMAIN
 from .migrate import MIGRATE_FROM, old_entries
+from .nemlig import NEMLIG_ID, NemligClient, NemligQueueError, new_session_kwargs
 from .schema import vol
 from .store_client import CONF_STORE, REMA, STORES, rema_only, store_name, store_of
 
@@ -110,6 +111,68 @@ class RemaConfigFlow(ConfigFlow, domain=DOMAIN):
             return None, [], {"base": "cannot_connect"}
         finally:
             session.detach()
+
+    async def _async_validate_nemlig(
+        self, email: str, password: str
+    ) -> tuple[int | None, dict[str, str]]:
+        """Log in to Nemlig.com with a session of its own (its cookies stay apart)."""
+        session = async_create_clientsession(self.hass, auto_cleanup=False, **new_session_kwargs())
+        try:
+            return await NemligClient(session, email, password).async_login(), {}
+        except RemaAuthError:
+            return None, {"base": "invalid_auth"}
+        except NemligQueueError as err:
+            _LOGGER.warning("Nemlig.com login failed: %s", err)
+            return None, {"base": "nemlig_queue"}
+        except RemaError as err:
+            _LOGGER.warning("Nemlig.com login failed: %s", err)
+            return None, {"base": "cannot_connect"}
+        except Exception:
+            _LOGGER.exception("Unexpected error while logging in to Nemlig.com")
+            return None, {"base": "unknown"}
+        finally:
+            session.detach()
+
+    async def async_step_nemlig(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Log in with the Nemlig.com account: its prices, offers and basket."""
+        errors: dict[str, str] = {}
+        reconfigure = self.source == "reconfigure"
+        if user_input is not None:
+            email = user_input[CONF_EMAIL].strip()
+            uid, errors = await self._async_validate_nemlig(email, user_input[CONF_PASSWORD])
+            if not errors:
+                data = {
+                    CONF_STORE: NEMLIG_ID,
+                    CONF_EMAIL: email,
+                    CONF_PASSWORD: user_input[CONF_PASSWORD],
+                    "nemlig_user_id": uid,
+                }
+                if reconfigure:
+                    entry = self._get_reconfigure_entry()
+                    if self._taken(_store_unique_id(NEMLIG_ID), NEMLIG_ID):
+                        return self.async_abort(reason="already_configured")
+                    return self.async_update_reload_and_abort(
+                        entry, title="Middagsro – Nemlig.com", data=data
+                    )
+                await self.async_set_unique_id(_store_unique_id(NEMLIG_ID))
+                self._abort_if_unique_id_configured()
+                if any(store_of(e.data) == NEMLIG_ID for e in self._async_current_entries()):
+                    return self.async_abort(reason="already_configured")
+                return self.async_create_entry(title="Middagsro – Nemlig.com", data=data)
+        return self.async_show_form(
+            step_id="reconfigure_nemlig" if reconfigure else "nemlig",
+            data_schema=self.add_suggested_values_to_schema(
+                USER_SCHEMA, {CONF_EMAIL: (user_input or {}).get(CONF_EMAIL)}
+            ),
+            description_placeholders={"missing": _missing(NEMLIG_ID)},
+            errors=errors,
+        )
+
+    async def async_step_reconfigure_nemlig(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change to Nemlig.com, or its login."""
+        return await self.async_step_nemlig(user_input)
 
     async def async_step_bilka(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Log in with the same Salling Group account as the BilkaToGo app, or not.
@@ -254,6 +317,8 @@ class RemaConfigFlow(ConfigFlow, domain=DOMAIN):
                 return await self.async_step_rema()
             if self._store == BILKA_ID:
                 return await self.async_step_bilka()
+            if self._store == NEMLIG_ID:
+                return await self.async_step_nemlig()
             return await self.async_step_store()
         return self.async_show_form(step_id="user", data_schema=STORE_SCHEMA)
 
@@ -316,6 +381,20 @@ class RemaConfigFlow(ConfigFlow, domain=DOMAIN):
         """Start reauthentication when the password no longer works."""
         return await self.async_step_reauth_confirm()
 
+    async def _async_reauth_nemlig(self, entry: Any, password: str) -> ConfigFlowResult:
+        """A new Nemlig.com password, for the same account."""
+        uid, errors = await self._async_validate_nemlig(entry.data[CONF_EMAIL], password)
+        if not errors:
+            if uid != entry.data.get("nemlig_user_id"):
+                return self.async_abort(reason="wrong_account")
+            return self.async_update_reload_and_abort(entry, data_updates={CONF_PASSWORD: password})
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=REAUTH_SCHEMA,
+            description_placeholders={"email": entry.data[CONF_EMAIL]},
+            errors=errors,
+        )
+
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -341,6 +420,8 @@ class RemaConfigFlow(ConfigFlow, domain=DOMAIN):
                     description_placeholders={"email": entry.data[CONF_EMAIL]},
                     errors=errors,
                 )
+            if store_of(entry.data) == NEMLIG_ID:
+                return await self._async_reauth_nemlig(entry, user_input[CONF_PASSWORD])
             user_id, errors = await self._async_validate(
                 entry.data[CONF_EMAIL], user_input[CONF_PASSWORD]
             )
@@ -368,6 +449,8 @@ class RemaConfigFlow(ConfigFlow, domain=DOMAIN):
                 return await self.async_step_reconfigure_rema()
             if self._store == BILKA_ID:
                 return await self.async_step_reconfigure_bilka()
+            if self._store == NEMLIG_ID:
+                return await self.async_step_reconfigure_nemlig()
             return await self.async_step_reconfigure_store()
         return self.async_show_form(
             step_id="reconfigure",

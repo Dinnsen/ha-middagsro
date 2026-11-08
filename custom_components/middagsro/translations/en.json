@@ -97,6 +97,30 @@
         "data": {
           "bilka_pickup": "Bilka pickup store"
         }
+      },
+      "nemlig": {
+        "title": "Nemlig.com: log in",
+        "description": "Log in with your Nemlig.com account. The meal plan is made from Nemlig's offers, every item has your Nemlig price, and the shopping list is sent to your basket on nemlig.com (you choose the delivery time and order yourself).\n\nNot available with Nemlig.com:\n{missing}",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        },
+        "data_description": {
+          "email": "The e-mail you log in to nemlig.com with.",
+          "password": "Kept in Home Assistant and sent only to nemlig.com."
+        }
+      },
+      "reconfigure_nemlig": {
+        "title": "Nemlig.com: log in",
+        "description": "Log in with your Nemlig.com account. The meal plan is made from Nemlig's offers, every item has your Nemlig price, and the shopping list is sent to your basket on nemlig.com (you choose the delivery time and order yourself).\n\nNot available with Nemlig.com:\n{missing}",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        },
+        "data_description": {
+          "email": "The e-mail you log in to nemlig.com with.",
+          "password": "Kept in Home Assistant and sent only to nemlig.com."
+        }
       }
     },
     "error": {
@@ -104,7 +128,8 @@
       "invalid_auth": "Wrong e-mail or password.",
       "unknown": "Unexpected error. See the log for details.",
       "invalid_pickup": "Choose an available Bilka pickup store.",
-      "missing_login": "Fill in both e-mail and password – or leave both empty to use Bilka without a login."
+      "missing_login": "Fill in both e-mail and password – or leave both empty to use Bilka without a login.",
+      "nemlig_queue": "Nemlig.com's waiting room (Queue-it) did not let Middagsro in. This happens when the shop is busy or asks for a browser check – try again in a little while."
     },
     "abort": {
       "already_configured": "This REMA 1000 account or shop is already set up.",
@@ -345,6 +370,9 @@
     },
     "unknown_action": {
       "message": "Unknown action: {action}"
+    },
+    "leftovers_no_source": {
+      "message": "There is no dinner before this day to eat the leftovers of."
     }
   },
   "issues": {

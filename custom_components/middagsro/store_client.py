@@ -27,6 +27,7 @@ from .bilka import BILKA_ID, BilkaSearch
 from .bilka_cart import BilkaCart, BilkaError
 from .chains import CHAINS, is_food_catalog
 from .const import DOMAIN
+from .nemlig import NEMLIG_ID, NEMLIG_NAME, NemligClient
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -40,7 +41,7 @@ LIST_NAME = "Indkøbsliste"
 MAX_ITEMS = 500
 
 # The shops to choose between: REMA 1000 first, then the chains on Tjek.
-STORES: dict[str, str] = {REMA: "REMA 1000", **CHAINS}
+STORES: dict[str, str] = {REMA: "REMA 1000", NEMLIG_ID: NEMLIG_NAME, **CHAINS}
 
 # What only works with REMA 1000 (shown when another shop is chosen).
 REMA_ONLY = (
@@ -67,7 +68,7 @@ def rema_only(store: str) -> list[str]:
     """What doesn't work with a shop (only with REMA 1000)."""
     if store == REMA:
         return []
-    if store == BILKA_ID:
+    if store in (BILKA_ID, NEMLIG_ID):
         return [line for line in REMA_ONLY if line not in _WITH_PRICES]
     return list(REMA_ONLY)
 
@@ -244,6 +245,8 @@ class StoreClient(RemaClient):
 class BilkaStoreClient(StoreClient):
     """Bilka: its avis from Tjek, and every item priced from Bilka ToGo's webshop."""
 
+    cart_label = "BilkaToGo"
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -290,7 +293,7 @@ class BilkaStoreClient(StoreClient):
                 list_id, amount=amount, product_id=product_id, name=name
             )
         if not product_id:
-            raise BilkaError("Vælg en BilkaToGo-vare til ingrediensen, før den sendes")
+            raise BilkaError(f"Vælg en {self.cart_label}-vare til ingrediensen, før den sendes")
         await self.cart.async_set_amount(product_id, max(1, amount))
         return {"id": product_id}
 
@@ -299,7 +302,9 @@ class BilkaStoreClient(StoreClient):
         if self.cart is None:
             return await super().async_update_item(list_id, item_id, **changes)
         if changes.get("bought"):
-            raise BilkaError("BilkaToGo-kurven kan ikke afkrydses. Gennemfør købet i BilkaToGo")
+            raise BilkaError(
+                f"{self.cart_label}-kurven kan ikke afkrydses. Gennemfør købet i {self.cart_label}"
+            )
         if "amount" in changes:
             await self.cart.async_set_amount(item_id, max(1, int(changes["amount"])))
         return {"id": item_id}
@@ -313,7 +318,7 @@ class BilkaStoreClient(StoreClient):
             await self.cart.async_set_amount(item_id, 0, verify=False)
         targets = dict.fromkeys(item_ids, 0)
         if await self.cart.async_confirm(targets) != set(targets):
-            raise BilkaError("BilkaToGo fjernede ikke alle varer. Prøv igen")
+            raise BilkaError(f"{self.cart_label} fjernede ikke alle varer. Prøv igen")
 
     async def async_add_once(
         self,
@@ -335,7 +340,7 @@ class BilkaStoreClient(StoreClient):
             )
             return
         if not product_id:
-            raise BilkaError("Vælg en BilkaToGo-vare til ingrediensen, før den sendes")
+            raise BilkaError(f"Vælg en {self.cart_label}-vare til ingrediensen, før den sendes")
         async with self._transfer_lock:
             if self._receipts is None:
                 self._receipts = await self._transfers.async_load() or {}
@@ -394,3 +399,48 @@ class BilkaStoreClient(StoreClient):
     ) -> list[Product]:
         """Products found before."""
         return self.bilka.known(product_ids)
+
+
+class NemligStoreClient(BilkaStoreClient):
+    """Nemlig.com: the account's prices on every item, its offer page as the week's
+    avis, and the shopping list sent to the account's basket.
+
+    It is a BilkaStoreClient with Nemlig's account in the place of BilkaToGo's search
+    and cart: the basket is written and confirmed the same way.
+    """
+
+    cart_label = NEMLIG_NAME
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        session: aiohttp.ClientSession,
+        entry_id: str,
+        email: str,
+        password: str,
+    ) -> None:
+        """Initialize."""
+        StoreClient.__init__(self, hass, session, entry_id, NEMLIG_ID)
+        self.nemlig = NemligClient(session, email, password)
+        self.bilka = self.nemlig  # type: ignore[assignment]  # the same search calls
+        self.cart = self.nemlig  # type: ignore[assignment]  # the same cart calls
+        self._transfers = Store(hass, 1, f"{DOMAIN}.{entry_id}.nemlig_transfers")
+        self._receipts = None
+        self._pending = {}
+        self._transfer_lock = asyncio.Lock()
+
+    async def async_login(self) -> int:
+        """Log in to the account (there is no pickup store to choose)."""
+        return await self.nemlig.async_login()
+
+    async def async_get_catalogs(self) -> list[Catalog]:
+        """The offer page as this week's avis."""
+        return await self.nemlig.async_catalogs()
+
+    async def async_get_offers(self, catalog_id: str, max_offers: int = 1000) -> list[Offer]:
+        """The offer page's products, each its own offer."""
+        return (await self.nemlig.async_offers())[:max_offers]
+
+    async def async_get_offer_products(self, offers: list[Offer]) -> list[Offer]:
+        """Nemlig's offers are its products already."""
+        return list(offers)

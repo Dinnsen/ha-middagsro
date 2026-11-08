@@ -21,7 +21,8 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
 from .api import Offer, RemaError
-from .dishes import TEXT_TYPE, matches_any
+from .dishes import TEXT_TYPE, is_cooked, matches_any
+from .ingredients import spec_for
 from .matching import choice_key, noon
 from .mealie import MealieError
 from .mealplan import (
@@ -99,6 +100,35 @@ def cooked_day(plan: dict[str, Any], day: dict[str, Any]) -> dict[str, Any]:
     return found or day
 
 
+def is_leftovers_day(day: dict[str, Any]) -> bool:
+    """A day that eats the leftovers of another day's dinner."""
+    return bool(day.get("uses_leftovers_from")) or day.get("type") == "rester"
+
+
+def release_source(plan: dict[str, Any], day: dict[str, Any]) -> dict[str, Any] | None:
+    """A leftovers day stops being one: the day its food was from no longer makes
+    a double portion, unless another day still eats the leftovers. Returns that
+    day when it changed."""
+    if not is_leftovers_day(day):
+        return None
+    source = cooked_day(plan, day)
+    day["uses_leftovers_from"] = None
+    if source is day:
+        return None
+    still = any(
+        other is not day and other.get("uses_leftovers_from") == source["date"]
+        for other in plan["days"]
+    )
+    if still or not source.get("makes_leftovers"):
+        return None
+    source["makes_leftovers"] = False
+    return source
+
+
+def leftovers_dish(dish: str) -> str:
+    return f"Rester af {dish[:1].lower()}{dish[1:]}"
+
+
 def update_total(plan: dict[str, Any]) -> None:
     """The plan's price after a change, and whether it is over budget."""
     plan["total"] = plan_total(plan["shopping"])
@@ -162,6 +192,118 @@ def _describe(line: dict[str, Any]) -> str:
     return text
 
 
+# ------------------------------------------------------------------ the list follows the plan
+
+
+def _key(name: str) -> str:
+    return spec_for(name).key
+
+
+def resolve_uses(plan: dict[str, Any], day: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """The shopping lines a dish's items are, by name or by what the thing is
+    ("KYLLINGEBRYSTFILET" is the line "Kyllingebryst"), and the items that are
+    on no line."""
+    lines = plan["shopping"]
+    by_name = {str(line["name"]).lower(): line for line in lines}
+    resolved: list[str] = []
+    missing: list[str] = []
+    for name in day.get("uses") or []:
+        line = by_name.get(str(name).lower())
+        if line is None:
+            key = _key(str(name))
+            line = next(
+                (
+                    candidate
+                    for candidate in lines
+                    if (candidate.get("key") or _key(candidate["name"])) == key
+                ),
+                None,
+            )
+        if line is None:
+            missing.append(str(name))
+        elif line["name"] not in resolved:
+            resolved.append(line["name"])
+    return resolved, missing
+
+
+async def async_sync_shopping(planner: MealPlanner, plan: dict[str, Any]) -> list[dict[str, Any]]:
+    """Make the shopping list follow the plan after a day was changed by hand.
+
+    Every dinner's items are on the list (an item the AI named but left off is
+    added), lines no dinner uses any more leave it (not the family's own: weekly
+    items, added items, items already sent or bought elsewhere), and the amounts
+    follow the recipes (down as well as up, unless set by hand). Only for plans
+    whose dishes say which items they use. Returns the lines removed.
+    """
+    cooked = [d for d in plan["days"] if is_cooked(d)]
+    if not cooked or not all("uses" in d for d in cooked):
+        return []
+    pantry = pantry_words(planner.store.settings["pantry"])
+    new_lines: list[dict[str, Any]] = []
+    for day in cooked:
+        resolved, missing = resolve_uses(plan, day)
+        # The recipe's basic items (salt, karry ...): the family has them.
+        basic = [
+            text.lower()
+            for ingredient in day.get("ingredients") or []
+            if ingredient.get("basic")
+            for text in (
+                str(ingredient.get("name") or ""),
+                str((ingredient.get("product") or {}).get("name") or ""),
+            )
+            if text
+        ]
+        for name in missing:
+            if any(_uses_item(item, name) for item in pantry) or any(
+                text in name.lower() for text in basic
+            ):
+                continue  # the family has it
+            line = planner._clean_line({"name": name, "search": name, "category": "Andet"})
+            if line is None:
+                continue
+            plan["shopping"].append(line)
+            new_lines.append(line)
+            resolved.append(line["name"])
+        day["uses"] = resolved
+    used = {str(name).lower() for d in cooked for name in d["uses"]}
+    removed = [
+        line
+        for line in plan["shopping"]
+        if str(line["name"]).lower() not in used
+        and not (
+            line.get("must_have")
+            or line.get("added")
+            or line.get("sent")
+            or line.get("pantry")
+            or line.get("bought")
+            or line.get("freezer_taken")
+        )
+    ]
+    if removed:
+        plan["shopping"] = [line for line in plan["shopping"] if line not in removed]
+    if new_lines:
+        offers = await _async_offers(planner, plan)
+        first = date.fromisoformat(plan["start_date"])
+        await planner._async_price_lines(
+            new_lines, offers, planner.price_time(first), late_offers(offers, first)
+        )
+    fit_amounts(plan, lower=True)
+    update_total(plan)
+    return removed
+
+
+async def async_sync_plan(planner: MealPlanner, plan_id: str) -> dict[str, Any]:
+    """Put the plan's shopping list right by hand (and take removed items off the shop's list)."""
+    plan = planner.store.get_plan(plan_id)
+    if plan is None:
+        raise _invalid("plan_not_found")
+    removed = await async_sync_shopping(planner, plan)
+    await planner.async_unlist(removed)
+    await planner.store.async_save()
+    planner._notify()
+    return plan
+
+
 # ------------------------------------------------------------------ swapping
 
 
@@ -175,6 +317,7 @@ def build_swap_prompt(
     own: list[dict[str, Any]] | None = None,
     earlier: list[str] | None = None,
     shop: str = "REMA 1000",
+    vegetarian: bool = False,
 ) -> str:
     """Ask the AI for three other dishes for a day."""
     when = date.fromisoformat(day["date"])
@@ -209,8 +352,10 @@ def build_swap_prompt(
             + "."
         )
     if day.get("makes_leftovers"):
-        out.append("- Retten laves i dobbelt portion; resten spises dagen efter.")
-    if day.get("type") == "vegetar":
+        out.append("- Retten laves i dobbelt portion; resten spises en anden dag.")
+    if vegetarian:
+        out.append("- Alle tre retter SKAL være vegetarretter (intet kød og ingen fisk).")
+    elif day.get("type") == "vegetar":
         out.append("- Gerne en vegetarret, da den gamle var det.")
     if offer_lines:
         out += [
@@ -281,7 +426,7 @@ def build_swap_items_prompt(
         if day.get("type") in NO_DISH
         else f'Retten "{day["dish"]}" {day["date"]} skiftes ud med "{dish}".',
         f"Den skal laves til {servings} personer"
-        + (" i dobbelt portion (rester dagen efter)." if day.get("makes_leftovers") else "."),
+        + (" i dobbelt portion (rester en anden dag)." if day.get("makes_leftovers") else "."),
         "",
         "HUSSTAND:",
         *_household_lines(settings),
@@ -374,10 +519,33 @@ async def _async_mealie_list(planner: MealPlanner) -> list[dict[str, Any]]:
         return []
 
 
-async def async_swap_options(planner: MealPlanner, plan_id: str, day_date: str) -> dict[str, Any]:
-    """Three other dishes for a day (a leftovers day: for the day it is from)."""
+def _target(
+    plan: dict[str, Any], picked: dict[str, Any], leftovers: str
+) -> tuple[dict[str, Any], bool]:
+    """The day a new dish goes on, and whether a leftovers day becomes a day of its own.
+
+    leftovers="day" (the default): the dish is cooked on the day chosen, and a
+    leftovers day stops being leftovers. "source": the dish whose leftovers the
+    day eats is changed instead (the leftovers follow it).
+    """
+    if leftovers == "source":
+        return cooked_day(plan, picked), False
+    return picked, is_leftovers_day(picked)
+
+
+async def async_swap_options(
+    planner: MealPlanner,
+    plan_id: str,
+    day_date: str,
+    leftovers: str = "day",
+    vegetarian: bool = False,
+) -> dict[str, Any]:
+    """Three other dishes for a day (or, with leftovers="source", for the day a
+    leftovers day is from)."""
     plan, picked = _plan_and_day(planner, plan_id, day_date)
-    day = cooked_day(plan, picked)
+    day, detach = _target(plan, picked, leftovers)
+    if detach:  # asked as a day without a dish: nothing of it to replace
+        day = {**day, "type": EMPTY_TYPE, "dish": "", "makes_leftovers": False}
     if not planner.ai_available():
         raise _invalid("no_ai_task")
     offers = await _async_offers(planner, plan)
@@ -398,6 +566,7 @@ async def async_swap_options(planner: MealPlanner, plan_id: str, day_date: str) 
         own=own,
         earlier=earlier,
         shop=planner.shop,
+        vegetarian=vegetarian,
     )
     raw = await planner._async_ask_ai(prompt, "REMA 1000 andre retter")
     options = [o for o in (_clean_option(item) for item in raw.get("options") or []) if o]
@@ -409,12 +578,19 @@ async def async_swap_options(planner: MealPlanner, plan_id: str, day_date: str) 
         if option["recipe_id"] not in ours:
             option["recipe_id"] = None
     # A suggestion the family had in the last weeks is no suggestion.
-    avoid = [d["dish"] for d in plan["days"] if d is not day and d is not picked] + earlier
+    avoid = [
+        d["dish"] for d in plan["days"] if d["date"] != day["date"] and d is not picked
+    ] + earlier
     fresh = [o for o in options if matches_any(o["dish"], avoid) is None]
     options = (fresh or options)[:3]
     if not options:
         raise _failed("swap_failed", error="AI'en kom ikke med nogen forslag")
-    return {"plan_id": plan["id"], "date": day["date"], "dish": day["dish"], "options": options}
+    return {
+        "plan_id": plan["id"],
+        "date": day["date"],
+        "dish": picked["dish"] if detach else day["dish"],
+        "options": options,
+    }
 
 
 def _with_dislikes(planner: MealPlanner) -> dict[str, Any]:
@@ -433,11 +609,20 @@ def _names(items: Any) -> list[str]:
 
 
 async def async_swap_dish(
-    planner: MealPlanner, plan_id: str, day_date: str, option: dict[str, Any]
+    planner: MealPlanner,
+    plan_id: str,
+    day_date: str,
+    option: dict[str, Any],
+    leftovers: str = "day",
 ) -> dict[str, Any]:
-    """Put another dish on a day: its shopping items, prices and recipe."""
+    """Put another dish on a day: its shopping items, prices and recipe.
+
+    On a leftovers day the dish is cooked that day, and the day the leftovers
+    were from no longer makes a double portion (unless leftovers="source": then
+    that day's dish is changed, and the leftovers follow it).
+    """
     plan, picked = _plan_and_day(planner, plan_id, day_date)
-    day = cooked_day(plan, picked)
+    day, detach = _target(plan, picked, leftovers)
     choice = _clean_option(option)
     if choice is None:
         raise _invalid("swap_failed", error="ingen ret valgt")
@@ -451,8 +636,10 @@ async def async_swap_dish(
         d for d in plan["days"] if not d.get("uses_leftovers_from") and d.get("type") != "rester"
     ]
     # Plans from 0.7.0 know every dish's items: the old dish's own are found here.
-    known_uses = day.get("type") in NO_DISH or (
-        bool(day.get("uses")) and all("uses" in d for d in cooked)
+    known_uses = (
+        detach
+        or day.get("type") in NO_DISH
+        or (bool(day.get("uses")) and all("uses" in d for d in cooked))
     )
     recipe: dict[str, Any] | None = None
     if choice["mealie"]:
@@ -473,7 +660,7 @@ async def async_swap_dish(
     prompt = build_swap_items_prompt(
         settings=settings,
         plan=plan,
-        day=day,
+        day={**day, "type": EMPTY_TYPE, "dish": "", "makes_leftovers": False} if detach else day,
         dish=choice["dish"],
         offer_lines=_offer_lines(offers, date.fromisoformat(day["date"]), late),
         known_uses=known_uses,
@@ -482,6 +669,10 @@ async def async_swap_dish(
     )
     raw = await planner._async_ask_ai(prompt, "REMA 1000 ny ret")
 
+    if detach:
+        # Leftovers no more: a day of its own, and the food day cooks one portion.
+        release_source(plan, day)
+        _empty(day)
     # The old dish's own items leave the list (a deleted dish has none left).
     if day.get("type") in NO_DISH:
         remove: set[str] = set()
@@ -541,9 +732,9 @@ async def async_swap_dish(
     await planner._async_recipe(day, plan)
     for leftover in plan["days"]:
         if leftover.get("uses_leftovers_from") == day["date"]:
-            leftover["dish"] = f"Rester af {choice['dish'][:1].lower()}{choice['dish'][1:]}"
+            leftover["dish"] = leftovers_dish(choice["dish"])
             await planner._async_recipe(leftover, plan)
-    fit_amounts(plan)
+    await planner.async_unlist(await async_sync_shopping(planner, plan))
     update_total(plan)
     await planner.store.async_save()
     await planner.async_mealie_sync(plan)
@@ -835,6 +1026,10 @@ async def async_clear_day(
     """
     plan, day = _plan_and_day(planner, plan_id, day_date)
     removed = _take_day_away(plan, day)
+    source = day.get("uses_leftovers_from")
+    release_source(plan, day)
+    if source and skip:
+        day["uses_leftovers_from"] = source  # kept aside as it was, for taking it back
     if skip:
         if day.get("mealie_entry"):
             plan.setdefault("skipped_entries", []).append(day["mealie_entry"])
@@ -850,6 +1045,7 @@ async def async_clear_day(
         _empty(day)
         day["mealie"] = None
     await planner.async_unlist(removed["lines"])
+    await planner.async_unlist(await async_sync_shopping(planner, plan))
     update_total(plan)
     await planner.store.async_save()
     await planner.async_mealie_sync(plan)
@@ -898,6 +1094,14 @@ async def async_restore_day(planner: MealPlanner, plan_id: str, day_date: str) -
             if back and other.get("type") == EMPTY_TYPE and not other.get("dish"):
                 other.clear()
                 other.update(back)
+        if source := day.get("uses_leftovers_from"):
+            # Leftovers again, if the food day still cooks; else a day to fill.
+            food = next((d for d in plan["days"] if d["date"] == source), None)
+            if food is not None and _is_cooked(food):
+                food["makes_leftovers"] = True
+            else:
+                _empty(day)
+                day["mealie"] = None
     else:
         when = date.fromisoformat(day_date)
         day = {"date": day_date, "weekday": WEEKDAYS_DA[when.weekday()], "servings": None}
@@ -921,9 +1125,57 @@ async def async_set_day_text(
         raise _invalid("day_text_required")
     plan, day = _plan_and_day(planner, plan_id, day_date)
     removed = _take_day_away(plan, day)
+    release_source(plan, day)
     _empty(day)
     day.update(dish=text, type=TEXT_TYPE, mealie=None, makes_leftovers=False)
     await planner.async_unlist(removed["lines"])
+    await planner.async_unlist(await async_sync_shopping(planner, plan))
+    update_total(plan)
+    await planner.store.async_save()
+    await planner.async_mealie_sync(plan)
+    planner._notify()
+    return plan
+
+
+async def async_set_leftovers(
+    planner: MealPlanner, plan_id: str, day_date: str, source_date: str | None = None
+) -> dict[str, Any]:
+    """Make a day a leftovers day: the rest of an earlier day's dinner.
+
+    ``source_date``: the day the food is from (default: the nearest day before
+    with a dinner). The day's own dish and its own items leave the list, and
+    the food day is cooked in a double portion (its recipe is made again for
+    that, and the list grows to match).
+    """
+    plan, day = _plan_and_day(planner, plan_id, day_date)
+    sources = [d for d in plan["days"] if d["date"] < day["date"] and _is_cooked(d)]
+    if source_date:
+        source = next((d for d in sources if d["date"] == source_date), None)
+    else:
+        source = sources[-1] if sources else None
+    if source is None:
+        raise _invalid("leftovers_no_source")
+    if day.get("uses_leftovers_from") == source["date"]:
+        return plan
+    removed = _take_day_away(plan, day)
+    release_source(plan, day)
+    _empty(day)
+    day.update(
+        type="rester",
+        uses_leftovers_from=source["date"],
+        dish=leftovers_dish(str(source["dish"])),
+        mealie=None,
+        servings=source.get("servings"),
+    )
+    await planner.async_unlist(removed["lines"])
+    await planner._async_recipe(day, plan)
+    if not source.get("makes_leftovers"):
+        source["makes_leftovers"] = True
+        try:
+            await planner._async_recipe(source, plan)  # for two dinners
+        except HomeAssistantError as err:
+            _LOGGER.warning("The recipe for %s could not be made again: %s", source["dish"], err)
+    await planner.async_unlist(await async_sync_shopping(planner, plan))
     update_total(plan)
     await planner.store.async_save()
     await planner.async_mealie_sync(plan)
@@ -1118,6 +1370,7 @@ async def async_edit_line(
     elif packages is not None:
         count = max(1, min(99, packages))
         line["packages"] = count
+        line["packages_set"] = True  # the family's amount: the plan's changes keep it
         item = line.get("product") or line.get("avis_item") or {}
         price = item.get("price")
         line["cost"] = round(count * price, 2) if price else None
