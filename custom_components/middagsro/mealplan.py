@@ -1460,6 +1460,7 @@ class MealPlanner(ProductMatcher):
         picks: dict[str, dict[str, Any]] | None = None,
         day_kinds: dict[str, Any] | None = None,
         use_freezer: bool = False,
+        full_period: bool = False,
     ) -> None:
         """Start making a plan in the background. Days in skip get no dinner.
 
@@ -1485,6 +1486,7 @@ class MealPlanner(ProductMatcher):
                 picks or {},
                 day_kinds=day_kinds,
                 use_freezer=use_freezer,
+                full_period=full_period,
             ),
             name=f"{DOMAIN} meal plan",
         )
@@ -1534,6 +1536,7 @@ class MealPlanner(ProductMatcher):
         base_id: str | None = None,
         day_kinds: dict[str, Any] | None = None,
         use_freezer: bool = False,
+        full_period: bool = False,
     ) -> None:
         try:
             plan = await self.async_generate(
@@ -1544,6 +1547,7 @@ class MealPlanner(ProductMatcher):
                 base_id=base_id,
                 day_kinds=day_kinds,
                 use_freezer=use_freezer,
+                full_period=full_period,
             )
             if send:
                 await self._async_send_when_ready(plan)
@@ -2044,6 +2048,7 @@ class MealPlanner(ProductMatcher):
         base_id: str | None = None,
         day_kinds: dict[str, Any] | None = None,
         use_freezer: bool = False,
+        full_period: bool = False,
     ) -> dict[str, Any]:
         """Make, price and store a plan. Returns the plan.
 
@@ -2053,6 +2058,7 @@ class MealPlanner(ProductMatcher):
         """
         base = self.store.get_plan(base_id) if base_id else None
         settings = self.store.settings
+        full_period = full_period or bool((base or {}).get("full_period"))
         # What each day is: the fixed days, or what the family chose for this week.
         window = [start + timedelta(days=i) for i in range(settings["days"])]
         if day_kinds is None and base is not None:
@@ -2075,8 +2081,11 @@ class MealPlanner(ProductMatcher):
             ],
         }
         dates = plan_dates(start, settings["days"], skip)
-        # Not past the last avis that is out: those days' prices aren't known yet.
+        # Manual plans keep the avis limit. Automatic plans cover the requested
+        # period using known shopping-day prices, even before the next avis is out.
         end = self.avis_end(start)
+        if full_period:
+            end = None
         if end is not None:
             dates = [d for d in dates if d <= end]
         if not dates:
@@ -2192,6 +2201,8 @@ class MealPlanner(ProductMatcher):
         best["checklist"] += [{"requirement": p, "ok": False} for p in problems]
         if problems:
             _LOGGER.info("The plan still breaks %d rule(s): %s", len(problems), "; ".join(problems))
+        if full_period:
+            best["full_period"] = True
         best["budget"] = settings["budget"]
         best["skipped"] = [d.isoformat() for d in skipped if d not in rye]
         best["day_kinds"] = {iso: k for iso, k in kinds.items() if k["kind"] != "ai"}
@@ -3387,7 +3398,7 @@ class MealPlanner(ProductMatcher):
         self._auto_attempted.add(key)
         _LOGGER.info("New tilbudsavis found, making the meal plan for %s", key)
         try:
-            self.async_start_generation(start, send=settings["auto_send"])
+            self.async_start_generation(start, send=settings["auto_send"], full_period=True)
         except HomeAssistantError as err:
             _LOGGER.warning("Could not make the meal plan for %s automatically: %s", key, err)
 
