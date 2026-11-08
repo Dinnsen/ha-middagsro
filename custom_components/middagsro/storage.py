@@ -73,7 +73,16 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         {"role": "child", "age": 5, "sex": "male"},
     ],
     "portion_percent": 100,
+    # Weekly items: {name, product_id, amount (packages per week), group, mode, use, unit}.
+    # mode "packs": amount packages a week; "week": use (in unit) a week, minus what is
+    # left; "lunch": use per packed lunch (madpakke), times the week's packed lunches.
     "must_haves": [],
+    # Packed lunches (madpakker): how many a school day, on which weekdays ("0".."6"),
+    # and a calendar whose events are days off (holidays) without packed lunches.
+    "lunch_count": 0,
+    "lunch_weekdays": ["0", "1", "2", "3", "4"],
+    "lunch_calendar": "",
+    "lunch_ideas": False,  # the AI suggests packed lunches from the week's offers
     # Don't send a must-have that is on the REMA list already (and not bought).
     "must_haves_once": False,
     "min_vegetarian": 0,
@@ -126,6 +135,37 @@ def _clamp(value: Any, low: int, high: int, default: int) -> int:
         return max(low, min(high, int(value)))
     except (TypeError, ValueError):
         return default
+
+
+MUST_HAVE_GROUPS = ("", "morgenmad", "madpakker", "husholdning")
+MUST_HAVE_MODES = ("packs", "week", "lunch")
+MUST_HAVE_UNITS = ("g", "kg", "ml", "l", "stk", "pk")
+
+
+def _amount(value: Any, high: float) -> float:
+    """A positive amount (comma or point), at most high; 0 when it isn't one."""
+    try:
+        number = float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        return 0.0
+    return round(number, 3) if 0 < number <= high else 0.0
+
+
+def clean_must_have(item: dict[str, Any]) -> dict[str, Any]:
+    """One weekly item, with its group and how much of it is used."""
+    mode = item.get("mode") if item.get("mode") in MUST_HAVE_MODES else "packs"
+    use = _amount(item.get("use"), 100000)
+    if mode != "packs" and not use:
+        mode = "packs"  # a use without an amount: as many packages as before
+    return {
+        "name": str(item.get("name") or "").strip()[:200],
+        "product_id": int(item["product_id"]) if item.get("product_id") else None,
+        "amount": _clamp(item.get("amount"), 1, 99, 1),
+        "group": item.get("group") if item.get("group") in MUST_HAVE_GROUPS else "",
+        "mode": mode,
+        "use": use,
+        "unit": item.get("unit") if item.get("unit") in MUST_HAVE_UNITS else "stk",
+    }
 
 
 def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
@@ -212,14 +252,16 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
         if isinstance(member, dict)
     ][:20]
     settings["must_haves"] = [
-        {
-            "name": str(item.get("name") or "").strip()[:200],
-            "product_id": int(item["product_id"]) if item.get("product_id") else None,
-            "amount": _clamp(item.get("amount"), 1, 99, 1),
-        }
+        clean_must_have(item)
         for item in settings["must_haves"] or []
         if isinstance(item, dict) and str(item.get("name") or "").strip()
     ][:50]
+    settings["lunch_count"] = _clamp(settings["lunch_count"], 0, 20, 0)
+    lunch_days = settings["lunch_weekdays"] if isinstance(settings["lunch_weekdays"], list) else []
+    settings["lunch_weekdays"] = sorted({str(d) for d in lunch_days if str(d) in set("0123456")})
+    calendar = str(settings["lunch_calendar"] or "").strip()
+    settings["lunch_calendar"] = calendar if re.fullmatch(r"calendar\.[a-z0-9_]+", calendar) else ""
+    settings["lunch_ideas"] = bool(settings["lunch_ideas"])
     for key in ("disliked_dishes", "rules"):
         settings[key] = [
             text for text in (str(item or "").strip()[:300] for item in settings[key] or []) if text
@@ -273,7 +315,7 @@ def plan_period(plan: dict[str, Any]) -> tuple[str, str]:
 PLAN_SETTINGS = (
     "days", "budget", "monthly_budget", "budget_period", "weekly_budget", "recipe_planner", "organic", "organic_max_extra_pct", "avoid",
     "avoid_other", "allergies", "allergies_other", "household", "portion_percent",
-    "must_haves", "min_vegetarian", "max_vegetarian", "leftover_days", "no_leftover_weekdays",
+    "must_haves", "lunch_count", "lunch_weekdays", "lunch_calendar", "lunch_ideas", "min_vegetarian", "max_vegetarian", "leftover_days", "no_leftover_weekdays",
     "fixed_days", "max_cook_minutes_weekday", "pantry", "wishes", "egg_min", "milk_organic",
     "produce_organic", "nutrition_enabled", "protein_pct", "carb_pct", "fat_pct", "kcal_min",
     "kcal_max", "chains", "plan_all_chains",

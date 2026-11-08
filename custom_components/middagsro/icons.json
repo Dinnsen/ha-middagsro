@@ -73,6 +73,9 @@
     },
     "register_purchase": {
       "service": "mdi:receipt-text-plus-outline"
+    },
+    "add_to_pantry": {
+      "service": "mdi:fridge-outline"
     }
   }
 }

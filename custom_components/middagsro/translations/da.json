@@ -266,6 +266,9 @@
     "swap_failed": {
       "message": "Retten kunne ikke skiftes: {error}"
     },
+    "line_sent": {
+      "message": "Varen er allerede sendt – ret den på indkøbslisten."
+    },
     "line_not_found": {
       "message": "Varen findes ikke på madplanens indkøbsliste."
     },
@@ -394,6 +397,13 @@
         "late": "Sidst på ugen",
         "all": "Alle"
       }
+    },
+    "pantry_place": {
+      "options": {
+        "køleskab": "Køleskab",
+        "fryser": "Fryser",
+        "skab": "Skab"
+      }
     }
   },
   "services": {
@@ -502,6 +512,32 @@
         "note": {
           "name": "Note",
           "description": "En kort note."
+        }
+      }
+    },
+    "add_to_pantry": {
+      "name": "Læg i spisekammeret",
+      "description": "Lægger noget, I har hjemme, i spisekammeret – oven i det, der er af det i forvejen. Nye madplaner bruger det først – fra en stemmekommando eller en automatisering.",
+      "fields": {
+        "name": {
+          "name": "Råvare",
+          "description": "Hvad det er, fx peberfrugter eller hakket oksekød."
+        },
+        "amount": {
+          "name": "Mængde",
+          "description": "Hvor meget."
+        },
+        "unit": {
+          "name": "Enhed",
+          "description": "g, kg, ml, l eller stk."
+        },
+        "place": {
+          "name": "Hvor",
+          "description": "Køleskab, fryser eller skab."
+        },
+        "best_before": {
+          "name": "Brug senest",
+          "description": "Datoen det skal bruges inden: madplanerne bruger det før."
         }
       }
     }

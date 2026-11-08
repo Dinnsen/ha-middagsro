@@ -266,6 +266,9 @@
     "swap_failed": {
       "message": "The dish could not be swapped: {error}"
     },
+    "line_sent": {
+      "message": "The item has been sent already: change it on the shopping list."
+    },
     "line_not_found": {
       "message": "The item is not on the meal plan's shopping list."
     },
@@ -394,6 +397,13 @@
         "late": "Late in the week",
         "all": "All"
       }
+    },
+    "pantry_place": {
+      "options": {
+        "køleskab": "Fridge",
+        "fryser": "Freezer",
+        "skab": "Cupboard"
+      }
     }
   },
   "services": {
@@ -502,6 +512,32 @@
         "note": {
           "name": "Note",
           "description": "A short note."
+        }
+      }
+    },
+    "add_to_pantry": {
+      "name": "Add to the pantry",
+      "description": "Puts something you have at home in the pantry (Spisekammer), added to what is there of it. New meal plans use it first – from a voice command or an automation.",
+      "fields": {
+        "name": {
+          "name": "Ingredient",
+          "description": "What it is, e.g. peberfrugter or hakket oksekød."
+        },
+        "amount": {
+          "name": "Amount",
+          "description": "How much."
+        },
+        "unit": {
+          "name": "Unit",
+          "description": "g, kg, ml, l or stk."
+        },
+        "place": {
+          "name": "Where",
+          "description": "Køleskab, fryser or skab."
+        },
+        "best_before": {
+          "name": "Use by",
+          "description": "The date it should be used by: plans use it before then."
         }
       }
     }

@@ -27,6 +27,7 @@ from .const import (
     ATTR_QUERY,
     DOMAIN,
     SERVICE_ADD_ITEMS,
+    SERVICE_ADD_TO_PANTRY,
     SERVICE_GENERATE_MEAL_PLAN,
     SERVICE_GET_OFFERS,
     SERVICE_REGISTER_PURCHASE,
@@ -34,6 +35,7 @@ from .const import (
     SERVICE_SEND_MEAL_PLAN,
 )
 from .coordinator import RemaConfigEntry
+from .inventory import PLACES, inventory
 from .mealplan import parse_date
 from .schema import vol
 
@@ -100,6 +102,15 @@ PURCHASE_SCHEMA = vol.Schema(
         vol.Optional("store"): cv.string,
         vol.Optional("date"): cv.string,
         vol.Optional("note"): cv.string,
+    }
+)
+PANTRY_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_NAME): cv.string,
+        vol.Required(ATTR_AMOUNT): vol.All(vol.Coerce(float), vol.Range(min=0.001, max=100000)),
+        vol.Optional("unit", default="stk"): vol.In(["g", "kg", "ml", "l", "stk"]),
+        vol.Optional("place"): vol.In(PLACES),
+        vol.Optional("best_before"): cv.string,
     }
 )
 OFFERS_SCHEMA = vol.Schema(
@@ -235,5 +246,29 @@ def async_setup_services(hass: HomeAssistant) -> None:
         SERVICE_REGISTER_PURCHASE,
         register_purchase,
         schema=PURCHASE_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    async def add_to_pantry(call: ServiceCall) -> ServiceResponse:
+        """Put something in the pantry ("vi har 2 peberfrugter"), added to what is there."""
+        try:
+            item = await inventory(hass).async_add(
+                call.data[ATTR_NAME],
+                call.data[ATTR_AMOUNT],
+                call.data["unit"],
+                call.data.get("place") or "",
+                call.data.get("best_before"),
+            )
+        except ValueError as err:
+            raise ServiceValidationError(str(err)) from err
+        for loaded in hass.config_entries.async_loaded_entries(DOMAIN):
+            loaded.runtime_data.planner._notify()
+        return {"name": item["name"], "amount": item["amount"], "unit": item["unit"]}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_ADD_TO_PANTRY,
+        add_to_pantry,
+        schema=PANTRY_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
