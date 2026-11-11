@@ -1027,7 +1027,7 @@ async def test_generate_errors(
 async def test_only_weeks_with_an_avis(
     hass: HomeAssistant, init_integration: MockConfigEntry, ai_task: str, freezer: Any
 ) -> None:
-    """A plan can't start after the last avis that is out, nor run past it."""
+    """The shopping day needs an avis; dinners may continue beyond its last day."""
     planner = init_integration.runtime_data.planner
     planner._get_catalogs = lambda: (CURRENT, None)  # next week's avis isn't out
     freezer.move_to(datetime(2026, 10, 12, 15, tzinfo=UTC))  # monday in week 42
@@ -1039,11 +1039,11 @@ async def test_only_weeks_with_an_avis(
     assert err.value.translation_placeholders == {"date": "18/10", "last": "17/10"}
     assert planner.avis_end(date(2026, 10, 1)) is None  # before every avis: as before
 
-    dates = mp.plan_dates(date(2026, 10, 15), 7)[:3]
+    dates = mp.plan_dates(date(2026, 10, 15), 7)
     ai = FakeAI(ai_answer(dates, []))
     with patch("homeassistant.components.ai_task.async_generate_data", new=ai):
         plan = await planner.async_generate(date(2026, 10, 15))
-    assert [d["date"] for d in plan["days"]] == ["2026-10-15", "2026-10-16", "2026-10-17"]
+    assert [d["date"] for d in plan["days"]] == [d.isoformat() for d in dates]
 
     # Out: next week is the default again, and a plan may run into it.
     planner._get_catalogs = lambda: (CURRENT, UPCOMING)
@@ -1343,6 +1343,68 @@ async def test_auto_generate_rules(
     with patch.object(planner, "async_start_generation") as start:
         planner.async_check_auto_generate(UPCOMING)  # a plan exists already
     start.assert_not_called()
+
+
+@pytest.mark.parametrize("shop_late_week", [False, True])
+async def test_auto_generate_keeps_requested_week(
+    hass: HomeAssistant, init_integration: MockConfigEntry, ai_task: str, shop_late_week: bool
+) -> None:
+    """An automatic Monday plan must not lose the weekend at the avis boundary (#72)."""
+    planner = init_integration.runtime_data.planner
+    store = init_integration.runtime_data.store
+    await store.async_set_settings(
+        {
+            "auto_generate": True,
+            "start_weekday": 0,
+            "days": 7,
+            "shop_late_week": shop_late_week,
+            "leftover_days": 0,
+        }
+    )
+    upcoming = replace(UPCOMING, valid_to=datetime(2026, 10, 23, 21, 59, tzinfo=UTC))
+    planner._get_catalogs = lambda: (CURRENT, upcoming)
+    dates = mp.plan_dates(date(2026, 10, 19), 7)
+    ai = FakeAI(ai_answer(dates, []))
+    with patch("homeassistant.components.ai_task.async_generate_data", new=ai):
+        planner.async_check_auto_generate(upcoming)
+        assert planner._task is not None
+        await planner._task
+    assert planner.status["state"] == "idle"
+    plan = store.latest_plan
+    assert plan is not None
+    assert [day["date"] for day in plan["days"]] == [day.isoformat() for day in dates]
+
+    # An update of an automatic plan keeps its weekend too.
+    with patch("homeassistant.components.ai_task.async_generate_data", new=ai):
+        updated = await planner.async_generate(dates[0], base_id=plan["id"])
+    assert [day["date"] for day in updated["days"]] == [day.isoformat() for day in dates]
+    assert updated["end_date"] == dates[-1].isoformat()
+
+
+@pytest.mark.parametrize("shop_late_week", [False, True])
+async def test_manual_bilka_week_continues_after_thursday(
+    hass: HomeAssistant, init_integration: MockConfigEntry, ai_task: str, shop_late_week: bool
+) -> None:
+    """The reported 8-14 November plan includes Friday and Saturday after the avis ends."""
+    planner = init_integration.runtime_data.planner
+    await init_integration.runtime_data.store.async_set_settings(
+        {"days": 7, "shop_late_week": shop_late_week}
+    )
+    catalog = replace(
+        UPCOMING,
+        label="Bilka Food Uge 46",
+        valid_from=datetime(2026, 11, 5, 23, tzinfo=UTC),
+        valid_to=datetime(2026, 11, 12, 22, 59, tzinfo=UTC),
+    )
+    planner._get_catalogs = lambda: (catalog, None)
+    dates = mp.plan_dates(date(2026, 11, 8), 7)
+    with patch(
+        "homeassistant.components.ai_task.async_generate_data", new=FakeAI(ai_answer(dates, []))
+    ):
+        plan = await planner.async_generate(dates[0])
+    assert [day["date"] for day in plan["days"]] == [day.isoformat() for day in dates]
+    assert plan["start_date"] == "2026-11-08"
+    assert plan["end_date"] == "2026-11-14"
 
 
 async def test_auto_generate_on_start_day(

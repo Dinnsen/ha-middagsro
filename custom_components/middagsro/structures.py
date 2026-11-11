@@ -73,6 +73,7 @@ def plan_structure(lib: Any) -> Any:
                 {lib.Required("requirement"): str, lib.Required("ok"): bool}
             ],
             lib.Optional("deviations"): str,
+            lib.Optional("lunch_ideas"): [str],
         }
     )
 

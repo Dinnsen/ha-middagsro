@@ -13,6 +13,7 @@ import copy
 from datetime import date, datetime, timedelta
 import json
 import logging
+import math
 import re
 from typing import Any
 import uuid
@@ -20,6 +21,7 @@ import uuid
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
+from .amounts import package_size
 from .api import Offer, RemaError
 from .dishes import TEXT_TYPE, is_cooked, matches_any
 from .ingredients import spec_for
@@ -1376,6 +1378,50 @@ async def async_edit_line(
         line["cost"] = round(count * price, 2) if price else None
         if line.get("product"):
             line["product_id"] = line["product"]["id"]  # keep it as chosen
+    update_total(plan)
+    await planner.store.async_save()
+    planner._notify()
+    return plan
+
+
+async def async_set_left(
+    planner: MealPlanner, plan_id: str, line_id: str, left: float
+) -> dict[str, Any]:
+    """How much of a weekly item used by the week is left: only the rest is bought.
+
+    All of it left: the line is left out (Har det), and comes back when less is.
+    """
+    plan = planner.store.get_plan(plan_id)
+    if plan is None:
+        raise _invalid("plan_not_found")
+    line = next((item for item in plan["shopping"] if item.get("id") == line_id), None)
+    if line is None or not line.get("use_mode"):
+        raise _invalid("line_not_found")
+    if line.get("sent"):
+        raise _invalid("line_sent")
+    total = float(line.get("use_total") or line.get("amount") or 0)
+    left = max(0.0, min(float(left), total))
+    line["left"] = round(left, 3)
+    wanted = round(total - left, 3)
+    if wanted <= 0:
+        line.update(skipped=True, have=True, reviewed=True)
+        line["amount"] = 0
+    else:
+        for key in ("skipped", "have"):
+            line.pop(key, None)
+        line["amount"] = wanted
+        item = line.get("product") or {}
+        size = package_size(item.get("underline"))
+        base = to_base(wanted, line.get("unit"))
+        if base and base[0] == "pack":
+            count = math.ceil(base[1] - 0.05)
+        elif base and size and size[0] == base[0] and size[1] > 0:
+            count = math.ceil(base[1] / size[1] - 0.05)
+        else:
+            count = int(line.get("packages") or 1)
+        line["packages"] = max(1, min(99, count))
+        price = item.get("price")
+        line["cost"] = round(line["packages"] * price, 2) if price else None
     update_total(plan)
     await planner.store.async_save()
     planner._notify()

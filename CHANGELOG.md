@@ -2,6 +2,35 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.16.0] - 2026-11-11
+
+Everything from the betas 2.16.0b1 and 2.16.0b2 (the sections below), tested on a real household's automatic plan.
+
+### Added
+- **Madpakker** (#66): packed lunches per school day, days off from a calendar, weekly items bought *pr. madpakke*, and the AI's packed lunch suggestions from the week's offers and leftovers.
+- **Weekly items by use** (#66): milk 5,5 l a week, and on the shopping list you write how much is left; weekly items in groups (*Morgenmad*, *Madpakker*, *Husholdning*).
+- **Spisekammer with dates and places** (#66), *Læg overskud i spisekammeret* after shopping, and the action `middagsro.add_to_pantry`.
+
+### Fixed
+- **The plan has all the days chosen** (#72, PR #73 by @nagels): a plan for seven days no longer stops at the last day of the avis that is out – also for automatic plans made before next week's avis.
+
+## [2.16.0b2] - 2026-11-08
+
+### Fixed
+- *Læg overskud i spisekammeret* names an item by the ingredient ("piskefløde"), not the product ("PISKEFLØDE 36%"), so the next plans' recipes find it.
+
+## [2.16.0b1] - 2026-11-08
+
+### Added
+- **Madpakker** (#66): under *Indstillinger › Faste varer*, how many packed lunches a school day and on which weekdays, and a calendar whose all-day events are days off (efterårsferie, skolefri). A weekly item can be bought *pr. madpakke* (rugbrød 0,25 pk, pålæg 20 g), and items in the group *Madpakker* follow the week: none in a holiday week, fewer in a short school week. The plan shows the week's packed lunches, and the AI can suggest packed lunches from the week's offers and the dinners' leftovers.
+- **Weekly items by use** (#66): a weekly item can be a use per week instead of a number of packages – milk 5,5 l a week – and on the shopping list you write how much is left; only the rest is bought (all of it left: not bought this week). Weekly items have groups – *Morgenmad*, *Madpakker*, *Husholdning* – shown as headings on the shopping list.
+- **Spisekammer with dates and places** (#66): an item can have *Brug senest* and where it is (køleskab, fryser, skab). The plan uses what must be used first early in the week, and the date is marked when it is close or past.
+- **Overskud i spisekammeret** (#66): after shopping, *Læg overskud i spisekammeret* puts what the packages hold beyond the dishes' needs (520 g of a 1 kg bag of rice) in the pantry, so the next plans use it.
+- **Action `middagsro.add_to_pantry`** (#66): put something in the pantry from a voice command or an automation ("vi har 2 peberfrugter"), added to what is there.
+
+### Fixed
+- **The plan has all the days chosen** (#72, PR #73 by @nagels): a plan for seven days stopped at the last day of the avis that was out – five dinners when the avis ended on thursday. The avis only has to cover the shopping day; the whole period is planned with the prices and offers known then, both for plans made by hand and automatic ones, and the day picker shows every day.
+
 ## [2.15.0] - 2026-11-08
 
 Everything from the betas 2.15.0b1 to 2.15.0b7 (the sections below), tested on a real household's plans.

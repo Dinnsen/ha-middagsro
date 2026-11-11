@@ -275,7 +275,7 @@ class ProductMatcher:
             if chosen:
                 packages = (
                     packages_needed(line["amount"], line["unit"], chosen)
-                    if line.get("recipe")
+                    if line.get("recipe") or line.get("use_mode")
                     else int(line["amount"] or 1)
                 )
                 self._apply(line, chosen, packages)
@@ -286,7 +286,12 @@ class ProductMatcher:
         if line.get("must_have"):
             priced = [p for p in products if p.price]
             if priced:
-                self._apply(line, priced[0], int(line["amount"] or 1))
+                count = (
+                    packages_needed(line["amount"], line["unit"], priced[0])
+                    if line.get("use_mode")
+                    else int(line["amount"] or 1)
+                )
+                self._apply(line, priced[0], count)
             elif self.prices:
                 line["note"] = "Ingen vare fundet – tilføjes som fritekst"
             return

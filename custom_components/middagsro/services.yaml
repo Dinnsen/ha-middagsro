@@ -105,3 +105,41 @@ register_purchase:
     note:
       selector:
         text:
+
+add_to_pantry:
+  fields:
+    name:
+      required: true
+      example: "peberfrugter"
+      selector:
+        text:
+    amount:
+      required: true
+      example: 2
+      selector:
+        number:
+          min: 0.001
+          max: 100000
+          step: any
+          mode: box
+    unit:
+      default: stk
+      selector:
+        select:
+          options:
+            - g
+            - kg
+            - ml
+            - l
+            - stk
+    place:
+      selector:
+        select:
+          options:
+            - køleskab
+            - fryser
+            - skab
+    best_before:
+      example: "2026-11-12"
+      selector:
+        date:

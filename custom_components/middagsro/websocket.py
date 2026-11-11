@@ -40,7 +40,7 @@ from .const import DOMAIN
 from .coordinator import RemaConfigEntry
 from .freezer import async_generate as async_generate_freezer, async_portions
 from .health import plan_health
-from .inventory import inventory
+from .inventory import inventory, surplus
 from .linking import async_suggest as async_suggest_links, links as recipe_links
 from .links import family_links, share_url
 from .mealie import MealieError
@@ -58,6 +58,7 @@ from .planedit import (
     async_restore_day,
     async_review_line,
     async_set_day_text,
+    async_set_left,
     async_set_leftovers,
     async_swap_dish,
     async_swap_options,
@@ -1934,6 +1935,8 @@ async def ws_purchase_delete(
         vol.Required("name"): str,
         vol.Required("amount"): vol.Coerce(float),
         vol.Required("unit"): vol.In(["g", "kg", "ml", "l", "stk"]),
+        vol.Optional("place"): vol.Any(str, None),
+        vol.Optional("best_before"): vol.Any(str, None),
     }
 )
 @websocket_api.async_response
@@ -1943,7 +1946,14 @@ async def ws_inventory_edit(
 ) -> None:
     """Save an actual quantity, never an unlimited pantry item."""
     _entry(hass, msg)
-    await inventory(hass).async_edit(msg.get("item_id"), msg["name"], msg["amount"], msg["unit"])
+    await inventory(hass).async_edit(
+        msg.get("item_id"),
+        msg["name"],
+        msg["amount"],
+        msg["unit"],
+        msg.get("place") or "",
+        msg.get("best_before"),
+    )
     for loaded in hass.config_entries.async_loaded_entries(DOMAIN):
         loaded.runtime_data.planner._notify()
     connection.send_result(msg["id"], True)
@@ -1988,6 +1998,59 @@ async def ws_inventory_consume(
     connection.send_result(msg["id"], True)
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/inventory/surplus",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Optional("apply", default=False): bool,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_inventory_surplus(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """What the plan's packages leave over; with apply, put it in the pantry (once)."""
+    entry = _entry(hass, msg)
+    store = entry.runtime_data.store
+    plan = store.get_plan(msg["plan_id"])
+    if plan is None:
+        raise ValueError("Madplanen findes ikke længere.")
+    items = surplus(plan)
+    if msg["apply"]:
+        if plan.get("pantry_stocked"):
+            raise ValueError("Overskuddet fra denne madplan er allerede lagt i spisekammeret.")
+        for item in items:
+            await inventory(hass).async_add(item["name"], item["amount"], item["unit"])
+        plan["pantry_stocked"] = dt_util.now().isoformat()
+        await store.async_save()
+        for loaded in hass.config_entries.async_loaded_entries(DOMAIN):
+            loaded.runtime_data.planner._notify()
+    connection.send_result(msg["id"], {"items": items, "stocked": plan.get("pantry_stocked")})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/line/left",
+        ENTRY: str,
+        vol.Required("plan_id"): str,
+        vol.Required("line_id"): str,
+        vol.Required("left"): vol.All(vol.Coerce(float), vol.Range(min=0, max=100000)),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_line_left(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """How much of a weekly item is left: only the rest is bought."""
+    planner = _entry(hass, msg).runtime_data.planner
+    connection.send_result(
+        msg["id"], await async_set_left(planner, msg["plan_id"], msg["line_id"], msg["left"])
+    )
+
+
 def async_register_websocket(hass: HomeAssistant) -> None:
     """Register the panel's commands."""
     for command in (
@@ -1995,6 +2058,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_inventory_edit,
         ws_inventory_delete,
         ws_inventory_consume,
+        ws_inventory_surplus,
+        ws_line_left,
         ws_notice_seen,
         ws_plan,
         ws_settings,

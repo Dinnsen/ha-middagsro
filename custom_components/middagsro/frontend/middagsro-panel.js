@@ -219,6 +219,7 @@ const kr = (value) =>
   value == null || Number.isNaN(Number(value))
     ? "–"
     : `${Number(value).toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kr.`;
+const MUST_GROUPS = { "": "Faste varer", morgenmad: "Morgenmad", madpakker: "Madpakker", husholdning: "Husholdning" };
 const dateLabel = (iso) => {
   if (!iso) return "";
   const d = new Date(`${iso}T12:00:00`);
@@ -784,11 +785,26 @@ class Rema1000Panel extends HTMLElement {
       "nav-save": () => this._saveNavigation(),
       "inventory-save": () => this._run(async () => {
         const d = this._inventoryDraft || {};
-        await this._ws("middagsro/inventory/edit", { item_id: d.id || null, name: d.name || "", amount: Number(String(d.amount || "").replace(",", ".")), unit: d.unit || "g" });
+        await this._ws("middagsro/inventory/edit", { item_id: d.id || null, name: d.name || "", amount: Number(String(d.amount || "").replace(",", ".")), unit: d.unit || "g", place: d.place || "", best_before: d.best_before || null });
         this._inventoryDraft = {};
       }, "Spisekammeret er gemt."),
       "inventory-edit": () => { this._inventoryDraft = { ...(this._state.freezer_inventory || []).find(i => i.id === arg) }; this._render(); },
       "inventory-cancel": () => { this._inventoryDraft = {}; this._render(); },
+      "surplus-stock": () => this._run(async () => {
+        const plan = this._plan;
+        if (!plan) return;
+        const { items } = await this._ws("middagsro/inventory/surplus", { plan_id: plan.id });
+        if (!items.length) throw new Error("Pakkerne holder ikke mere, end retterne bruger – der er intet overskud at gemme.");
+        const list = items.map((i) => `• ${i.name}: ${String(i.amount).replace(".", ",")} ${i.unit}`).join("\n");
+        if (!confirm(`Læg dette i spisekammeret, når I har handlet?\n\n${list}\n\nNye madplaner bruger det først. Du kan rette mængderne under Spisekammer.`)) return;
+        await this._ws("middagsro/inventory/surplus", { plan_id: plan.id, apply: true });
+        this._surplusDone = true;
+        if (!this._viewingLatest) this._plan = await this._ws("middagsro/plan", { plan_id: plan.id });
+      }, () => {
+        const done = this._surplusDone;
+        this._surplusDone = false;
+        return done ? "Overskuddet er lagt i spisekammeret." : null;
+      }),
       "inventory-delete": () => this._run(async () => { await this._ws("middagsro/inventory/delete", { item_id: arg }); if (this._inventoryDraft?.id === arg) this._inventoryDraft = {}; }, "Råvaren er fjernet."),
       "inventory-consume-open": () => {
         const [planId, groupId] = String(arg || "").split("|");
@@ -1477,7 +1493,7 @@ class Rema1000Panel extends HTMLElement {
         const rows = {
           household: { role: "adult", age: 40, sex: "female" },
           fixed_days: { weekday: 3, kind: "rest", text: "Rester" },
-          must_haves: { name: "", amount: 1, product_id: null },
+          must_haves: { name: "", amount: 1, product_id: null, group: "", mode: "packs", use: 0, unit: "stk" },
         };
         this._form[arg].push(clone(rows[arg]));
         this._dirty = true;
@@ -1494,7 +1510,7 @@ class Rema1000Panel extends HTMLElement {
         const product = this._search.results[Number(arg)];
         if (!product) return;
         const name = `${product.name}${product.underline ? ` (${product.underline.split("/")[0].trim()})` : ""}`;
-        this._form.must_haves.push({ name, product_id: product.id, amount: 1 });
+        this._form.must_haves.push({ name, product_id: product.id, amount: 1, group: "", mode: "packs", use: 0, unit: "stk" });
         this._search = { query: "", results: [], loading: false };
         this._dirty = true;
         this._render();
@@ -1714,6 +1730,12 @@ class Rema1000Panel extends HTMLElement {
       },
       "line-save-count": () => this._lineAction({ packages: this._modal.packages }, "Antallet er rettet."),
       "line-delete": () => this._lineAction({ delete: true }, "Varen er slettet fra indkøbslisten."),
+      "line-save-left": () => {
+        const m = this._modal;
+        const left = Number(String(m?.left ?? "").replace(",", "."));
+        if (!m || !Number.isFinite(left) || left < 0) return this._say("Skriv hvor meget I har tilbage, fx 1,5.");
+        this._lineAction({ left }, left ? "Kun resten købes." : "Hele forbruget købes.", "middagsro/line/left");
+      },
       "line-search": () => this._lineSearch(),
       "line-pick": () => {
         const product = this._modal?.results[Number(arg)];
@@ -2049,6 +2071,10 @@ class Rema1000Panel extends HTMLElement {
       if (ev.type === "change" && el.value.trim() && this._isRema()) this._favSearchRun();
       return;
     }
+    if (ds.bind === "line-left") {
+      if (this._modal) this._modal.left = el.value;
+      return;
+    }
     if (ds.bind === "linesearch") {
       if (this._modal) this._modal.query = el.value;
       if (ev.type === "change") this._lineSearch();
@@ -2107,7 +2133,7 @@ class Rema1000Panel extends HTMLElement {
       }
       this._dirty = true;
       this._updateSettingsSavebar();
-      if (ev.type === "change" && (el.type === "radio" || el.tagName === "SELECT" || /_pct$/.test(ds.path))) this._render();
+      if (ev.type === "change" && (el.type === "radio" || el.tagName === "SELECT" || /_pct$/.test(ds.path) || ds.path === "lunch_count")) this._render();
     }
   }
 
@@ -2638,14 +2664,14 @@ class Rema1000Panel extends HTMLElement {
     }
   }
 
-  async _lineAction(data, okMessage) {
+  async _lineAction(data, okMessage, command = "middagsro/plan/line") {
     const m = this._modal;
     if (!m || m.busy) return;
     m.busy = true;
     m.error = null;
     this._renderModal();
     try {
-      const plan = await this._ws("middagsro/plan/line", { plan_id: m.planId, line_id: m.lineId, ...data });
+      const plan = await this._ws(command, { plan_id: m.planId, line_id: m.lineId, ...data });
       if (!this._viewingLatest && this._plan?.id === plan.id) this._plan = plan;
       this._modal = null;
       this._renderModal();
@@ -2716,6 +2742,12 @@ class Rema1000Panel extends HTMLElement {
                 .map(([k, label, unit]) => `<tr><td>${label}</td><td>${String(m.nutrition[k]).replace(".", ",")}${unit}</td></tr>`)
                 .join("")}</table></details>`
           : ""}
+        ${line.use_mode && !line.sent ? `<div class="left-box">
+          <p class="small">${esc(line.use_note || "")}${line.use_note ? ". " : ""}Hvor meget har I tilbage? Kun resten købes.</p>
+          <div class="row wrap">
+            <label class="field inline">Har tilbage <input type="number" inputmode="decimal" min="0" step="any" data-bind="line-left" value="${esc(m.left ?? line.left ?? "")}" placeholder="0"> ${esc(line.unit || "")}</label>
+            <button class="btn small primary" data-action="line-save-left" ${busy ? "disabled" : ""}>Gem</button>
+          </div></div>` : ""}
         ${line.skipped ? `<div class="banner info">${line.have ? "I har varen hjemme, så den er ikke på listen denne gang." : "Varen er udeladt som forkert vare."} <button class="btn small" data-action="review-unskip" data-arg="${esc(line.id)}" ${busy ? "disabled" : ""}>Tag den med igen</button></div>` : ""}
         ${this._needsReview(line) ? `<div class="banner warn"><div>Middagsro er ikke sikker på, at det er den rigtige vare${line.note ? ` (${esc(line.note)})` : ""}.
           <div class="row wrap">${p ? `<button class="btn small primary" data-action="review-keep" data-arg="${esc(line.id)}" ${busy ? "disabled" : ""}>✓ Behold varen</button>` : ""}
@@ -4244,15 +4276,14 @@ class Rema1000Panel extends HTMLElement {
     const count = this._state?.settings?.days || 7;
     if (!start) return [];
     const pad = (n) => String(n).padStart(2, "0");
-    const last = this._lastAvisDay();
     return Array.from({ length: count }, (_, i) => {
       const d = new Date(`${start}T12:00:00`);
       d.setDate(d.getDate() + i);
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    }).filter((iso) => !last || iso <= last || start > last);
+    });
   }
 
-  // The last day of the newest avis that is out: a plan can't be priced after it.
+  // The last day available for the first shopping day; dinners may go beyond it.
   _lastAvisDay() {
     const cat = this._state?.catalogs || {};
     return localDay(cat.upcoming?.valid_to || cat.current?.valid_to || "");
@@ -4303,7 +4334,7 @@ class Rema1000Panel extends HTMLElement {
       </label>
     </div>
     ${cat.current && !cat.upcoming && last
-      ? `<p class="muted small">Næste uges avis er ikke ude endnu, så madplanen kan højst gå til og med ${esc(dateLabel(last))}.</p>`
+      ? `<p class="muted small">Næste uges avis er ikke ude endnu. Hele den valgte periode planlægges med kendte priser og tilbud på indkøbsdagen.</p>`
       : ""}
     <div class="wishes">
       <button class="btn" data-action="note-open">${note ? "Ret ønsker til madplanen" : "Ønsker til madplanen"}</button>
@@ -4335,15 +4366,26 @@ class Rema1000Panel extends HTMLElement {
     const d = this._inventoryDraft || {};
     return `<details class="card fold" data-fold="inventory" ${open || this._folds?.has("inventory") ? "open" : ""}>
       <summary><span class="fold-title">Råvarer på lager</span> <span class="badge">${items.length}</span></summary>
-      <p class="muted small">Fælles lager for alle butikker. Skriv råvaren, fx hakket oksekød, og den samlede mængde. Råvarerne bruges automatisk til nye madplaner, medmindre du slår det fra.</p>
-      ${items.map(i => `<div class="row wrap"><span class="spacer">${esc(i.name)} · ${i.amount} ${esc(i.unit)}</span><button class="btn small" data-action="inventory-edit" data-arg="${esc(i.id)}">Ret</button><button class="btn small" data-action="inventory-delete" data-arg="${esc(i.id)}" ${this._busy ? "disabled" : ""}>Fjern</button></div>`).join("") || '<p class="muted">Spisekammeret er tomt.</p>'}
+      <p class="muted small">Fælles lager for alle butikker. Skriv råvaren, fx hakket oksekød, og den samlede mængde. Råvarerne bruges automatisk til nye madplaner, medmindre du slår det fra – dem med <b>Brug senest</b> først og tidligt i ugen.</p>
+      ${items.map(i => `<div class="row wrap"><span class="spacer">${esc(i.name)} · ${String(i.amount).replace(".", ",")} ${esc(i.unit)}${i.place ? ` <span class="muted small">· ${esc(i.place)}</span>` : ""}${this._bestBefore(i.best_before)}</span><button class="btn small" data-action="inventory-edit" data-arg="${esc(i.id)}">Ret</button><button class="btn small" data-action="inventory-delete" data-arg="${esc(i.id)}" ${this._busy ? "disabled" : ""}>Fjern</button></div>`).join("") || '<p class="muted">Spisekammeret er tomt.</p>'}
       <div class="row wrap inventory-fields">
         <label class="field">Råvare <input data-bind="inventory-field" data-field="name" maxlength="120" value="${esc(d.name || "")}" placeholder="Fx hakket oksekød"></label>
         <label class="field">Mængde <input data-bind="inventory-field" data-field="amount" type="number" min="0.001" max="100000" step="any" value="${esc(d.amount ?? "")}" placeholder="800"></label>
         <label class="field">Enhed <select data-bind="inventory-field" data-field="unit">${["g", "kg", "ml", "l", "stk"].map(u => `<option ${u === (d.unit || "g") ? "selected" : ""}>${u}</option>`).join("")}</select></label>
+        <label class="field">Hvor <select data-bind="inventory-field" data-field="place"><option value="">–</option>${["køleskab", "fryser", "skab"].map(p => `<option value="${p}" ${p === d.place ? "selected" : ""}>${p[0].toUpperCase()}${p.slice(1)}</option>`).join("")}</select></label>
+        <label class="field">Brug senest <input data-bind="inventory-field" data-field="best_before" type="date" value="${esc(d.best_before || "")}"></label>
       </div><div class="row wrap"><button class="btn" data-action="inventory-save" ${this._busy ? "disabled" : ""}>${d.id ? "Gem mængde" : "Tilføj råvare"}</button>${d.id ? '<button class="btn" data-action="inventory-cancel">Annuller</button>' : ""}</div>
       <p class="muted small">Lageret reserveres ikke af en madplan. Tryk “Retten er lavet” ved den enkelte ret for at bekræfte forbruget. Ret lageret her, hvis du bruger noget til andet. Nye lagerændringer gælder nye madplaner.</p>
     </details>`;
+  }
+
+  // "brug senest 10/11", red when it is today or past, amber within two days.
+  _bestBefore(iso) {
+    if (!iso) return "";
+    const days = Math.round((new Date(`${iso}T12:00:00`) - new Date(`${localToday()}T12:00:00`)) / 86400000);
+    const cls = days <= 0 ? "badge over" : days <= 2 ? "badge doubt" : "muted small";
+    const text = days < 0 ? `overskredet ${shortDate(iso)}` : days === 0 ? "brug i dag" : `brug senest ${shortDate(iso)}`;
+    return ` <span class="${cls}">${text}</span>`;
   }
 
   _inventoryUsage(plan, day = null, shopping = false) {
@@ -4404,6 +4446,18 @@ class Rema1000Panel extends HTMLElement {
       <div class="batch-footer"><div><span class="muted small">Anslået indkøb i alt</span><strong>${kr(plan.total)}</strong></div><button class="btn primary" data-action="tab" data-arg="shopping">Se indkøbsliste →</button></div>
       <div class="row between wrap"><button class="link" data-action="view-latest">‹ Til ugens madplan</button><button class="btn small danger" data-action="delete-plan" data-arg="${esc(plan.id)}" ${this._busy ? "disabled" : ""}>Slet fryserplan</button></div>
     </div>${this._freezerControls()}`;
+  }
+
+  // The week's packed lunches: how many, the days off, and the AI's ideas.
+  _lunchHtml(plan) {
+    const lunch = plan.lunch;
+    if (!lunch) return "";
+    const off = (lunch.off || []).map((d) => dateLabel(d)).join(", ");
+    const ideas = plan.lunch_ideas || [];
+    return `<details class="plan-checks" ${ideas.length ? "open" : ""}><summary>Madpakker: ${lunch.lunches ? `${lunch.lunches} i perioden` : "ingen i perioden"}</summary>
+      <p class="muted small">${lunch.count} om dagen · ${(lunch.days || []).length} skoledage${off ? ` · fri ${esc(off)}` : ""}. Madpakkevarerne står på indkøbslisten.</p>
+      ${ideas.length ? `<ul class="lunch-ideas">${ideas.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : ""}
+    </details>`;
   }
 
   _planView() {
@@ -4514,6 +4568,7 @@ class Rema1000Panel extends HTMLElement {
         ${this._planHelp ? '<p class="muted small help-text">Tryk på en ret for at se opskriften eller skifte den ud. 👍, 👎 og ♥ gemmer retten i opskriftsamlingen – tryk igen for at fortryde.</p>' : ""}
         ${this._inventoryUsage(plan)}
         <div class="days">${days}</div>
+        ${this._lunchHtml(plan)}
         ${checklist || plan.deviations ? `<details class="plan-checks"><summary>Krav-tjekliste</summary><ul class="checklist">${checklist}</ul>${plan.deviations ? `<p class="muted">${esc(plan.deviations)}</p>` : ""}</details>` : ""}
         <div class="plan-actions">
           ${(() => {
@@ -5034,7 +5089,7 @@ class Rema1000Panel extends HTMLElement {
                 p?.is_organic ? '<span class="badge eco">Øko</span>' : "",
                 line.skipped ? `<span class="badge skipped">${line.have ? "Har det" : "Udeladt"}</span>` : this._needsReview(line) ? `<span class="badge doubt">${line.confidence === "low" ? "Tjek" : "Usikker"}</span>` : "",
                 line.remembered ? '<span class="badge remembered" title="Den vare I valgte til ingrediensen sidst">Jeres valg</span>' : "",
-                line.must_have ? '<span class="badge">Fast vare</span>' : "",
+                line.must_have ? `<span class="badge">${line.use_mode === "lunch" ? "Madpakker" : "Fast vare"}</span>` : "",
                 line.buy_from ? `<span class="badge from">Købes ${esc(dayShort(line.buy_from))}</span>` : "",
                 line.price_source === "avis" ? '<span class="badge">Avispris</span>' : "",
               ].join("");
@@ -5046,6 +5101,7 @@ class Rema1000Panel extends HTMLElement {
                   <span class="muted">${esc(p?.underline || (this._state?.shop?.bilka_cart ? "Vælg en vare" : "Tilføjes som fritekst"))}${need ? ` · behov ${esc(need)}` : ""}</span>
                   ${line.offer_name ? `<span class="muted">Avisvare: ${esc(line.offer_name)}${line.swapped_from ? ` – i stedet for ${esc(line.swapped_from)}` : ""}</span>` : ""}
                   ${line.note ? `<span class="note">${esc(line.note)}</span>` : ""}
+                  ${line.use_note ? `<span class="muted">${esc(line.use_note)}${!line.use_mode ? "" : line.left ? ` – har ${esc(String(line.left).replace(".", ","))} ${esc(line.unit)} tilbage` : line.sent ? "" : " – tryk for at skrive, hvad I har tilbage"}</span>` : ""}
                   ${compare?.lines?.[line.id]
                     ? `<button class="cheaper" data-action="chain-move" data-arg="${esc(line.id)}|${esc(compare.lines[line.id].dealer_id)}"
                         title="Flyt til ${esc(this._chainName(compare.lines[line.id].dealer_id))}-listen">${this._chainLogo(compare.lines[line.id].dealer_id, "tiny")}
@@ -5124,6 +5180,8 @@ class Rema1000Panel extends HTMLElement {
           <button class="btn small" data-action="links-share" ${this._busy ? "disabled" : ""}
             title="Åbner GitHub med jeres valgte varer (kun ingrediens og varenummer), så alle kan få gavn af dem i den fælles tabel.">Del jeres valg</button>` : ""}
           <button class="btn small" data-action="plan-refresh" ${this._busy ? "disabled" : ""}>Opdatér tilbudspriser</button>
+          <button class="btn small" data-action="surplus-stock" ${this._busy || plan.pantry_stocked ? "disabled" : ""}
+            title="Det, pakkerne indeholder ud over retternes behov (fx 520 g ris af en 1 kg pose), lægges i spisekammeret efter indkøbet.">${plan.pantry_stocked ? "Overskud er lagt i spisekammeret ✓" : "Læg overskud i spisekammeret"}</button>
           ${!missingProducts.length && this._hasPrices() && plan.shopping.some(line => !line.product && !line.sent && !line.product_id && !line.added && !line.buy_at) ? `<button class="btn small" data-action="rematch-missing" ${this._busy ? "disabled" : ""}>Søg manglende varer igen</button>` : ""}
         </div></details>
       </div>${lateHtml}${this._chainListsHtml(plan)}`;
@@ -5657,16 +5715,42 @@ class Rema1000Panel extends HTMLElement {
         }
       )
       .join("");
-    const musts = f.must_haves
-      .map(
-        (m, i) => `<div class="row wrap rowitem">
+    const lunchOn = Number(f.lunch_count) > 0;
+    const mustRow = (m, i) => {
+      const mode = m.mode || "packs";
+      const modes = { packs: "Antal pakker pr. uge", week: "Forbrug pr. uge", ...(lunchOn || mode === "lunch" ? { lunch: "Pr. madpakke" } : {}) };
+      return `<div class="row wrap rowitem">
           <input class="grow" type="text" data-path="must_haves.${i}.name" value="${esc(m.name)}" placeholder="Vare">
-          <label class="field inline">Antal pr. uge ${num(`must_haves.${i}.amount`, m.amount, 1, 99)}</label>
+          <select data-path="must_haves.${i}.mode" aria-label="Hvor meget">${Object.entries(modes).map(([v, l]) => `<option value="${v}" ${mode === v ? "selected" : ""}>${l}</option>`).join("")}</select>
+          ${mode === "packs"
+            ? num(`must_haves.${i}.amount`, m.amount, 1, 99)
+            : `<input type="number" data-path="must_haves.${i}.use" data-type="number" min="0" step="any" value="${esc(m.use || "")}" placeholder="${mode === "lunch" ? "0,25" : "5,5"}" aria-label="Mængde">
+              <select data-path="must_haves.${i}.unit" aria-label="Enhed">${["g", "kg", "ml", "l", "stk", "pk"].map((u) => `<option ${u === (m.unit || "stk") ? "selected" : ""}>${u}</option>`).join("")}</select>`}
+          <select data-path="must_haves.${i}.group" aria-label="Gruppe">${Object.entries(MUST_GROUPS).map(([v, l]) => `<option value="${v}" ${(m.group || "") === v ? "selected" : ""}>${l}</option>`).join("")}</select>
           ${m.product_id ? '<span class="badge">REMA-vare</span>' : ""}
           <button class="btn small danger" data-action="remove-row" data-arg="must_haves|${i}">Fjern</button>
-        </div>`
-      )
+        </div>`;
+    };
+    // Grouped as they are shown on the shopping list.
+    const musts = Object.keys(MUST_GROUPS)
+      .map((group) => {
+        const rows = f.must_haves.map((m, i) => ((m.group || "") === group ? mustRow(m, i) : "")).join("");
+        return rows ? `${group ? `<h3 class="small-h">${MUST_GROUPS[group]}</h3>` : ""}${rows}` : "";
+      })
       .join("");
+    const calendars = Object.keys(this._hass?.states || {}).filter((id) => id.startsWith("calendar.")).sort();
+    const lunchHtml = `<h2>Madpakker</h2>
+        <p class="muted small">Madpakkevarer følger ugens madpakker: ingen i ferien, færre i en kort skoleuge. Vælg <b>Pr. madpakke</b> ved en fast vare – fx rugbrød 0,25 pk eller pålæg 20 g – eller gruppen <b>Madpakker</b>.</p>
+        <div class="grid">
+          <label class="field">Madpakker om dagen ${num("lunch_count", f.lunch_count, 0, 20)}</label>
+          <label class="field">Fridage fra kalender
+            <select data-path="lunch_calendar"><option value="">Ingen</option>
+              ${calendars.map((id) => `<option value="${esc(id)}" ${f.lunch_calendar === id ? "selected" : ""}>${esc(this._hass.states[id].attributes?.friendly_name || id)}</option>`).join("")}
+            </select></label>
+        </div>
+        ${lunchOn ? `<p class="small">Skoledage</p><div class="checks">${WEEKDAYS.map((d, i) => check("lunch_weekdays", String(i), { [String(i)]: d })).join("")}</div>
+        <p class="muted small">Heldagsbegivenheder i kalenderen – fx efterårsferie eller en skolefri dag – giver ingen madpakker den dag.</p>
+        <label class="check"><input type="checkbox" data-path="lunch_ideas" ${f.lunch_ideas ? "checked" : ""}> AI'en foreslår madpakker ud fra ugens tilbud og aftensmadens rester</label>` : ""}`;
     const results = this._search.loading
       ? '<p class="muted"><span class="spinner small"></span> Søger …</p>'
       : this._search.results
@@ -5792,6 +5876,7 @@ class Rema1000Panel extends HTMLElement {
         <label class="check"><input type="checkbox" data-path="milk_organic" ${f.milk_organic ? "checked" : ""}> Mælk skal være økologisk</label>
         <label class="check"><input type="checkbox" data-path="produce_organic" ${f.produce_organic ? "checked" : ""}> Frugt og grønt skal være økologisk</label>
         `) + card(`        <h2 class="flush">Faste varer hver uge</h2>
+        <p class="muted small">Et fast antal pakker, et forbrug pr. uge (fx mælk 5,5 l – på indkøbslisten skriver I, hvad der er tilbage) eller en mængde pr. madpakke. Grupperne bliver overskrifter på indkøbslisten.</p>
         ${musts}
         <label class="check"><input type="checkbox" data-path="must_haves_once" ${f.must_haves_once ? "checked" : ""}> Send ikke faste varer, der allerede står på ${this._listName()}</label>
         <p class="muted small">Når madplanen sendes, springes en fast vare over, hvis den står på ${this._isRema() ? "listen i REMA-appen" : "indkøbslisten"} og ikke er købt – så bliver antallet ikke lagt oven i.</p>
@@ -5802,6 +5887,7 @@ class Rema1000Panel extends HTMLElement {
           <button class="btn small" data-action="add-row" data-arg="must_haves">+ ${this._hasPrices() ? "Fritekst" : "Tilføj vare"}</button>
         </div>
         <div class="results">${results}</div>
+        ${lunchHtml}
         `),
       rules: () => card(`        <h2 class="flush">Det skal AI'en huske</h2>
         <p class="muted small">Hvert punkt gemmes med det samme.</p>
@@ -6375,6 +6461,11 @@ const STYLE = `
   .badge.from { background: var(--info-color, #039be5); color: #fff; }
   .badge.doubt { background: var(--rema-warn); color: #000; }
   .badge.skipped { background: var(--secondary-text-color); color: var(--rema-on-accent); }
+  .badge.over { background: var(--error-color, #db4437); color: #fff; }
+  .left-box { background: var(--rema-subtle); border-radius: 10px; padding: 8px 12px; margin: 10px 0; }
+  .left-box p { margin: 0 0 6px; }
+  .left-box input { width: 90px; }
+  .lunch-ideas { margin: 6px 0 0; padding-left: 20px; }
   .badge.remembered { background: var(--rema-accent); color: var(--rema-on-accent); }
   .line.is-skipped .what, .line.is-skipped .cost { opacity: 0.55; text-decoration: line-through; }
   .review { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 10px; }

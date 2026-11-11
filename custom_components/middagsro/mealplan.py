@@ -53,6 +53,7 @@ from .dishes import (
 from .errors import _failed, _invalid
 from .ingredients import CATALOG, catalogue_entry, spec_for
 from .inventory import apply_inventory, inventory, prompt_items
+from .lunches import async_lunches, clean_ideas, lunch_prompt, must_have_lines
 from .matcher import ProductMatcher
 from .matching import (
     SEARCH_CONCURRENCY,
@@ -604,6 +605,8 @@ def build_prompt(
             f"- Faste ugevarer købes separat og skal IKKE på indkøbslisten: {names}. "
             "Du må gerne bruge dem i retterne."
         )
+    if lunch := lunch_prompt(s, s.get("_lunch")):
+        out.append(lunch)
 
     if mealie:
         out += [
@@ -1413,6 +1416,7 @@ class MealPlanner(ProductMatcher):
         self._sends: dict[tuple[str, str], Callable[[], None]] = {}
         # While a plan is made: what REMA answered, so the rounds don't search twice.
         self._search_cache: dict[tuple[str, str], list[Product]] | None = None
+        self._lunch: dict[str, Any] | None = None  # the plan being made: packed lunches
 
     # ------------------------------------------------------------- status
 
@@ -2101,10 +2105,10 @@ class MealPlanner(ProductMatcher):
             ],
         }
         dates = plan_dates(start, settings["days"], skip)
-        # Not past the last avis that is out: those days' prices aren't known yet.
-        end = self.avis_end(start)
-        if end is not None:
-            dates = [d for d in dates if d <= end]
+        # The avis must cover the shopping day (this refuses a start no avis covers yet),
+        # not every day a dinner is eaten: the whole period is planned and priced with
+        # the offers known on the shopping day (#72).
+        self.avis_end(start)
         if not dates:
             raise _invalid("all_days_skipped")
         skipped = sorted(
@@ -2125,6 +2129,9 @@ class MealPlanner(ProductMatcher):
             inventory(self.hass).items if use_freezer or (base or {}).get("use_freezer") else []
         )
         settings["_freezer_inventory"] = freezer_items
+        # The period's packed lunches (school days without the calendar's days off).
+        self._lunch = await async_lunches(self.hass, settings, window)
+        settings["_lunch"] = self._lunch
         # With a monthly food budget, the plan may cost what is left of its week.
         if (left := plan_budget(self.store, dates[0])) is not None:
             settings["budget"] = left
@@ -2733,19 +2740,7 @@ class MealPlanner(ProductMatcher):
                     {**item, "amount": scale_amount(item.get("amount") or "", factor)}
                     for item in day["ingredients"]
                 ]
-        for item in settings["must_haves"]:
-            shopping.append(
-                {
-                    "name": item["name"],
-                    "amount": item["amount"],
-                    "unit": "pk",
-                    "search": item["name"],
-                    "category": "Faste varer",
-                    "offer": None,
-                    "must_have": True,
-                    "product_id": item.get("product_id"),
-                }
-            )
+        shopping += must_have_lines(settings["must_haves"], self._lunch)
         plan = {
             "id": uuid.uuid4().hex[:12],
             "created": dt_util.now().isoformat(),
@@ -2765,6 +2760,8 @@ class MealPlanner(ProductMatcher):
                 if isinstance(c, dict)
             ],
             "deviations": str(raw.get("deviations") or "")[:2000],
+            "lunch": self._lunch,
+            "lunch_ideas": clean_ideas(raw.get("lunch_ideas")) if self._lunch else [],
             "total": 0.0,
             "budget": settings["budget"],
             "catalog": {"id": catalog.id, "label": catalog.label} if catalog else None,
