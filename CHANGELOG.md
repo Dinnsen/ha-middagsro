@@ -2,6 +2,18 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.16.0] - 2026-11-11
+
+Everything from the betas 2.16.0b1 and 2.16.0b2 (the sections below), tested on a real household's automatic plan.
+
+### Added
+- **Madpakker** (#66): packed lunches per school day, days off from a calendar, weekly items bought *pr. madpakke*, and the AI's packed lunch suggestions from the week's offers and leftovers.
+- **Weekly items by use** (#66): milk 5,5 l a week, and on the shopping list you write how much is left; weekly items in groups (*Morgenmad*, *Madpakker*, *Husholdning*).
+- **Spisekammer with dates and places** (#66), *Læg overskud i spisekammeret* after shopping, and the action `middagsro.add_to_pantry`.
+
+### Fixed
+- **The plan has all the days chosen** (#72, PR #73 by @nagels): a plan for seven days no longer stops at the last day of the avis that is out – also for automatic plans made before next week's avis.
+
 ## [2.16.0b2] - 2026-11-08
 
 ### Fixed
