@@ -2,6 +2,16 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.17.0] - 2026-11-17
+
+### Added
+- **The message centre** (Indstillinger › Beskeder): a card for offers on the watch list and one for the food budget, with a phone beside them. Each can be turned off, go through the quiet hours or be held back, and has its own icon and colour on the phone. After the quiet hours, what was held back comes as one message (*Mens du sov*) or nothing.
+- **Udseende:** three looks shared with EV Planner and Hverdagsro – Theme Studio (your Home Assistant theme, as before), Frisk and Hverdag. Kept per person.
+- **A profile menu** at the top right: Indstillinger, Beskeder and Udseende.
+
+### Changed
+- **The tabs look as in EV Planner** on a wide screen: an icon on each, the chosen one as a soft pill. Indstillinger is in the profile menu there; on a phone it is still under *Mere*. Madplan is still first.
+
 ## [2.16.0] - 2026-11-11
 
 Everything from the betas 2.16.0b1 and 2.16.0b2 (the sections below), tested on a real household's automatic plan.
