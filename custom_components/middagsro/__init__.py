@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from typing import Any
 
@@ -31,6 +31,7 @@ from .mealplan import MealPlanner
 from .migrate import async_migrate
 from .nemlig import NEMLIG_ID, new_session_kwargs
 from .panel import async_register_panel, async_unregister_panel
+from .phone import async_flush as async_flush_phone
 from .services import async_setup_services
 from .storage import STORE_VERSION, RemaPlanStore
 from .store_client import REMA, BilkaStoreClient, NemligStoreClient, StoreClient, store_of
@@ -186,6 +187,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
             _LOGGER.debug("The watch list was not checked: %s", err)
 
     entry.async_on_unload(async_track_time_interval(hass, _check_watch, WATCH_CHECK_EVERY))
+
+    # The message centre: what the quiet hours held back is sent when they end.
+    async def _flush_held(now: datetime) -> None:
+        await async_flush_phone(planner, now)
+
+    entry.async_on_unload(async_track_time_interval(hass, _flush_held, timedelta(minutes=1)))
     entry.async_on_unload(async_call_later(hass, 120, _check_watch))
     planner.async_restore_sends()
 

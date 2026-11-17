@@ -24,6 +24,7 @@ from homeassistant.util import dt as dt_util
 from .chains import CHAINS, REMA_ID
 from .const import DOMAIN
 from .dishes import household_portions
+from .phone import async_tell
 
 if TYPE_CHECKING:
     from .mealplan import MealPlanner
@@ -529,20 +530,13 @@ async def _async_tell(planner: MealPlanner, title: str, message: str) -> None:
                 planner.hass, message, title, notification_id=f"{DOMAIN}_budget"
             )
         elif target.startswith("notify."):
-            await planner.hass.services.async_call(
-                "notify",
-                target.removeprefix("notify."),
-                {
-                    "title": title,
-                    "message": message,
-                    "data": {
-                        "url": "/middagsro",
-                        "clickAction": "/middagsro",
-                        "notification_icon": "mdi:wallet-outline",
-                        "tag": f"{DOMAIN}-budget",
-                    },
-                },
-                blocking=True,
+            await async_tell(
+                planner,
+                "budget",
+                target,
+                title,
+                message,
+                {"url": "/middagsro", "clickAction": "/middagsro", "tag": f"{DOMAIN}-budget"},
             )
     except (HomeAssistantError, ValueError) as err:
         _LOGGER.warning("Could not tell about the food budget: %s", err)

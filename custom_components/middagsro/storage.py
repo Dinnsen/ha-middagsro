@@ -127,7 +127,42 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # Tell when something on the watch list is on offer: "" (off), "persistent_notification"
     # (in Home Assistant) or a notify service ("notify.mobile_app_telefon").
     "watch_notify": "",
+    # The message centre: per kind (watch, budget) on, through the quiet hours, icon and colour; and the quiet hours.
+    "messages": {},
+    "quiet": {"on": False, "from": "22:00", "to": "07:00", "after": "digest"},
 }
+
+
+_HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+_HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
+_MDI = re.compile(r"^mdi:[a-z0-9-]{1,40}$")
+
+
+def _messages(raw: Any) -> dict[str, dict[str, Any]]:
+    """The message centre's choices per kind, cleaned."""
+    out: dict[str, dict[str, Any]] = {}
+    for kind, own in (raw if isinstance(raw, dict) else {}).items():
+        if kind not in ("watch", "budget") or not isinstance(own, dict):
+            continue
+        clean: dict[str, Any] = {key: bool(own[key]) for key in ("on", "through") if key in own}
+        if isinstance(own.get("icon"), str) and _MDI.match(own["icon"]):
+            clean["icon"] = own["icon"]
+        if isinstance(own.get("color"), str) and _HEX.match(own["color"]):
+            clean["color"] = own["color"]
+        out[kind] = clean
+    return out
+
+
+def _quiet(raw: Any) -> dict[str, Any]:
+    """The quiet hours, cleaned."""
+    own = raw if isinstance(raw, dict) else {}
+    out = {"on": bool(own.get("on", False)), "from": "22:00", "to": "07:00", "after": "digest"}
+    for key in ("from", "to"):
+        if isinstance(own.get(key), str) and _HHMM.match(own[key][:5]):
+            out[key] = own[key][:5]
+    if own.get("after") in ("digest", "drop"):
+        out["after"] = own["after"]
+    return out
 
 
 def _clamp(value: Any, low: int, high: int, default: int) -> int:
@@ -234,6 +269,8 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
     settings["watch_notify"] = (
         notify if notify == "persistent_notification" or notify.startswith("notify.") else ""
     )
+    settings["messages"] = _messages(settings["messages"])
+    settings["quiet"] = _quiet(settings["quiet"])
     settings["auto_generate"] = bool(settings["auto_generate"])
     settings["auto_send"] = bool(settings["auto_send"])
     settings["must_haves_once"] = bool(settings["must_haves_once"])

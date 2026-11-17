@@ -24,6 +24,7 @@ from homeassistant.util import dt as dt_util
 from .api import Product, RemaError, parse_time
 from .chains import CHAINS, REMA_ID, ChainError, _same_kind, as_offer, query_words, text_has
 from .const import DOMAIN
+from .phone import async_tell
 
 if TYPE_CHECKING:
     from .mealplan import MealPlanner
@@ -304,8 +305,9 @@ def deal_line(deal: dict[str, Any]) -> str:
 
 
 async def _async_notify(
-    hass: HomeAssistant, target: str, item: dict[str, Any], deals: list[dict[str, Any]]
+    planner: MealPlanner, target: str, item: dict[str, Any], deals: list[dict[str, Any]]
 ) -> None:
+    hass = planner.hass
     title = f"🔔 {item['text']} er på tilbud"
     message = "\n".join(deal_line(d) for d in deals)
     if target == "persistent_notification":
@@ -325,12 +327,7 @@ async def _async_notify(
     image = item.get("image") or next((d.get("image") for d in deals if d.get("image")), None)
     if image:
         data["image"] = image
-    await hass.services.async_call(
-        "notify",
-        target.removeprefix("notify."),
-        {"title": title, "message": message, "data": data},
-        blocking=True,
-    )
+    await async_tell(planner, "watch", target, title, message, data)
 
 
 _checking: set[str] = set()
@@ -370,7 +367,7 @@ async def _async_check(planner: MealPlanner, target: str) -> int:
         if not new:
             continue
         try:
-            await _async_notify(planner.hass, target, item, new)
+            await _async_notify(planner, target, item, new)
         except (HomeAssistantError, ValueError) as err:
             _LOGGER.warning("Could not send the notification for %s: %s", item["text"], err)
             continue

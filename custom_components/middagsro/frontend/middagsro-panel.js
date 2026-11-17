@@ -140,6 +140,14 @@ const TABS = [
   ["settings", "Indstillinger"],
 ];
 
+// The look, chosen per person (Home Assistant keeps it with the user): Theme Studio (the theme), Frisk, Hverdag.
+const LOOK_NAMES = { studio: "Theme Studio", frisk: "Frisk", hverdag: "Hverdag" };
+// The message centre's kinds: [key, name, when, icon, colour, title, example, time].
+const MSG_KINDS = [
+  ["watch", "Tilbud på overvågningslisten", "Når noget kommer på tilbud", "mdi:tag-heart", "#E4568C", "🔔 Merrild kaffe er på tilbud", "🛒 REMA 1000: Merrild kaffe – 35,00 kr.", "08:05"],
+  ["budget", "Madbudget", "Når 80 % af ugen er brugt", "mdi:wallet-outline", "#0FA3A3", "💰 312 kr. tilbage af ugens madbudget", "Brugt 1.288 kr. af 1.600 kr.", "17:40"],
+];
+const MSG_ICONS = ["mdi:tag-heart", "mdi:sale", "mdi:bell", "mdi:wallet-outline", "mdi:cash", "mdi:cart", "mdi:silverware-fork-knife", "mdi:food-apple"];
 const BELL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.6 1.9H4.4z"/><path d="M10 20.6a2.1 2.1 0 0 0 4 0"/></svg>';
 // "Ryd" next to a search field: clears it and its results.
 const clearBtn = (arg) => `<button class="btn small" data-action="clear-field" data-arg="${arg}" aria-label="Ryd søgefeltet">Ryd</button>`;
@@ -155,6 +163,8 @@ const SETTING_ICONS = {
   mealie: TAB_ICONS.recipes,
   sites: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.3 2.4 3.4 5.2 3.4 8.5s-1.1 6.1-3.4 8.5c-2.3-2.4-3.4-5.2-3.4-8.5s1.1-6.1 3.4-8.5z"/></svg>',
   watch: BELL_ICON,
+  messages: BELL_ICON,
+  look: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.8 1.8-1.7 0-1.1-.9-1.5-.9-2.6 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4C21 6.5 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10" cy="7" r="1.2"/><circle cx="15" cy="7" r="1.2"/></svg>',
   budget: TAB_ICONS.budget,
   shop: TAB_ICONS.shopping,
   chains: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5 5.5 4h13L20 9.5M4 9.5h16M4 9.5c0 1.7 1.3 2.5 2.7 2.5S9.3 11.2 9.3 9.5c0 1.7 1.3 2.5 2.7 2.5s2.7-.8 2.7-2.5c0 1.7 1.3 2.5 2.7 2.5S20 11.2 20 9.5M5.5 12v8h13v-8M10 20v-4.5h4V20"/></svg>',
@@ -190,6 +200,9 @@ const SETTINGS_SECTIONS = (panel) => {
       summary: f.nutrition_enabled ? `${f.kcal_min}–${f.kcal_max} kcal · ${f.protein_pct}/${f.carb_pct}/${f.fat_pct} %` : "Slået fra" },
     { key: "chains", title: "Andre butikker", form: true,
       summary: (f.chains || []).filter((id) => id !== panel._storeId()).length ? `${f.chains.filter((id) => id !== panel._storeId()).map((id) => panel._chainName(id)).join(", ")}${f.plan_all_chains ? " · madplan på tværs" : " · sammenligning"}` : `Kun ${panel._shopName()}` },
+    { key: "messages", title: "Beskeder", form: true,
+      summary: [f.watch_notify ? "Tilbud" : "", f.budget_notify ? "Madbudget" : "", f.quiet?.on ? `stille ${f.quiet.from}–${f.quiet.to}` : ""].filter(Boolean).join(" · ") || "Ingen beskeder" },
+    { key: "look", title: "Udseende", form: false, summary: LOOK_NAMES[panel._look()] },
     { key: "watch", title: "Overvågning og beskeder", form: true,
       summary: `${(state.watch || []).length} overvåget${f.watch_notify ? " · besked ved tilbud" : " · ingen beskeder"}` },
     { key: "sites", title: "Opskrifter og madsider", form: true,
@@ -360,9 +373,36 @@ class Rema1000Panel extends HTMLElement {
     this.shadowRoot.addEventListener("touchend", (ev) => this._onTouchEnd(ev), { passive: true });
   }
 
+  // The look, per person: Theme Studio (the default, as before), Frisk or Hverdag.
+  _looks() {
+    return ["studio", "frisk", "hverdag"];
+  }
+
+  _look() {
+    return this._looks().includes(this._lookChoice) ? this._lookChoice : "studio";
+  }
+
+  _applyLook() {
+    if (this._lookAsked === undefined && this._hass?.callWS) {
+      this._lookAsked = true;
+      this._hass.callWS({ type: "frontend/get_user_data", key: "middagsro_look" }).then((answer) => { this._lookChoice = answer?.value || null; this._applyLook(); }).catch(() => {});
+    }
+    this.setAttribute("look", this._look());
+    this.toggleAttribute("dark", Boolean(this._hass?.themes?.darkMode));
+  }
+
+  _setLook(look) {
+    if (!this._looks().includes(look)) return;
+    this._lookChoice = look;
+    this._applyLook();
+    this._hass?.callWS?.({ type: "frontend/set_user_data", key: "middagsro_look", value: look }).catch(() => {});
+    this._render();
+  }
+
   set hass(hass) {
     const first = !this._hass;
     this._hass = hass;
+    this._applyLook();
     const menu = this.shadowRoot.querySelector("ha-menu-button");
     if (menu) menu.hass = hass;
     if (first) {
@@ -746,6 +786,9 @@ class Rema1000Panel extends HTMLElement {
 
   _onClick(ev) {
     const el = ev.target.closest("[data-action]");
+    // The profile menu closes on a tap anywhere else.
+    const profMenu = this.shadowRoot.querySelector(".prof-menu");
+    if (profMenu && !profMenu.hidden && !ev.target.closest(".prof-wrap")) profMenu.hidden = true;
     if (!el) return;
     const { action, arg } = el.dataset;
     const actions = {
@@ -1450,7 +1493,15 @@ class Rema1000Panel extends HTMLElement {
         if (!bought) return this._say("Sæt flueben ved det, I har købt – så ryddes det fra listen.");
         this._editPlan(() => this._ws("middagsro/chains/clear", { plan_id: this._plan.id, dealer_id: arg }), `Kurven er ryddet – ${bought} varer er købt.`);
       },
+      prof: () => {
+        const menu = this.shadowRoot.querySelector(".prof-menu");
+        menu.hidden = !menu.hidden;
+        this.shadowRoot.querySelector(".prof").setAttribute("aria-expanded", String(!menu.hidden));
+      },
+      look: () => this._setLook(arg),
       "settings-open": () => {
+        const menu = this.shadowRoot.querySelector(".prof-menu");
+        if (menu) menu.hidden = true;
         this._goTab("settings");
         this._settingsSection = arg || null;
         this._render();
@@ -3810,6 +3861,12 @@ class Rema1000Panel extends HTMLElement {
           <span class="spacer"></span>
           <span id="timerchip" class="timer-chip" data-action="tab" data-arg="recipes"></span>
           <span id="busy"></span>
+          <span class="prof-wrap"><button class="prof" data-action="prof" aria-haspopup="menu" aria-expanded="false" aria-label="Profil og indstillinger"></button>
+            <span class="prof-menu" role="menu" hidden>
+              <button role="menuitem" data-action="settings-open" data-arg="">${TAB_ICONS.settings || ""}<span>Indstillinger</span></button>
+              <button role="menuitem" data-action="settings-open" data-arg="messages">${BELL_ICON}<span>Beskeder</span></button>
+              <button role="menuitem" data-action="settings-open" data-arg="look">${SETTING_ICONS.look}<span>Udseende</span></button>
+            </span></span>
         </div>
         <nav class="tabs" aria-label="Middagsro"></nav>
         <div class="more-scrim" data-action="more" hidden></div>
@@ -3819,6 +3876,8 @@ class Rema1000Panel extends HTMLElement {
         <div id="toast" role="status" aria-live="polite"></div>`;
     }
     this._renderNavigation();
+    const prof = root.querySelector(".prof");
+    if (prof) prof.textContent = String(this._hass?.user?.name || "?").trim().charAt(0).toUpperCase();
     const menu = root.querySelector("ha-menu-button");
     if (menu) {
       menu.hass = this._hass;
@@ -5941,6 +6000,43 @@ class Rema1000Panel extends HTMLElement {
         <p class="muted small">Beskeden går samme sted hen som overvågningens (Overvågning og beskeder${f.watch_notify ? "" : " – vælg en modtager dér"}).</p>
         <h3>Kontér automatisk</h3>
         <p class="muted small">Handlingen <b>middagsro.register_purchase</b> konterer et køb (beløb og butik) og svarer med, hvad der er tilbage af ugen. Betaler I med Apple Pay, kan en automatisering i Genveje-appen (Personlig › Transaktion › Wallet, butikker: REMA 1000, Netto …) kalde den med <i>Beløb</i> og <i>Forhandler</i> via Home Assistant-appens "Udfør handling" – så konteres købet af sig selv, når I betaler. Med Siri kan en genvej spørge om beløbet og kalde den samme handling.</p>`),
+      messages: () => {
+        f.messages ||= {};
+        for (const [k] of MSG_KINDS) f.messages[k] ||= {};
+        f.quiet ||= { on: false, from: "22:00", to: "07:00", after: "digest" };
+        const q = f.quiet, toMin = (t) => { const [h, m] = String(t || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
+        const quiet = (t) => q.on && (toMin(q.from) <= toMin(q.to) ? toMin(t) >= toMin(q.from) && toMin(t) < toMin(q.to) : toMin(t) >= toMin(q.from) || toMin(t) < toMin(q.to));
+        const isOn = (k) => (k === "budget" ? f.budget_notify : f.messages.watch.on !== false) && Boolean(f.watch_notify);
+        const look = (k, i) => ({ color: f.messages[k].color || MSG_KINDS[i][4], icon: f.messages[k].icon || MSG_KINDS[i][3] });
+        const notes = MSG_KINDS.map((d, i) => ({ d, l: look(d[0], i), held: quiet(d[7]) && !f.messages[d[0]].through })).filter(({ d }) => isOn(d[0]));
+        const note = (title, body, time, color, held = false) => `<div class="mc-note${held ? " held" : ""}" style="--c:${color}"><span class="mc-ic">${BELL_ICON}</span><span class="mc-t"><b>${esc(title)}</b><i>${time}</i></span><span class="mc-m">${esc(body)}</span></div>`;
+        const digest = q.after !== "drop", held = notes.filter((n) => n.held);
+        const phone = `<div class="mc-phone"><div class="mc-clock">${esc(q.on ? q.to : "18:00")}</div>
+          ${notes.length ? "" : `<p class="mc-empty">Ingen beskeder er slået til.</p>`}
+          ${notes.filter((n) => !(n.held && digest)).map(({ d, l, held: h }) => note(d[5], d[6], d[7], l.color, h)).join("")}
+          ${held.length && digest ? `<span class="mc-when">Efter stille timer</span>${note("Mens du sov", held.map(({ d }) => `${d[5]}: ${d[6]}`).join(" · "), q.to, "#5B5BD6")}` : ""}</div>`;
+        const kcard = (d, i) => {
+          const [k, name, when] = d, l = look(k, i), on = isOn(k);
+          return `<article class="mc-card${on ? "" : " off"}" style="--c:${l.color}">
+            <div class="mc-top"><span class="mc-ic">${BELL_ICON}</span><div><b>${esc(name)}</b><small>${esc(when)}</small></div>
+              <label class="check"><input type="checkbox" data-path="${k === "budget" ? "budget_notify" : "messages.watch.on"}" ${on ? "checked" : ""} ${f.watch_notify ? "" : "disabled"}> Til</label></div>
+            <div class="mc-bubble"><b>${esc(d[5])}</b><span>${esc(d[6])}</span></div>
+            <label class="check"><input type="checkbox" data-path="messages.${k}.through" ${f.messages[k].through ? "checked" : ""}> Går igennem stille timer</label>
+            <div class="row wrap"><label class="field">Ikon <select data-path="messages.${k}.icon">${MSG_ICONS.map((x) => `<option value="${x}" ${l.icon === x ? "selected" : ""}>${x.slice(4)}</option>`).join("")}</select></label>
+              <label class="field">Farve <input type="color" data-path="messages.${k}.color" value="${esc(l.color)}"></label></div></article>`;
+        };
+        return card(`<h2 class="flush">Beskeder</h2>
+          <div class="mc-strip">
+            <label class="field">Send til <select data-path="watch_notify"><option value="" ${!f.watch_notify ? "selected" : ""}>Ingen beskeder</option>${(this._state.notify_targets || []).map((t) => `<option value="${esc(t.id)}" ${f.watch_notify === t.id ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select></label>
+            <label class="check"><input type="checkbox" data-path="quiet.on" ${q.on ? "checked" : ""}> Stille timer</label>
+            ${q.on ? `<input type="time" class="mc-time" data-path="quiet.from" value="${esc(q.from)}" aria-label="Fra">–<input type="time" class="mc-time" data-path="quiet.to" value="${esc(q.to)}" aria-label="Til">
+              <label class="field">Bagefter <select data-path="quiet.after"><option value="digest" ${digest ? "selected" : ""}>Én samlet besked</option><option value="drop" ${digest ? "" : "selected"}>Ingenting</option></select></label>` : ""}
+          </div>
+          <div class="mc-main"><div>${phone}</div><div class="mc-cards">${MSG_KINDS.map(kcard).join("")}</div></div>`);
+      },
+      look: () => card(`<h2 class="flush">Udseende</h2>
+        <p class="muted small">Gemmes for dig. Theme Studio følger jeres Home Assistant-theme.</p>
+        <div class="row wrap">${this._looks().map((k) => `<button class="btn${this._look() === k ? " primary" : ""}" data-action="look" data-arg="${k}" aria-pressed="${this._look() === k}">${LOOK_NAMES[k]}</button>`).join("")}</div>`),
       watch: () => card(`<h2 class="flush">Besked om tilbud</h2>
         <p class="muted">Få besked, når noget fra overvågningslisten under Favoritter kommer på tilbud hos ${esc(this._shopName())} eller en af jeres andre butikker – kun da, og kun én gang pr. tilbud.</p>
         <label class="field">Send besked til
@@ -6081,6 +6177,56 @@ const STYLE = `
     /* Bars that stay on screen while content scrolls under them: the card colour on the
        page background, so see-through (glass) themes don't show text behind them. */
     --rema-solid-card: linear-gradient(var(--card-background-color), var(--card-background-color)) var(--primary-background-color); }
+
+  /* The looks: Theme Studio is Home Assistant's theme (as before); Frisk and Hverdag are EV Planner's and Hverdagsro's. */
+  :host([look="frisk"]) { --primary-background-color: #F2F4F7; --card-background-color: #FFFFFF; --ha-card-background: #FFFFFF; --secondary-background-color: #EEF1F4;
+    --primary-text-color: #111827; --secondary-text-color: #6B7280; --divider-color: #E5E7EB; --primary-color: #00A884; --text-primary-color: #fff;
+    --app-header-background-color: #FFFFFF; --app-header-text-color: #111827; --ha-card-border-radius: 16px; --ha-card-box-shadow: 0 1px 2px rgba(0,0,0,.05);
+    --ha-font-family-body: Inter, "Segoe UI", system-ui, sans-serif; --theme-studio-card-backdrop-filter: none; }
+  :host([look="frisk"][dark]) { --primary-background-color: #0E1116; --card-background-color: #161A21; --ha-card-background: #161A21; --secondary-background-color: #1C212A;
+    --primary-text-color: #EEF1F5; --secondary-text-color: #9AA3B2; --divider-color: #262C36; --primary-color: #2DD4A7; --app-header-background-color: #161A21; --app-header-text-color: #EEF1F5; }
+  :host([look="hverdag"]) { --primary-background-color: #F2F4F6; --card-background-color: #FFFFFF; --ha-card-background: #FFFFFF; --secondary-background-color: #F1EEFB;
+    --primary-text-color: #1B1530; --secondary-text-color: #6B6880; --divider-color: #E4E2EE; --primary-color: #6E4AFF; --text-primary-color: #fff;
+    --app-header-background-color: #FFFFFF; --app-header-text-color: #1B1530; --ha-card-border-radius: 18px; --ha-card-box-shadow: 0 1px 2px rgba(27,21,48,.06), 0 8px 24px rgba(27,21,48,.07);
+    --ha-font-family-body: Figtree, "Segoe UI", system-ui, sans-serif; --theme-studio-card-backdrop-filter: none; }
+  :host([look="hverdag"][dark]) { --primary-background-color: #0F0E19; --card-background-color: #191726; --ha-card-background: #191726; --secondary-background-color: #221F33;
+    --primary-text-color: #F1EFFA; --secondary-text-color: #A7A3BD; --divider-color: #2D2A42; --primary-color: #9B83FF; --app-header-background-color: #191726; --app-header-text-color: #F1EFFA; }
+  :host([look="frisk"]) .card, :host([look="hverdag"]) .card { border: 0; }
+  :host([look="hverdag"]) .card { border: 0; }
+  /* The profile button and its menu (Indstillinger, Beskeder, Udseende), as in EV Planner. */
+  .prof-wrap { position: relative; }
+  .prof { width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--rema-accent); color: var(--rema-on-accent); font-weight: 700; cursor: pointer; }
+  .prof-menu { position: absolute; right: 0; top: 42px; z-index: 6; display: grid; min-width: 210px; padding: 6px; border-radius: 14px; background: var(--card-background-color); box-shadow: 0 12px 32px rgba(0,0,0,.18); border: 1px solid var(--divider-color); }
+  .prof-menu[hidden] { display: none; }
+  .prof-menu button { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 0; border-radius: 10px; background: none; color: var(--primary-text-color); font: inherit; text-align: left; cursor: pointer; }
+  .prof-menu button:hover { background: var(--rema-tint); }
+  .prof-menu svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+  /* The message centre (Indstillinger › Beskeder). */
+  .mc-strip { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; padding: 10px 12px; border-radius: 14px; background: var(--rema-subtle); margin: 8px 0 14px; }
+  .mc-strip .field { margin: 0; }
+  .mc-time { padding: 4px 8px; border-radius: 8px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font: inherit; }
+  .mc-main { display: grid; grid-template-columns: minmax(230px, 290px) minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 700px) { .mc-main { grid-template-columns: 1fr; } }
+  .mc-phone { background: #0F1218; color: #F3F5F8; border-radius: 28px; border: 6px solid #2A2F38; padding: 14px 9px; display: grid; gap: 7px; align-content: start; min-height: 300px; }
+  .mc-clock { text-align: center; font-size: 34px; font-weight: 700; margin: 4px 0; }
+  .mc-when { color: #A7AFBC; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 4px 6px 0; }
+  .mc-empty { color: #A7AFBC; text-align: center; font-size: 13px; }
+  .mc-note { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 2px 9px; padding: 9px 11px; border-radius: 16px; background: rgba(255,255,255,.12); }
+  .mc-note.held { opacity: .42; }
+  .mc-note .mc-ic { grid-row: span 2; }
+  .mc-t { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; min-width: 0; }
+  .mc-t b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mc-t i { font-style: normal; color: #A7AFBC; }
+  .mc-m { font-size: 12.5px; color: #DDE2EA; }
+  .mc-ic { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--c); color: #fff; flex: none; }
+  .mc-ic svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; }
+  .mc-cards { display: grid; gap: 10px; }
+  .mc-card { border-radius: 14px; padding: 12px; background: var(--rema-subtle); display: grid; gap: 8px; }
+  .mc-card.off { opacity: .65; }
+  .mc-top { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+  .mc-top .mc-ic { width: 32px; height: 32px; }
+  .mc-top small { display: block; color: var(--secondary-text-color); font-size: 12.5px; }
+  .mc-bubble { background: var(--card-background-color); border-radius: 12px; padding: 8px 11px; font-size: 13px; display: grid; gap: 1px; }
   * { box-sizing: border-box; }
   a { color: var(--rema-accent); overflow-wrap: anywhere; }
   .skiphead { margin: 14px 0 6px; }
@@ -6696,6 +6842,14 @@ const STYLE = `
     .savebar { bottom: calc(8px + var(--rema-tabbar)); }
     .sticky { bottom: var(--rema-tabbar); padding-bottom: 12px; }
     .toast { bottom: calc(16px + var(--rema-tabbar)); }
+  }
+  /* Tabs as in EV Planner on a wide screen: an icon, and the chosen one as a soft pill. Settings is in the profile menu. */
+  @media (min-width: 701px) {
+    .tab { align-items: center; gap: 6px; border-bottom: 0; border-radius: 12px; margin-bottom: 8px; padding: 8px 12px; }
+    .tab.desktop-primary, .tab.more { display: inline-flex; }
+    .tab svg { display: inline-block; width: 18px; height: 18px; }
+    .tab.active { background: var(--rema-tint); }
+    .tab[data-arg="settings"], .more-item[data-arg="settings"] { display: none !important; }
   }
 `;
 
