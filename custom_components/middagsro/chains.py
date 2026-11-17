@@ -617,12 +617,7 @@ async def async_add_rema_offer(
     planner: MealPlanner, offer: dict[str, Any], plan_id: str | None
 ) -> dict[str, Any]:
     """An offer from REMA's avis on the plan's shopping list (else the REMA list)."""
-    from .planedit import (  # noqa: PLC0415
-        ADDED_CATEGORY,
-        _new_line,
-        async_add_product,
-        update_total,
-    )
+    from .planedit import ADDED_CATEGORY, _new_line, async_add_product, update_total  # noqa: PLC0415
 
     heading = str(offer.get("heading") or "").strip()[:200]
     if not heading or not offer.get("id"):
