@@ -11,7 +11,8 @@ from custom_components.middagsro.api import Receipt, ReceiptItem, RemaApiError
 
 from .test_api import FakeResponse, logged_in, token
 
-RECEIPTS_URL = f"{api.SCAN_API_BASE}/user/receipts"
+RECEIPTS_URL = api.RECEIPTS_URLS[0]  # the first candidate the client tries
+RECEIPTS_URL_2 = api.RECEIPTS_URLS[1]
 
 
 def _sample(**over: object) -> dict:
@@ -185,14 +186,25 @@ async def test_get_receipts_renews_a_rejected_token() -> None:
     assert len(receipts) == 1
 
 
-async def test_get_receipts_raises_when_token_refused_twice() -> None:
-    """A 401 that survives renewal is reported, not retried forever."""
+async def test_get_receipts_falls_through_to_next_candidate() -> None:
+    """A 404 on the first endpoint moves on to the next, which is remembered."""
     client, session = await logged_in()
-    session.on(
-        "POST",
-        "https://shop.rema1000.dk/api/auth/refresh",
-        FakeResponse(data={"tokens": {"access_token": token()}}),
-    )
-    session.on("GET", RECEIPTS_URL, FakeResponse(status=401))
+    session.on("GET", RECEIPTS_URL, FakeResponse(status=404))
+    session.on("GET", RECEIPTS_URL_2, FakeResponse(data={"data": [_sample()]}))
+
+    receipts = await client.async_get_receipts()
+
+    assert len(receipts) == 1
+    assert client._receipts_url == RECEIPTS_URL_2  # the working one is remembered
+    # Next call tries the remembered endpoint first (only it is routed here).
+    session.on("GET", RECEIPTS_URL_2, FakeResponse(data={"data": []}))
+    assert await client.async_get_receipts() == []
+
+
+async def test_get_receipts_raises_when_no_endpoint_answers() -> None:
+    """When every candidate fails, one error reports each status."""
+    client, session = await logged_in()
+    for url in api.RECEIPTS_URLS:
+        session.on("GET", url, FakeResponse(status=404))
     with pytest.raises(RemaApiError):
         await client.async_get_receipts()

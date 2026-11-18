@@ -2,6 +2,11 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.18.2] - 2026-11-18
+
+### Fixed
+- **Receipts endpoint discovery:** the exact host/path for digital receipts isn't certain from the app, so the client now tries a small ordered list of candidate endpoints and uses (and remembers) the first that answers, instead of a single hard-coded URL that returned 404.
+
 ## [2.18.1] - 2026-11-18
 
 ### Fixed

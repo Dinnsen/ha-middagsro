@@ -49,12 +49,18 @@ API_BASE = "https://api.digital.rema1000.dk/api"
 # webshop, the REMA 1000 app and the Scan Selv app ("Use the same login"), so
 # the same Bearer access token is reused here; no API-management subscription
 # key is needed (the gateway validates the JWT alone).
-# The shared account token is reused against this gateway; it fails soft if
-# refused (see RemaReceiptsCoordinator). Base host and the relative paths
-# (user/receipts, user/order, ...) are reverse-engineered from dk.rema1000.app
-# 1.8.15, where backend_base_url is this host root — the /apps/scanselv/ prefix
-# in the app is only for its vigo/status endpoints, not the user API.
-SCAN_API_BASE = "https://apim-rema-scan-prod.azure-api.net"
+# The account's digital receipts (kvitteringer). REMA has no public API, and
+# the Scan Selv app reads them from a backend reached with the shared account
+# token (the webshop login the client already holds). The exact host/path is
+# not certain from the app alone, so these candidates are tried in order and
+# the first that answers is used and remembered; it fails soft if none do.
+RECEIPTS_URLS: tuple[str, ...] = (
+    "https://api.digital.rema1000.dk/api/user/receipts",
+    "https://api.digital.rema1000.dk/user/receipts",
+    "https://apim-rema-scan-prod.azure-api.net/scanselv/user/receipts",
+    "https://apim-rema-scan-prod.azure-api.net/user/receipts",
+    "https://apim-rema-scan-prod.azure-api.net/apps/scanselv/user/receipts",
+)
 
 TJEK_DEFAULT_BASE = "https://squid-api.tjek.com"
 TJEK_DEALER_ID = "11deC"  # REMA 1000 Danmark on Tjek / eTilbudsavis
@@ -789,6 +795,7 @@ class RemaClient:
             str, tuple[float, tuple[tuple[int, ...], tuple[str, ...], tuple[str, ...]]]
         ] = {}
         self._primary_list: tuple[float, int] | None = None
+        self._receipts_url: str | None = None  # the receipts endpoint that last worked
         self.dealer_id = TJEK_DEALER_ID  # the shop's avis on Tjek
 
     @property
@@ -1029,84 +1036,73 @@ class RemaClient:
 
     # ------------------------------------------------------------ receipts
 
-    async def _async_scan_request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, Any] | None = None,
-        retry: bool = True,
-    ) -> Any:
-        """Call the Scan Selv backend with the account's access token.
+    async def _async_token_get(
+        self, url: str, params: dict[str, Any] | None, *, retry: bool = True
+    ) -> tuple[int, str]:
+        """GET a full URL with the account's Bearer token; return (status, body).
 
-        Separate from ``_async_request`` because it talks to a different host
-        (the Azure API-management gateway) with a different response shape. A
-        rejected token is renewed once; a busy server is tried again.
+        The same headers as the working webshop calls are sent, so a receipts
+        endpoint on api.digital.rema1000.dk accepts them; extra headers are
+        harmless to the Scan Selv gateway. A rejected token is renewed once.
         """
         await self._async_ensure_token()
         token = self._access_token
         headers = {
-            "Accept": "application/json",
+            **BASE_HEADERS,
             "Authorization": f"Bearer {token}",
-            "X-Locale": "da",
+            "Origin": self._site or SITES[0],
         }
-        attempt = 0
-        while True:
-            delay = 0.0
-            try:
-                async with self._session.request(
-                    method,
-                    f"{SCAN_API_BASE}{path}",
-                    params=params,
-                    headers=headers,
-                    timeout=REQUEST_TIMEOUT,
-                ) as resp:
-                    if resp.status == 401 and retry:
-                        await self._async_ensure_token(stale=token)
-                        return await self._async_scan_request(
-                            method, path, params=params, retry=False
-                        )
-                    if resp.status == 401:
-                        raise RemaApiError("Scan Selv rejected the access token", 401)
-                    if resp.status in RETRY_STATUSES and attempt < len(RETRY_DELAYS):
-                        delay = _retry_after(resp.headers.get("Retry-After"), RETRY_DELAYS[attempt])
-                        attempt += 1
-                    elif resp.status >= 400:
-                        body = (await resp.text())[:300]
-                        raise RemaApiError(
-                            f"{method} {path} returned HTTP {resp.status}: {body}", resp.status
-                        )
-                    else:
-                        if resp.status == 204:
-                            return None
-                        return _json_or_error(await resp.text(), f"{method} {path}")
-            except (aiohttp.ClientError, TimeoutError) as err:
-                raise RemaConnectionError(f"Could not reach REMA 1000 Scan Selv: {err}") from err
-            await asyncio.sleep(delay)
+        try:
+            async with self._session.request(
+                "GET", url, params=params, headers=headers, timeout=REQUEST_TIMEOUT
+            ) as resp:
+                if resp.status == 401 and retry:
+                    await self._async_ensure_token(stale=token)
+                    return await self._async_token_get(url, params, retry=False)
+                return resp.status, await resp.text()
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise RemaConnectionError(f"Could not reach REMA 1000: {err}") from err
 
     async def async_get_receipts(
         self, *, since: datetime | None = None, limit: int | None = None
     ) -> list[Receipt]:
         """The account's digital receipts (kvitteringer), newest first.
 
-        ``since`` asks the backend for receipts from a point in time (the app
-        syncs the same way). ``limit`` keeps only the newest few.
+        REMA's receipts endpoint is not public; the exact host/path is matched
+        against RECEIPTS_URLS (the first that answers is used and remembered),
+        so a gateway change or a wrong guess degrades to the next candidate
+        instead of breaking. ``since`` asks for receipts from a point in time;
+        ``limit`` keeps only the newest few.
         """
         params: dict[str, Any] = {}
         if since is not None:
             params["since"] = since.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-        data = await self._async_scan_request("GET", "/user/receipts", params=params or None)
-        raw_list: Any = data
-        if isinstance(data, dict):
-            raw_list = _first(data, "data", "receipts", "items") or []
-        receipts: list[Receipt] = []
-        for entry in raw_list if isinstance(raw_list, list) else []:
-            try:
-                receipts.append(Receipt.from_api(entry))
-            except (TypeError, ValueError) as err:
-                _LOGGER.debug("Skipping a receipt that could not be read: %s", err)
-        receipts.sort(key=lambda r: r.date or datetime.min.replace(tzinfo=UTC), reverse=True)
-        return receipts[:limit] if limit else receipts
+        urls = (
+            [self._receipts_url, *[u for u in RECEIPTS_URLS if u != self._receipts_url]]
+            if self._receipts_url
+            else list(RECEIPTS_URLS)
+        )
+        statuses: dict[str, int] = {}
+        for url in urls:
+            status, body = await self._async_token_get(url, params or None)
+            if status < 400:
+                self._receipts_url = url  # remember what worked
+                data = _json_or_error(body, "GET receipts") if body.strip() else []
+                raw_list: Any = (
+                    _first(data, "data", "receipts", "items") if isinstance(data, dict) else data
+                )
+                receipts: list[Receipt] = []
+                for entry in raw_list if isinstance(raw_list, list) else []:
+                    try:
+                        receipts.append(Receipt.from_api(entry))
+                    except (TypeError, ValueError) as err:
+                        _LOGGER.debug("Skipping a receipt that could not be read: %s", err)
+                receipts.sort(
+                    key=lambda r: r.date or datetime.min.replace(tzinfo=UTC), reverse=True
+                )
+                return receipts[:limit] if limit else receipts
+            statuses[url] = status
+        raise RemaApiError(f"No receipts endpoint answered (statuses: {statuses})")
 
     # ------------------------------------------------------------ shopping lists
 
