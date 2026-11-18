@@ -2,6 +2,11 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.18.4] - 2026-11-19
+
+### Changed
+- **Receipts endpoint matrix:** both earlier guesses answered 404/405, so the client now probes a small matrix of method+host+path candidates and uses (and remembers) the first that answers, reporting each status when none do. Live endpoint still being pinned down.
+
 ## [2.18.3] - 2026-11-18
 
 ### Fixed
