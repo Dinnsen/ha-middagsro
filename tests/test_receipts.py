@@ -138,7 +138,7 @@ async def test_get_receipts_fetches_and_sorts() -> None:
     client, session = await logged_in()
     older = _sample(id="old", paymentDate=1_700_000_000_000)
     newer = _sample(id="new", paymentDate=1_760_000_000_000)
-    session.on("GET", RECEIPTS_URL, FakeResponse(data={"data": [older, newer]}))
+    session.on("POST", RECEIPTS_URL, FakeResponse(data={"data": [older, newer]}))
 
     receipts = await client.async_get_receipts(limit=10)
 
@@ -151,19 +151,19 @@ async def test_get_receipts_limit_and_since() -> None:
     """``limit`` trims the list and ``since`` is passed to the backend."""
     client, session = await logged_in()
     data = {"data": [_sample(id=f"r{i}", paymentDate=1_700_000_000_000 + i) for i in range(5)]}
-    session.on("GET", RECEIPTS_URL, FakeResponse(data=data))
+    session.on("POST", RECEIPTS_URL, FakeResponse(data=data))
 
     receipts = await client.async_get_receipts(since=datetime(2026, 1, 1, tzinfo=UTC), limit=2)
 
     assert len(receipts) == 2
     _, _, kwargs = next(c for c in session.calls if c[1] == RECEIPTS_URL)
-    assert kwargs["params"]["since"] == "2026-01-01T00:00:00Z"
+    assert kwargs["json"]["sinceDate"] == "2026-01-01T00:00:00Z"
 
 
 async def test_get_receipts_handles_bare_list() -> None:
     """A backend that returns a plain list (no envelope) is accepted too."""
     client, session = await logged_in()
-    session.on("GET", RECEIPTS_URL, FakeResponse(data=[_sample()]))
+    session.on("POST", RECEIPTS_URL, FakeResponse(data=[_sample()]))
     receipts = await client.async_get_receipts()
     assert len(receipts) == 1
 
@@ -189,15 +189,15 @@ async def test_get_receipts_renews_a_rejected_token() -> None:
 async def test_get_receipts_falls_through_to_next_candidate() -> None:
     """A 404 on the first endpoint moves on to the next, which is remembered."""
     client, session = await logged_in()
-    session.on("GET", RECEIPTS_URL, FakeResponse(status=404))
-    session.on("GET", RECEIPTS_URL_2, FakeResponse(data={"data": [_sample()]}))
+    session.on("POST", RECEIPTS_URL, FakeResponse(status=404))
+    session.on("POST", RECEIPTS_URL_2, FakeResponse(data={"data": [_sample()]}))
 
     receipts = await client.async_get_receipts()
 
     assert len(receipts) == 1
     assert client._receipts_url == RECEIPTS_URL_2  # the working one is remembered
     # Next call tries the remembered endpoint first (only it is routed here).
-    session.on("GET", RECEIPTS_URL_2, FakeResponse(data={"data": []}))
+    session.on("POST", RECEIPTS_URL_2, FakeResponse(data={"data": []}))
     assert await client.async_get_receipts() == []
 
 
@@ -205,6 +205,6 @@ async def test_get_receipts_raises_when_no_endpoint_answers() -> None:
     """When every candidate fails, one error reports each status."""
     client, session = await logged_in()
     for url in api.RECEIPTS_URLS:
-        session.on("GET", url, FakeResponse(status=404))
+        session.on("POST", url, FakeResponse(status=404))
     with pytest.raises(RemaApiError):
         await client.async_get_receipts()
