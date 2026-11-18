@@ -49,12 +49,12 @@ API_BASE = "https://api.digital.rema1000.dk/api"
 # webshop, the REMA 1000 app and the Scan Selv app ("Use the same login"), so
 # the same Bearer access token is reused here; no API-management subscription
 # key is needed (the gateway validates the JWT alone).
-# NOTE: that the webshop-issued token is accepted by this gateway is an
-# assumption derived from the shared-login design; it is verified against the
-# live API by the receipts coordinator, which fails soft if the token is
-# refused (see RemaReceiptsCoordinator). Endpoint + fields reverse-engineered
-# from dk.rema1000.app 1.8.15.
-SCAN_API_BASE = "https://apim-rema-scan-prod.azure-api.net/apps/scanselv"
+# The shared account token is reused against this gateway; it fails soft if
+# refused (see RemaReceiptsCoordinator). Base host and the relative paths
+# (user/receipts, user/order, ...) are reverse-engineered from dk.rema1000.app
+# 1.8.15, where backend_base_url is this host root — the /apps/scanselv/ prefix
+# in the app is only for its vigo/status endpoints, not the user API.
+SCAN_API_BASE = "https://apim-rema-scan-prod.azure-api.net"
 
 TJEK_DEFAULT_BASE = "https://squid-api.tjek.com"
 TJEK_DEALER_ID = "11deC"  # REMA 1000 Danmark on Tjek / eTilbudsavis
