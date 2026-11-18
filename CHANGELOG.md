@@ -2,6 +2,11 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.18.5] - 2026-11-19
+
+### Changed
+- **Receipts endpoint probing (diagnostic):** narrowed to `/v1/` paths, added the Scan Selv app headers, and captured response bodies to pin down the live endpoint.
+
 ## [2.18.4] - 2026-11-19
 
 ### Changed

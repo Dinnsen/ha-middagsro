@@ -56,14 +56,11 @@ API_BASE = "https://api.digital.rema1000.dk/api"
 # and remembered, and it fails soft (with a per-candidate status summary) if
 # none do. {uid} is the account's REMA user id.
 RECEIPTS_PROBES: tuple[tuple[str, str], ...] = (
-    ("GET", "https://api.digital.rema1000.dk/api/v3/users/{uid}/receipts"),
-    ("POST", "https://apim-rema-scan-prod.azure-api.net/user/receipts"),
-    ("GET", "https://apim-rema-scan-prod.azure-api.net/api/user/receipts"),
+    ("GET", "https://api.digital.rema1000.dk/api/v1/user/receipts"),
+    ("GET", "https://api.digital.rema1000.dk/v1/user/receipts"),
     ("GET", "https://apim-rema-scan-prod.azure-api.net/v1/user/receipts"),
-    ("GET", "https://apim-rema-scan-prod.azure-api.net/receipts"),
-    ("GET", "https://apim-rema-scan-prod.azure-api.net/user/{uid}/receipts"),
-    ("PUT", "https://api.digital.rema1000.dk/api/user/receipts"),
-    ("GET", "https://api.digital.rema1000.dk/api/v3/user/receipts"),
+    ("POST", "https://apim-rema-scan-prod.azure-api.net/v1/user/receipts"),
+    ("GET", "https://apim-rema-scan-prod.azure-api.net/v1/user/{uid}/receipts"),
 )
 
 TJEK_DEFAULT_BASE = "https://squid-api.tjek.com"
@@ -1060,6 +1057,10 @@ class RemaClient:
             **BASE_HEADERS,
             "Authorization": f"Bearer {token}",
             "Origin": self._site or SITES[0],
+            # The Scan Selv app sends these; its backend may expect them.
+            "X-App-Platform": "android",
+            "X-App-Version": "1.8.15",
+            "X-App-Language": "da",
         }
         try:
             async with self._session.request(
@@ -1092,7 +1093,7 @@ class RemaClient:
             if self._receipts_probe
             else list(RECEIPTS_PROBES)
         )
-        statuses: dict[str, int] = {}
+        statuses: dict[str, str] = {}
         for method, tmpl in probes:
             url = tmpl.format(uid=self._user_id)
             status, body_text = await self._async_token_request(
@@ -1114,7 +1115,7 @@ class RemaClient:
                     key=lambda r: r.date or datetime.min.replace(tzinfo=UTC), reverse=True
                 )
                 return receipts[:limit] if limit else receipts
-            statuses[f"{method} {url}"] = status
+            statuses[f"{method} {url}"] = f"{status} {body_text[:160].strip()}"
         raise RemaApiError(f"No receipts endpoint answered (statuses: {statuses})")
 
     # ------------------------------------------------------------ shopping lists
