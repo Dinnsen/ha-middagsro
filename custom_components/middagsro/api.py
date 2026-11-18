@@ -57,9 +57,6 @@ API_BASE = "https://api.digital.rema1000.dk/api"
 RECEIPTS_URLS: tuple[str, ...] = (
     "https://api.digital.rema1000.dk/api/user/receipts",
     "https://api.digital.rema1000.dk/user/receipts",
-    "https://apim-rema-scan-prod.azure-api.net/scanselv/user/receipts",
-    "https://apim-rema-scan-prod.azure-api.net/user/receipts",
-    "https://apim-rema-scan-prod.azure-api.net/apps/scanselv/user/receipts",
 )
 
 TJEK_DEFAULT_BASE = "https://squid-api.tjek.com"
@@ -1036,14 +1033,19 @@ class RemaClient:
 
     # ------------------------------------------------------------ receipts
 
-    async def _async_token_get(
-        self, url: str, params: dict[str, Any] | None, *, retry: bool = True
+    async def _async_token_request(
+        self,
+        method: str,
+        url: str,
+        *,
+        json_body: Any = None,
+        retry: bool = True,
     ) -> tuple[int, str]:
-        """GET a full URL with the account's Bearer token; return (status, body).
+        """Call a full URL with the account's Bearer token; return (status, body).
 
         The same headers as the working webshop calls are sent, so a receipts
-        endpoint on api.digital.rema1000.dk accepts them; extra headers are
-        harmless to the Scan Selv gateway. A rejected token is renewed once.
+        endpoint on api.digital.rema1000.dk accepts them. A rejected token is
+        renewed once.
         """
         await self._async_ensure_token()
         token = self._access_token
@@ -1054,11 +1056,13 @@ class RemaClient:
         }
         try:
             async with self._session.request(
-                "GET", url, params=params, headers=headers, timeout=REQUEST_TIMEOUT
+                method, url, json=json_body, headers=headers, timeout=REQUEST_TIMEOUT
             ) as resp:
                 if resp.status == 401 and retry:
                     await self._async_ensure_token(stale=token)
-                    return await self._async_token_get(url, params, retry=False)
+                    return await self._async_token_request(
+                        method, url, json_body=json_body, retry=False
+                    )
                 return resp.status, await resp.text()
         except (aiohttp.ClientError, TimeoutError) as err:
             raise RemaConnectionError(f"Could not reach REMA 1000: {err}") from err
@@ -1068,15 +1072,15 @@ class RemaClient:
     ) -> list[Receipt]:
         """The account's digital receipts (kvitteringer), newest first.
 
-        REMA's receipts endpoint is not public; the exact host/path is matched
-        against RECEIPTS_URLS (the first that answers is used and remembered),
-        so a gateway change or a wrong guess degrades to the next candidate
-        instead of breaking. ``since`` asks for receipts from a point in time;
-        ``limit`` keeps only the newest few.
+        Receipts are fetched with a POST to the account API (the endpoint
+        answers 405 to GET). REMA's API is not public, so the exact host/path
+        is matched against RECEIPTS_URLS (the first that answers is used and
+        remembered), degrading to the next candidate instead of breaking.
+        ``since`` limits how far back; ``limit`` keeps only the newest few.
         """
-        params: dict[str, Any] = {}
+        body: dict[str, Any] = {}
         if since is not None:
-            params["since"] = since.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+            body["sinceDate"] = since.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         urls = (
             [self._receipts_url, *[u for u in RECEIPTS_URLS if u != self._receipts_url]]
             if self._receipts_url
@@ -1084,10 +1088,10 @@ class RemaClient:
         )
         statuses: dict[str, int] = {}
         for url in urls:
-            status, body = await self._async_token_get(url, params or None)
+            status, body_text = await self._async_token_request("POST", url, json_body=body)
             if status < 400:
                 self._receipts_url = url  # remember what worked
-                data = _json_or_error(body, "GET receipts") if body.strip() else []
+                data = _json_or_error(body_text, "receipts") if body_text.strip() else []
                 raw_list: Any = (
                     _first(data, "data", "receipts", "items") if isinstance(data, dict) else data
                 )

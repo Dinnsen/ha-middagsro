@@ -2,6 +2,11 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.18.3] - 2026-11-18
+
+### Fixed
+- **Receipts use POST, not GET:** the account receipts endpoint on `api.digital.rema1000.dk` answered 405 to GET; it is a POST (with an optional `sinceDate`). Narrowed the candidate list to the account API host.
+
 ## [2.18.2] - 2026-11-18
 
 ### Fixed
