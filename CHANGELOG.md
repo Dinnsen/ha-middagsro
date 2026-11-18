@@ -2,6 +2,11 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.18.1] - 2026-11-18
+
+### Fixed
+- **Receipts endpoint:** call the Scan Selv backend at its host root (`user/receipts`) instead of under an `/apps/scanselv/` prefix, which returned 404. Verified live against a real account.
+
 ## [2.18.0] - 2026-11-18
 
 ### Added
