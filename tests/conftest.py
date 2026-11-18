@@ -271,6 +271,7 @@ def mock_client() -> Generator[MagicMock]:
     client.async_get_offer_products = AsyncMock(side_effect=lambda offers: offers)
     client.async_get_products = AsyncMock(return_value=[])
     client.async_get_nutrition = AsyncMock(return_value={})
+    client.async_get_receipts = AsyncMock(return_value=[])
     with (
         patch("custom_components.middagsro.RemaClient", return_value=client),
         patch("custom_components.middagsro.config_flow.RemaClient", return_value=client),

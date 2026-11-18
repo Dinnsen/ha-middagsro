@@ -25,6 +25,7 @@ CURRENT = "sensor.middagsro_current_offer_catalogue"
 UPCOMING = "sensor.middagsro_next_offer_catalogue"
 MEAL_PLAN = "sensor.middagsro_meal_plan"
 DINNER = "sensor.middagsro_dinner_today"
+LATEST_RECEIPT = "sensor.middagsro_latest_receipt"
 CALENDAR = "calendar.middagsro_meal_plan"
 TODO = "todo.middagsro_shopping_list"
 QUICK_ADD = "text.middagsro_add_to_shopping_list"
@@ -55,6 +56,7 @@ async def test_entities_and_device(
             UPCOMING,
             MEAL_PLAN,
             DINNER,
+            LATEST_RECEIPT,
             "sensor.middagsro_food_budget_left_this_week",
             "sensor.middagsro_food_budget_spent_this_month",
             "sensor.middagsro_food_budget_forecast_for_the_month",
