@@ -170,6 +170,9 @@
       },
       "budget_month_forecast": {
         "name": "Food budget forecast for the month"
+      },
+      "latest_receipt": {
+        "name": "Latest receipt"
       }
     },
     "todo": {
@@ -376,6 +379,12 @@
     },
     "leftovers_no_source": {
       "message": "There is no dinner before this day to eat the leftovers of."
+    },
+    "receipts_rema_only": {
+      "message": "Receipts are only available for REMA 1000 accounts."
+    },
+    "bad_since": {
+      "message": "The 'since' date could not be read. Use e.g. 2026-01-01."
     }
   },
   "issues": {
@@ -443,6 +452,24 @@
         "catalog": {
           "name": "Tilbudsavis",
           "description": "The current or the next tilbudsavis."
+        }
+      }
+    },
+    "get_receipts": {
+      "name": "Get receipts",
+      "description": "Returns the account's digital receipts (kvitteringer) from REMA 1000, newest first.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Only needed if more than one REMA 1000 account is set up."
+        },
+        "limit": {
+          "name": "How many",
+          "description": "At most this many of the newest receipts."
+        },
+        "since": {
+          "name": "Since",
+          "description": "Only receipts from this date onwards (e.g. 2026-01-01)."
         }
       }
     },

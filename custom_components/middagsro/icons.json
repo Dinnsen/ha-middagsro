@@ -29,6 +29,9 @@
       },
       "budget_month_forecast": {
         "default": "mdi:chart-timeline-variant"
+      },
+      "latest_receipt": {
+        "default": "mdi:receipt-text"
       }
     },
     "todo": {
@@ -61,6 +64,9 @@
     },
     "get_offers": {
       "service": "mdi:sale"
+    },
+    "get_receipts": {
+      "service": "mdi:receipt-text-outline"
     },
     "search_products": {
       "service": "mdi:magnify"

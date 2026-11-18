@@ -43,6 +43,19 @@ LOGIN_ORIGIN = f"https://{LOGIN_HOST}"
 SITES = ("https://shop.rema1000.dk", "https://rema1000.dk")
 API_BASE = "https://api.digital.rema1000.dk/api"
 
+# The REMA 1000 "Scan Selv" app has its own backend (an Azure API Management
+# gateway) which carries the account's digital receipts (kvitteringer). The
+# webshop API above does not expose them. The account is shared across the
+# webshop, the REMA 1000 app and the Scan Selv app ("Use the same login"), so
+# the same Bearer access token is reused here; no API-management subscription
+# key is needed (the gateway validates the JWT alone).
+# NOTE: that the webshop-issued token is accepted by this gateway is an
+# assumption derived from the shared-login design; it is verified against the
+# live API by the receipts coordinator, which fails soft if the token is
+# refused (see RemaReceiptsCoordinator). Endpoint + fields reverse-engineered
+# from dk.rema1000.app 1.8.15.
+SCAN_API_BASE = "https://apim-rema-scan-prod.azure-api.net/apps/scanselv"
+
 TJEK_DEFAULT_BASE = "https://squid-api.tjek.com"
 TJEK_DEALER_ID = "11deC"  # REMA 1000 Danmark on Tjek / eTilbudsavis
 
@@ -156,6 +169,194 @@ def split_amount(text: str) -> tuple[int, str]:
     if match := _AMOUNT_PREFIX.match(text):
         return max(1, int(match.group(1))), match.group(2)
     return 1, text.strip()
+
+
+def _kroner(value: Any) -> float | None:
+    """A money amount from the receipts API as kroner.
+
+    REMA stores receipt amounts as whole øre (integers), e.g. 1995 -> 19.95.
+    A value that already carries a decimal separator is read as kroner, so the
+    helper is right whether the field is an integer øre amount or a string.
+    """
+    if value is None or isinstance(value, bool) or value == "":
+        return None
+    if isinstance(value, int):
+        return round(value / 100, 2)
+    text = str(value).strip()
+    try:
+        if "." in text or "," in text:
+            return round(float(text.replace(",", ".")), 2)
+        return round(int(text) / 100, 2) if text else None  # a bare integer is øre
+    except ValueError:
+        return None
+
+
+def _receipt_time(value: Any) -> datetime | None:
+    """A receipt timestamp: an ISO string, or epoch milliseconds/seconds."""
+    if isinstance(value, bool) or value in (None, ""):
+        return None
+    if isinstance(value, (int, float)):
+        seconds = value / 1000 if value > 1e11 else value  # ms if it is that big
+        try:
+            return datetime.fromtimestamp(seconds, UTC)
+        except (OverflowError, OSError, ValueError):
+            return None
+    return parse_time(str(value))
+
+
+def _first(data: dict[str, Any], *keys: str) -> Any:
+    """The first present, non-null value among several candidate keys."""
+    for key in keys:
+        if isinstance(data, dict) and data.get(key) is not None:
+            return data[key]
+    return None
+
+
+@dataclass(slots=True, frozen=True)
+class ReceiptItem:
+    """One line on a digital receipt."""
+
+    name: str
+    quantity: int | None = None
+    price: float | None = None  # kroner, the line's price as printed
+    deposit: float | None = None
+    discount: float | None = None
+    vat: float | None = None
+
+    @classmethod
+    def from_api(cls, raw: Any) -> ReceiptItem:
+        """Read a receipt line defensively from the API's JSON."""
+        if not isinstance(raw, dict):
+            raise TypeError("receipt line is not an object")
+        name = _first(raw, "shelfText1", "shelf_text_1", "name", "text", "description")
+        extra = _first(raw, "shelfText2", "shelf_text_2", "underline")
+        label = " ".join(p for p in (str(name or "").strip(), str(extra or "").strip()) if p)
+        price = _first(raw, "price", "amount", "total")
+        qty = _first(raw, "quantity", "qty", "count")
+        return cls(
+            name=label or "Vare",
+            quantity=int(qty)
+            if isinstance(qty, (int, float, str)) and str(qty).isdigit()
+            else None,
+            price=_kroner(price),
+            deposit=_kroner(_first(raw, "deposit", "pant")),
+            discount=_kroner(_first(raw, "discount", "rabat")),
+            vat=_kroner(_first(raw, "vat", "moms")),
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        """A plain dict for service responses."""
+        return asdict(self)
+
+
+@dataclass(slots=True, frozen=True)
+class ReceiptStore:
+    """The store a receipt was issued by."""
+
+    number: str | None = None
+    name: str | None = None
+    address: str | None = None
+    zip: str | None = None
+    city: str | None = None
+
+    @classmethod
+    def from_api(cls, raw: Any) -> ReceiptStore | None:
+        """Read the store block of a receipt, if present."""
+        if not isinstance(raw, dict):
+            return None
+        address = _first(raw, "address1", "address", "street")
+        return cls(
+            number=_as_str(_first(raw, "storeNumber", "store_number", "number", "id")),
+            name=_as_str(_first(raw, "name", "storeName")),
+            address=_as_str(address),
+            zip=_as_str(_first(raw, "zip", "zipCode", "postalCode")),
+            city=_as_str(_first(raw, "city", "town")),
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        """A plain dict for service responses."""
+        return asdict(self)
+
+
+@dataclass(slots=True, frozen=True)
+class Receipt:
+    """A digital receipt (kvittering) for one purchase."""
+
+    id: str
+    display_id: str | None
+    date: datetime | None
+    total: float | None  # kroner
+    total_string: str | None
+    total_discount: float | None
+    total_vat: float | None
+    payment_source: str | None
+    card_type: str | None
+    masked_pan: str | None
+    store: ReceiptStore | None
+    items: tuple[ReceiptItem, ...]
+
+    @classmethod
+    def from_api(cls, raw: Any) -> Receipt:
+        """Read a receipt defensively from the API's JSON.
+
+        Field names are reverse-engineered from the app's local store, so both
+        the names seen there and common alternatives are accepted; a line that
+        cannot be read is skipped rather than failing the whole receipt.
+        """
+        if not isinstance(raw, dict):
+            raise TypeError("receipt is not an object")
+        rid = _first(raw, "id", "receiptId", "displayId", "display_id")
+        if rid is None:
+            raise ValueError("receipt without an id")
+        provider = _first(raw, "paymentProvider", "payment_provider", "paymentProviderInfo") or {}
+        if not isinstance(provider, dict):
+            provider = {}
+        raw_items = _first(raw, "items", "lines", "receiptItems") or []
+        items: list[ReceiptItem] = []
+        for line in raw_items if isinstance(raw_items, list) else []:
+            try:
+                items.append(ReceiptItem.from_api(line))
+            except (TypeError, ValueError):
+                continue
+        return cls(
+            id=str(rid),
+            display_id=_as_str(_first(raw, "displayId", "display_id", "number")),
+            date=_receipt_time(_first(raw, "paymentDate", "payment_date", "date", "createdAt")),
+            total=_kroner(_first(raw, "totalPrice", "total_price", "total", "amount")),
+            total_string=_as_str(_first(raw, "totalPriceString", "total_price_string")),
+            total_discount=_kroner(_first(raw, "totalDiscount", "total_discount")),
+            total_vat=_kroner(_first(raw, "totalVat", "total_vat")),
+            payment_source=_as_str(_first(raw, "paymentSource", "payment_source")),
+            card_type=_as_str(_first(provider, "cardType", "card_type", "type")),
+            masked_pan=_as_str(_first(provider, "maskedPan", "masked_pan", "pan")),
+            store=ReceiptStore.from_api(_first(raw, "store", "shop")),
+            items=tuple(items),
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        """A plain dict for service responses."""
+        return {
+            "id": self.id,
+            "display_id": self.display_id,
+            "date": self.date.isoformat() if self.date else None,
+            "total": self.total,
+            "total_string": self.total_string,
+            "total_discount": self.total_discount,
+            "total_vat": self.total_vat,
+            "payment_source": self.payment_source,
+            "card_type": self.card_type,
+            "masked_pan": self.masked_pan,
+            "store": self.store.as_dict() if self.store else None,
+            "items": [item.as_dict() for item in self.items],
+        }
+
+
+def _as_str(value: Any) -> str | None:
+    """A trimmed string, or None for empty/missing values."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 @dataclass(slots=True)
@@ -825,6 +1026,87 @@ class RemaClient:
             except (aiohttp.ClientError, TimeoutError) as err:
                 raise RemaConnectionError(f"Could not reach REMA 1000: {err}") from err
             await asyncio.sleep(delay)
+
+    # ------------------------------------------------------------ receipts
+
+    async def _async_scan_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        retry: bool = True,
+    ) -> Any:
+        """Call the Scan Selv backend with the account's access token.
+
+        Separate from ``_async_request`` because it talks to a different host
+        (the Azure API-management gateway) with a different response shape. A
+        rejected token is renewed once; a busy server is tried again.
+        """
+        await self._async_ensure_token()
+        token = self._access_token
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {token}",
+            "X-Locale": "da",
+        }
+        attempt = 0
+        while True:
+            delay = 0.0
+            try:
+                async with self._session.request(
+                    method,
+                    f"{SCAN_API_BASE}{path}",
+                    params=params,
+                    headers=headers,
+                    timeout=REQUEST_TIMEOUT,
+                ) as resp:
+                    if resp.status == 401 and retry:
+                        await self._async_ensure_token(stale=token)
+                        return await self._async_scan_request(
+                            method, path, params=params, retry=False
+                        )
+                    if resp.status == 401:
+                        raise RemaApiError("Scan Selv rejected the access token", 401)
+                    if resp.status in RETRY_STATUSES and attempt < len(RETRY_DELAYS):
+                        delay = _retry_after(resp.headers.get("Retry-After"), RETRY_DELAYS[attempt])
+                        attempt += 1
+                    elif resp.status >= 400:
+                        body = (await resp.text())[:300]
+                        raise RemaApiError(
+                            f"{method} {path} returned HTTP {resp.status}: {body}", resp.status
+                        )
+                    else:
+                        if resp.status == 204:
+                            return None
+                        return _json_or_error(await resp.text(), f"{method} {path}")
+            except (aiohttp.ClientError, TimeoutError) as err:
+                raise RemaConnectionError(f"Could not reach REMA 1000 Scan Selv: {err}") from err
+            await asyncio.sleep(delay)
+
+    async def async_get_receipts(
+        self, *, since: datetime | None = None, limit: int | None = None
+    ) -> list[Receipt]:
+        """The account's digital receipts (kvitteringer), newest first.
+
+        ``since`` asks the backend for receipts from a point in time (the app
+        syncs the same way). ``limit`` keeps only the newest few.
+        """
+        params: dict[str, Any] = {}
+        if since is not None:
+            params["since"] = since.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        data = await self._async_scan_request("GET", "/user/receipts", params=params or None)
+        raw_list: Any = data
+        if isinstance(data, dict):
+            raw_list = _first(data, "data", "receipts", "items") or []
+        receipts: list[Receipt] = []
+        for entry in raw_list if isinstance(raw_list, list) else []:
+            try:
+                receipts.append(Receipt.from_api(entry))
+            except (TypeError, ValueError) as err:
+                _LOGGER.debug("Skipping a receipt that could not be read: %s", err)
+        receipts.sort(key=lambda r: r.date or datetime.min.replace(tzinfo=UTC), reverse=True)
+        return receipts[:limit] if limit else receipts
 
     # ------------------------------------------------------------ shopping lists
 

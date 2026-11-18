@@ -18,6 +18,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import (
     Catalog,
+    Receipt,
     RemaAuthError,
     RemaClient,
     RemaError,
@@ -26,7 +27,13 @@ from .api import (
     parse_time,
 )
 from .bilka import BilkaError
-from .const import DOMAIN, LIST_SCAN_INTERVAL, OFFERS_SCAN_INTERVAL, STORAGE_VERSION
+from .const import (
+    DOMAIN,
+    LIST_SCAN_INTERVAL,
+    OFFERS_SCAN_INTERVAL,
+    RECEIPTS_SCAN_INTERVAL,
+    STORAGE_VERSION,
+)
 from .store_client import BilkaStoreClient
 
 if TYPE_CHECKING:
@@ -47,6 +54,7 @@ class RemaRuntimeData:
     store: RemaPlanStore
     planner: MealPlanner
     favorite_offers: FavoriteOffers
+    receipts: RemaReceiptsCoordinator | None = None
 
 
 type RemaConfigEntry = ConfigEntry[RemaRuntimeData]
@@ -283,3 +291,46 @@ class RemaOffersCoordinator(DataUpdateCoordinator[OffersData]):
             catalogs=catalogs,
             first_seen=dict(self._first_seen),
         )
+
+
+class RemaReceiptsCoordinator(DataUpdateCoordinator[list[Receipt]]):
+    """Keep the account's digital receipts (kvitteringer) in sync.
+
+    Only for REMA 1000 accounts. Receipts come from the Scan Selv backend, a
+    different host than the webshop API; if it refuses the token or is down the
+    coordinator fails soft so the rest of the integration keeps working.
+    """
+
+    config_entry: RemaConfigEntry
+
+    # The newest receipts are enough for a sensor and the action; the whole
+    # history is not pulled on every poll.
+    KEEP = 50
+
+    def __init__(self, hass: HomeAssistant, entry: RemaConfigEntry, client: RemaClient) -> None:
+        """Initialize the coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            config_entry=entry,
+            name=f"{DOMAIN} receipts",
+            update_interval=RECEIPTS_SCAN_INTERVAL,
+        )
+        self.client = client
+
+    async def _async_update_data(self) -> list[Receipt]:
+        """Fetch the newest receipts."""
+        try:
+            return await self.client.async_get_receipts(limit=self.KEEP)
+        except RemaAuthError as err:
+            raise ConfigEntryAuthFailed(
+                translation_domain=DOMAIN,
+                translation_key="auth_failed",
+                translation_placeholders={"email": self.config_entry.data[CONF_EMAIL]},
+            ) from err
+        except RemaError as err:
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="update_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err

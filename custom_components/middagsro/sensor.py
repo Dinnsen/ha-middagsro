@@ -14,7 +14,12 @@ from homeassistant.util import dt as dt_util
 
 from .api import Catalog
 from .budget import summary as budget_summary
-from .coordinator import RemaConfigEntry, RemaOffersCoordinator, RemaShoppingListCoordinator
+from .coordinator import (
+    RemaConfigEntry,
+    RemaOffersCoordinator,
+    RemaReceiptsCoordinator,
+    RemaShoppingListCoordinator,
+)
 from .entity import RemaEntity, device_info
 from .mealplan import signal_plans_updated
 
@@ -28,16 +33,18 @@ async def async_setup_entry(
 ) -> None:
     """Set up the sensors."""
     data = entry.runtime_data
-    async_add_entities(
-        [
-            RemaListTotalSensor(data.shopping_list, entry),
-            RemaCatalogSensor(data.offers, entry, "current_catalog"),
-            RemaCatalogSensor(data.offers, entry, "upcoming_catalog"),
-            RemaMealPlanSensor(data.shopping_list, entry),
-            RemaDinnerTodaySensor(entry),
-            *(RemaBudgetSensor(entry, key) for key in BUDGET_SENSORS),
-        ]
-    )
+    entities: list[SensorEntity] = [
+        RemaListTotalSensor(data.shopping_list, entry),
+        RemaCatalogSensor(data.offers, entry, "current_catalog"),
+        RemaCatalogSensor(data.offers, entry, "upcoming_catalog"),
+        RemaMealPlanSensor(data.shopping_list, entry),
+        RemaDinnerTodaySensor(entry),
+        *(RemaBudgetSensor(entry, key) for key in BUDGET_SENSORS),
+    ]
+    # Receipts exist only for REMA 1000 accounts (not Bilka/Nemlig).
+    if data.receipts is not None:
+        entities.append(RemaLatestReceiptSensor(data.receipts, entry))
+    async_add_entities(entities)
 
 
 class RemaDinnerTodaySensor(SensorEntity):
@@ -313,4 +320,44 @@ class RemaCatalogSensor(RemaEntity[RemaOffersCoordinator], SensorEntity):
             "valid_to": catalog.valid_to.isoformat() if catalog.valid_to else None,
             "offer_count": catalog.offer_count,
             "first_seen": self.coordinator.data.first_seen.get(catalog.id),
+        }
+
+
+class RemaLatestReceiptSensor(RemaEntity[RemaReceiptsCoordinator], SensorEntity):
+    """The account's most recent digital receipt (kvittering). State is its date."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, coordinator: RemaReceiptsCoordinator, entry: RemaConfigEntry) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, "latest_receipt")
+
+    @property
+    def _latest(self) -> Any:
+        """The newest receipt, if any (the list is kept newest first)."""
+        data = self.coordinator.data
+        return data[0] if data else None
+
+    @property
+    def native_value(self) -> datetime | None:
+        """When the newest purchase was paid."""
+        receipt = self._latest
+        return receipt.date if receipt else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Describe the newest receipt, and how many are known."""
+        receipt = self._latest
+        if receipt is None:
+            return {"receipt_count": len(self.coordinator.data or [])}
+        return {
+            "receipt_count": len(self.coordinator.data or []),
+            "receipt_id": receipt.id,
+            "display_id": receipt.display_id,
+            "total": receipt.total,
+            "total_string": receipt.total_string,
+            "items": len(receipt.items),
+            "store": receipt.store.name if receipt.store else None,
+            "card_type": receipt.card_type,
+            "masked_pan": receipt.masked_pan,
         }

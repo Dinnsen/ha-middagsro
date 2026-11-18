@@ -119,13 +119,21 @@ The household's fixed amount for food a month, with every purchase booked agains
 
 <img src="docs/images/budget-year.png" alt="Averages per shopping day, the year month by month and the latest purchases" width="100%">
 
-**Booking by itself with Apple Pay (iPhone).** REMA's *Scan & Betal* has no receipts you can reach, but a card payment can book itself. In the *Shortcuts* app, make a personal automation **Transaction** (*Transaktion*) for your Wallet card – choose the shops (REMA 1000, Netto …), or leave them open if the card is only for food – and *Run immediately*. Add Home Assistant's action **Perform action** (*Udfør handling*), choose *Register a purchase*, and write in its data field:
+**Booking by itself with Apple Pay (iPhone).** For shops without digital receipts (or a card you use everywhere), a card payment can book itself. In the *Shortcuts* app, make a personal automation **Transaction** (*Transaktion*) for your Wallet card – choose the shops (REMA 1000, Netto …), or leave them open if the card is only for food – and *Run immediately*. Add Home Assistant's action **Perform action** (*Udfør handling*), choose *Register a purchase*, and write in its data field:
 
 ```json
 {"amount": "Amount", "store": "Merchant"}
 ```
 
 where *Amount* and *Merchant* are not typed but inserted as the shortcut's variables (*Shortcut Input → Amount* and *→ Merchant*), so they show as blue bubbles. The amount may come as the payment shows it (*600,00 kr.*). A Siri shortcut that asks for the amount works the same way, and the action answers with what is left of the week.
+
+### Receipts (*Kvitteringer*)
+
+Your REMA 1000 **digital receipts** in Home Assistant, read with the same account you log in with (the one shared by the REMA 1000 app, the Scan Selv app and rema1000.dk).
+
+- A **Seneste kvittering** sensor with the newest purchase: its date is the state, with the total, the store, the number of lines and the card used as attributes.
+- The action **`middagsro.get_receipts`** returns the receipts (`limit`, and `since` for a starting date) – for a dashboard, an automation or booking them against the budget.
+- REMA 1000 accounts only; it never blocks or slows setup, and simply stays empty if REMA's backend is unavailable.
 
 ### History
 

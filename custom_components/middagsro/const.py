@@ -7,6 +7,7 @@ DOMAIN: Final = "middagsro"
 
 LIST_SCAN_INTERVAL: Final = timedelta(minutes=2)
 OFFERS_SCAN_INTERVAL: Final = timedelta(hours=3)
+RECEIPTS_SCAN_INTERVAL: Final = timedelta(hours=6)
 
 STORAGE_VERSION: Final = 1
 
@@ -18,6 +19,7 @@ ATTR_PRODUCT_ID: Final = "product_id"
 ATTR_NAME: Final = "name"
 ATTR_AMOUNT: Final = "amount"
 ATTR_CATALOG: Final = "catalog"
+ATTR_SINCE: Final = "since"
 
 SERVICE_SEARCH_PRODUCTS: Final = "search_products"
 SERVICE_ADD_ITEMS: Final = "add_items"
@@ -26,6 +28,7 @@ SERVICE_GENERATE_MEAL_PLAN: Final = "generate_meal_plan"
 SERVICE_SEND_MEAL_PLAN: Final = "send_meal_plan"
 SERVICE_REGISTER_PURCHASE: Final = "register_purchase"
 SERVICE_ADD_TO_PANTRY: Final = "add_to_pantry"
+SERVICE_GET_RECEIPTS: Final = "get_receipts"
 
 # The recipe sites the family can choose (sites.py has their details).
 SITE_IDS: Final = ("valdemarsro", "madensverden", "louisesmadblog", "dkkogebogen", "arla")

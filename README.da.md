@@ -117,13 +117,21 @@ Husstandens faste beløb til mad pr. måned, med hvert køb konteret – så I k
 
 <img src="docs/images/budget-year.png" alt="Gennemsnit pr. indkøbsdag, året måned for måned og de seneste køb" width="100%">
 
-**Kontér af sig selv med Apple Pay (iPhone).** REMA's *Scan & Betal* har ingen kvitteringer, man kan komme til, men en kortbetaling kan kontere sig selv. Lav i *Genveje*-appen en personlig automatisering **Transaktion** for jeres Wallet-kort – vælg butikkerne (REMA 1000, Netto …), eller lad dem stå åbne, hvis kortet kun bruges til mad – og *Kør med det samme*. Tilføj Home Assistant-appens handling **Udfør handling**, vælg *Register a purchase*, og skriv i dens datafelt:
+**Kontér af sig selv med Apple Pay (iPhone).** For butikker uden digitale kvitteringer (eller et kort du bruger alle steder) kan en kortbetaling kontere sig selv. Lav i *Genveje*-appen en personlig automatisering **Transaktion** for jeres Wallet-kort – vælg butikkerne (REMA 1000, Netto …), eller lad dem stå åbne, hvis kortet kun bruges til mad – og *Kør med det samme*. Tilføj Home Assistant-appens handling **Udfør handling**, vælg *Register a purchase*, og skriv i dens datafelt:
 
 ```json
 {"amount": "Beløb", "store": "Forhandler"}
 ```
 
 hvor *Beløb* og *Forhandler* ikke skrives, men indsættes som genvejens variabler (*Genvejsinput → Beløb* og *→ Forhandler*), så de står som blå bobler. Beløbet må gerne komme, som betalingen viser det (*600,00 kr.*). En Siri-genvej, der spørger om beløbet, virker på samme måde, og handlingen svarer med, hvad der er tilbage af ugen.
+
+### Kvitteringer
+
+Dine **digitale kvitteringer** fra REMA 1000 i Home Assistant, læst med den samme konto du logger ind med (den der deles af REMA 1000-appen, Scan Selv-appen og rema1000.dk).
+
+- En **Seneste kvittering**-sensor med det nyeste køb: datoen er tilstanden, og beløb, butik, antal linjer og det brugte kort er attributter.
+- Handlingen **`middagsro.get_receipts`** returnerer kvitteringerne (`limit`, og `since` for en startdato) – til et dashboard, en automatisering eller til at kontere dem mod budgettet.
+- Kun REMA 1000-konti; den blokerer eller forsinker aldrig opsætningen og står blot tom, hvis REMA's backend ikke kan nås.
 
 ### Historik
 
