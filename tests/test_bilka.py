@@ -25,6 +25,7 @@ from custom_components.middagsro.store_client import (
     BilkaStoreClient,
     rema_only,
 )
+from custom_components.middagsro.store_selection import async_switch
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -311,3 +312,57 @@ async def test_search_everywhere_with_bilka(
     assert entries[0]["full_price"] is True
     assert entries[0]["pre_price"] == 10.0
     assert entries[0]["unit_price"] == {"unit": "kg", "price": 16.0}
+
+
+async def test_recipe_products_follow_selected_shop(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    bilka_entry: MockConfigEntry,
+    hass_ws_client: WebSocketGenerator,
+    mock_client: MagicMock,
+) -> None:
+    """Both recipe searches and automatic suggestions follow REMA -> Bilka -> REMA."""
+    client = await hass_ws_client(hass)
+    product = make_product(987654, "Spaghetti", 8.0, underline="500 G / SALLING")
+    search = AsyncMock(return_value=[product])
+    number = 0
+
+    async def request(**msg: Any) -> dict[str, Any]:
+        nonlocal number
+        number += 1
+        await client.send_json({"id": number, **msg})
+        reply = await client.receive_json()
+        assert reply["success"], reply
+        return reply["result"]
+
+    with patch.object(bilka_entry.runtime_data.client.bilka, "async_search", search):
+        await async_switch(hass, init_integration, bilka_entry, "new", False, None)
+        mock_client.async_search_products.reset_mock()
+        products = await request(type="middagsro/search", query="spaghetti")
+        assert [p["id"] for p in products] == [product.id]
+        result = await request(
+            type="middagsro/recipes/links",
+            recipe={"ingredients": [{"name": "spaghetti", "amount": "500 g"}]},
+            suggest=True,
+        )
+        assert result["available"] is True
+        assert result["suggestions"][0]["product"]["id"] == product.id
+        assert search.await_count >= 2
+        mock_client.async_search_products.assert_not_awaited()
+        # Saving and opening the recipe retains the chosen Bilka item.
+        chosen = {"id": product.id, "name": product.name, "underline": product.underline}
+        saved = await request(
+            type="middagsro/recipes/save",
+            recipe={
+                "name": "Familiens pasta",
+                "ingredients": [{"name": "spaghetti", "product": chosen}],
+            },
+        )
+        opened = await request(type="middagsro/recipes/get", recipe_id=saved["id"])
+        assert opened["ingredients"][0]["product"] == chosen
+        await async_switch(hass, bilka_entry, init_integration, "new", False, None)
+        count = search.await_count
+        products = await request(type="middagsro/search", query="spaghetti")
+        assert product.id not in {p["id"] for p in products}
+        mock_client.async_search_products.assert_awaited()
+        assert search.await_count == count
