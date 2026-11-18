@@ -11,12 +11,7 @@ from custom_components.middagsro.api import Receipt, ReceiptItem, RemaApiError
 
 from .test_api import FakeResponse, logged_in, token
 
-USER_ID = 4242  # the id logged_in() authenticates as
-# The first two probe candidates the client tries, resolved for the test user.
-P0_METHOD, _P0_TMPL = api.RECEIPTS_PROBES[0]
-P1_METHOD, _P1_TMPL = api.RECEIPTS_PROBES[1]
-RECEIPTS_URL = _P0_TMPL.format(uid=USER_ID)
-RECEIPTS_URL_2 = _P1_TMPL.format(uid=USER_ID)
+RECEIPTS_URL = api.RECEIPTS_URL
 
 
 def _sample(**over: object) -> dict:
@@ -142,7 +137,7 @@ async def test_get_receipts_fetches_and_sorts() -> None:
     client, session = await logged_in()
     older = _sample(id="old", paymentDate=1_700_000_000_000)
     newer = _sample(id="new", paymentDate=1_760_000_000_000)
-    session.on(P0_METHOD, RECEIPTS_URL, FakeResponse(data={"data": [older, newer]}))
+    session.on("GET", RECEIPTS_URL, FakeResponse(data={"data": [older, newer]}))
 
     receipts = await client.async_get_receipts(limit=10)
 
@@ -155,9 +150,9 @@ async def test_get_receipts_limits() -> None:
     """``limit`` trims the list to the newest few."""
     client, session = await logged_in()
     data = {"data": [_sample(id=f"r{i}", paymentDate=1_700_000_000_000 + i) for i in range(5)]}
-    session.on(P0_METHOD, RECEIPTS_URL, FakeResponse(data=data))
+    session.on("GET", RECEIPTS_URL, FakeResponse(data=data))
 
-    receipts = await client.async_get_receipts(since=datetime(2026, 1, 1, tzinfo=UTC), limit=2)
+    receipts = await client.async_get_receipts(limit=2)
 
     assert len(receipts) == 2
 
@@ -165,7 +160,7 @@ async def test_get_receipts_limits() -> None:
 async def test_get_receipts_handles_bare_list() -> None:
     """A backend that returns a plain list (no envelope) is accepted too."""
     client, session = await logged_in()
-    session.on(P0_METHOD, RECEIPTS_URL, FakeResponse(data=[_sample()]))
+    session.on("GET", RECEIPTS_URL, FakeResponse(data=[_sample()]))
     receipts = await client.async_get_receipts()
     assert len(receipts) == 1
 
@@ -179,7 +174,7 @@ async def test_get_receipts_renews_a_rejected_token() -> None:
         FakeResponse(data={"tokens": {"access_token": token()}}),
     )
     session.on(
-        P0_METHOD,
+        "GET",
         RECEIPTS_URL,
         FakeResponse(status=401),
         FakeResponse(data={"data": [_sample()]}),
@@ -188,25 +183,22 @@ async def test_get_receipts_renews_a_rejected_token() -> None:
     assert len(receipts) == 1
 
 
-async def test_get_receipts_falls_through_to_next_candidate() -> None:
-    """A 404 on the first endpoint moves on to the next, which is remembered."""
+async def test_get_receipts_soft_error_when_backend_rejects_token() -> None:
+    """A persistent 401 is a soft error (not a re-login prompt)."""
     client, session = await logged_in()
-    session.on(P0_METHOD, RECEIPTS_URL, FakeResponse(status=404))
-    session.on(P1_METHOD, RECEIPTS_URL_2, FakeResponse(data={"data": [_sample()]}))
-
-    receipts = await client.async_get_receipts()
-
-    assert len(receipts) == 1
-    assert client._receipts_probe == api.RECEIPTS_PROBES[1]  # the working one is remembered
-    # Next call tries the remembered candidate first (only it is routed here).
-    session.on(P1_METHOD, RECEIPTS_URL_2, FakeResponse(data={"data": []}))
-    assert await client.async_get_receipts() == []
+    session.on(
+        "POST",
+        "https://shop.rema1000.dk/api/auth/refresh",
+        FakeResponse(data={"tokens": {"access_token": token()}}),
+    )
+    session.on("GET", RECEIPTS_URL, FakeResponse(status=401))
+    with pytest.raises(RemaApiError, match="Scan Selv"):
+        await client.async_get_receipts()
 
 
-async def test_get_receipts_raises_when_no_endpoint_answers() -> None:
-    """When every candidate fails, one error reports each status."""
+async def test_get_receipts_raises_on_server_error() -> None:
+    """Other HTTP errors surface as a RemaApiError."""
     client, session = await logged_in()
-    for method, tmpl in api.RECEIPTS_PROBES:
-        session.on(method, tmpl.format(uid=USER_ID), FakeResponse(status=404))
+    session.on("GET", RECEIPTS_URL, FakeResponse(status=500, text="boom"))
     with pytest.raises(RemaApiError):
         await client.async_get_receipts()

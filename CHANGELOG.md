@@ -2,6 +2,11 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.18.7] - 2026-11-19
+
+### Changed
+- **Receipts endpoint confirmed, auth pending.** Live testing pinned the receipts endpoint to the Scan Selv gateway `GET /v1/user/receipts`. It validates a Scan Selv-audience token and rejects the shared web token ("Invalid token"), so receipts need the Scan Selv app's own sign-in, which is not implemented yet. The client now targets that endpoint and fails soft with a clear message; the sensor stays empty. Docs updated to mark receipts as in progress.
+
 ## [2.18.6] - 2026-11-19
 
 ### Fixed

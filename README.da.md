@@ -125,13 +125,12 @@ Husstandens faste beløb til mad pr. måned, med hvert køb konteret – så I k
 
 hvor *Beløb* og *Forhandler* ikke skrives, men indsættes som genvejens variabler (*Genvejsinput → Beløb* og *→ Forhandler*), så de står som blå bobler. Beløbet må gerne komme, som betalingen viser det (*600,00 kr.*). En Siri-genvej, der spørger om beløbet, virker på samme måde, og handlingen svarer med, hvad der er tilbage af ugen.
 
-### Kvitteringer
+### Kvitteringer – undervejs
 
-Dine **digitale kvitteringer** fra REMA 1000 i Home Assistant, læst med den samme konto du logger ind med (den der deles af REMA 1000-appen, Scan Selv-appen og rema1000.dk).
+Forarbejdet til dine **digitale kvitteringer** fra REMA 1000 i Home Assistant: en **Seneste kvittering**-sensor og handlingen **`middagsro.get_receipts`** (kun REMA 1000-konti). Datamodellen og endpointet er på plads, og det blokerer eller forsinker aldrig opsætningen.
 
-- En **Seneste kvittering**-sensor med det nyeste køb: datoen er tilstanden, og beløb, butik, antal linjer og det brugte kort er attributter.
-- Handlingen **`middagsro.get_receipts`** returnerer kvitteringerne (`limit`, og `since` for en startdato) – til et dashboard, en automatisering eller til at kontere dem mod budgettet.
-- Kun REMA 1000-konti; den blokerer eller forsinker aldrig opsætningen og står blot tom, hvis REMA's backend ikke kan nås.
+> [!NOTE]
+> Ikke live endnu. Kvitteringerne ligger på REMAs Scan Selv-backend, som kræver et token fra Scan Selv-appens eget login – den delte konto logger ind, men den backend afviser web-tokenet integrationen har ("Invalid token"). Indtil Scan Selv-autorisationen er tilføjet, står sensoren tom, og handlingen returnerer en tydelig besked. Ingen opsætning eller andre funktioner påvirkes.
 
 ### Historik
 
