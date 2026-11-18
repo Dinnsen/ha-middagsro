@@ -127,13 +127,12 @@ The household's fixed amount for food a month, with every purchase booked agains
 
 where *Amount* and *Merchant* are not typed but inserted as the shortcut's variables (*Shortcut Input → Amount* and *→ Merchant*), so they show as blue bubbles. The amount may come as the payment shows it (*600,00 kr.*). A Siri shortcut that asks for the amount works the same way, and the action answers with what is left of the week.
 
-### Receipts (*Kvitteringer*)
+### Receipts (*Kvitteringer*) – in progress
 
-Your REMA 1000 **digital receipts** in Home Assistant, read with the same account you log in with (the one shared by the REMA 1000 app, the Scan Selv app and rema1000.dk).
+Groundwork for your REMA 1000 **digital receipts** in Home Assistant: a **Seneste kvittering** sensor and the action **`middagsro.get_receipts`** (REMA 1000 accounts only). The receipts data model and endpoint are in place, and it never blocks or slows setup.
 
-- A **Seneste kvittering** sensor with the newest purchase: its date is the state, with the total, the store, the number of lines and the card used as attributes.
-- The action **`middagsro.get_receipts`** returns the receipts (`limit`, and `since` for a starting date) – for a dashboard, an automation or booking them against the budget.
-- REMA 1000 accounts only; it never blocks or slows setup, and simply stays empty if REMA's backend is unavailable.
+> [!NOTE]
+> Not live yet. The receipts live on REMA's Scan Selv backend, which needs a token from the Scan Selv app's own sign-in – the shared account logs in, but that backend rejects the web token the integration holds ("Invalid token"). Until the Scan Selv authorization is added, the sensor stays empty and the action returns a clear message. No setup or other feature is affected.
 
 ### History
 
