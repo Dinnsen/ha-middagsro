@@ -2,6 +2,11 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.18.0] - 2026-11-18
+
+### Added
+- **Digital receipts (kvitteringer)** from REMA 1000: a **Seneste kvittering** sensor with the newest purchase's date, total, store and line count, and an action **`middagsro.get_receipts`** (`limit`, `since`) that returns the receipts for automations and dashboards. Read from the REMA 1000 Scan Selv backend with the account you already log in with — only for REMA 1000 accounts, and never blocks setup if the backend is unavailable.
+
 ## [2.17.0] - 2026-11-17
 
 ### Added

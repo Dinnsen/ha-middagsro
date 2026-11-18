@@ -170,6 +170,9 @@
       },
       "budget_month_forecast": {
         "name": "Madbudget prognose for måneden"
+      },
+      "latest_receipt": {
+        "name": "Seneste kvittering"
       }
     },
     "todo": {
@@ -376,6 +379,12 @@
     },
     "leftovers_no_source": {
       "message": "Der er ingen ret før denne dag at spise rester af."
+    },
+    "receipts_rema_only": {
+      "message": "Kvitteringer er kun tilgængelige for REMA 1000-konti."
+    },
+    "bad_since": {
+      "message": "Datoen i 'siden' kunne ikke læses. Brug fx 2026-01-01."
     }
   },
   "issues": {
@@ -443,6 +452,24 @@
         "catalog": {
           "name": "Tilbudsavis",
           "description": "Den aktuelle eller den næste tilbudsavis."
+        }
+      }
+    },
+    "get_receipts": {
+      "name": "Hent kvitteringer",
+      "description": "Returnerer kontoens digitale kvitteringer fra REMA 1000, nyeste først.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Konto",
+          "description": "Kun nødvendig hvis der er sat mere end én REMA 1000-konto op."
+        },
+        "limit": {
+          "name": "Hvor mange",
+          "description": "Højst så mange af de nyeste kvitteringer."
+        },
+        "since": {
+          "name": "Siden",
+          "description": "Kun kvitteringer fra og med denne dato (fx 2026-01-01)."
         }
       }
     },

@@ -22,6 +22,7 @@ from .const import DOMAIN, STORAGE_VERSION
 from .coordinator import (
     RemaConfigEntry,
     RemaOffersCoordinator,
+    RemaReceiptsCoordinator,
     RemaRuntimeData,
     RemaShoppingListCoordinator,
 )
@@ -111,6 +112,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
     await shopping_list.async_config_entry_first_refresh()
     # Offers come from a third party (Tjek); don't block setup if it fails.
     await offers.async_refresh()
+    # Digital receipts are a REMA-only extra from the Scan Selv backend; never
+    # block setup on them (the backend may refuse the webshop token).
+    receipts: RemaReceiptsCoordinator | None = None
+    if store_id == REMA:
+        receipts = RemaReceiptsCoordinator(hass, entry, client)
+        await receipts.async_refresh()
 
     def catalogs() -> tuple[Catalog | None, Catalog | None]:
         data = offers.data
@@ -165,6 +172,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
         store=store,
         planner=planner,
         favorite_offers=FavoriteOffers(client),
+        receipts=receipts,
     )
 
     @callback

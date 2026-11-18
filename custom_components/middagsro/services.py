@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.core import (
@@ -25,11 +26,13 @@ from .const import (
     ATTR_NAME,
     ATTR_PRODUCT_ID,
     ATTR_QUERY,
+    ATTR_SINCE,
     DOMAIN,
     SERVICE_ADD_ITEMS,
     SERVICE_ADD_TO_PANTRY,
     SERVICE_GENERATE_MEAL_PLAN,
     SERVICE_GET_OFFERS,
+    SERVICE_GET_RECEIPTS,
     SERVICE_REGISTER_PURCHASE,
     SERVICE_SEARCH_PRODUCTS,
     SERVICE_SEND_MEAL_PLAN,
@@ -113,6 +116,14 @@ PANTRY_SCHEMA = vol.Schema(
         vol.Optional("best_before"): cv.string,
     }
 )
+RECEIPTS_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
+        vol.Optional(ATTR_LIMIT, default=20): vol.All(vol.Coerce(int), vol.Range(min=1, max=200)),
+        vol.Optional(ATTR_SINCE): cv.string,
+    }
+)
+
 OFFERS_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
@@ -247,6 +258,39 @@ def async_setup_services(hass: HomeAssistant) -> None:
         register_purchase,
         schema=PURCHASE_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    async def get_receipts(call: ServiceCall) -> ServiceResponse:
+        """Return the account's digital receipts (kvitteringer), newest first."""
+        entry = _get_entry(hass, call)
+        if entry.runtime_data.receipts is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="receipts_rema_only"
+            )
+        since: datetime | None = None
+        if raw := call.data.get(ATTR_SINCE):
+            try:
+                since = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            except ValueError as err:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN, translation_key="bad_since"
+                ) from err
+            if since.tzinfo is None:
+                since = since.replace(tzinfo=UTC)
+        try:
+            receipts = await entry.runtime_data.client.async_get_receipts(
+                since=since, limit=call.data[ATTR_LIMIT]
+            )
+        except RemaError as err:
+            raise _error(err) from err
+        return {"receipts": [receipt.as_dict() for receipt in receipts]}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_RECEIPTS,
+        get_receipts,
+        schema=RECEIPTS_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
 
     async def add_to_pantry(call: ServiceCall) -> ServiceResponse:

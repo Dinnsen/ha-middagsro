@@ -143,3 +143,21 @@ add_to_pantry:
       example: "2026-11-12"
       selector:
         date:
+
+get_receipts:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: middagsro
+    limit:
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 200
+          mode: box
+    since:
+      example: "2026-01-01"
+      selector:
+        text:
