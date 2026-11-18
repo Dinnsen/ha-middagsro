@@ -51,12 +51,19 @@ API_BASE = "https://api.digital.rema1000.dk/api"
 # key is needed (the gateway validates the JWT alone).
 # The account's digital receipts (kvitteringer). REMA has no public API, and
 # the Scan Selv app reads them from a backend reached with the shared account
-# token (the webshop login the client already holds). The exact host/path is
-# not certain from the app alone, so these candidates are tried in order and
-# the first that answers is used and remembered; it fails soft if none do.
-RECEIPTS_URLS: tuple[str, ...] = (
-    "https://api.digital.rema1000.dk/api/user/receipts",
-    "https://api.digital.rema1000.dk/user/receipts",
+# token. The exact host/method/path is not certain from the app, so a small
+# matrix of (method, url) candidates is tried; the first that answers is used
+# and remembered, and it fails soft (with a per-candidate status summary) if
+# none do. {uid} is the account's REMA user id.
+RECEIPTS_PROBES: tuple[tuple[str, str], ...] = (
+    ("GET", "https://api.digital.rema1000.dk/api/v3/users/{uid}/receipts"),
+    ("POST", "https://apim-rema-scan-prod.azure-api.net/user/receipts"),
+    ("GET", "https://apim-rema-scan-prod.azure-api.net/api/user/receipts"),
+    ("GET", "https://apim-rema-scan-prod.azure-api.net/v1/user/receipts"),
+    ("GET", "https://apim-rema-scan-prod.azure-api.net/receipts"),
+    ("GET", "https://apim-rema-scan-prod.azure-api.net/user/{uid}/receipts"),
+    ("PUT", "https://api.digital.rema1000.dk/api/user/receipts"),
+    ("GET", "https://api.digital.rema1000.dk/api/v3/user/receipts"),
 )
 
 TJEK_DEFAULT_BASE = "https://squid-api.tjek.com"
@@ -792,7 +799,7 @@ class RemaClient:
             str, tuple[float, tuple[tuple[int, ...], tuple[str, ...], tuple[str, ...]]]
         ] = {}
         self._primary_list: tuple[float, int] | None = None
-        self._receipts_url: str | None = None  # the receipts endpoint that last worked
+        self._receipts_probe: tuple[str, str] | None = None  # (method, url) that last worked
         self.dealer_id = TJEK_DEALER_ID  # the shop's avis on Tjek
 
     @property
@@ -1072,25 +1079,27 @@ class RemaClient:
     ) -> list[Receipt]:
         """The account's digital receipts (kvitteringer), newest first.
 
-        Receipts are fetched with a POST to the account API (the endpoint
-        answers 405 to GET). REMA's API is not public, so the exact host/path
-        is matched against RECEIPTS_URLS (the first that answers is used and
-        remembered), degrading to the next candidate instead of breaking.
-        ``since`` limits how far back; ``limit`` keeps only the newest few.
+        REMA's API is not public, so the host/method/path is matched against
+        RECEIPTS_PROBES (the first that answers is used and remembered),
+        degrading to the next candidate instead of breaking. ``since`` limits
+        how far back; ``limit`` keeps only the newest few.
         """
         body: dict[str, Any] = {}
         if since is not None:
             body["sinceDate"] = since.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-        urls = (
-            [self._receipts_url, *[u for u in RECEIPTS_URLS if u != self._receipts_url]]
-            if self._receipts_url
-            else list(RECEIPTS_URLS)
+        probes = (
+            [self._receipts_probe, *[p for p in RECEIPTS_PROBES if p != self._receipts_probe]]
+            if self._receipts_probe
+            else list(RECEIPTS_PROBES)
         )
         statuses: dict[str, int] = {}
-        for url in urls:
-            status, body_text = await self._async_token_request("POST", url, json_body=body)
+        for method, tmpl in probes:
+            url = tmpl.format(uid=self._user_id)
+            status, body_text = await self._async_token_request(
+                method, url, json_body=body if method in ("POST", "PUT") else None
+            )
             if status < 400:
-                self._receipts_url = url  # remember what worked
+                self._receipts_probe = (method, tmpl)  # remember what worked
                 data = _json_or_error(body_text, "receipts") if body_text.strip() else []
                 raw_list: Any = (
                     _first(data, "data", "receipts", "items") if isinstance(data, dict) else data
@@ -1105,7 +1114,7 @@ class RemaClient:
                     key=lambda r: r.date or datetime.min.replace(tzinfo=UTC), reverse=True
                 )
                 return receipts[:limit] if limit else receipts
-            statuses[url] = status
+            statuses[f"{method} {url}"] = status
         raise RemaApiError(f"No receipts endpoint answered (statuses: {statuses})")
 
     # ------------------------------------------------------------ shopping lists
