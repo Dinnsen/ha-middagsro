@@ -177,7 +177,7 @@ async def test_get_receipts_renews_a_rejected_token() -> None:
         FakeResponse(data={"tokens": {"access_token": token()}}),
     )
     session.on(
-        "GET",
+        "POST",
         RECEIPTS_URL,
         FakeResponse(status=401),
         FakeResponse(data={"data": [_sample()]}),
