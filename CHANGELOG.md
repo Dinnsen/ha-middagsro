@@ -2,6 +2,11 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.18.6] - 2026-11-19
+
+### Fixed
+- **Receipts are a POST to `/api/v1/user/receipts`:** the account API answered REMA's own "Method not allowed" (405) to GET on this path, so it is a POST. The Scan Selv gateway rejected the shared token ("Invalid token"), so the account API host is used.
+
 ## [2.18.5] - 2026-11-19
 
 ### Changed

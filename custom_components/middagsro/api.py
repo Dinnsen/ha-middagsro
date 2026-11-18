@@ -56,11 +56,9 @@ API_BASE = "https://api.digital.rema1000.dk/api"
 # and remembered, and it fails soft (with a per-candidate status summary) if
 # none do. {uid} is the account's REMA user id.
 RECEIPTS_PROBES: tuple[tuple[str, str], ...] = (
-    ("GET", "https://api.digital.rema1000.dk/api/v1/user/receipts"),
-    ("GET", "https://api.digital.rema1000.dk/v1/user/receipts"),
-    ("GET", "https://apim-rema-scan-prod.azure-api.net/v1/user/receipts"),
-    ("POST", "https://apim-rema-scan-prod.azure-api.net/v1/user/receipts"),
-    ("GET", "https://apim-rema-scan-prod.azure-api.net/v1/user/{uid}/receipts"),
+    ("POST", "https://api.digital.rema1000.dk/api/v1/user/receipts"),
+    ("PUT", "https://api.digital.rema1000.dk/api/v1/user/receipts"),
+    ("POST", "https://api.digital.rema1000.dk/v1/user/receipts"),
 )
 
 TJEK_DEFAULT_BASE = "https://squid-api.tjek.com"
