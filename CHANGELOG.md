@@ -2,6 +2,11 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## Unreleased
+
+### Fixed
+- Ingredient matching in the recipe editor names the selected shop in search progress, missing-item messages and linked products instead of always showing REMA 1000. Searches and automatic suggestions continue to use the selected shop's products, including BilkaToGo.
+
 ## [2.17.0] - 2026-11-17
 
 ### Added

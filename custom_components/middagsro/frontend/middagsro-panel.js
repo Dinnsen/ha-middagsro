@@ -2104,7 +2104,7 @@ class Rema1000Panel extends HTMLElement {
       const value = number ? Number(el.value) || 0 : el.value;
       if (ds.list) m.recipe[ds.list][Number(ds.idx)][ds.field] = value;
       else m.recipe[ds.field] = value;
-      // Typing an ingredient searches REMA, so it can be linked to the very product.
+      // Typing an ingredient searches the selected shop for its product.
       if (ds.list === "ingredients" && ds.field === "name" && ev.type === "input" && this._hasPrices()) this._ingSearchSoon(Number(ds.idx), el.value);
       if (ds.list === "ingredients" && ds.field === "name" && ev.type === "change") this._rcLinksSoon(m);
       return;
@@ -3541,7 +3541,7 @@ class Rema1000Panel extends HTMLElement {
     }
   }
 
-  // A recipe's items and REMA's products: which are bought and linked, and (suggest)
+  // A recipe's items and the selected shop's products: bought, linked, and (suggest)
   // products for those that have none. Nothing is saved until the recipe is.
   async _rcLinks(m, suggest = false) {
     if (!this._hasPrices()) return;
@@ -3569,16 +3569,16 @@ class Rema1000Panel extends HTMLElement {
   // Under the ingredients' heading: ready, or how many items still need a product.
   _rcLinkStatus(m) {
     if (!this._hasPrices()) return "";
-    if (m.suggesting) return '<div class="banner info small"><span class="spinner small"></span> Finder REMA-varer til ingredienserne …</div>';
+    if (m.suggesting) return `<div class="banner info small"><span class="spinner small"></span> Finder varer hos ${esc(this._shopName())} til ingredienserne …</div>`;
     if (!m.links || m.links.failed) return m.links === null ? '<p class="muted small"><span class="spinner small"></span> Tjekker varerne …</p>' : "";
     const rows = m.links.ingredients || [];
     const ings = m.recipe.ingredients;
     const missing = ings.filter((ing, i) => rows[i]?.bought && !ing.product && !ing.basic).length;
     if (!ings.length) return "";
-    if (!missing) return '<div class="banner info small"><span class="badge ready">Klar</span> Alle varer, der skal købes, er koblet til en REMA-vare.</div>';
+    if (!missing) return `<div class="banner info small"><span class="badge ready">Klar</span> Alle varer, der skal købes, er koblet til en vare fra ${esc(this._shopName())}.</div>`;
     const found = Object.values(m.found || {});
     const sure = found.filter((f) => f.product && f.confidence === "high" && !ings[f.index]?.product && !ings[f.index]?.basic).length;
-    return `<div class="banner warn small"><div>${missing === 1 ? "1 ingrediens mangler" : `${missing} ingredienser mangler`} en REMA-vare. Kobl dem én gang, så indkøbslisten får de rigtige varer – eller tryk <i>Har vi altid</i> ved det, I ikke køber.</div>
+    return `<div class="banner warn small"><div>${missing === 1 ? "1 ingrediens mangler" : `${missing} ingredienser mangler`} en vare fra ${esc(this._shopName())}. Kobl dem én gang, så indkøbslisten får de rigtige varer – eller tryk <i>Har vi altid</i> ved det, I ikke køber.</div>
       <div class="row wrap">${m.found ? "" : '<button class="btn small" data-action="rc-links-find">Find varer</button>'}${sure ? `<button class="btn small primary" data-action="rc-links-useall">Brug de sikre forslag (${sure})</button>` : ""}</div></div>`;
   }
 
@@ -3587,7 +3587,7 @@ class Rema1000Panel extends HTMLElement {
     const row = m.links?.ingredients?.[i];
     const kind = row?.kind ? `<span class="muted">slags: ${esc(row.kind)}</span>` : "";
     if (ing.product) {
-      return `<p class="muted small rc-prod">REMA: ${esc(ing.product.name)}${ing.product.underline ? ` · ${esc(ing.product.underline)}` : ""}${ing.basic ? " · basisvare" : ""}
+      return `<p class="muted small rc-prod">${esc(this._shopName())}: ${esc(ing.product.name)}${ing.product.underline ? ` · ${esc(ing.product.underline)}` : ""}${ing.basic ? " · basisvare" : ""}
         <button class="link small" data-action="rc-ing-unlink" data-arg="${i}">Fjern</button>
         ${this._hasPrices() ? `<label class="check inline small" title="Ellers må en anden vare af samme slags bruges, når den er på tilbud"><input type="checkbox" data-action="rc-ing-exact" data-arg="${i}" ${ing.exact ? "checked" : ""}> Altid præcis denne</label>` : ""}</p>`;
     }
@@ -4658,7 +4658,7 @@ class Rema1000Panel extends HTMLElement {
     return `${this._plan?.id}|${localToday()}`;
   }
 
-  // A short pause after typing an ingredient, then REMA's products for it.
+  // A short pause after typing an ingredient, then the selected shop's products.
   _ingSearchSoon(idx, text) {
     clearTimeout(this._ingTimer);
     const query = String(text || "").trim();
@@ -4675,7 +4675,7 @@ class Rema1000Panel extends HTMLElement {
     const m = this._modal;
     if (m?.kind !== "recipe") return;
     const token = (this._ingToken = (this._ingToken || 0) + 1);
-    this._ingSuggHtml(idx, '<p class="muted small"><span class="spinner small"></span> Søger hos REMA …</p>');
+    this._ingSuggHtml(idx, `<p class="muted small"><span class="spinner small"></span> Søger hos ${esc(this._shopName())} …</p>`);
     let items = [];
     try {
       items = (await this._ws("middagsro/search", { query })).slice(0, 6);
@@ -4695,7 +4695,7 @@ class Rema1000Panel extends HTMLElement {
                 <span class="price ${onOffer(p) ? "sale" : ""}">${kr(p.price)}</span></button>`
             )
             .join("")}</div>`
-        : `<p class="muted small">Ingen REMA-varer fundet for "${esc(query)}".</p>`
+        : `<p class="muted small">Ingen varer hos ${esc(this._shopName())} fundet for "${esc(query)}".</p>`
     );
   }
 
