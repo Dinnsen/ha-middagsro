@@ -32,6 +32,12 @@
       },
       "latest_receipt": {
         "default": "mdi:receipt-text"
+      },
+      "receipt_last_total": {
+        "default": "mdi:cash-multiple"
+      },
+      "receipt_last_gross": {
+        "default": "mdi:cash-marker"
       }
     },
     "todo": {

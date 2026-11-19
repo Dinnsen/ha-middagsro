@@ -249,6 +249,20 @@ class ReceiptItem:
             vat=_kroner(_first(raw, "vat", "moms")),
         )
 
+    @classmethod
+    def from_dict(cls, raw: Any) -> ReceiptItem:
+        """Rebuild from a stored ``as_dict`` (persisted receipts)."""
+        if not isinstance(raw, dict):
+            raise TypeError("receipt line is not an object")
+        return cls(
+            name=str(raw.get("name") or "Vare"),
+            quantity=raw.get("quantity"),
+            price=raw.get("price"),
+            deposit=raw.get("deposit"),
+            discount=raw.get("discount"),
+            vat=raw.get("vat"),
+        )
+
     def as_dict(self) -> dict[str, Any]:
         """A plain dict for service responses."""
         return asdict(self)
@@ -260,22 +274,62 @@ class ReceiptStore:
 
     number: str | None = None
     name: str | None = None
-    address: str | None = None
+    address: str | None = None  # the street (address1)
+    address2: str | None = None  # e.g. "v/ Rasmus Brødsgaard Christensen"
     zip: str | None = None
     city: str | None = None
+    phone: str | None = None
+    cvr: str | None = None
 
     @classmethod
     def from_api(cls, raw: Any) -> ReceiptStore | None:
-        """Read the store block of a receipt, if present."""
+        """Read the store block of a receipt, if present.
+
+        The address can be a nested object ``{address1, address2, zip, city}``
+        or flat keys on the store block; both are accepted.
+        """
         if not isinstance(raw, dict):
             return None
-        address = _first(raw, "address1", "address", "street")
+        nested = _first(raw, "address", "storeAddress", "location")
+        addr = nested if isinstance(nested, dict) else {}
+        street = _first(addr, "address1", "street", "address_line1") or _first(
+            raw, "address1", "street"
+        )
+        # A top-level "address" is a street only when it is a plain string.
+        if street is None and isinstance(nested, str):
+            street = nested
         return cls(
             number=_as_str(_first(raw, "storeNumber", "store_number", "number", "id")),
             name=_as_str(_first(raw, "name", "storeName")),
-            address=_as_str(address),
-            zip=_as_str(_first(raw, "zip", "zipCode", "postalCode")),
-            city=_as_str(_first(raw, "city", "town")),
+            address=_as_str(street),
+            address2=_as_str(
+                _first(addr, "address2", "address_line2") or _first(raw, "address2", "owner")
+            ),
+            zip=_as_str(
+                _first(addr, "zip", "zipCode", "postalCode")
+                or _first(raw, "zip", "zipCode", "postalCode")
+            ),
+            city=_as_str(_first(addr, "city", "town") or _first(raw, "city", "town")),
+            phone=_as_str(
+                _first(raw, "phone", "phoneNumber", "tlf") or _first(addr, "phone", "phoneNumber")
+            ),
+            cvr=_as_str(_first(raw, "cvr", "cvrNumber", "vatNumber")),
+        )
+
+    @classmethod
+    def from_dict(cls, raw: Any) -> ReceiptStore | None:
+        """Rebuild from a stored ``as_dict`` (persisted receipts)."""
+        if not isinstance(raw, dict):
+            return None
+        return cls(
+            number=raw.get("number"),
+            name=raw.get("name"),
+            address=raw.get("address"),
+            address2=raw.get("address2"),
+            zip=raw.get("zip"),
+            city=raw.get("city"),
+            phone=raw.get("phone"),
+            cvr=raw.get("cvr"),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -290,10 +344,11 @@ class Receipt:
     id: str
     display_id: str | None
     date: datetime | None
-    total: float | None  # kroner
+    total: float | None  # kroner - paid, i.e. after discounts
     total_string: str | None
     total_discount: float | None
     total_vat: float | None
+    gross: float | None  # "bruttosubtotal" - before discounts
     payment_source: str | None
     card_type: str | None
     masked_pan: str | None
@@ -323,18 +378,54 @@ class Receipt:
                 items.append(ReceiptItem.from_api(line))
             except (TypeError, ValueError):
                 continue
+        total = _kroner(_first(raw, "totalPrice", "total_price", "total", "amount"))
+        total_discount = _kroner(_first(raw, "totalDiscount", "total_discount"))
+        gross = _kroner(
+            _first(raw, "grossSubtotal", "gross_subtotal", "subtotal", "bruttoSubtotal")
+        )
+        if gross is None and total is not None:
+            # The printed "bruttosubtotal" = paid total + the discounts given.
+            gross = round(total + (total_discount or 0.0), 2)
         return cls(
             id=str(rid),
             display_id=_as_str(_first(raw, "displayId", "display_id", "number")),
             date=_receipt_time(_first(raw, "paymentDate", "payment_date", "date", "createdAt")),
-            total=_kroner(_first(raw, "totalPrice", "total_price", "total", "amount")),
+            total=total,
             total_string=_as_str(_first(raw, "totalPriceString", "total_price_string")),
-            total_discount=_kroner(_first(raw, "totalDiscount", "total_discount")),
+            total_discount=total_discount,
             total_vat=_kroner(_first(raw, "totalVat", "total_vat")),
+            gross=gross,
             payment_source=_as_str(_first(raw, "paymentSource", "payment_source")),
             card_type=_as_str(_first(provider, "cardType", "card_type", "type")),
             masked_pan=_as_str(_first(provider, "maskedPan", "masked_pan", "pan")),
             store=ReceiptStore.from_api(_first(raw, "store", "shop")),
+            items=tuple(items),
+        )
+
+    @classmethod
+    def from_dict(cls, raw: Any) -> Receipt:
+        """Rebuild from a stored ``as_dict`` (persisted receipts)."""
+        if not isinstance(raw, dict) or raw.get("id") is None:
+            raise ValueError("stored receipt without an id")
+        items: list[ReceiptItem] = []
+        for line in raw.get("items") or []:
+            try:
+                items.append(ReceiptItem.from_dict(line))
+            except (TypeError, ValueError):
+                continue
+        return cls(
+            id=str(raw["id"]),
+            display_id=raw.get("display_id"),
+            date=_receipt_time(raw.get("date")),
+            total=raw.get("total"),
+            total_string=raw.get("total_string"),
+            total_discount=raw.get("total_discount"),
+            total_vat=raw.get("total_vat"),
+            gross=raw.get("gross"),
+            payment_source=raw.get("payment_source"),
+            card_type=raw.get("card_type"),
+            masked_pan=raw.get("masked_pan"),
+            store=ReceiptStore.from_dict(raw.get("store")),
             items=tuple(items),
         )
 
@@ -348,6 +439,7 @@ class Receipt:
             "total_string": self.total_string,
             "total_discount": self.total_discount,
             "total_vat": self.total_vat,
+            "gross": self.gross,
             "payment_source": self.payment_source,
             "card_type": self.card_type,
             "masked_pan": self.masked_pan,

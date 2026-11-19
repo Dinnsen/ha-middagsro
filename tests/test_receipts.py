@@ -9,6 +9,8 @@ from yarl import URL
 
 from custom_components.middagsro import api
 from custom_components.middagsro.api import Receipt, ReceiptItem, RemaApiError, RemaAuthError
+from custom_components.middagsro.receipts import aggregate_items, receipt_summary
+from homeassistant.core import HomeAssistant
 
 from .test_api import FakeResponse, logged_in, token
 
@@ -128,6 +130,144 @@ def test_receipt_item_from_api_minimal() -> None:
     item = ReceiptItem.from_api({"price": 999})
     assert item.name == "Vare"
     assert item.price == 9.99
+
+
+def test_store_nested_address() -> None:
+    """The store's address can be a nested object, not just flat keys."""
+    store = api.ReceiptStore.from_api(
+        {
+            "name": "Kolding",
+            "storeNumber": "446",
+            "address": {
+                "address1": "Drejensvej 2",
+                "address2": "v/ Rasmus Brødsgaard Christensen",
+                "zip": "6000",
+                "city": "Kolding",
+            },
+            "phone": "88526993",
+            "cvr": "25519485",
+        }
+    )
+    assert store is not None
+    assert store.address == "Drejensvej 2"
+    assert store.address2 == "v/ Rasmus Brødsgaard Christensen"
+    assert store.zip == "6000"
+    assert store.city == "Kolding"
+    assert store.phone == "88526993"
+    assert store.cvr == "25519485"
+
+
+def test_store_flat_and_string_address() -> None:
+    """Flat keys and a plain-string address both still work."""
+    flat = api.ReceiptStore.from_api(
+        {"storeName": "Valby", "address1": "Gl. Køge Landevej 1", "zip": "2500", "city": "Valby"}
+    )
+    assert flat is not None and flat.address == "Gl. Køge Landevej 1" and flat.city == "Valby"
+    plain = api.ReceiptStore.from_api({"name": "X", "address": "Hovedgaden 3"})
+    assert plain is not None and plain.address == "Hovedgaden 3" and plain.zip is None
+
+
+def test_receipt_gross_computed_and_explicit() -> None:
+    """Gross is the paid total plus discounts, or read straight when provided."""
+    receipt = Receipt.from_api(
+        _sample(totalPrice=16875, totalDiscount=3395, store={"name": "Kolding"})
+    )
+    assert receipt.total == 168.75
+    assert receipt.gross == 202.70  # 168.75 + 33.95
+    explicit = Receipt.from_api(_sample(grossSubtotal=20000))
+    assert explicit.gross == 200.0
+
+
+def test_receipt_from_dict_round_trip() -> None:
+    """A persisted receipt rebuilds with its lines, store and amounts."""
+    original = Receipt.from_api(
+        _sample(
+            grossSubtotal=16000,
+            store={
+                "name": "Kolding",
+                "storeNumber": "446",
+                "address": {"address1": "Drejensvej 2", "zip": "6000", "city": "Kolding"},
+            },
+        )
+    )
+    rebuilt = Receipt.from_dict(original.as_dict())
+    assert rebuilt.id == original.id
+    assert rebuilt.total == original.total
+    assert rebuilt.gross == original.gross
+    assert rebuilt.store is not None and rebuilt.store.city == "Kolding"
+    assert rebuilt.store.address == "Drejensvej 2"
+    assert [i.name for i in rebuilt.items] == [i.name for i in original.items]
+    assert rebuilt.items[0].quantity == 2 and rebuilt.items[0].price == 10.95
+
+
+def test_receipt_from_dict_requires_id() -> None:
+    """A stored receipt without an id is rejected."""
+    with pytest.raises(ValueError):
+        Receipt.from_dict({"total": 10})
+
+
+# --------------------------------------------------------------- aggregation
+
+
+def _rc(date_ms: str, items: list[dict], rid: str) -> Receipt:
+    return Receipt.from_api({"id": rid, "paymentDate": date_ms, "totalPrice": 1000, "items": items})
+
+
+def test_aggregate_items_counts_prices_and_frequent() -> None:
+    """Items roll up across receipts: quantities, unit price range, last buy, flag."""
+    receipts = [
+        _rc("2026-11-01T10:00:00Z", [{"shelfText1": "Mælk", "price": 1095, "quantity": 1}], "a"),
+        _rc(
+            "2026-11-10T10:00:00Z",
+            [
+                {"shelfText1": "Mælk", "price": 995, "quantity": 2},
+                {"shelfText1": "Æg", "price": 2000},
+            ],
+            "b",
+        ),
+        _rc("2026-11-13T10:00:00Z", [{"shelfText1": "Mælk", "price": 1195, "quantity": 1}], "c"),
+    ]
+    agg = aggregate_items(receipts)
+    assert agg[0]["name"] == "Mælk"  # most bought first
+    milk = agg[0]
+    assert milk["count"] == 4  # 1 + 2 + 1 quantities
+    assert milk["times"] == 3  # three receipts
+    assert milk["max_price"] == 11.95
+    assert milk["last_date"] == "2026-11-13T10:00:00+00:00"
+    assert milk["last_price"] == 11.95
+    assert milk["frequent"] is False
+    eggs = next(i for i in agg if i["name"] == "Æg")
+    assert eggs["count"] == 1 and eggs["frequent"] is False
+
+
+def test_aggregate_items_flags_frequent_over_five() -> None:
+    """An item bought more than five times is flagged."""
+    receipts = [
+        _rc(f"2026-11-{d:02d}T10:00:00Z", [{"shelfText1": "Kaffe", "price": 3000}], f"r{d}")
+        for d in range(1, 8)
+    ]
+    agg = aggregate_items(receipts)
+    assert agg[0]["name"] == "Kaffe"
+    assert agg[0]["count"] == 7
+    assert agg[0]["frequent"] is True
+
+
+def test_receipt_summary_is_compact() -> None:
+    """The list summary carries the amounts and store but not the lines."""
+    summary = receipt_summary(
+        Receipt.from_api(
+            _sample(
+                totalPrice=16875, totalDiscount=3395, store={"name": "Kolding", "city": "Kolding"}
+            )
+        )
+    )
+    assert summary["total"] == 168.75
+    assert summary["gross"] == 202.70
+    assert summary["total_discount"] == 33.95
+    assert summary["items"] == 2
+    assert summary["store"] == "Kolding"
+    assert summary["city"] == "Kolding"
+    assert "items" in summary and isinstance(summary["items"], int)
 
 
 # --------------------------------------------------------------- client (scan sign-in)
@@ -265,3 +405,105 @@ async def test_get_receipts_server_error(monkeypatch: pytest.MonkeyPatch) -> Non
     session.on("GET", RECEIPTS_URL, FakeResponse(status=500, text="boom"))
     with pytest.raises(RemaApiError):
         await client.async_get_receipts()
+
+
+# ------------------------------------------------- live wiring (coordinator, sensors, panel)
+
+
+def _live_receipts() -> list[Receipt]:
+    """Two parsed receipts, newest last so sorting is exercised."""
+    return [
+        Receipt.from_api(
+            {
+                "id": "r-2",
+                "paymentDate": "2026-10-10T09:00:00Z",
+                "totalPrice": 7970,
+                "store": {"name": "Kolding", "city": "Kolding"},
+                "items": [{"shelfText1": "KAFFE", "price": 3000}],
+            }
+        ),
+        Receipt.from_api(
+            {
+                "id": "r-1",
+                "paymentDate": "2026-10-13T15:21:13Z",
+                "totalPrice": 16875,
+                "totalDiscount": 3395,
+                "store": {
+                    "name": "Kolding",
+                    "storeNumber": "446",
+                    "address": {"address1": "Drejensvej 2", "zip": "6000", "city": "Kolding"},
+                },
+                "items": [
+                    {"shelfText1": "KAFFE", "price": 3000},
+                    {"shelfText1": "CHOKOLADEKNAS", "price": 2000, "discount": 200},
+                ],
+            }
+        ),
+    ]
+
+
+async def test_receipts_drive_coordinator_sensors_and_panel(
+    hass: object,
+    init_integration: object,
+    mock_client: object,
+    hass_ws_client: object,
+) -> None:
+    """Fetched receipts populate the store, the sensors, the item stats and the panel."""
+    assert isinstance(hass, HomeAssistant)
+    mock_client.async_get_receipts.return_value = _live_receipts()
+    coordinator = init_integration.runtime_data.receipts
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    # Newest first, and the per-item stats are built.
+    assert [r.id for r in coordinator.data] == ["r-1", "r-2"]
+    kaffe = next(i for i in coordinator.items if i["name"] == "KAFFE")
+    assert kaffe["count"] == 2 and kaffe["times"] == 2
+
+    # The latest-purchase sensors read the newest receipt.
+    total = hass.states.get("sensor.middagsro_latest_purchase")
+    gross = hass.states.get("sensor.middagsro_latest_purchase_before_discounts")
+    assert total is not None and float(total.state) == 168.75
+    assert gross is not None and float(gross.state) == 202.70
+    assert total.attributes["discount"] == 33.95
+
+    # The panel state carries the compact list + item stats.
+    client = await hass_ws_client(hass)
+    await client.send_json({"id": 1, "type": "middagsro/state"})
+    state = (await client.receive_json())["result"]
+    assert state["receipts"]["count"] == 2
+    assert state["receipts"]["list"][0]["id"] == "r-1"
+    assert state["receipts"]["list"][0]["gross"] == 202.70
+
+    # One full receipt, with its lines, on demand.
+    await client.send_json({"id": 2, "type": "middagsro/receipt", "receipt_id": "r-1"})
+    full = await client.receive_json()
+    assert full["success"]
+    assert full["result"]["store"]["city"] == "Kolding"
+    assert len(full["result"]["items"]) == 2
+
+    # An unknown receipt id is a clean error.
+    await client.send_json({"id": 3, "type": "middagsro/receipt", "receipt_id": "nope"})
+    missing = await client.receive_json()
+    assert not missing["success"]
+
+
+async def test_receipts_booked_into_budget_on_refresh(
+    hass: object,
+    init_integration: object,
+    mock_client: object,
+) -> None:
+    """With booking on, a refresh turns receipts into budget purchases."""
+    store = init_integration.runtime_data.store
+    await store.async_set_settings(
+        {**store.settings, "monthly_budget": 3000, "book_receipts": True}
+    )
+    # Book from before the sample receipts so they are included.
+    store.settings["book_receipts_since"] = "2026-01-01"
+    mock_client.async_get_receipts.return_value = _live_receipts()
+    await init_integration.runtime_data.receipts.async_request_refresh()
+    await hass.async_block_till_done()
+    booked = {p["id"] for p in store.purchases}
+    assert {"rcpt_r-1", "rcpt_r-2"} <= booked
+    amount = next(p["amount"] for p in store.purchases if p["id"] == "rcpt_r-1")
+    assert amount == 168.75

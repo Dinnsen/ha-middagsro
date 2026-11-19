@@ -238,6 +238,27 @@ const dateLabel = (iso) => {
   const d = new Date(`${iso}T12:00:00`);
   return `${WEEKDAYS[(d.getDay() + 6) % 7]} ${d.getDate()}/${d.getMonth() + 1}`;
 };
+// "13. nov. 2026" from an ISO date or datetime.
+const longDate = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso.length <= 10 ? `${iso}T12:00:00` : iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getDate()}. ${MONTHS_SHORT[d.getMonth()]}. ${d.getFullYear()}`;
+};
+// "15.21.13" – the clock time of a receipt.
+const clockTime = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(".");
+};
+// A price or price range for a bought item, e.g. "4,95 kr." or "3,95–5,95 kr."
+const priceRange = (min, max) => {
+  if (min == null && max == null) return "";
+  if (min == null || max == null || min === max) return kr(min == null ? max : min);
+  const fmt = (v) => Number(v).toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${fmt(min)}–${fmt(max)} kr.`;
+};
 // "torsdag" for a date.
 const dayName = (iso) => {
   const d = new Date(`${localDay(iso)}T12:00:00`);
@@ -340,6 +361,12 @@ class Rema1000Panel extends HTMLElement {
     this._dayKinds = {}; // ISO date -> {kind, text}: what a day of the next plan is this week
     this._sites = { query: "", results: [], loading: false, error: null, searched: false, opening: null };
     this._budgetSpan = "month";
+    // The Historik page: which sub-tab, and the receipt opened in the detail view.
+    this._histSub = "indkob"; // "indkob" (receipts), "plans" (meal plans), "varer" (items)
+    this._receiptId = null; // the receipt being opened / shown (null = the list)
+    this._receipt = null; // its full contents, once fetched
+    this._receiptLoading = false;
+    this._itemFilter = "";
     this._wake = null;
     this._wakeWanted = false;
     this._onVisibility = () => {
@@ -893,6 +920,7 @@ class Rema1000Panel extends HTMLElement {
         if (bind === "rc") this._rc.query = "";
         if (bind === "shopsearch") this._shopSearch[part] = { query: "", results: [], offers: [], loading: false };
         if (bind === "favfilter") this._favFilter = "";
+        if (bind === "itemfilter") this._itemFilter = "";
         if (bind === "search") this._search = { query: "", results: [], loading: false };
         if (bind === "favsearch") this._favSearch = { query: "", results: [], loading: false };
         if (bind === "rrquery") return this._rrSearch("");
@@ -1063,6 +1091,38 @@ class Rema1000Panel extends HTMLElement {
       },
       "budget-view": () => {
         this._budgetSpan = arg;
+        this._render();
+      },
+      "hist-sub": () => {
+        this._histSub = arg;
+        this._receiptId = null;
+        this._receipt = null;
+        this._receiptLoading = false;
+        this._render();
+      },
+      "view-receipt": () => {
+        this._receiptId = arg;
+        this._receipt = null;
+        this._receiptLoading = true;
+        this._render();
+        this._ws("middagsro/receipt", { receipt_id: arg })
+          .then((receipt) => {
+            if (this._receiptId !== arg) return; // moved on meanwhile
+            this._receipt = receipt;
+            this._receiptLoading = false;
+            this._render();
+          })
+          .catch((err) => {
+            if (this._receiptId !== arg) return;
+            this._receiptLoading = false;
+            this._render();
+            this._say(err?.message || "Kunne ikke hente kvitteringen.");
+          });
+      },
+      "receipt-back": () => {
+        this._receiptId = null;
+        this._receipt = null;
+        this._receiptLoading = false;
         this._render();
       },
       "open-day": () => {
@@ -2057,6 +2117,11 @@ class Rema1000Panel extends HTMLElement {
         const list = this.shadowRoot.querySelector("#fav-all");
         if (list) list.innerHTML = this._favRows();
       });
+      return;
+    }
+    if (ds.bind === "itemfilter") {
+      this._itemFilter = el.value;
+      this._soon("itemfilter", () => this._render());
       return;
     }
     if (ds.bind === "rrquery") {
@@ -5709,6 +5774,20 @@ class Rema1000Panel extends HTMLElement {
   }
 
   _historyView() {
+    // Receipts and the item list are a REMA 1000 extra; other shops only have
+    // the meal-plan history, so there are no tabs for them.
+    if (!this._isRema()) return this._plansHistoryView();
+    const sub = ["indkob", "plans", "varer"].includes(this._histSub) ? this._histSub : "indkob";
+    const seg = `<div class="seg subnav">
+        <button class="${sub === "indkob" ? "active" : ""}" data-action="hist-sub" data-arg="indkob">Indkøb</button>
+        <button class="${sub === "plans" ? "active" : ""}" data-action="hist-sub" data-arg="plans">Madplaner</button>
+        <button class="${sub === "varer" ? "active" : ""}" data-action="hist-sub" data-arg="varer">Varer</button>
+      </div>`;
+    const body = { indkob: () => this._receiptsView(), plans: () => this._plansHistoryView(), varer: () => this._itemsView() }[sub]();
+    return seg + body;
+  }
+
+  _plansHistoryView() {
     const plans = this._state.plans;
     if (!plans.length) return `<div class="card">Der er ingen tidligere madplaner.</div>`;
     const rows = plans
@@ -5726,6 +5805,125 @@ class Rema1000Panel extends HTMLElement {
       )
       .join("");
     return `<div class="card"><h1>Historik</h1><ul class="history">${rows}</ul></div>`;
+  }
+
+  _receiptsView() {
+    if (this._receiptId) return this._receiptDetailView();
+    const data = this._state.receipts;
+    const list = (data && data.list) || [];
+    if (!list.length) {
+      return `<div class="card"><h1>Indkøb</h1>
+        <p class="muted">Der er ingen kvitteringer endnu. De hentes fra REMA 1000-appens “Scan Selv”, og de nyeste dukker op her af sig selv.</p></div>`;
+    }
+    const rows = list
+      .map(
+        (r) => `<li class="hist receipt-row" data-action="view-receipt" data-arg="${esc(r.id)}" role="button" tabindex="0">
+          <div class="what">
+            <b>${esc(r.store || "REMA 1000")}${r.city ? ` · ${esc(r.city)}` : ""}</b>
+            <span class="muted small">${esc(longDate(r.date))} · ${r.items} vare${r.items === 1 ? "" : "r"}</span>
+          </div>
+          <div class="receipt-amt">
+            <b>${kr(r.total)}</b>
+            ${r.total_discount ? `<span class="save small">spar ${kr(r.total_discount)}</span>` : ""}
+          </div>
+          <span class="chev" aria-hidden="true">›</span>
+        </li>`
+      )
+      .join("");
+    return `<div class="card"><h1>Indkøb</h1>
+      <p class="muted">Dine kvitteringer fra REMA 1000. Tryk på en for at se den.</p>
+      <ul class="history receipts">${rows}</ul></div>`;
+  }
+
+  _receiptDetailView() {
+    const back = `<div class="row"><button class="link" data-action="receipt-back">‹ Alle kvitteringer</button></div>`;
+    if (this._receiptLoading && !this._receipt) {
+      return `${back}<div class="card center"><span class="spinner"></span> Henter kvittering …</div>`;
+    }
+    const r = this._receipt;
+    if (!r) {
+      return `${back}<div class="card"><p class="muted">Kvitteringen kunne ikke hentes.</p></div>`;
+    }
+    const s = r.store || {};
+    const line2 = [s.address2].filter(Boolean);
+    const addr = [s.address, [s.zip, s.city].filter(Boolean).join(" ")].filter(Boolean);
+    const right = [
+      longDate(r.date),
+      clockTime(r.date),
+      s.phone ? `TLF: ${esc(s.phone)}` : "",
+      s.cvr ? `CVR: ${esc(s.cvr)}` : "",
+    ].filter(Boolean);
+    const itemRows = (r.items || [])
+      .map((it) => {
+        const qty = it.quantity && it.quantity > 1;
+        const unit = qty && it.price != null ? (it.price / it.quantity) : null;
+        return `<div class="rc-line">
+          <div class="rc-name">${esc(it.name)}${qty ? ` <span class="rc-qty">${it.quantity} á ${unit != null ? unit.toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "?"}</span>` : ""}</div>
+          <div class="rc-price">${it.price != null ? it.price.toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ""}</div>
+          ${it.discount ? `<div class="rc-disc">Rabat per stk. <span>${Number(it.discount).toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>` : ""}
+        </div>`;
+      })
+      .join("");
+    const num = (v) => (v == null ? "" : Number(v).toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    const pay = r.card_type || (r.payment_source || "").toUpperCase() || "BETALT";
+    return `${back}
+      <div class="card receipt-paper">
+        <div class="rc-head">REMA 1000</div>
+        <div class="rc-store">
+          <div class="rc-store-left">
+            <b>${esc(s.name || "REMA 1000")}</b>
+            ${line2.map((l) => `<div>${esc(l)}</div>`).join("")}
+            ${addr.map((l) => `<div>${esc(l)}</div>`).join("")}
+          </div>
+          <div class="rc-store-right">${right.map((l) => `<div>${l}</div>`).join("")}</div>
+        </div>
+        <div class="rc-items">${itemRows}</div>
+        <div class="rc-total"><span>Total</span><span>${num(r.total)}</span></div>
+        ${r.total_vat != null ? `<div class="rc-sub muted"><span>Heraf moms</span><span>${num(r.total_vat)}</span></div>` : ""}
+        <div class="rc-foot">
+          <div class="rc-sub"><span>${esc(pay)}</span><span>${num(r.total)}</span></div>
+          ${r.gross != null ? `<div class="rc-sub"><span>BRUTTOSUBTOTAL</span><span>${num(r.gross)}</span></div>` : ""}
+          ${r.total_discount ? `<div class="rc-sub rc-save"><span>RABAT TOTAL</span><span>-${num(r.total_discount)}</span></div>` : ""}
+        </div>
+        <div class="rc-bon muted small">Bon ID:<br>${esc(r.id)}</div>
+      </div>`;
+  }
+
+  _itemsView() {
+    const data = this._state.receipts;
+    const items = (data && data.items) || [];
+    if (!items.length) {
+      return `<div class="card"><h1>Varer</h1>
+        <p class="muted">Når der er kvitteringer, vises alle købte varer her – med antal købt, laveste og højeste pris.</p></div>`;
+    }
+    const totalBought = items.reduce((sum, i) => sum + (i.count || 0), 0);
+    const most = items[0];
+    const filter = this._itemFilter.trim().toLowerCase();
+    const shown = (filter ? items.filter((i) => i.name.toLowerCase().includes(filter)) : items).slice(0, 500);
+    const rows = shown
+      .map(
+        (i) => `<li class="hist item-row${i.frequent ? " frequent" : ""}">
+          <div class="what">
+            <b>${i.frequent ? '<span class="star" title="Købt mere end 5 gange">★</span> ' : ""}${esc(i.name)}</b>
+            <span class="muted small">${i.times} køb${i.last_date ? ` · sidst ${esc(longDate(i.last_date))}` : ""}${i.last_price != null ? ` · ${kr(i.last_price)}` : ""}</span>
+          </div>
+          <div class="item-stats">
+            <span class="count">${i.count}×</span>
+            <span class="muted small">${priceRange(i.min_price, i.max_price)}</span>
+          </div>
+        </li>`
+      )
+      .join("");
+    return `<div class="card"><h1>Varer</h1>
+      <div class="stats">
+        <div class="stat"><span class="muted small">Forskellige varer</span><b>${items.length}</b></div>
+        <div class="stat"><span class="muted small">Købt i alt</span><b>${totalBought}</b></div>
+        <div class="stat"><span class="muted small">Mest købt</span><b class="ell">${esc(most.name)}</b><span class="muted small">${most.count}×</span></div>
+      </div>
+      <div class="row wrap"><input class="grow filter" type="search" data-bind="itemfilter" value="${esc(this._itemFilter)}" placeholder="Filtrér, fx mælk">${clearBtn("itemfilter")}</div>
+      <ul class="history items-list">${rows}</ul>
+      ${shown.length >= 500 ? `<p class="muted small">Viser de 500 mest købte.</p>` : ""}
+    </div>`;
   }
 
   _settingsView() {
@@ -5999,6 +6197,8 @@ class Rema1000Panel extends HTMLElement {
         <label class="check"><input type="checkbox" data-path="budget_notify" ${f.budget_notify ? "checked" : ""}> Giv besked, når 80 % af ugens budget er brugt</label>
         <p class="muted small">Beskeden går samme sted hen som overvågningens (Overvågning og beskeder${f.watch_notify ? "" : " – vælg en modtager dér"}).</p>
         <h3>Kontér automatisk</h3>
+        ${this._isRema() ? `<label class="check"><input type="checkbox" data-path="book_receipts" ${f.book_receipts ? "checked" : ""}> Kontér mine REMA 1000-kvitteringer automatisk</label>
+        <p class="muted small">Hver digital kvittering fra REMA 1000 bogføres som et køb i Økonomi, så du kan droppe Apple Pay-genvejen. Kun kvitteringer fra den dag, du slår det til, konteres – din hidtidige historik røres ikke. ${f.book_receipts && f.book_receipts_since ? `Konterer fra ${esc(longDate(f.book_receipts_since))}.` : ""}${f.monthly_budget ? "" : " <b>Sæt et madbudget ovenfor først.</b>"}</p>` : ""}
         <p class="muted small">Handlingen <b>middagsro.register_purchase</b> konterer et køb (beløb og butik) og svarer med, hvad der er tilbage af ugen. Betaler I med Apple Pay, kan en automatisering i Genveje-appen (Personlig › Transaktion › Wallet, butikker: REMA 1000, Netto …) kalde den med <i>Beløb</i> og <i>Forhandler</i> via Home Assistant-appens "Udfør handling" – så konteres købet af sig selv, når I betaler. Med Siri kan en genvej spørge om beløbet og kalde den samme handling.</p>`),
       messages: () => {
         f.messages ||= {};
@@ -6667,6 +6867,37 @@ const STYLE = `
   .rema li { padding: 6px 0; border-bottom: 1px solid var(--divider-color); } .rema .bought { opacity: .45; text-decoration: line-through; }
   .hist, .fav { display: flex; gap: 10px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--divider-color); }
   .hist .what, .fav .what { flex: 1; cursor: pointer; } .fav.edit { flex-direction: column; align-items: stretch; }
+  .stat b.ell { font-size: 15px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Indkøb – the receipt list */
+  .receipt-row { cursor: pointer; }
+  .receipt-row .receipt-amt { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
+  .receipt-row .save { color: var(--rema-accent); }
+  .save { color: var(--rema-accent); }
+  .receipt-row .chev { color: var(--secondary-text-color); font-size: 22px; line-height: 1; margin-left: 2px; }
+  /* A digital receipt, styled like the REMA 1000 app */
+  .receipt-paper { max-width: 420px; margin-inline: auto; background: #fff; color: #0a1f44; border-radius: 10px; }
+  :host([dark]) .receipt-paper { background: #f6f8ff; }
+  .receipt-paper .muted { color: #5b6b8c; }
+  .rc-head { text-align: center; font-weight: 800; font-size: 30px; letter-spacing: 1px; color: #1664ff; padding: 6px 0 12px; }
+  .rc-store { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid #d9e0f0; border-bottom: 1px solid #d9e0f0; padding: 12px 0; font-size: 14px; }
+  .rc-store-right { text-align: right; white-space: nowrap; }
+  .rc-store b { font-size: 15px; }
+  .rc-items { padding: 6px 0; }
+  .rc-line { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; padding: 7px 0; align-items: baseline; }
+  .rc-name { font-weight: 600; }
+  .rc-qty { color: #1664ff; font-weight: 600; }
+  .rc-price { font-weight: 700; text-align: right; }
+  .rc-disc { grid-column: 1 / -1; color: #5b6b8c; font-size: 13px; }
+  .rc-disc span { color: #e8930c; font-weight: 700; }
+  .rc-total { display: flex; justify-content: space-between; font-weight: 800; font-size: 26px; border-top: 1px solid #d9e0f0; padding: 12px 0 2px; }
+  .rc-sub { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 0; }
+  .rc-foot { border-top: 1px solid #d9e0f0; margin-top: 10px; padding-top: 10px; }
+  .rc-save span:last-child, .rc-save { color: #e8930c; font-weight: 700; }
+  .rc-bon { text-align: center; margin-top: 14px; word-break: break-all; }
+  /* Varer – the bought-items list */
+  .item-row .item-stats { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
+  .item-row .count { font-weight: 700; }
+  .item-row.frequent .star { color: #e8930c; }
   .field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--secondary-text-color); margin: 8px 0; }
   .field.inline { flex-direction: row; align-items: center; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 16px; }

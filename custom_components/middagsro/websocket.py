@@ -66,6 +66,7 @@ from .planedit import (
     cooked_day,
     pantry_needs,
 )
+from .receipts import receipt_summary
 from .recipes import (
     ACTIONS,
     async_delete_recipe,
@@ -148,6 +149,20 @@ def _recipe_summary(recipe: dict[str, Any], pantry: str = "") -> dict[str, Any]:
         "ingredient_names": [i["name"] for i in recipe.get("ingredients") or []][:30],
         "ready": status["ready"],
         "missing": status["missing"],
+    }
+
+
+def _receipts_payload(coordinator: Any) -> dict[str, Any]:
+    """Compact receipts for the panel: the list, the per-item stats, the count.
+
+    The full receipt (with its lines) is fetched on demand (``middagsro/receipt``)
+    so the state push stays small.
+    """
+    receipts = coordinator.data or []
+    return {
+        "list": [receipt_summary(receipt) for receipt in receipts],
+        "items": coordinator.items,
+        "count": len(receipts),
     }
 
 
@@ -258,6 +273,8 @@ def _state(hass: HomeAssistant, entry: RemaConfigEntry) -> dict[str, Any]:
             "allergies": list(ALLERGY_OPTIONS),
             "frequencies": list(FAVORITE_FREQUENCIES),
         },
+        # Digital receipts (REMA only): the list, per-item stats and count.
+        "receipts": _receipts_payload(data.receipts) if data.receipts is not None else None,
     }
 
 
@@ -349,6 +366,8 @@ async def ws_subscribe(
         entry.runtime_data.shopping_list.async_add_listener(changed),
         async_track_time_change(hass, changed, hour=0, minute=0, second=10),
     ]
+    if entry.runtime_data.receipts is not None:
+        unsubs.append(entry.runtime_data.receipts.async_add_listener(changed))
 
     live = [True]
 
@@ -390,6 +409,24 @@ async def ws_plan(
 
 
 @websocket_api.websocket_command(
+    {vol.Required("type"): "middagsro/receipt", ENTRY: str, vol.Required("receipt_id"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_receipt(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """One full digital receipt, with its lines, for the detail view."""
+    coordinator = _entry(hass, msg).runtime_data.receipts
+    receipt = None
+    if coordinator is not None and coordinator.data:
+        receipt = next((r for r in coordinator.data if r.id == msg["receipt_id"]), None)
+    if receipt is None:
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key="receipt_not_found")
+    connection.send_result(msg["id"], receipt.as_dict())
+
+
+@websocket_api.websocket_command(
     {vol.Required("type"): "middagsro/settings", ENTRY: str, vol.Required("settings"): dict}
 )
 @websocket_api.async_response
@@ -401,6 +438,11 @@ async def ws_settings(
     entry = _entry(hass, msg)
     settings = await entry.runtime_data.store.async_set_settings(msg["settings"])
     entry.runtime_data.planner._notify()  # the budget's sensors follow
+    # Just turned receipt booking on: book what is already known without waiting
+    # for the next poll (the coordinator's listener books on refresh).
+    receipts = entry.runtime_data.receipts
+    if settings.get("book_receipts") and receipts is not None:
+        await receipts.async_request_refresh()
     connection.send_result(msg["id"], settings)
 
 
@@ -2062,6 +2104,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_line_left,
         ws_notice_seen,
         ws_plan,
+        ws_receipt,
         ws_settings,
         ws_store_switch,
         ws_store_ask,
