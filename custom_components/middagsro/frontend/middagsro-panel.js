@@ -47,6 +47,7 @@ const validTo = (iso) => (iso && !iso.startsWith("2099") ? shortDate(iso.slice(0
 const STATUS_LABELS = { draft: "Klar", sent: "Sendt", generating: "Laves", error: "Fejl" };
 // Line icons for the tab bar (shown when it sits at the bottom on a phone).
 const TAB_ICONS = {
+  home: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5h-5v5H5a1 1 0 0 1-1-1Z"/></svg>',
   plan: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4M7.5 14h3M13.5 14h3M7.5 17h3"/></svg>',
   recipes: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7.5c-1.6-1.6-4.3-2.3-8-2.2v12.5c3.7-.1 6.4.6 8 2.2 1.6-1.6 4.3-2.3 8-2.2V5.3c-3.7-.1-6.4.6-8 2.2zM12 7.5V20"/></svg>',
   shopping: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2.2l2.3 10.3a1 1 0 0 0 1 .7h8.9a1 1 0 0 0 1-.8L20 8H6.3"/><circle cx="9.5" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/></svg>',
@@ -58,7 +59,8 @@ const TAB_ICONS = {
   budget: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h14.5a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18V6.5A1.5 1.5 0 0 1 5.5 5H17"/><path d="M16 12.5h4v3h-4a1.5 1.5 0 0 1 0-3z"/></svg>',
 };
 const NAV_STORAGE = "middagsro.navigation.v1";
-const PHONE_TABS = ["plan", "recipes", "shopping", "favorites"];
+const PHONE_TABS = ["home", "plan", "shopping", "budget"];
+const OLD_PHONE_TABS = ["plan", "recipes", "shopping", "favorites"];
 const MORE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>';
 const CLOSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 // Shown on every button that asks the AI for something.
@@ -129,6 +131,7 @@ const rateToast = (recipe) =>
 const normName = (name) => String(name || "").toLowerCase().split(/\s+/).filter(Boolean).join(" ");
 const CREDIT = `<p class="credit">Udviklet af Christian Dinnsen <a class="gh-link" href="https://github.com/Dinnsen" target="_blank" rel="noopener noreferrer" aria-label="Christian Dinnsen på GitHub" title="Christian Dinnsen på GitHub"><svg class="gh" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a></p>`;
 const TABS = [
+  ["home", "Forside"],
   ["plan", "Madplan"],
   ["recipes", "Opskrifter"],
   ["shopping", "Indkøb"],
@@ -303,7 +306,7 @@ class Rema1000Panel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this._tab = "plan";
+    this._tab = "home";
     this._navigation = this._readNavigation();
     this._state = null;
     this._plan = null; // the plan being viewed (latest unless chosen in history)
@@ -481,7 +484,7 @@ class Rema1000Panel extends HTMLElement {
       return;
     }
     const [tab, date] = String(path || "").replace(/^\/+/, "").split("/");
-    const key = TABS.some(([k]) => k === tab) ? tab : "plan";
+    const key = TABS.some(([k]) => k === tab) ? tab : tab ? "plan" : "home";
     if (key === "recipes") {
       this._recipesSub = "week";
       this._wantDate = /^\d{4}-\d{2}-\d{2}$/.test(date || "") ? date : localToday();
@@ -820,6 +823,7 @@ class Rema1000Panel extends HTMLElement {
     if (profMenu && !profMenu.hidden && !ev.target.closest(".prof-wrap")) profMenu.hidden = true;
     if (!el) return;
     const { action, arg } = el.dataset;
+    if (this._v3Click(action, arg, el)) return;
     const actions = {
       "store-switch-copy": () => this._performStoreSwitch(this._modal.target, "copy", this._modal.remember),
       "store-switch-new": () => this._performStoreSwitch(this._modal.target, "new", this._modal.remember),
@@ -2018,6 +2022,7 @@ class Rema1000Panel extends HTMLElement {
   _onInput(ev) {
     const el = ev.target;
     const ds = el.dataset;
+    if (this._v3Input(el, ev)) return;
     if (ds.bind === "store-choice") {
       if (ev.type !== "change") return;
       const target = el.value;
@@ -2943,6 +2948,10 @@ class Rema1000Panel extends HTMLElement {
   }
 
   _healthView() {
+    return `${this._v3Plate()}${this._healthPlanView()}`;
+  }
+
+  _healthPlanView() {
     if (!this._plan) return `<div class="card">Der er ingen madplan endnu.</div>`;
     const h = this._health;
     if (!h || h.key !== this._healthKey()) {
@@ -3086,6 +3095,7 @@ class Rema1000Panel extends HTMLElement {
       node.textContent = left > 0 ? clock(left) : "Færdig!";
       if (left === 0) node.closest(".step")?.classList.add("alarm");
     });
+    this._v3SceneTick();
     const chip = this.shadowRoot.querySelector("#timerchip");
     if (chip) {
       const text = soonest === null ? "" : `⏱ ${clock(soonest)}`;
@@ -3794,7 +3804,10 @@ class Rema1000Panel extends HTMLElement {
       const saved = JSON.parse(localStorage.getItem(NAV_STORAGE) || "null");
       const clean = values => Array.isArray(values) ? [...new Set(values.filter(key => TABS.some(([id]) => id === key)))] : [];
       const desktop = clean(saved?.desktop), mobile = clean(saved?.mobile);
-      return { desktop: desktop.length ? desktop : defaults.desktop, mobile: mobile.length === 4 ? mobile : defaults.mobile };
+      // Forside (3.0) is new: it joins a saved menu, and the old phone default becomes the new one.
+      if (desktop.length && !desktop.includes("home")) desktop.unshift("home");
+      const oldPhone = mobile.length === 4 && mobile.every((key, i) => key === OLD_PHONE_TABS[i]);
+      return { desktop: desktop.length ? desktop : defaults.desktop, mobile: mobile.length === 4 && !oldPhone ? mobile : defaults.mobile };
     } catch { return defaults; }
   }
 
@@ -3920,6 +3933,7 @@ class Rema1000Panel extends HTMLElement {
     } else {
       try {
         body = {
+          home: () => this._homeView(),
           plan: () => this._planView(),
           recipes: () => this._recipesView(),
           shopping: () => this._shoppingView(),
@@ -3946,9 +3960,11 @@ class Rema1000Panel extends HTMLElement {
       root.innerHTML = `
         <style>${STYLE}</style>
         <div id="top"></div>
+        <div class="v3 hdr-host"><header class="hdr small" id="hdr">
+        <div class="scene-wrap" id="scene" aria-hidden="true"></div>
         <div class="toolbar">
           <ha-menu-button></ha-menu-button>
-          <span class="brand"><img class="logo" src="${this._img("icon.svg")}" alt=""><span class="wordmark">Middagsro</span></span>
+          <span class="brand" data-action="tab" data-arg="home" role="button" tabindex="0" aria-label="Forside"><img class="logo" src="${this._img("icon.svg")}" alt=""><span class="wordmark">Middagsro</span></span>
           <span class="spacer"></span>
           <span id="timerchip" class="timer-chip" data-action="tab" data-arg="recipes"></span>
           <span id="busy"></span>
@@ -3959,7 +3975,9 @@ class Rema1000Panel extends HTMLElement {
               <button role="menuitem" data-action="settings-open" data-arg="look">${SETTING_ICONS.look}<span>Udseende</span></button>
             </span></span>
         </div>
+        <div id="hdr-body"></div>
         <nav class="tabs" aria-label="Middagsro"></nav>
+        </header></div>
         <div class="more-scrim" data-action="more" hidden></div>
         <div class="more-sheet" hidden></div>
         <main id="content"></main>
@@ -3996,6 +4014,7 @@ class Rema1000Panel extends HTMLElement {
         : null;
     root.querySelector("#content").innerHTML = `${this._embed ? "" : this._storeChooser()}<div id="status">${this._statusHtml()}</div>${body}`;
     this._renderToast();
+    try { this._v3Header(); this._v3After(); } catch (err) { console.error("Middagsro: the header could not be drawn", err); }
     if (keep?.key) {
       const again = [...root.querySelectorAll("#content input, #content textarea, #content select")].find((el) => this._fieldKey(el) === keep.key);
       if (again) {
@@ -4061,6 +4080,14 @@ class Rema1000Panel extends HTMLElement {
     }
     if (this._modal?.kind === "day") {
       node.innerHTML = this._dayModal(this._modal);
+      return;
+    }
+    if (this._modal?.kind === "v3-bon") {
+      node.innerHTML = this._v3BonModal(this._modal);
+      return;
+    }
+    if (this._modal?.kind === "v3-xfer") {
+      node.innerHTML = this._v3XferModal(this._modal);
       return;
     }
     if (this._modal?.kind === "pantry") {
@@ -4251,7 +4278,7 @@ class Rema1000Panel extends HTMLElement {
     return `
       <div class="scrim" data-action="modal-close"></div>
       <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="day-title">
-        <div class="dialog-top"><div><h2 id="day-title">${esc(m.skipped ? "Springes over" : m.dish || "Ingen ret")}</h2>
+        <div class="dialog-top day-hero">${V3.dishArt(m.skipped ? "" : m.dish, "dlg-art")}<div><h2 id="day-title">${esc(m.skipped ? "Springes over" : m.dish || "Ingen ret")}</h2>
           <p class="muted">${esc(dateLabel(m.date))}</p></div>
           <button class="icon-btn close" data-action="modal-close" aria-label="Luk" ${dis}>${CLOSE_ICON}</button></div>
         ${m.error ? `<div class="banner error">${esc(m.error)}</div>` : ""}
@@ -4623,7 +4650,7 @@ class Rema1000Panel extends HTMLElement {
       .filter(Boolean)
       .join(" · ");
     if (!plan) {
-      return `${this._chainsCard()}<div class="card hero">
+      return `<div class="card hero">
         <img src="${this._img("icon.png")}" class="hero-icon" alt="">
         <h1>Ingen madplan endnu</h1>
         <p>Madplanen laves med AI ud fra ugens tilbud og jeres indstillinger. Tjek indstillingerne først, og tryk så på knappen.</p>
@@ -4636,15 +4663,15 @@ class Rema1000Panel extends HTMLElement {
     const dayRow = (owner, day) => {
       const type = TYPE_LABELS[day.type] ?? day.type;
       const past = day.date < today;
-      return `<div class="day-row ${past ? "past" : ""}"><button class="day ${day.date === today ? "today" : ""}" data-action="day-menu" data-arg="${esc(owner.id)}|${day.date}">
-          <span class="date">${day.date === today ? `I aften · ${esc(dateLabel(day.date))}` : esc(dateLabel(day.date))}</span>
+      return `<div class="day-row ${past ? "past" : ""}"><button class="day art ${day.date === today ? "today" : ""}" data-action="day-menu" data-arg="${esc(owner.id)}|${day.date}">
+          ${V3.dishArt(day.dish || "", "d-art")}<span class="date">${day.date === today ? `I aften · ${esc(dateLabel(day.date))}` : esc(dateLabel(day.date))}</span>
           <span class="dish ${day.dish ? "" : "muted"}">${esc(day.dish || "Ingen ret – tryk for at vælge en")}</span>
           <span class="meta">${day.total_minutes ? `${day.total_minutes} min` : ""}${type ? ` <span class="badge">${esc(type)}</span>` : ""}${day.mealie ? ' <span class="badge mealie">Mealie</span>' : ""}${day.new_dish ? ' <span class="badge doubt">Ny ret – godkend</span>' : ""}${owner.surprise ? ' <span class="badge surprise">Overraskelse</span>' : ""}</span>
         </button><span class="day-tools">${this._rateButtons(owner, day)}${this._moveButtons(owner, day, past)}</span></div>`;
     };
     // A skipped day stays in the list, grey: tap it to take it back or make it something else.
-    const skippedRow = (planId, date) => `<div class="day-row skipped-day ${date < today ? "past" : ""}"><button class="day" data-action="day-menu-skipped" data-arg="${esc(planId)}|${date}">
-          <span class="date">${esc(dateLabel(date))}</span>
+    const skippedRow = (planId, date) => `<div class="day-row skipped-day ${date < today ? "past" : ""}"><button class="day art" data-action="day-menu-skipped" data-arg="${esc(planId)}|${date}">
+          ${V3.dishArt("", "d-art")}<span class="date">${esc(dateLabel(date))}</span>
           <span class="dish muted">Springes over – tryk for at ændre</span>
           <span class="meta"><span class="badge">Springes over</span></span>
         </button><span class="day-tools"></span></div>`;
@@ -4686,10 +4713,8 @@ class Rema1000Panel extends HTMLElement {
       .map((c) => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.requirement)}</li>`)
       .join("");
     return `
-      ${this._chainsCard()}
       ${this._olderBanner()}
       ${this._updateBanner(plan)}
-      ${this._budgetCard(true)}
       <div class="card">
         <div class="row between wrap">
           <div>
@@ -5119,10 +5144,8 @@ class Rema1000Panel extends HTMLElement {
         <div class="row between wrap">
           <h1>${esc(day.dish || "Ingen ret")}</h1>
           ${this._rateButtons(plan, day)}
-          <button class="btn ${this._wake ? "primary" : ""}" data-action="wake">
-            ${this._wake ? "☀ Skærmen holdes tændt" : "☀ Hold skærmen tændt"}
-          </button>
         </div>
+        <button class="v3-wake${this._wake ? " on" : ""}" data-action="wake" aria-pressed="${this._wake ? "true" : "false"}"><span class="wk-sun">☀</span><span><b>${this._wake ? "Skærmen holdes tændt" : "Hold skærmen tændt"}</b><small>${this._wake ? "Tryk for at slippe den igen" : "Så telefonen ikke går i dvale, mens I laver mad"}</small></span><span class="wk-sw"><i></i></span></button>
         <p class="muted">${plan.kind === "freezer" ? "Fryserret" : esc(dateLabel(day.date))}${day.servings ? ` · ${day.servings} ${plan.kind === "freezer" ? "portioner" : "personer"}` : ""}${day.active_minutes ? ` · ${day.active_minutes} min aktiv` : ""}${day.total_minutes ? ` · ${day.total_minutes} min i alt` : ""}${type ? ` · ${esc(type)}` : ""}</p>
         ${leftovers}
         ${this._inventoryUsage(plan, day)}
@@ -5341,7 +5364,7 @@ class Rema1000Panel extends HTMLElement {
           .map((i) => `<li class="${i.bought ? "bought" : ""}">${i.amount > 1 ? `${i.amount} × ` : ""}${esc(i.name)}</li>`)
           .join("")
       : "<li class='muted'>Listen er tom.</li>";
-    return `${this._olderBanner()}${this._inventoryUsage(plan, null, true)}${planHtml}
+    return `${this._chainsCard()}${this._olderBanner()}${this._inventoryUsage(plan, null, true)}${planHtml}<div class="v3">${this._v3Compare()}</div>
       <div class="card">
         <div class="row between wrap">
           <h2>På ${this._listName()} lige nu${rema && this._isRema() ? ` (${esc(rema.name)})` : ""}</h2>
@@ -5620,7 +5643,8 @@ class Rema1000Panel extends HTMLElement {
         <div class="seg fit"><button class="${this._book.period !== "week" ? "active" : ""}" data-action="budget-period" data-arg="month">Pr. måned</button>
           <button class="${this._book.period === "week" ? "active" : ""}" data-action="budget-period" data-arg="week">Pr. uge</button></div>
         <div class="row wrap"><input class="grow" type="text" inputmode="numeric" data-bind="book" data-field="monthly" value="${esc(this._book.monthly)}" placeholder="${this._book.period === "week" ? "Fx 1200" : "Fx 5000"}">
-          <button class="btn primary" data-action="budget-setup">Start madbudget</button></div></div>`;
+          <button class="btn primary" data-action="budget-setup">Start madbudget</button></div></div>
+        <div class="v3">${this._v3Rhythm()}${this._v3SpendCard()}${this._v3Story()}</div>`;
     }
     const m = b.month;
     const span = this._budgetSpan;
@@ -5631,13 +5655,13 @@ class Rema1000Panel extends HTMLElement {
       <button class="${span === "purchases" ? "active" : ""}" data-action="budget-view" data-arg="purchases">Køb</button></div>`;
     const body = { month: () => this._budgetMonth(b), weeks: () => this._budgetWeeks(b), year: () => this._budgetYear(b), purchases: () => this._budgetPurchases(b) }[span]?.() || "";
     const forecastDiff = m.forecast - m.budget;
-    return `${this._budgetCard()}
+    return `<div class="v3">${this._v3BudgetCard()}${this._v3Rhythm()}${this._v3SpendCard()}${this._v3Story()}</div>
+      <h2 class="v3-section">Måned, uger og år</h2>
       <div class="stats">
         <div class="stat"><span class="muted small">Brugt i ${MONTHS_SHORT[Number(m.first.slice(5, 7)) - 1]}.</span><b>${kr0(m.spent)}</b><span class="muted small">af ${kr0(m.budget)}</span></div>
         <div class="stat"><span class="muted small">Prognose</span><b class="${forecastDiff > 0 ? "over" : "ok"}">${kr0(m.forecast)}</b><span class="muted small">${forecastDiff > 0 ? `${kr0(forecastDiff)} over` : `${kr0(-forecastDiff)} under`}</span></div>
       </div>
-      ${seg}${body}
-      ${this._spendOverview()}`;
+      ${seg}${body}`;
   }
 
   _receiptLoginsSettings() {
@@ -5968,10 +5992,12 @@ class Rema1000Panel extends HTMLElement {
     const itemRows = (r.items || [])
       .map((it) => {
         const qty = it.quantity && it.quantity > 1;
-        const unit = qty && it.price != null ? (it.price / it.quantity) : null;
+        // REMA's line price is one piece's: the line costs the price times how many.
+        const unit = qty && it.price != null ? it.price : null;
+        const lineTotal = it.price != null ? it.price * (it.quantity || 1) : null;
         return `<div class="rc-line">
           <div class="rc-name">${esc(it.name)}${qty ? ` <span class="rc-qty">${it.quantity} á ${unit != null ? unit.toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "?"}</span>` : ""}</div>
-          <div class="rc-price">${it.price != null ? it.price.toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ""}</div>
+          <div class="rc-price">${lineTotal != null ? lineTotal.toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ""}</div>
           ${it.discount ? `<div class="rc-disc">Rabat per stk. <span>${Number(it.discount).toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>` : ""}
         </div>`;
       })
@@ -6026,7 +6052,7 @@ class Rema1000Panel extends HTMLElement {
         </li>`
       )
       .join("");
-    return `<div class="card"><h1>Varer</h1>
+    return `${this._v3TopItems()}<div class="card"><h1>Alle varer</h1>
       <div class="stats">
         <div class="stat"><span class="muted small">Forskellige varer</span><b>${items.length}</b></div>
         <div class="stat"><span class="muted small">Købt i alt</span><b>${totalBought}</b></div>
@@ -6466,7 +6492,7 @@ class Rema1000Panel extends HTMLElement {
   }
 }
 
-const STYLE = `
+const STYLE_BASE = `
   /* No double-tap zoom; 16 px inputs so a phone doesn't zoom in on them. */
   :host, button, input, select, textarea, .day, .line { touch-action: manipulation; }
   :host { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
@@ -7208,6 +7234,2024 @@ const STYLE = `
     .tab[data-arg="settings"], .more-item[data-arg="settings"] { display: none !important; }
   }
 `;
+
+/* ======================================================================================
+   Middagsro 3: the street in the header, the front page, the clocks in Økonomi and the
+   plates in Sundhed. Drawn here, on top of the panel above; nothing of it needs a build.
+   ====================================================================================== */
+const V3 = (() => {
+  const NBSP = " ";
+  const fmt = (v, d = 0) => Number(v || 0).toLocaleString("da-DK", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const krd = (v, d = 0) => `${fmt(v, d)}${NBSP}kr.`;
+  const DAYS = ["SØN", "MAN", "TIR", "ONS", "TOR", "FRE", "LØR"];
+  const DAYS_LONG = ["søndag", "mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag"];
+  const MONTHS = ["jan", "feb", "mar", "apr", "maj", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
+  const MONTHS_LONG = ["januar", "februar", "marts", "april", "maj", "juni", "juli", "august", "september", "oktober", "november", "december"];
+  const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "");
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const addDays = (iso, n) => { const d = new Date(`${iso}T12:00:00`); d.setDate(d.getDate() + n); return d; };
+  const daysBetween = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 864e5);
+  const isoWeek = (d) => { const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day); const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return Math.ceil(((t - y0) / 864e5 + 1) / 7); };
+  // A Middagsro week starts on Sunday: its number is the ISO week of the Monday after.
+  const weekNo = (start) => isoWeek(addDays(start, 1));
+  const sundayOf = (iso) => { const d = new Date(`${iso}T12:00:00`); d.setDate(d.getDate() - d.getDay()); return ymd(d); };
+  const span = (start) => { const a = addDays(start, 0), b = addDays(start, 6); return a.getMonth() === b.getMonth() ? `${a.getDate()}.–${b.getDate()}. ${MONTHS_LONG[b.getMonth()]}` : `${a.getDate()}. ${MONTHS[a.getMonth()]}–${b.getDate()}. ${MONTHS[b.getMonth()]}`; };
+  const greet = (h) => (h < 5 ? "God nat" : h < 10 ? "God morgen" : h < 12 ? "God formiddag" : h < 18 ? "God eftermiddag" : "God aften");
+
+  /* Geometry: angles in degrees, clockwise from the top, as on a clock. */
+  const P = (cx, cy, r, a) => { const t = (a * Math.PI) / 180; return [cx + r * Math.sin(t), cy - r * Math.cos(t)]; };
+  const pt = (p) => `${p[0].toFixed(2)} ${p[1].toFixed(2)}`;
+  const sector = (cx, cy, r0, r1, a0, a1) => {
+    if (a1 - a0 >= 359.99) a1 = a0 + 359.99;
+    const L = a1 - a0 > 180 ? 1 : 0;
+    return `M${pt(P(cx, cy, r1, a0))}A${r1} ${r1} 0 ${L} 1 ${pt(P(cx, cy, r1, a1))}L${pt(P(cx, cy, r0, a1))}A${r0} ${r0} 0 ${L} 0 ${pt(P(cx, cy, r0, a0))}Z`;
+  };
+  const arc = (cx, cy, r, a0, a1) => {
+    if (a1 - a0 >= 359.99) a1 = a0 + 359.99;
+    const L = a1 - a0 > 180 ? 1 : 0;
+    return `M${pt(P(cx, cy, r, a0))}A${r} ${r} 0 ${L} 1 ${pt(P(cx, cy, r, a1))}`;
+  };
+  const countUp = (el, to, dur = 900, render = (v) => krd(v)) => {
+    if (!el) return;
+    const from = Number(el.dataset.v || 0);
+    el.dataset.v = to;
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { el.textContent = render(to); return; }
+    const t0 = performance.now();
+    const step = (t) => { const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3); el.textContent = render(from + (to - from) * e); if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  };
+
+  /* Varegrupperne: eight, in a fixed order, each with its colour and its little drawing. */
+  const GROUPS = [
+    { k: "mejeri", name: "Mejeri & æg" }, { k: "kolonial", name: "Kolonial & færdigt" }, { k: "drikke", name: "Drikke & kaffe" },
+    { k: "brod", name: "Brød & morgenmad" }, { k: "snacks", name: "Snacks & slik" }, { k: "frugt", name: "Frugt & grønt" },
+    { k: "hjem", name: "Hjem, baby & andet" }, { k: "kod", name: "Kød & fisk" },
+  ];
+  const GNAME = Object.fromEntries(GROUPS.map((g) => [g.k, g.name]));
+  GNAME.none = "Andre køb";
+  const ORDER = [...GROUPS.map((g) => g.k), "none"];
+  const c = (g) => `var(--g-${g})`;
+  const tint = (g, p) => `color-mix(in srgb, var(--g-${g}) ${p}%, var(--card-background-color))`;
+  const shade = (g, p) => `color-mix(in srgb, var(--g-${g}) ${100 - p}%, #000)`;
+  const ART = {
+    mejeri: (g = "mejeri") => `<ellipse cx="32" cy="57" rx="20" ry="3" fill="${shade(g, 40)}" opacity=".12"/><path d="M18 22 L24 12 H38 L44 22 V54 H18 Z" fill="${tint(g, 22)}"/><path d="M24 12 H38 L44 22 H18 Z" fill="${tint(g, 55)}"/><path d="M18 22 H44 V54 H18 Z" fill="none" stroke="${c(g)}" stroke-width="2.4" stroke-linejoin="round"/><path d="M24 12 L18 22 M38 12 L44 22 M24 12 H38" stroke="${c(g)}" stroke-width="2.4" stroke-linecap="round"/><rect x="22" y="30" width="18" height="12" rx="3" fill="${c(g)}"/><path d="M26 38 q5 -6 10 0" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/><ellipse cx="49" cy="47" rx="7" ry="9" fill="#FFF7EA" stroke="${shade(g, 30)}" stroke-opacity=".35" stroke-width="1.4"/><ellipse cx="47" cy="44" rx="2" ry="3" fill="#fff"/>`,
+    kolonial: (g = "kolonial") => `<ellipse cx="32" cy="57" rx="20" ry="3" fill="#000" opacity=".1"/><rect x="17" y="18" width="22" height="36" rx="6" fill="${tint(g, 18)}" stroke="${c(g)}" stroke-width="2.4"/><rect x="15" y="12" width="26" height="8" rx="3" fill="${c(g)}"/><path d="M21 30 h14 M21 36 h14 M21 42 h14 M21 48 h14" stroke="${tint(g, 70)}" stroke-width="3" stroke-linecap="round"/><path d="M22 28 l3 22 M28 28 l1 22 M33 28 l-2 22" stroke="#F2C66D" stroke-width="2.4" stroke-linecap="round"/><rect x="40" y="34" width="14" height="20" rx="3" fill="${c(g)}"/><rect x="40" y="40" width="14" height="8" fill="${tint(g, 40)}"/><ellipse cx="47" cy="34" rx="7" ry="2.4" fill="${shade(g, 25)}"/>`,
+    drikke: (g = "drikke") => `<ellipse cx="32" cy="57" rx="20" ry="3" fill="#000" opacity=".1"/><path d="M22 8 h8 v8 q6 4 6 12 v24 q0 3 -3 3 h-14 q-3 0 -3 -3 v-24 q0 -8 6 -12 Z" fill="${tint(g, 22)}" stroke="${c(g)}" stroke-width="2.4" stroke-linejoin="round"/><rect x="22" y="5" width="8" height="5" rx="1.5" fill="${c(g)}"/><rect x="16" y="32" width="20" height="12" fill="${c(g)}"/><circle cx="26" cy="38" r="3" fill="#fff" opacity=".85"/><path d="M40 30 h14 l-2 22 q0 3 -3 3 h-4 q-3 0 -3 -3 Z" fill="${tint(g, 45)}" stroke="${c(g)}" stroke-width="2" stroke-linejoin="round"/><path d="M41 38 h12" stroke="${c(g)}" stroke-width="2"/><circle cx="46" cy="44" r="1.6" fill="#fff"/><circle cx="49" cy="48" r="1.2" fill="#fff"/>`,
+    brod: (g = "brod") => `<ellipse cx="32" cy="56" rx="24" ry="3" fill="#000" opacity=".1"/><path d="M8 40 q0 -18 24 -18 q24 0 24 18 v8 q0 6 -6 6 h-36 q-6 0 -6 -6 Z" fill="${tint(g, 55)}" stroke="${shade(g, 22)}" stroke-width="2.2"/><path d="M8 40 q0 -18 24 -18 q24 0 24 18" fill="${c(g)}" opacity=".85"/><path d="M18 34 l6 -6 M28 32 l6 -7 M38 33 l6 -6" stroke="${tint(g, 15)}" stroke-width="3" stroke-linecap="round"/><circle cx="16" cy="46" r="1" fill="${shade(g, 30)}"/><circle cx="24" cy="49" r="1" fill="${shade(g, 30)}"/><circle cx="44" cy="47" r="1" fill="${shade(g, 30)}"/>`,
+    snacks: (g = "snacks") => `<ellipse cx="32" cy="57" rx="20" ry="3" fill="#000" opacity=".1"/><path d="M14 30 l-8 -6 v16 Z M50 30 l8 -6 v16 Z" fill="${tint(g, 55)}" stroke="${c(g)}" stroke-width="2" stroke-linejoin="round"/><rect x="14" y="22" width="36" height="16" rx="8" fill="${c(g)}"/><path d="M22 22 l-4 16 M30 22 l-4 16 M38 22 l-4 16 M46 22 l-4 16" stroke="${tint(g, 35)}" stroke-width="2.4"/><path d="M44 42 v14" stroke="${shade(g, 40)}" stroke-width="2.4" stroke-linecap="round"/><circle cx="44" cy="42" r="8" fill="${tint(g, 30)}" stroke="${c(g)}" stroke-width="2"/><path d="M44 42 m-4 0 a4 4 0 1 1 4 4" stroke="${c(g)}" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="20" cy="49" r="5" fill="#F3B34C"/><circle cx="20" cy="49" r="2" fill="#fff" opacity=".6"/>`,
+    frugt: (g = "frugt") => `<ellipse cx="32" cy="57" rx="22" ry="3" fill="#000" opacity=".1"/><path d="M26 22 q-14 -4 -16 12 q-1 14 10 20 q4 2 6 0 q2 2 6 0 q11 -6 10 -20 q-2 -16 -16 -12 Z" fill="#E5483C"/><path d="M16 34 q0 -8 6 -9" stroke="#fff" stroke-width="2.6" stroke-linecap="round" fill="none" opacity=".55"/><path d="M26 22 q0 -8 4 -12" stroke="#6B4A2A" stroke-width="2.4" stroke-linecap="round" fill="none"/><path d="M30 14 q8 -6 14 0 q-8 5 -14 0 Z" fill="${c(g)}"/><path d="M44 30 l10 22 q1 3 -2 3 l-3 0 Z" fill="#F08A24"/><path d="M47 36 h3 M48 41 h3 M50 46 h2" stroke="#C0631A" stroke-width="1.6" stroke-linecap="round"/><path d="M44 30 q-4 -8 -2 -12 M45 30 q2 -9 6 -10 M45 30 q6 -4 10 -2" stroke="${c(g)}" stroke-width="2.6" stroke-linecap="round" fill="none"/>`,
+    hjem: (g = "hjem") => `<ellipse cx="32" cy="57" rx="22" ry="3" fill="#000" opacity=".1"/><path d="M10 30 L32 12 L54 30 V54 H10 Z" fill="${tint(g, 18)}" stroke="${c(g)}" stroke-width="2.4" stroke-linejoin="round"/><path d="M6 32 L32 10 L58 32" stroke="${c(g)}" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 46 c-8 -5 -10 -9 -7 -12 c2 -2 5 -1 7 2 c2 -3 5 -4 7 -2 c3 3 1 7 -7 12 Z" fill="${c(g)}"/><circle cx="48" cy="50" r="7" fill="#fff" stroke="${tint(g, 60)}" stroke-width="2"/><circle cx="48" cy="50" r="2.4" fill="${tint(g, 60)}"/>`,
+    kod: (g = "kod") => `<ellipse cx="32" cy="57" rx="22" ry="3" fill="#000" opacity=".1"/><path d="M10 34 q2 -14 18 -14 q16 0 20 10 q2 8 -6 12 q-6 4 -18 4 q-14 0 -14 -12 Z" fill="${c(g)}"/><path d="M16 34 q2 -8 12 -8 q10 0 12 6" stroke="${tint(g, 55)}" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M42 42 q-4 4 -14 4" stroke="#fff" stroke-width="3.2" fill="none" stroke-linecap="round" opacity=".9"/><path d="M34 48 q8 -8 18 -2 l6 -5 v12 l-6 -5 q-10 6 -18 0 Z" fill="#7FB3D9" stroke="#4C86B5" stroke-width="1.6" stroke-linejoin="round"/><circle cx="40" cy="48" r="1.4" fill="#173A57"/>`,
+    none: () => `<circle cx="32" cy="32" r="18" fill="var(--g-none)" opacity=".7"/>`,
+  };
+  const art = (g, cls = "art") => `<svg class="${cls}" viewBox="0 0 64 64" aria-hidden="true">${(ART[g] || ART.none)(g)}</svg>`;
+  const dot = (g) => (g === "none" ? `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="var(--g-none)"/></svg>` : art(g, ""));
+
+  /* What a line is, by its name (as the server does for receipts). */
+  const GROUP_WORDS = [
+    ["hjem", "bleer|pants|bleposer|vådserviet|nan pro|svømmeble|toiletpapir|køkkenrull|skumvask|opvask|vaskemiddel|flydende vask|afspænding|pletfjern|håndsæbe|shampoo|hairspray|batteri|affaldspose|lynlås|genluk|tandpasta|ansigtscreme|håndcreme|sollotion|lommeletter|servietter|sprinklervæske|vejsalt|rodalon|hygiejnebind|gavepapir|sløjfe|amaryllis|playset|politibil|pocket money"],
+    ["kolonial", "pizza|lovemade|dinner kit|pommes|fritter|pomm's|dej|suppe|melboller|lasagne|nuggets|ret nemt|karbonader|panerede|tærte|quiche"],
+    ["drikke", "pepsi|faxe|fanta|cola|juice|smoothie|iskaffe|blanc|freixenet|chateau|château|grand cru|prosecco|asti|barbera|reserva|mocktail|shots|kaffe|crema|espresso|qualita|x-mas|chardonnay|rosé|ipa"],
+    ["snacks", "slik|snack|chips|popcorn|haribo| mix|bars |chokolade|knas|marshmallow|toffifee|kiks|kager|gummies|lakrids|ferrero|kinder|julekalender|isvaffel|sandwich is|ostepops|spiraler|bugles|nødde|rosin|dipmix|grinebidder|halloween|snitter|kanelstang|trøfler|kammerjunker|dippers|fruit stars|sour cream"],
+    ["kod", "laks|kylling|okse|kalv|gris|hamburgerryg|postej|spegepølse|pølse|bacon|skinke|frikadelle|fisk|makrel|tun |tun i|tunsalat|rejer|ørred|mørbrad|medister|flæskesteg|ribbens|culotte|ribeye|kebab|döner|salami|rullepølse|burgerboost|pulled pork|andebryst|steak|kalkun|hapser|sandwichsk|koteletter|carpaccio"],
+    ["brod", "rugbrød|brød|boller|mysli|havregryn|guldkorn|coco pops|baguette|skagenslapper|cafesandwich|pølsehorn|brioche|burgerb|rugfras|klemmer|tortilla|rug go|kohberg|pandekager|æbleskiver|solsikke |focaccia|marmelade|gær"],
+    ["mejeri", "mælk|yoghurt|fraiche|ost|mozzarella|smørbar|lurpak|kærgården|æg|fløde|cremefine|koldskål|actimel|puck|havarti|parmigiano|grana|cheasy|vaniljesauce|45\\+|30\\+|burrata|gouda|kakao|skiver ml"],
+    ["frugt", "agurk|banan|avocado|blåbær|jordbær|druer|salat|broccoli|gulerød|tomat|citron|lime|appelsin|clementin|kiwi|æble|vandmelon|kartof|kart\\.|majs|ærter|sugar snaps|løg|porre|squash|champignon|blomkål|hokkaido|ingefær|purløg|land/kl|danmark kl|spanien kl|holland kl"],
+    ["kolonial", "pasta|nudler|fusilli|fettuccine|ris |ris$|pesto|salsa|remoulade|dressing|mayo|sauce|croutoner|bulgur|olie|mel |mel$|rasp|peanut|tex mex|hummus|vaniljestæng"],
+  ].map(([g, w]) => [g, new RegExp(w)]);
+  const groupOf = (name) => { const n = ` ${String(name || "").toLowerCase()} `; for (const [g, re] of GROUP_WORDS) if (re.test(n)) return g; return "hjem"; };
+  // "LETMÆLK 1,5% ARLA, ØKOLOGISK" -> "Letmælk 1,5% arla, økologisk"
+  const clean = (n) => { let s = String(n || "").replace(/\s*LAND\/KL\.: SE VAREN/i, "").replace(/\s*REMA 1000/i, "").replace(/\s+,/g, ",").trim().toLowerCase(); return cap(s); };
+  // A product picture, with the group's drawing if it is missing or will not load.
+  const pic = (url, g) => (url ? `<img src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" data-fb="${esc(g || "hjem")}">` : art(g || "hjem", ""));
+
+  /* Retterne, tegnet: a plate from above with what the dish's name says is on it. */
+  const dishKind = (n) => {
+    n = String(n || "").toLowerCase();
+    if (!n) return "tom";
+    if (/spiser ude|takeaway|take-away|ude$/.test(n)) return "ude";
+    if (/rugbrød/.test(n)) return "rugbrod";
+    if (/rester|fryser/.test(n) && !/laks|chili|frikadel|pølse|pita|risotto/.test(n)) return "rester";
+    if (/laks|fisk|torsk|rødspætte|sej|tun/.test(n)) return "laks";
+    if (/chili|gryde|bolognese|kødsovs/.test(n)) return "chili";
+    if (/frikadel|krebinet|karbonade|bøf|burger/.test(n)) return "frikadeller";
+    if (/cæsar|salat/.test(n)) return "salat";
+    if (/pita|tortilla|baguette|kebab|taco|wrap|burrito/.test(n)) return "pita";
+    if (/risotto|ris |stegte ris|ris$|karry/.test(n)) return "ris";
+    if (/pølse/.test(n)) return "polse";
+    if (/lasagne|spaghetti|pasta|nudel|pizza/.test(n)) return "pasta";
+    if (/suppe/.test(n)) return "suppe";
+    if (/kylling|mørbrad|oksekød|wok|svin|flæsk|kotelet/.test(n)) return "kylling";
+    if (/kage|omelet|æggekage|tærte|pandekage/.test(n)) return "aeg";
+    return "andet";
+  };
+  const DISH = {
+    laks: `<path d="M30 46 q14 -16 40 -6 q6 10 0 18 q-26 10 -40 -4Z" fill="#F08A5D"/><path d="M40 42 l4 14 M50 40 l4 16 M60 40 l3 16" stroke="#FBD1B8" stroke-width="2.4" stroke-linecap="round"/><g fill="#2E9E5B"><circle cx="34" cy="68" r="6"/><circle cx="42" cy="72" r="6"/><circle cx="38" cy="64" r="5"/></g><path d="M56 66 q10 -4 16 4 q-8 8 -16 4Z" fill="#7DBE5A"/><path d="M58 70 q6 -2 10 2" stroke="#4E8C35" stroke-width="1.4" fill="none"/><circle cx="68" cy="34" r="6" fill="#F7E36B" stroke="#D9C24A" stroke-width="1.4"/>`,
+    chili: `<circle cx="50" cy="50" r="22" fill="#B5371F"/><g fill="#5A1F12"><ellipse cx="42" cy="44" rx="4" ry="2.6"/><ellipse cx="56" cy="52" rx="4" ry="2.6"/><ellipse cx="47" cy="58" rx="4" ry="2.6"/><ellipse cx="58" cy="41" rx="4" ry="2.6"/></g><g fill="#F3B34C"><circle cx="50" cy="46" r="2"/><circle cx="40" cy="54" r="2"/><circle cx="60" cy="58" r="2"/></g><path d="M38 40 q10 -6 22 2" stroke="#fff" stroke-width="2.4" fill="none" opacity=".75" stroke-linecap="round"/>`,
+    frikadeller: `<g fill="#8A4B2A"><ellipse cx="38" cy="44" rx="10" ry="8"/><ellipse cx="56" cy="40" rx="10" ry="8"/><ellipse cx="48" cy="56" rx="10" ry="8"/></g><g fill="#B26A3E" opacity=".6"><ellipse cx="36" cy="41" rx="4" ry="2"/><ellipse cx="54" cy="37" rx="4" ry="2"/><ellipse cx="46" cy="53" rx="4" ry="2"/></g><g fill="#F2C66D" stroke="#D9A441" stroke-width="1.4"><path d="M62 54 l10 2 l-4 9 l-9 -3Z"/><path d="M66 46 l9 -1 l1 9 l-9 1Z"/></g><g fill="#2E9E5B"><circle cx="32" cy="64" r="4"/><circle cx="38" cy="68" r="4"/></g>`,
+    salat: `<g fill="#6DBA4F"><path d="M30 50 q8 -22 20 -20 q-2 14 -20 20Z"/><path d="M50 30 q20 0 22 18 q-14 -2 -22 -18Z"/><path d="M70 52 q-2 20 -20 22 q2 -14 20 -22Z"/><path d="M48 72 q-20 0 -20 -16 q14 2 20 16Z"/></g><g fill="#F3DFA6" stroke="#D9B865" stroke-width="1.2"><rect x="40" y="44" width="7" height="7" rx="1.5"/><rect x="54" y="52" width="7" height="7" rx="1.5"/><rect x="46" y="58" width="6" height="6" rx="1.5"/></g><g fill="#E7B172"><path d="M52 40 q8 -2 10 4 q-6 4 -10 -4Z"/></g>`,
+    pita: `<path d="M26 58 q4 -26 30 -26 q24 2 22 20 q-4 18 -26 20 q-24 2 -26 -14Z" fill="#E9C389"/><path d="M34 54 q20 -10 40 -4" stroke="#C99A5C" stroke-width="2" fill="none"/><g fill="#6DBA4F"><circle cx="44" cy="44" r="5"/><circle cx="56" cy="42" r="4"/></g><g fill="#E5483C"><circle cx="50" cy="48" r="3.4"/><circle cx="62" cy="46" r="3"/></g><path d="M38 50 q12 -6 26 -2" stroke="#F4E9D8" stroke-width="3" fill="none" stroke-linecap="round"/>`,
+    ris: `<circle cx="50" cy="50" r="22" fill="#F3EEDD"/><g fill="#E4DCC2">${Array.from({ length: 14 }, (_, i) => `<ellipse cx="${36 + ((i * 7) % 28)}" cy="${38 + ((i * 11) % 26)}" rx="2.6" ry="1.2" transform="rotate(${i * 25} ${36 + ((i * 7) % 28)} ${38 + ((i * 11) % 26)})"/>`).join("")}</g><g fill="#2E9E5B"><circle cx="58" cy="44" r="4"/><circle cx="44" cy="58" r="3.4"/></g><path d="M64 64 q8 -10 14 -2 q-6 8 -14 2Z" fill="#E7B172"/>`,
+    polse: `<g stroke-linecap="round"><path d="M30 42 q20 -8 40 0" stroke="#A7472A" stroke-width="9"/><path d="M30 56 q20 -8 40 0" stroke="#B85433" stroke-width="9"/></g><path d="M34 41 q16 -6 32 0 M34 55 q16 -6 32 0" stroke="#E08D6A" stroke-width="2" fill="none"/><g fill="#F2C66D"><circle cx="40" cy="68" r="4"/><circle cx="50" cy="70" r="4"/><circle cx="60" cy="68" r="4"/></g>`,
+    pasta: `<g fill="none" stroke="#F2D27A" stroke-width="3" stroke-linecap="round"><path d="M32 50 q8 -14 18 0 q10 14 18 0"/><path d="M30 58 q10 -12 20 0 q10 12 20 0"/><path d="M34 42 q8 -10 16 0 q8 10 16 0"/></g><circle cx="50" cy="50" r="10" fill="#C2412B" opacity=".9"/><g fill="#7DBE5A"><circle cx="46" cy="47" r="2"/><circle cx="54" cy="52" r="2"/></g>`,
+    suppe: `<circle cx="50" cy="50" r="24" fill="#E8B04B"/><circle cx="50" cy="50" r="24" fill="none" stroke="#fff" stroke-width="3" opacity=".6"/><g fill="#7DBE5A"><circle cx="42" cy="46" r="3"/><circle cx="58" cy="54" r="3"/></g><g fill="#B5371F"><rect x="52" y="40" width="6" height="5" rx="1"/><rect x="40" y="56" width="6" height="5" rx="1"/></g>`,
+    kylling: `<path d="M30 52 q2 -16 22 -16 q18 2 18 14 q0 14 -20 16 q-20 0 -20 -14Z" fill="#E7B172"/><path d="M36 48 q12 -6 28 0 M38 56 q12 -5 24 0" stroke="#C98C4E" stroke-width="2.4" fill="none"/><g fill="#2E9E5B"><circle cx="66" cy="66" r="5"/><circle cx="72" cy="60" r="4"/></g><g fill="#F2C66D"><circle cx="34" cy="68" r="4"/><circle cx="42" cy="72" r="4"/></g>`,
+    aeg: `<circle cx="50" cy="50" r="22" fill="#F7D774"/><g fill="#F2C66D" stroke="#D9A441" stroke-width="1"><path d="M38 44 l8 -2 l1 7 l-8 1Z"/><path d="M54 56 l8 -1 l0 7 l-8 0Z"/></g><g fill="#2E9E5B"><circle cx="58" cy="44" r="3"/><circle cx="44" cy="58" r="3"/></g><g fill="#B85433"><rect x="48" y="46" width="6" height="4" rx="1"/></g>`,
+    rester: `<rect x="28" y="34" width="44" height="34" rx="7" fill="#DCE7F2" stroke="#9FB3C8" stroke-width="2"/><rect x="26" y="30" width="48" height="9" rx="4" fill="#7FA6CF"/><path d="M36 52 q14 -8 28 0" stroke="#B5371F" stroke-width="7" stroke-linecap="round" opacity=".7"/><circle cx="66" cy="62" r="7" fill="#fff" stroke="#9FB3C8" stroke-width="1.5"/><path d="M66 58 v4 l3 2" stroke="#7FA6CF" stroke-width="1.6" fill="none" stroke-linecap="round"/>`,
+    rugbrod: `<rect x="30" y="34" width="40" height="30" rx="5" fill="#6B4A36"/><g fill="#8A6A52"><circle cx="38" cy="42" r="1.6"/><circle cx="50" cy="40" r="1.6"/><circle cx="62" cy="44" r="1.6"/><circle cx="44" cy="54" r="1.6"/><circle cx="58" cy="56" r="1.6"/></g><path d="M32 36 q18 -8 36 0" stroke="#E9C389" stroke-width="4" fill="none" stroke-linecap="round"/><g fill="#6DBA4F"><circle cx="40" cy="36" r="4"/></g><g fill="#F08A5D"><ellipse cx="56" cy="36" rx="6" ry="3"/></g>`,
+    ude: `<path d="M38 30 v16 q0 6 6 6 v20" stroke="#8A93A6" stroke-width="3.4" fill="none" stroke-linecap="round"/><path d="M34 30 v10 M42 30 v10" stroke="#8A93A6" stroke-width="3" stroke-linecap="round"/><path d="M62 30 q-8 8 -2 22 v20" stroke="#8A93A6" stroke-width="3.4" fill="none" stroke-linecap="round"/><circle cx="50" cy="50" r="8" fill="none" stroke="#C5CBD6" stroke-width="2" stroke-dasharray="3 3"/>`,
+    tom: `<circle cx="50" cy="50" r="10" fill="none" stroke="#C5CBD6" stroke-width="2" stroke-dasharray="3 3"/>`,
+    andet: `<g fill="#2E9E5B"><circle cx="40" cy="44" r="7"/><circle cx="46" cy="38" r="6"/></g><path d="M50 52 q12 -10 22 0 q-10 12 -22 0Z" fill="#E7B172"/><g fill="#F2C66D"><circle cx="40" cy="62" r="5"/><circle cx="50" cy="66" r="5"/></g>`,
+  };
+  const dishArt = (name, cls = "dish-art") => {
+    const k = dishKind(name);
+    const plate = k === "ude" || k === "tom"
+      ? `<circle cx="50" cy="50" r="40" fill="var(--rema-subtle)" stroke="var(--divider-color)" stroke-width="2" stroke-dasharray="4 5"/>`
+      : k === "rester"
+        ? `<circle cx="50" cy="50" r="40" fill="var(--rema-subtle)"/>`
+        : `<circle cx="50" cy="52" r="42" fill="#000" opacity=".08"/><circle cx="50" cy="50" r="42" fill="#FFFFFF"/><circle cx="50" cy="50" r="34" fill="#F6F4EF" stroke="#E9E5DC" stroke-width="1.5"/>`;
+    return `<svg class="${cls}" viewBox="0 0 100 100" aria-hidden="true">${plate}${DISH[k]}</svg>`;
+  };
+
+  /* The street with your shop and your kitchen, as it looks now. The sky follows the clock. */
+  const LOGO = `<path d="M0 0h512v512H0z" fill="none"/><rect width="512" height="512" rx="116" fill="url(#lg-cg2)"/><path d="M256 92C265 166 288 190 362 200C288 210 265 234 256 308C247 234 224 210 150 200C224 190 247 166 256 92Z" fill="#fff"/><path d="M352 104C355 122 361 128 379 131C361 134 355 140 352 158C349 140 343 134 325 131C343 128 349 122 352 104Z" fill="#fff" opacity=".75"/><path d="M144 326H368C368 384 324 420 256 420S144 384 144 326Z" fill="#1B1530"/><g fill="#1B1530"><path d="M80 236v52a20 20 0 0 0 14 19v113a10 10 0 0 0 20 0V307a20 20 0 0 0 14-19v-52a5 5 0 0 0-10 0v44a4 4 0 0 1-8 0v-44a5 5 0 0 0-10 0v44a4 4 0 0 1-8 0v-44a5 5 0 0 0-10 0z"/><path d="M422 236c-26 14-34 54-32 96h22v88a10 10 0 0 0 20 0V244c0-7-5-11-10-8z"/></g>`;
+  const skyAt = (h) => {
+    if (h < 5 || h >= 21.5) return { top: "#0B1330", low: "#26336A", stars: 1, lit: 1, name: "nat", ground: "#1A2238", haze: "#3A4680" };
+    if (h < 8) return { top: "#3A3F7A", low: "#F4A77A", stars: 0.3, lit: 1, name: "morgen", ground: "#3B3F5C", haze: "#C98C8C" };
+    if (h < 11) return { top: "#6FB1E8", low: "#FDE3C0", stars: 0, lit: 0, name: "formiddag", ground: "#5E6B7E", haze: "#E8D9C6" };
+    if (h < 16) return { top: "#4C9BE0", low: "#BFE2FB", stars: 0, lit: 0, name: "dag", ground: "#5A6B80", haze: "#CFE3F2" };
+    if (h < 18) return { top: "#5F86C9", low: "#F7C08A", stars: 0, lit: 0.6, name: "eftermiddag", ground: "#545C74", haze: "#E9BFA0" };
+    return { top: "#2E2D6B", low: "#D9718A", stars: 0.6, lit: 1, name: "aften", ground: "#2C2F4F", haze: "#8E5E8C" };
+  };
+  const shopFront = (k, kind, h) => {
+    const open = h >= 7 && h < 22;
+    return `<rect x="0" y="0" width="340" height="190" rx="8" fill="color-mix(in srgb, #EEF0F4 86%, ${k.ground})"/>
+    <rect x="0" y="0" width="340" height="28" rx="8" fill="color-mix(in srgb, var(--rema-accent) 80%, #000)"/>
+    <text x="170" y="19" text-anchor="middle" style="font:800 15px var(--v3-display);fill:#fff;letter-spacing:.2em">DAGLIGVARER</text>
+    <path d="M-10 28 h360 l-10 30 h-340Z" fill="var(--rema-accent)"/>
+    ${Array.from({ length: 12 }, (_, i) => `<path d="M${4 + i * 28} 28 l-3 30 h14 l3 -30Z" fill="#fff" opacity=".85"/>`).join("")}
+    <rect x="22" y="78" width="104" height="92" rx="5" fill="#1F2B44"/><rect x="22" y="78" width="104" height="92" rx="5" fill="url(#win-${kind})" style="opacity:${(open ? Math.max(0.35, k.lit) : 0.1).toFixed(2)}"/>
+    <rect x="214" y="78" width="104" height="92" rx="5" fill="#1F2B44"/><rect x="214" y="78" width="104" height="92" rx="5" fill="url(#win-${kind})" style="opacity:${(open ? Math.max(0.35, k.lit) : 0.1).toFixed(2)}"/>
+    <g opacity=".75">${[0, 1, 2].map((r) => `<rect x="30" y="${96 + r * 24}" width="88" height="4" fill="#7A5A3A"/><rect x="222" y="${96 + r * 24}" width="88" height="4" fill="#7A5A3A"/>${[0, 1, 2, 3].map((q) => `<rect x="${34 + q * 21}" y="${84 + r * 24}" width="12" height="12" rx="2" fill="${["#E5483C", "#2E9E5B", "#F3B34C", "#2a78d6"][(r + q) % 4]}"/><rect x="${226 + q * 21}" y="${84 + r * 24}" width="12" height="12" rx="2" fill="${["#F3B34C", "#2a78d6", "#E5483C", "#2E9E5B"][(r + q) % 4]}"/>`).join("")}`).join("")}</g>
+    <rect x="144" y="74" width="52" height="116" rx="4" fill="color-mix(in srgb, var(--rema-accent) 30%, #222)"/>
+    <rect x="148" y="78" width="44" height="64" rx="3" fill="#BFE3FF" opacity=".5"/>
+    <rect x="132" y="-34" width="76" height="26" rx="13" fill="${open ? "#2DD4A7" : "#E34948"}"/><text x="170" y="-16" text-anchor="middle" style="font:800 13px var(--ha-font-family-body, sans-serif);fill:#fff;letter-spacing:.12em">${open ? "ÅBENT" : "LUKKET"}</text>`;
+  };
+  const BAG = (kind) => `
+      <path d="M36 92 l18 -54" stroke="#C88F4A" stroke-width="16" stroke-linecap="round"/><path d="M40 82 l5 -6 M44 70 l5 -6 M48 58 l5 -6" stroke="#9C6A30" stroke-width="2.4" stroke-linecap="round"/>
+      <path d="M80 96 q-4 -30 10 -64" stroke="#E9F2E0" stroke-width="10" stroke-linecap="round" fill="none"/><path d="M90 32 q-10 -16 -2 -26 M90 32 q6 -18 18 -22 M90 32 q-14 -6 -22 0" stroke="#2E9E5B" stroke-width="5" stroke-linecap="round" fill="none"/>
+      <rect x="100" y="56" width="26" height="44" rx="3" fill="#fff" stroke="#2a78d6" stroke-width="2.4"/><path d="M100 56 l5 -10 h16 l5 10" fill="#fff" stroke="#2a78d6" stroke-width="2.4" stroke-linejoin="round"/><rect x="104" y="70" width="18" height="12" rx="2" fill="#2a78d6"/>
+      <path d="M58 78 q-6 -18 4 -30 q4 10 12 14 q-6 4 -16 16Z M62 80 q2 -20 16 -26 q0 10 6 16 q-8 2 -22 10Z" fill="#F5C93B" stroke="#C99A14" stroke-width="1.4"/>
+      <path d="M10 96 h140 l-12 104 q-1 6 -7 6 h-102 q-6 0 -7 -6Z" fill="url(#bag-${kind})"/>
+      <path d="M10 96 h140" stroke="#B8935F" stroke-width="3"/><path d="M48 96 q0 -24 32 -24 q32 0 32 24" fill="none" stroke="#B8935F" stroke-width="5" stroke-linecap="round"/>
+      <g class="baglogo" transform="translate(50 110) scale(.117)">${LOGO}</g>`;
+  const scene = (kind = "hero", h = new Date().getHours() + new Date().getMinutes() / 60) => {
+    const k = skyAt(h);
+    const mob = kind === "mobile", cm = kind === "compactm";
+    const W = mob || cm ? 440 : 1200, H = kind === "hero" ? 460 : mob ? 760 : 170;
+    const base = kind === "hero" ? 400 : mob ? 470 : 150;
+    const day = h >= 6 && h < 19.5;
+    const t = day ? (h - 6) / 13.5 : ((h + 24 - 19.5) % 24) / 10.5;
+    const sx = (mob || cm ? 30 : 80) + t * (W - (mob || cm ? 60 : 160)), sy = base - (cm ? 40 : 60) - Math.sin(t * Math.PI) * (kind === "hero" ? 300 : mob ? 330 : cm ? 70 : 95);
+    const lit = (o) => `opacity:${(k.lit * o).toFixed(2)}`;
+    const big = kind !== "compact";
+    const stars = Array.from({ length: 34 }, (_, i) => { const x = (i * 263) % W, y = 14 + ((i * 97) % (base - 140 > 40 ? base - 140 : 60)); return `<circle class="tw" style="animation-delay:${(i % 7) * 0.6}s" cx="${x}" cy="${y}" r="${(i % 3) * 0.5 + 0.8}" fill="#fff"/>`; }).join("");
+    const sky = `<defs>
+      <linearGradient id="sk-${kind}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${k.top}"/><stop offset="1" stop-color="${k.low}"/></linearGradient>
+      <radialGradient id="glow-${kind}"><stop offset="0" stop-color="${day ? "#FFE7A3" : "#DDE6FF"}" stop-opacity=".9"/><stop offset="1" stop-color="${day ? "#FFE7A3" : "#DDE6FF"}" stop-opacity="0"/></radialGradient>
+      <linearGradient id="win-${kind}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFE3A1"/><stop offset="1" stop-color="#FFB35C"/></linearGradient>
+      <linearGradient id="bag-${kind}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E9D3B0"/><stop offset="1" stop-color="#CFAE80"/></linearGradient>
+      <linearGradient id="lg-cg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6E4AFF"/><stop offset="1" stop-color="#FF7A59"/></linearGradient>
+    </defs>
+    <rect width="${W}" height="${H}" fill="url(#sk-${kind})"/>
+    <g style="opacity:${k.stars}">${stars}</g>
+    <g class="sunpulse"><circle cx="${sx.toFixed(0)}" cy="${sy.toFixed(0)}" r="${big ? 90 : 46}" fill="url(#glow-${kind})"/></g>
+    ${day ? `<circle cx="${sx.toFixed(0)}" cy="${sy.toFixed(0)}" r="${big ? 26 : 15}" fill="#FFD25E"/>`
+      : `<circle cx="${sx.toFixed(0)}" cy="${sy.toFixed(0)}" r="${big ? 22 : 13}" fill="#F3F1E6"/><circle cx="${(sx + (big ? 9 : 5)).toFixed(0)}" cy="${(sy - (big ? 6 : 4)).toFixed(0)}" r="${big ? 19 : 11}" fill="${k.top}"/>`}
+    ${day ? `<g class="cloud"><path d="M180 ${base - 250} a18 18 0 0 1 34 -8 a14 14 0 0 1 26 9 a10 10 0 0 1 -3 20 h-52 a12 12 0 0 1 -5 -21Z" fill="#fff" opacity=".8"/></g><g class="cloud c2"><path d="M820 ${base - 300} a14 14 0 0 1 26 -6 a11 11 0 0 1 20 7 a9 9 0 0 1 -3 17 h-40 a9 9 0 0 1 -3 -18Z" fill="#fff" opacity=".65"/></g>` : ""}`;
+    const far = `<path d="M0 ${base - 70} L60 ${base - 92} L110 ${base - 80} L170 ${base - 110} L230 ${base - 86} L300 ${base - 104} L360 ${base - 82} L430 ${base - 120} L500 ${base - 90} L580 ${base - 108} L650 ${base - 84} L720 ${base - 116} L800 ${base - 92} L880 ${base - 112} L960 ${base - 86} L1040 ${base - 104} L1120 ${base - 84} L1200 ${base - 96} V${base} H0Z" fill="${k.haze}" opacity=".55"/>
+    <g fill="${k.ground}" opacity=".55">${Array.from({ length: mob ? 4 : 9 }, (_, i) => { const x = (mob ? 10 : 40) + i * (mob ? 112 : 140), hh = 34 + ((i * 37) % 30); return `<rect x="${x}" y="${base - hh - 30}" width="${48 + (i % 3) * 14}" height="${hh + 30}" rx="3"/><path d="M${x - 4} ${base - hh - 30} l${(52 + (i % 3) * 14) / 2 + 4} -18 l${(52 + (i % 3) * 14) / 2 + 4} 18Z"/>${Array.from({ length: 2 }, (_, j) => `<rect x="${x + 10 + j * 18}" y="${base - hh - 14}" width="9" height="9" fill="url(#win-${kind})" style="${lit(0.85)}"/>`).join("")}`; }).join("")}</g>`;
+    const tree = (x, y, s) => `<g transform="translate(${x} ${y}) scale(${s})"><rect x="16" y="70" width="10" height="80" fill="#6B4A36"/><circle cx="21" cy="56" r="40" fill="color-mix(in srgb, #2E8B57 70%, ${k.ground})"/><circle cx="44" cy="78" r="26" fill="color-mix(in srgb, #3FA06A 70%, ${k.ground})"/></g>`;
+    const lamp = (x, y, s = 1) => `<g transform="translate(${x} ${y}) scale(${s})"><rect x="0" y="0" width="4" height="46" fill="#3A3F55"/><circle cx="2" cy="0" r="6" fill="${k.lit ? "#FFE3A1" : "#C9CFDB"}"/><circle cx="2" cy="0" r="20" fill="#FFE3A1" style="${lit(0.25)}"/></g>`;
+    if (mob) {
+      return `<svg class="scene-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMin slice" aria-hidden="true">${sky}${far}
+      ${tree(146, base - 118, 0.8)}
+      <g transform="translate(186 ${base - 133}) scale(.7)">${shopFront(k, kind, h)}</g>
+      <rect x="0" y="${base}" width="${W}" height="${H - base}" fill="${k.ground}"/>
+      <path d="M0 ${base + 20} H${W}" stroke="#fff" stroke-opacity=".28" stroke-dasharray="22 16" stroke-width="3"/>
+      <g transform="translate(14 ${base - 177}) scale(.86)"><g class="bob">${BAG(kind)}</g></g>
+      <ellipse cx="80" cy="${base + 6}" rx="62" ry="5" fill="#000" opacity=".16"/>
+      ${lamp(160, base - 46)}${lamp(420, base - 46)}</svg>`;
+    }
+    if (cm) {
+      const roofs = Array.from({ length: 6 }, (_, i) => { const x = 8 + i * 52, hh = 18 + ((i * 13) % 14), w = 30 + (i % 3) * 6; return `<rect x="${x}" y="${base - hh - 16}" width="${w}" height="${hh + 16}" rx="2"/><path d="M${x - 3} ${base - hh - 16} l${w / 2 + 3} -11 l${w / 2 + 3} 11Z"/><rect x="${x + 7}" y="${base - hh - 6}" width="6" height="6" fill="url(#win-${kind})" style="${lit(0.85)}"/><rect x="${x + 17}" y="${base - hh - 6}" width="6" height="6" fill="url(#win-${kind})" style="${lit(0.85)}"/>`; }).join("");
+      return `<svg class="scene-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMaxYMax slice" aria-hidden="true">${sky}
+      <path d="M0 ${base - 38} L60 ${base - 48} L130 ${base - 40} L200 ${base - 56} L280 ${base - 42} L360 ${base - 52} L440 ${base - 44} V${base} H0Z" fill="${k.haze}" opacity=".5"/>
+      <g fill="${k.ground}" opacity=".6">${roofs}</g>
+      <g transform="translate(322 ${base - 55.1}) scale(.29)">${shopFront(k, kind, h)}</g>
+      <rect x="0" y="${base}" width="${W}" height="${H - base}" fill="${k.ground}"/></svg>`;
+    }
+    if (kind !== "hero") {
+      return `<svg class="scene-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMax slice" aria-hidden="true">${sky}${far}
+      <rect x="0" y="${base}" width="${W}" height="${H - base}" fill="${k.ground}"/>
+      <g transform="translate(940 ${base - 79.8}) scale(.42)">${shopFront(k, kind, h)}</g></svg>`;
+    }
+    const house = `<g transform="translate(-40 ${base - 190})">
+      <path d="M0 80 L110 10 L220 80 V190 H0Z" fill="color-mix(in srgb, #F2EEE6 80%, ${k.ground})"/>
+      <path d="M-14 86 L110 0 L234 86" fill="none" stroke="#8E5A48" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/>
+      <rect x="160" y="18" width="24" height="44" fill="#8E5A48"/>
+      <g class="smoke"><circle cx="172" cy="6" r="8" fill="#fff" opacity=".35"/><circle cx="180" cy="-12" r="10" fill="#fff" opacity=".25"/><circle cx="170" cy="-32" r="12" fill="#fff" opacity=".15"/></g>
+      <rect x="28" y="104" width="76" height="56" rx="6" fill="#20263C"/><rect x="28" y="104" width="76" height="56" rx="6" fill="url(#win-${kind})" style="${lit(1)}"/>
+      <path d="M50 150 h32 q0 -16 -16 -16 q-16 0 -16 16Z" fill="#2A2238" opacity=".85"/><rect x="46" y="148" width="40" height="5" rx="2" fill="#2A2238" opacity=".85"/>
+      <g class="steam"><path d="M58 128 q-5 -8 0 -16 q5 -8 0 -16" stroke="#fff" stroke-width="2.4" fill="none" opacity=".7" stroke-linecap="round"/><path d="M70 126 q-5 -8 0 -16 q5 -8 0 -16" stroke="#fff" stroke-width="2.4" fill="none" opacity=".55" stroke-linecap="round"/></g>
+      <rect x="138" y="116" width="50" height="74" rx="4" fill="#5A4034"/><circle cx="178" cy="154" r="3" fill="#E9C46A"/>
+      <path d="M28 132 h76 M66 104 v56" stroke="#F2EEE6" stroke-width="3" opacity=".9"/></g>
+      <g transform="translate(196 ${base - 150})"><rect x="16" y="70" width="10" height="80" fill="#6B4A36"/><circle cx="21" cy="56" r="40" fill="color-mix(in srgb, #2E8B57 70%, ${k.ground})"/><circle cx="44" cy="78" r="26" fill="color-mix(in srgb, #3FA06A 70%, ${k.ground})"/></g>`;
+    const bag = `<g transform="translate(232 ${base - 200})"><g class="bob">${BAG(kind)}</g></g><ellipse cx="312" cy="${base + 8}" rx="80" ry="6" fill="#000" opacity=".16"/>
+      <g transform="translate(960 ${base - 150})"><rect x="16" y="70" width="10" height="80" fill="#6B4A36"/><circle cx="21" cy="50" r="46" fill="color-mix(in srgb, #2E8B57 70%, ${k.ground})"/><circle cx="-6" cy="76" r="26" fill="color-mix(in srgb, #3FA06A 70%, ${k.ground})"/></g>`;
+    return `<svg class="scene-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMax slice" aria-hidden="true">${sky}${far}
+    ${house}
+    <g transform="translate(420 ${base - 190})">${shopFront(k, kind, h)}</g>
+    <rect x="0" y="${base}" width="${W}" height="${H - base}" fill="${k.ground}"/>
+    <path d="M0 ${base + 22} H${W}" stroke="#fff" stroke-opacity=".28" stroke-dasharray="26 18" stroke-width="3"/>
+    ${bag}
+    ${Array.from({ length: 4 }, (_, i) => `<g transform="translate(${70 + i * 300} ${base - 52})"><rect x="0" y="0" width="5" height="52" fill="#3A3F55"/><circle cx="2.5" cy="0" r="7" fill="${k.lit ? "#FFE3A1" : "#C9CFDB"}"/><circle cx="2.5" cy="0" r="22" fill="#FFE3A1" style="${lit(0.25)}"/></g>`).join("")}
+  </svg>`;
+  };
+
+  const ICON = {
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>',
+    clock: '<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/>',
+    check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+    bag: '<path d="M5 8h14l-1.4 10.2a2 2 0 0 1-2 1.8H8.4a2 2 0 0 1-2-1.8Z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/>',
+    truck: '<path d="M3 7h11v9H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17.5" cy="17.5" r="1.8"/>',
+    receipt: '<path d="M7 3h10v18l-2.5-1.6L12 21l-2.5-1.6L7 21Z M9.5 8h5 M9.5 11.5h5 M9.5 15h3"/>',
+    phone: '<rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 18.5h3"/>',
+    pen: '<path d="M5 19l1-4L16 5l3 3L9 18Z M14 7l3 3"/>',
+    home: '<path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5h-5v5H5a1 1 0 0 1-1-1Z"/>',
+  };
+  const ic = (k, s = 20) => `<svg class="i" viewBox="0 0 24 24" width="${s}" height="${s}" aria-hidden="true">${ICON[k] || ""}</svg>`;
+
+  return {
+    fmt, krd, DAYS, DAYS_LONG, MONTHS, MONTHS_LONG, cap, ymd, addDays, daysBetween, isoWeek, weekNo, sundayOf, span, greet,
+    P, sector, arc, countUp, GROUPS, GNAME, ORDER, ART, art, dot, groupOf, clean, pic, dishKind, dishArt, skyAt, scene, ICON, ic,
+  };
+})();
+
+/* The pages drawn with the helpers above: methods of the panel. */
+const V3_FEES = "middagsro.fees.v1";
+const V3_TITLES = {
+  plan: "Madplan", recipes: "Opskrifter", shopping: "Indkøb", favorites: "Favoritter", budget: "Økonomi",
+  health: "Sundhed", inventory: "Spisekammer", history: "Historik", settings: "Indstillinger",
+};
+const V3_METHODS = {
+  _v3s() {
+    if (!this._v3) {
+      let fees = { bilka: "pickup", nemlig: 39, zones: 2 };
+      try { fees = { ...fees, ...(JSON.parse(localStorage.getItem(V3_FEES) || "null") || {}) }; } catch { /* a browser without storage */ }
+      this._v3 = { week: null, day: null, span: "week", sel: null, solo: null, hw: 0, q: "", hits: [], hitsQ: "", searching: false,
+        amt: "", cmp: {}, cmpLoading: null, img: {}, imgAsked: new Set(), sort: "kr", fees, keys: {}, counted: {} };
+    }
+    return this._v3;
+  },
+
+  _v3Phone() { return matchMedia("(max-width: 700px)").matches; },
+  _v3Kind() { const phone = this._v3Phone(); return this._tab === "home" ? (phone ? "mobile" : "hero") : phone ? "compactm" : "compact"; },
+  _v3Hour() { const d = new Date(); return d.getHours() + d.getMinutes() / 60; },
+
+  /* ------------------------------------------------------------ the header: the street */
+  _v3Header() {
+    const root = this.shadowRoot;
+    const hdr = root.querySelector("#hdr");
+    if (!hdr || this._embed) return;
+    const s = this._v3s();
+    const home = this._tab === "home";
+    hdr.classList.toggle("big", home);
+    hdr.classList.toggle("small", !home);
+    const sky = V3.skyAt(this._v3Hour());
+    hdr.dataset.sky = sky.name;
+    const kind = this._v3Kind();
+    const sceneKey = `${kind}|${Math.floor(this._v3Hour() * 12)}`;
+    if (s.keys.scene !== sceneKey) {
+      s.keys.scene = sceneKey;
+      root.querySelector("#scene").innerHTML = V3.scene(kind, this._v3Hour());
+    }
+    const body = root.querySelector("#hdr-body");
+    const typing = body.contains(root.activeElement);
+    const html = this._v3HeaderBody();
+    if (!typing && s.keys.body !== html) {
+      s.keys.body = html;
+      body.innerHTML = html;
+      const left = body.querySelector("[data-count]");
+      if (left) V3.countUp(left, Number(left.dataset.count), 700);
+    }
+  },
+
+  // Once a minute the sky moves on (called from the panel's one-second tick).
+  _v3SceneTick() {
+    if (this._embed || !this.shadowRoot.querySelector("#scene")) return;
+    const s = this._v3s();
+    const kind = this._v3Kind();
+    const key = `${kind}|${Math.floor(this._v3Hour() * 12)}`;
+    if (s.keys.scene === key) return;
+    s.keys.scene = key;
+    this.shadowRoot.querySelector("#scene").innerHTML = V3.scene(kind, this._v3Hour());
+    const hdr = this.shadowRoot.querySelector("#hdr");
+    if (hdr) hdr.dataset.sky = V3.skyAt(this._v3Hour()).name;
+  },
+
+  _v3HeaderBody() {
+    if (!this._state) return "";
+    if (this._tab !== "home") {
+      const [title, sub] = this._v3PageTitle();
+      return `<div class="page-title"><h1>${esc(title)}</h1>${sub ? `<p>${sub}</p>` : ""}</div>`;
+    }
+    const now = new Date();
+    const wk = V3.weekNo(V3.sundayOf(localToday()));
+    return `<div class="hero-copy"><div class="kicker light">${V3.DAYS_LONG[now.getDay()]} ${now.getDate()}. ${V3.MONTHS_LONG[now.getMonth()]} · uge ${wk}</div>
+        <h1 class="hello">${V3.greet(this._v3Hour())}${this._hass?.user?.name ? `, ${esc(String(this._hass.user.name).split(" ")[0])}` : ""}</h1>
+        <p class="hero-sub">${this._v3Tonight()}</p></div>
+      <div class="glass budget-glass">${this._v3HeroBudget()}</div>`;
+  },
+
+  _v3PageTitle() {
+    const st = this._state;
+    const plan = this._plan;
+    const b = st.budget;
+    const title = V3_TITLES[this._tab] || "Middagsro";
+    const sub = {
+      plan: () => (plan ? esc(plan.title || "") : "Ingen madplan endnu"),
+      recipes: () => (this._recipesSub === "collection" ? `${(st.recipes || []).length} retter i samlingen` : "Ugens opskrifter"),
+      shopping: () => (plan ? `${plan.shopping.filter((l) => !l.skipped).length} varer · ${kr(plan.total)}${st.rema_list ? ` · ${st.rema_list.items.filter((i) => !i.bought).length} på ${esc(this._listName())}` : ""}` : esc(this._listName())),
+      favorites: () => "Varer I køber igen og igen",
+      budget: () => (b ? `Uge ${b.week.week} · ${kr0(Math.abs(b.week.remaining))} ${b.week.remaining < 0 ? "over" : "tilbage"}` : "Madbudget og forbrug"),
+      health: () => "Det, I køber, og det, I spiser",
+      inventory: () => "Det, I allerede har hjemme",
+      history: () => "Indkøb, madplaner og varer",
+      settings: () => "Butikker, logins, budget og udseende",
+    }[this._tab];
+    return [title, sub ? sub() : ""];
+  },
+
+  _v3Today() {
+    const today = localToday();
+    const tl = this._timeline();
+    if (tl) return tl.find((e) => e.date === today && e.day) || null;
+    const day = (this._plan?.days || []).find((d) => d.date === today);
+    return day ? { plan: this._plan, day, date: today } : null;
+  },
+
+  _v3Tonight() {
+    const e = this._v3Today();
+    if (!e) return this._plan ? "Ingen ret i aften." : "Lav jeres første madplan – den bygges på ugens tilbud.";
+    const d = e.day;
+    return `I aften: <b>${esc(d.dish || "Ingen ret")}</b>${d.total_minutes ? ` · ${d.total_minutes} min` : ""}`;
+  },
+
+  /* The week's money in the street: a ring, the days, and a field to book an amount. */
+  _v3HeroBudget() {
+    const b = this._state?.budget;
+    if (!b) {
+      return `<div class="hb-top"><div class="hb-num"><span class="kicker light">Madbudget</span><b>Hold øje med ugen</b><span>Skriv jeres faste beløb, så tæller Middagsro med.</span></div></div>
+        <div class="hb-quick"><button class="hb-link" data-action="tab" data-arg="budget">Start madbudget ›</button></div>`;
+    }
+    const m = this._v3WeekModel(this._v3WeekIndex(true));
+    const left = m.budget - m.spent, f = m.budget > 0 ? Math.min(1, m.spent / m.budget) : 1;
+    const daysLeft = Math.max(1, 7 - m.todayIdx);
+    const dmax = Math.max(200, ...m.days);
+    const s = this._v3s();
+    const [nx, ny] = V3.P(60, 60, 50, m.nowFrac * 360);
+    return `<div class="hb-top">
+      <svg class="hb-ring" viewBox="0 0 120 120" aria-hidden="true">
+        <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="10"/>
+        ${f > 0 ? `<path class="seg-arc" d="${V3.arc(60, 60, 50, 0, f * 360)}" pathLength="100" style="--len:100;fill:none;stroke:${m.spent > m.budget ? "var(--v3-bad)" : "#7CF2C8"};stroke-width:10;stroke-linecap:round"/>` : ""}
+        <circle cx="${nx.toFixed(1)}" cy="${ny.toFixed(1)}" r="4" fill="#fff"/></svg>
+      <div class="hb-num"><span class="kicker light">Ugens madbudget · uge ${m.wk}</span><b class="num" data-count="${Math.abs(left)}">${V3.krd(Math.abs(left))}</b><span>${left >= 0 ? `tilbage · ≈ ${V3.krd(left / daysLeft)} pr. dag` : "over budget"}</span></div>
+    </div>
+    <div class="hb-days">${m.days.map((v, d) => `<div class="hbd${d === m.todayIdx ? " now" : ""}"><span class="bar">${V3.ORDER.filter((g) => m.dayG[d][g]).map((g) => `<i style="flex-grow:${m.dayG[d][g].toFixed(2)};background:var(--g-${g})"></i>`).join("")}<em style="height:${Math.max(0, 100 - (v / dmax) * 100).toFixed(1)}%"></em></span><small>${V3.DAYS[m.jsDay(d)][0]}</small></div>`).join("")}</div>
+    <div class="hb-book"><label class="hb-amt">${V3.ic("plus", 16)}<input data-bind="v3amt" data-v3book="hero" inputmode="decimal" enterkeyhint="done" value="${esc(s.amt)}" placeholder="Kontér et beløb" aria-label="Beløb i kroner" autocomplete="off"><span>kr.</span></label><button class="hb-go" data-action="v3-book" data-arg="hero">Kontér</button></div>
+    <div class="hb-quick">${[100, 250, 500].map((v) => `<button data-action="v3-add" data-arg="${v}">+${v}</button>`).join("")}<button class="hb-link" data-action="tab" data-arg="budget">Se økonomi ›</button></div>`;
+  },
+
+  _v3Amount(raw) {
+    const v = Number(String(raw || "").replace(/\s/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", "."));
+    return v > 0 ? Math.round(v * 100) / 100 : 0;
+  },
+
+  _v3Book(where) {
+    const s = this._v3s();
+    const amount = this._v3Amount(s.amt);
+    if (!amount) {
+      this.shadowRoot.querySelector(`[data-v3book="${where}"]`)?.focus();
+      return this._say("Skriv beløbet, der skal konteres.");
+    }
+    let booked = null;
+    s.amt = "";
+    s.week = null;
+    s.day = null;
+    this.shadowRoot.querySelectorAll("[data-v3book]").forEach((i) => { i.value = ""; i.blur(); });
+    this._run(async () => {
+      booked = (await this._ws("middagsro/purchases/add", { amount, store: this._storeId(), date: localToday() }))?.booked || null;
+    }, () => {
+      if (booked) this._toastAction = { label: "Fortryd", action: "purchase-undo", arg: booked };
+      return `${V3.krd(amount, amount % 1 ? 2 : 0)} er konteret på uge ${this._state?.budget?.week?.week || ""}.`;
+    });
+  },
+
+  /* ------------------------------------------------------------------ Forside */
+  _homeView() {
+    return `<div class="v3 home">${this._v3PlanCard()}${this._v3Quick()}</div>${CREDIT}`;
+  },
+
+  _v3PlanWeeks() {
+    const tl = this._timeline();
+    const today = localToday();
+    let entries;
+    if (tl) entries = tl.filter((e) => e.day || e.skipped);
+    else if (this._plan?.days) entries = this._plan.days.map((d) => ({ date: d.date, day: d, plan: this._plan, week: V3.isoWeek(new Date(`${d.date}T12:00:00`)) }));
+    else entries = [];
+    const weeks = [];
+    for (const e of entries) {
+      let w = weeks.find((x) => x.week === e.week);
+      if (!w) weeks.push((w = { week: e.week, entries: [] }));
+      w.entries.push(e);
+    }
+    // This week first (the one with today, or the first still to come).
+    const now = weeks.findIndex((w) => w.entries.some((e) => e.date >= today));
+    return now > 0 ? weeks.slice(now) : weeks;
+  },
+
+  _v3PlanCard() {
+    const s = this._v3s();
+    const plan = this._plan;
+    if (!plan) {
+      return `<div class="card plan-home"><div class="row between wrap"><div><div class="kicker">Madplan</div><h2>Ingen madplan endnu</h2><p class="sub">Madplanen laves med AI ud fra ugens tilbud og jeres indstillinger.</p></div>
+        <button class="btn primary" data-action="tab" data-arg="plan">Lav madplan</button></div></div>`;
+    }
+    const weeks = this._v3PlanWeeks();
+    const idx = Math.min(s.hw, Math.max(0, weeks.length - 1));
+    const w = weeks[idx];
+    const today = localToday();
+    const tiles = (w?.entries || []).map((e, i) => {
+      const d = new Date(`${e.date}T12:00:00`), now = e.date === today, past = e.date < today;
+      const day = e.day;
+      const dish = e.skipped ? "Springes over" : day?.dish || "Ingen ret";
+      const type = day ? TYPE_LABELS[day.type] ?? "" : "";
+      return `<button class="dtile${now ? " now" : ""}${past ? " past" : ""}${e.skipped ? " skipped" : ""}" data-action="${e.skipped ? "day-menu-skipped" : "day-menu"}" data-arg="${esc(e.plan.id)}|${esc(e.date)}" style="animation-delay:${i * 0.05}s">
+        <span class="dt-day">${now ? "I aften" : V3.DAYS_LONG[d.getDay()]}</span><span class="dt-date">${d.getDate()}. ${V3.MONTHS[d.getMonth()]}</span>
+        ${V3.dishArt(e.skipped ? "" : dish)}<b>${esc(dish)}</b>
+        <span class="dt-meta">${day?.total_minutes ? `${V3.ic("clock", 13)} ${day.total_minutes} min` : ""}${type ? `<span class="tag">${esc(type)}</span>` : ""}</span></button>`;
+    }).join("");
+    const dinners = (w?.entries || []).filter((e) => e.day && e.day.dish && !["rester", "egen", "tom"].includes(e.day.type)).length;
+    const rest = (w?.entries || []).filter((e) => e.day && (e.day.type === "rester" || e.day.uses_leftovers_from)).length;
+    const left = plan.shopping.filter((l) => !l.buy_from && !l.buy_at && !l.sent).length;
+    return `<div class="card plan-home">
+      <div class="row between wrap"><div><div class="kicker">${esc(w ? `Madplan uge ${w.week}` : plan.title || "Madplan")}</div><h2>${idx === 0 ? "Denne uges aftensmad" : "Næste uges aftensmad"}</h2>
+        <p class="sub">${plan.summary && idx === weeks.length - 1 ? `${esc(plan.summary)} ` : ""}Tryk på en dag for at se opskriften eller skifte retten.</p></div>
+        ${weeks.length > 1 ? `<div class="seg">${weeks.slice(0, 2).map((x, i) => `<button class="${idx === i ? "on" : ""}" data-action="v3-hw" data-arg="${i}">${i === 0 ? "Denne uge" : "Næste uge"}</button>`).join("")}</div>` : ""}</div>
+      <div class="strip">${tiles || '<p class="sub">Ingen dage i ugen.</p>'}</div>
+      <div class="plan-foot">
+        <span class="pf-stat"><b class="num">${kr0(plan.total)}</b><span>indkøb til planen</span></span>
+        <span class="pf-stat"><b class="num">${dinners}</b><span>aftener at lave</span></span>
+        <span class="pf-stat"><b class="num">${rest}</b><span>restedage</span></span>
+        <span class="spacer"></span>
+        <button class="btn" data-action="tab" data-arg="plan">Åbn madplanen</button>
+        ${left ? `<button class="btn primary" data-action="tab" data-arg="shopping">${V3.ic("bag", 16)} Indkøbslisten</button>` : `<span class="pill good">${V3.ic("check", 14)} Sendt til listen</span>`}
+      </div></div>`;
+  },
+
+  /* Quick add: search the shop, tap, and it is on the list. */
+  _v3Quick() {
+    const s = this._v3s();
+    const list = this._state?.rema_list;
+    const onList = (list?.items || []).filter((i) => !i.bought);
+    const often = ((this._state?.receipts?.items) || []).filter((i) => i.frequent).slice(0, 6);
+    return `<div class="card quickadd">
+      <div class="row between wrap"><div><div class="kicker">Lyn-tilføj</div><h2>Mangler I noget?</h2></div>
+        <button class="cart" data-action="tab" data-arg="shopping" aria-label="Indkøbslisten">${V3.ic("bag", 22)}<span class="cart-n">${onList.length}</span></button></div>
+      <div class="qbar${s.q ? " typing" : ""}">${V3.ic("search", 22)}<input data-bind="v3q" value="${esc(s.q)}" placeholder="Tilføj vare – fx mælk, bananer" autocomplete="off" enterkeyhint="done" aria-label="Tilføj vare">
+        <button class="qgo" data-action="v3-qadd" aria-label="Tilføj">${V3.ic("plus", 22)}</button></div>
+      <div class="qhits" id="v3-qhits">${this._v3QuickHits()}</div>
+      ${!s.q && often.length ? `<div class="qchips"><span class="sub" style="margin:0 6px 0 0">Ofte købt</span>${often.map((i) => `<button data-action="v3-qfill" data-arg="${esc(V3.clean(i.name).split(/[ ,]/)[0])}">${esc(V3.clean(i.name).split(",")[0])}</button>`).join("")}</div>` : ""}
+      <div class="onlist"><span class="kicker">På ${esc(list?.name || this._listName())} · ${onList.length}</span><div class="ol-chips">${onList.slice(0, 40).map((i) => `<span class="olc">${i.amount > 1 ? `<b>${i.amount}×</b> ` : ""}${esc(i.name)}</span>`).join("") || '<span class="sub">Listen er tom.</span>'}</div></div>
+    </div>`;
+  },
+
+  _v3QuickHits() {
+    const s = this._v3s();
+    const q = s.q.trim();
+    if (!q) return "";
+    const hits = s.hitsQ === q ? s.hits : [];
+    const rows = hits.slice(0, 6).map((p, i) => `<button class="qhit" data-action="v3-qpick" data-arg="${i}" style="animation-delay:${i * 0.03}s"><span class="qimg">${V3.pic(p.image, V3.groupOf(p.name))}</span><span class="qname">${esc(V3.clean(p.name))}${p.underline ? `<small>${esc(p.underline)}</small>` : ""}</span>${p.price ? `<span class="qprice">${V3.fmt(p.price, 2)} kr.</span>` : ""}<span class="qplus">${V3.ic("plus", 16)}</span></button>`).join("");
+    const free = this._plan ? `<button class="qhit free" data-action="v3-qtext"><span class="qimg">${V3.art(V3.groupOf(q), "")}</span><span class="qname">Tilføj “${esc(q)}” til madplanens liste</span><span class="qplus">${V3.ic("plus", 16)}</span></button>` : "";
+    return `${s.searching && s.hitsQ !== q ? '<p class="sub"><span class="spinner small"></span> Søger …</p>' : ""}${rows}${free}`;
+  },
+
+  _v3RenderQuick() {
+    const node = this.shadowRoot.querySelector("#v3-qhits");
+    if (node) { node.innerHTML = this._v3QuickHits(); this._v3Pics(node); }
+    this.shadowRoot.querySelector(".qbar")?.classList.toggle("typing", !!this._v3s().q);
+  },
+
+  _v3Search() {
+    const s = this._v3s();
+    const q = s.q.trim();
+    if (q.length < 2) { s.hits = []; s.hitsQ = q; this._v3RenderQuick(); return; }
+    s.searching = true;
+    this._v3RenderQuick();
+    this._ws("middagsro/search", { query: q })
+      .then((found) => { if (s.q.trim() !== q) return; s.hits = found || []; s.hitsQ = q; })
+      .catch(() => { if (s.q.trim() === q) { s.hits = []; s.hitsQ = q; } })
+      .finally(() => { s.searching = false; this._v3RenderQuick(); });
+  },
+
+  _v3Fly(from, label) {
+    const cart = this.shadowRoot.querySelector(".cart");
+    if (!from || !cart || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const a = from.getBoundingClientRect(), b = cart.getBoundingClientRect();
+    const fly = document.createElement("div");
+    fly.className = "v3-fly";
+    fly.textContent = label;
+    fly.style.left = `${a.left + 20}px`;
+    fly.style.top = `${a.top}px`;
+    this.shadowRoot.appendChild(fly);
+    requestAnimationFrame(() => { fly.style.transform = `translate(${b.left - a.left - 10}px, ${b.top - a.top}px) scale(.3)`; fly.style.opacity = "0"; });
+    setTimeout(() => fly.remove(), 700);
+    cart.classList.remove("pop"); void cart.offsetWidth; cart.classList.add("pop");
+  },
+};
+
+/* Økonomi: the week as a clock, the receipts, the rhythm, a year in one dial and the whole story. */
+Object.assign(V3_METHODS, {
+  // An animation plays when something new is drawn, not again on every redraw of the same.
+  _v3Anim(key, sig) {
+    const s = this._v3s();
+    const same = s.counted[key] === sig;
+    s.counted[key] = sig;
+    return same ? " still" : "";
+  },
+
+  _v3Receipts() {
+    const list = this._state?.receipts?.list || [];
+    const s = this._v3s();
+    if (s.rmapN !== list.length || !s.rmap) { s.rmap = new Map(list.map((r) => [`rcpt_${r.id}`, r])); s.rmapN = list.length; }
+    return s.rmap;
+  },
+
+  _v3WeekIndex(current = false) {
+    const W = this._state?.budget?.weeks || [];
+    const cur = Math.max(0, W.findIndex((w) => w.current));
+    const s = this._v3s();
+    if (current || s.week == null || !W[s.week]) return W.findIndex((w) => w.current) >= 0 ? cur : W.length - 1;
+    return s.week;
+  },
+
+  _v3Typical() {
+    const B = (this._state?.receipts?.overview?.week?.buckets || []).filter((b) => b.count && b.days).slice(-26);
+    const t = [0, 0, 0, 0, 0, 0, 0];
+    for (const b of B) b.days.forEach((v, d) => (t[d] += v));
+    return t.map((v) => (B.length ? v / B.length : 0));
+  },
+
+  _v3WeekModel(i) {
+    const b = this._state.budget;
+    const W = b.weeks || [];
+    const w = W[i] || { start: b.week.start, week: b.week.week, budget: b.week.budget, spent: b.week.spent, current: true };
+    const cur = !!w.current;
+    const start = w.start, end = V3.ymd(V3.addDays(start, 6));
+    const startJs = new Date(`${start}T12:00:00`).getDay();
+    const jsDay = (k) => (startJs + k) % 7;
+    const rmap = this._v3Receipts();
+    const dayG = Array.from({ length: 7 }, () => ({}));
+    const add = (d, g, v) => { dayG[d][g] = (dayG[d][g] || 0) + v; };
+    const buys = (b.purchases || []).filter((p) => p.date >= start && p.date <= end);
+    for (const p of buys) {
+      const d = Math.min(6, Math.max(0, V3.daysBetween(start, p.date)));
+      const r = rmap.get(p.id);
+      const g = r?.groups || {};
+      const sum = Object.values(g).reduce((a, x) => a + x, 0);
+      if (sum > 0) for (const [k, v] of Object.entries(g)) add(d, k, (v / sum) * p.amount);
+      else add(d, "none", p.amount);
+    }
+    const days = dayG.map((g) => Object.values(g).reduce((a, x) => a + x, 0));
+    const groups = {};
+    for (const g of dayG) for (const [k, v] of Object.entries(g)) groups[k] = (groups[k] || 0) + v;
+    const today = localToday();
+    const todayIdx = cur ? Math.min(6, Math.max(0, V3.daysBetween(start, today))) : 7;
+    const nowFrac = cur ? Math.min(1, (todayIdx + this._v3Hour() / 24) / 7) : 1;
+    const typ = this._v3Typical();
+    return {
+      i, start, end, wk: w.week, current: cur, jsDay, todayIdx, nowFrac, days, dayG, groups,
+      budget: cur ? b.week.available : w.budget, spent: cur ? b.week.spent : w.spent,
+      typical: Array.from({ length: 7 }, (_, k) => typ[jsDay(k)]),
+      buys: buys.slice().sort((x, y) => (y.date + (y.created || "")).localeCompare(x.date + (x.created || ""))),
+    };
+  },
+
+  _v3WeekDial(m) {
+    const s = this._v3s();
+    const C = 200, SEC = 360 / 7, R = 170, W = 10, IN = 112, OUT = 146;
+    const cur = m.current;
+    const cap = Math.max(700, ...m.days, ...m.typical);
+    const petalR = (v) => IN + (OUT - IN) * Math.sqrt(Math.min(v, cap) / cap);
+    let out = `<defs><linearGradient id="v3budg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--rema-accent)"/><stop offset="1" stop-color="color-mix(in srgb, var(--rema-accent) 55%, #A3E635)"/></linearGradient></defs>`;
+    out += `<circle class="face" cx="${C}" cy="${C}" r="160" opacity=".7"/>`;
+    if (cur) out += `<path d="${V3.sector(C, C, 90, 160, m.todayIdx * SEC - SEC / 2, m.todayIdx * SEC + SEC / 2)}" fill="var(--rema-tint)"/>`;
+    for (let d = 0; d < 7; d += 1) { const a = d * SEC + SEC / 2; const [x1, y1] = V3.P(C, C, 92, a), [x2, y2] = V3.P(C, C, 160, a); out += `<line class="tick" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`; }
+    for (let d = 0; d < 7; d += 1) {
+      const a0 = d * SEC - SEC / 2 + 4, a1 = d * SEC + SEC / 2 - 4, v = m.days[d];
+      out += `<g class="day${s.day === d ? " on" : ""}${s.day != null && s.day !== d ? " dim" : ""}" data-action="v3-day" data-arg="${d}">`;
+      out += `<path d="${V3.sector(C, C, 90, 160, d * SEC - SEC / 2, d * SEC + SEC / 2)}" fill="transparent"/>`;
+      if (cur && m.typical[d] > 20 && v < m.typical[d]) out += `<path class="ghost" d="${V3.sector(C, C, IN, petalR(m.typical[d]), a0, a1)}"/>`;
+      if (v > 0.5) {
+        const r1 = petalR(v);
+        let r = IN;
+        out += `<g class="petal" style="animation-delay:${(0.15 + d * 0.06).toFixed(2)}s">`;
+        for (const g of V3.ORDER) {
+          const gv = m.dayG[d][g];
+          if (!gv) continue;
+          const h = (gv / v) * (r1 - IN);
+          if (h < 0.5) { r += h; continue; }
+          out += `<path d="${V3.sector(C, C, r, r + h, a0, a1)}" fill="var(--g-${g})" stroke="var(--card-background-color)" stroke-width="1.2"/>`;
+          r += h;
+        }
+        out += "</g>";
+        const [lx, ly] = V3.P(C, C, r1 + 8, d * SEC);
+        out += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" class="dayval">${V3.fmt(v)}</text>`;
+      }
+      const [x, y] = V3.P(C, C, 101, d * SEC);
+      out += `<text class="daylab${cur && d === m.todayIdx ? " today" : ""}" x="${x.toFixed(1)}" y="${y.toFixed(1)}">${V3.DAYS[m.jsDay(d)]}</text></g>`;
+    }
+    out += `<circle class="track" cx="${C}" cy="${C}" r="${R}" stroke-width="${W}"/>`;
+    const frac = m.budget > 0 ? Math.min(1, m.spent / m.budget) : 0;
+    if (frac > 0) out += `<path class="seg-arc" d="${V3.arc(C, C, R, 0, frac * 360)}" pathLength="100" style="--len:100;stroke:url(#v3budg);stroke-width:${W};stroke-linecap:round"/>`;
+    if (m.budget > 0 && m.spent > m.budget) {
+      const over = Math.min(359, ((m.spent - m.budget) / m.budget) * 360);
+      out += `<path class="over" d="${V3.arc(C, C, R + 13, 0, over)}" pathLength="100" stroke-dasharray="100" style="--len:100;stroke-width:5"/>`;
+      const [x, y] = V3.P(C, C, R + 26, Math.min(over, 340));
+      out += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" class="overval">+${V3.fmt(m.spent - m.budget)}</text>`;
+    }
+    if (cur) {
+      const pa = m.nowFrac * 360;
+      const [x1, y1] = V3.P(C, C, 90, pa), [x2, y2] = V3.P(C, C, R + 8, pa), [px, py] = V3.P(C, C, R + 20, pa);
+      out += `<line class="needle" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`;
+      out += `<text x="${px.toFixed(1)}" y="${py.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" class="nowlab">NU</text>`;
+    }
+    out += `<circle cx="${C}" cy="${C}" r="90" fill="var(--card-background-color)"/>`;
+    return out;
+  },
+
+  _v3MiniRing(spent, budget) {
+    const f = budget > 0 ? spent / budget : 0, over = f > 1;
+    return `<svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="10" fill="none" stroke="var(--rema-subtle)" stroke-width="4"/>
+    ${f > 0 ? `<path d="${V3.arc(14, 14, 10, 0, Math.min(1, f) * 360)}" fill="none" stroke="${over ? "var(--v3-bad)" : "var(--rema-accent)"}" stroke-width="4" stroke-linecap="round"/>` : ""}</svg>`;
+  },
+
+  _v3Buys(m) {
+    const s = this._v3s();
+    const rmap = this._v3Receipts();
+    const L = s.day == null ? m.buys : m.buys.filter((p) => V3.daysBetween(m.start, p.date) === s.day);
+    const dayName = s.day == null ? "" : V3.cap(V3.DAYS_LONG[m.jsDay(s.day)]);
+    const head = s.day == null ? "" : `<div class="row between"><b>${dayName}</b><button class="undo" data-action="v3-day" data-arg="${s.day}">Vis hele ugen</button></div>`;
+    if (!L.length) return `${head}<p class="sub">${s.day == null ? `Endnu intet konteret i uge ${m.wk}.` : "Ingen køb den dag."}</p>`;
+    return head + L.map((p) => {
+      const r = rmap.get(p.id);
+      const kind = r ? "receipt" : p.source === "action" ? "phone" : "pen";
+      const color = r ? "var(--rema-accent)" : p.source === "action" ? "var(--v3-ink)" : "var(--v3-good)";
+      const what = r ? "REMA-kvittering" : p.source === "action" ? "Automatisk" : "Konteret";
+      const d = new Date(`${p.date}T12:00:00`);
+      const t = r?.date ? new Date(r.date) : null;
+      const g = r?.groups || null;
+      const name = p.store === "other" ? p.note || "Andet" : r ? `REMA 1000${r.store ? ` ${r.store}` : ""}` : this._chainName(p.store);
+      const open = r ? ` data-action="v3-bon" data-arg="${esc(r.id)}"` : ` data-action="purchase-edit" data-arg="${esc(p.id)}"`;
+      return `<button class="buy open"${open}><span class="ic" style="background:color-mix(in srgb, ${color} 14%, transparent);color:${color}">${V3.ic(kind, 20)}</span>
+        <span><b>${esc(name)}</b><small>${V3.DAYS_LONG[d.getDay()]} ${d.getDate()}. ${V3.MONTHS[d.getMonth()]}${t ? ` kl. ${String(t.getHours()).padStart(2, "0")}.${String(t.getMinutes()).padStart(2, "0")}` : ""} · ${what}${r ? ` · ${r.items} linjer` : p.note && p.store !== "other" ? ` · ${esc(p.note)}` : ""}</small>
+        ${g && Object.keys(g).length ? `<span class="mini-g">${V3.ORDER.filter((k) => g[k]).map((k) => `<i style="flex-grow:${g[k]};background:var(--g-${k})"></i>`).join("")}</span>` : ""}</span>
+        <span class="amt">${V3.krd(p.amount, 2)}<br><small class="chev">${r ? "Se bon ›" : "Ret ›"}</small></span></button>`;
+    }).join("");
+  },
+
+  _v3PickDay(d) {
+    const s = this._v3s();
+    s.day = s.day === d ? null : d;
+    const root = this.shadowRoot;
+    root.querySelectorAll(".dial .day").forEach((g) => { const k = Number(g.dataset.arg); g.classList.toggle("on", s.day === k); g.classList.toggle("dim", s.day != null && s.day !== k); });
+    const box = root.querySelector("#v3-buys");
+    if (box) box.innerHTML = this._v3Buys(this._v3WeekModel(this._v3WeekIndex()));
+  },
+
+  _v3BudgetCard() {
+    const b = this._state.budget;
+    const s = this._v3s();
+    const W = b.weeks || [];
+    const i = this._v3WeekIndex();
+    const m = this._v3WeekModel(i);
+    const cur = m.current;
+    const left = m.budget - m.spent;
+    const daysLeft = Math.max(1, 7 - m.todayIdx);
+    const pace = m.budget * (cur ? m.nowFrac : 1);
+    const status = m.spent > m.budget ? ["bad", "Over budget"] : cur && m.spent > pace * 1.1 ? ["bad", "Over tempo"] : ["good", cur ? "På sporet" : "Holdt budgettet"];
+    const curI = W.findIndex((w) => w.current);
+    const pick = W.slice(-4).map((w) => {
+      const j = W.indexOf(w);
+      const mm = w.current ? this._v3WeekModel(j) : w;
+      return `<button class="wk${j === i ? " on" : ""}" data-action="v3-week" data-arg="${j}" aria-label="Uge ${w.week}">${this._v3MiniRing(mm.spent, w.current ? b.week.available : w.budget)}<span>${w.current ? "Nu" : w.week}</span></button>`;
+    }).join("");
+    const wk = b.week;
+    const per = b.period === "week" ? `${kr0(b.weekly)} hver uge` : `${kr0(b.monthly)} om måneden`;
+    const notes = cur ? [
+      Math.abs(wk.carry) >= 1 ? `${wk.carry > 0 ? `Heraf ${kr0(wk.carry)} sparet i tidligere uger` : `${kr0(-wk.carry)} trukket fra – brugt for meget tidligere`}.` : "",
+      wk.planned > 0 ? `Resten af ugens lister er anslået til ${kr0(wk.planned)}. ${wk.after_planned < 0 ? `Det er ${kr0(-wk.after_planned)} mere, end der er tilbage.` : `Så er der ${kr0(wk.after_planned)} til resten.`}` : "",
+    ].filter(Boolean) : [];
+    const month = b.month;
+    const anim = this._v3Anim("week", `${i}|${m.spent}|${m.budget}|${m.buys.length}`);
+    return `<div class="card hero-week${anim}">
+      <div class="hero-top">
+        <div><div class="kicker">Ugens madbudget · uge ${m.wk}${cur ? " · denne uge" : ""}</div><h2>${V3.span(m.start)}</h2>
+          <p class="sub">${cur ? `${esc(per)}. Ugen starter forfra ${V3.DAYS_LONG[new Date(`${m.start}T12:00:00`).getDay()]}.` : `En tidligere uge. <button class="undo" data-action="v3-week" data-arg="${curI}">Tilbage til denne uge</button>`}</p></div>
+        <div class="weekpick">${pick}</div>
+      </div>
+      <div class="grid2" style="margin-top:6px">
+        <div>
+          <div class="dialwrap">
+            <svg class="dial" viewBox="0 0 400 400" role="img" aria-label="Ugens forbrug: ${esc(V3.krd(m.spent))} af ${esc(V3.krd(m.budget))}">${this._v3WeekDial(m)}</svg>
+            <div class="center">
+              <span class="lab">${left >= 0 ? "Tilbage" : "Over budget"}</span>
+              <span class="big num${left < 0 ? " bad" : ""}" data-count="${Math.abs(left)}">${V3.krd(Math.abs(left))}</span>
+              <span class="small">${cur ? (left > 0 ? `≈ ${V3.krd(left / daysLeft)} pr. dag · ${daysLeft} ${daysLeft === 1 ? "dag" : "dage"}` : "Resten af ugen") : `brugt ${V3.krd(m.spent)}`}</span>
+              <span class="pill ${status[0]} chip">${status[1]}</span>
+            </div>
+          </div>
+          <p class="sub" style="text-align:center">Tryk på en dag for at se dens køb.${cur && m.typical.some((v) => v > 20) ? " Stiplet: hvad dagen plejer at koste." : ""}</p>
+        </div>
+        <div>
+          <div class="kbook">
+            <div class="row between"><b>Kontér et beløb</b><span class="pill">uge ${wk.week}</span></div>
+            <div class="kbook-row">
+              <label class="kamount"><input data-bind="v3amt" data-v3book="eco" inputmode="decimal" enterkeyhint="done" value="${esc(s.amt)}" placeholder="0" aria-label="Beløb i kroner" autocomplete="off"><span>kr.</span></label>
+              <button class="kgo" data-action="v3-book" data-arg="eco">Kontér</button>
+            </div>
+            <div class="kquick">${[50, 100, 250, 500].map((v) => `<button data-action="v3-add" data-arg="${v}">+${v}</button>`).join("")}</div>
+            <details class="more-book"${this._book.amount || this._book.store || this._book.date ? " open" : ""}><summary>Anden butik eller dato</summary><div id="budget-book">${this._bookForm()}</div></details>
+          </div>
+          ${notes.map((n) => `<p class="sub note-line">${esc(n)}</p>`).join("")}
+          <div class="stats4">
+            <div class="stat"><span>Brugt</span><b class="num">${V3.krd(m.spent)}</b></div>
+            <div class="stat"><span>Budget</span><b class="num">${V3.krd(m.budget)}</b></div>
+            <div class="stat"><span>${cur ? "Tempo nu" : "Forskel"}</span><b class="num">${cur ? V3.krd(pace) : `${left >= 0 ? "−" : "+"}${V3.krd(Math.abs(left))}`}</b></div>
+            <div class="stat"><span>${V3.cap(V3.MONTHS_LONG[Number(month.first.slice(5, 7)) - 1])} · af ${V3.fmt(month.budget)}</span><b class="num">${V3.krd(month.spent)}</b></div>
+          </div>
+          <div class="legend">${V3.ORDER.filter((g) => m.groups[g] > 1).map((g) => `<span class="lg">${V3.dot(g)}${esc(V3.GNAME[g])} <span class="v">${V3.fmt(m.groups[g])}</span></span>`).join("")}</div>
+          <div class="buys" id="v3-buys">${this._v3Buys(m)}</div>
+        </div>
+      </div></div>`;
+  },
+
+  /* The family's rhythm: which day the big shop is, and when. */
+  _v3Rhythm() {
+    const rh = this._state?.receipts?.overview?.rhythm;
+    if (!rh) return "";
+    const wd = rh.weekdays || [];
+    const trips = wd.reduce((a, d) => a + d[0], 0), kroner = wd.reduce((a, d) => a + d[1], 0);
+    if (trips < 6 || !kroner) return "";
+    const top = wd.reduce((best, d, i) => (d[1] > wd[best][1] ? i : best), 0);
+    const topAvg = wd[top][1] / Math.max(1, wd[top][0]);
+    const restTrips = trips - wd[top][0];
+    const restAvg = restTrips ? (kroner - wd[top][1]) / restTrips : 0;
+    const maxKr = Math.max(...wd.map((d) => d[1]), 1);
+    const hrs = top === 0 ? rh.sunday_hours : rh.hours;
+    const peakH = hrs.indexOf(Math.max(...hrs));
+    const hours = rh.hours.slice(7, 22), hmax = Math.max(...hours, 1);
+    const stats = this._state?.budget?.stats;
+    const extra = stats?.extra_trips ? ` Hertil ${stats.extra_trips} ekstra ture${stats.extra_average ? ` i snit ${V3.krd(stats.extra_average)}` : ""} de seneste tre måneder.` : "";
+    const anim = this._v3Anim("rhythm", `${trips}|${kroner}`);
+    return `<div class="card sunday${anim}"><div class="sunday-body">
+      <div class="row between wrap"><div><div class="kicker">Jeres rytme</div><h2>${V3.cap(V3.DAYS_LONG[top])} er jeres store handelsdag</h2></div><span class="pill acc">${Math.round((wd[top][1] / kroner) * 100)} % af alle kroner</span></div>
+      <p class="sub">${wd[top][0]} af ${trips} ture i REMA 1000 er om ${V3.DAYS_LONG[top]}en, i snit ${V3.krd(topAvg)}${restAvg ? ` – ${V3.fmt(topAvg / restAvg, 1)}× en tur de andre dage` : ""}. Typisk kl. ${peakH}–${peakH + 1}.${extra}</p>
+      <div class="rhythm">${wd.map((d, i) => { const size = (this._v3Phone() ? 14 : 18) + (this._v3Phone() ? 30 : 46) * Math.sqrt(d[1] / maxKr); return `<div class="rd${i === top ? " top" : ""}"><div class="bub" style="width:${size.toFixed(0)}px;height:${size.toFixed(0)}px">${size > 28 ? d[0] : ""}</div><span>${V3.DAYS[i]}</span><small>${d[0] ? V3.fmt(d[1] / d[0]) : "–"}</small></div>`; }).join("")}</div>
+      <p class="sub" style="margin-top:8px">Boblen er kronerne pr. ugedag, tallet i den antal ture; under den, kroner pr. tur.</p>
+      <div class="hours" aria-label="Ture pr. time">${hours.map((h, i) => `<i class="${i + 7 === peakH ? "peak" : ""}" style="height:${Math.max(3, (h / hmax) * 100).toFixed(1)}%" title="kl. ${i + 7}: ${h} ture"></i>`).join("")}</div>
+      <div class="hourlab"><span>07</span><span>10</span><span>13</span><span>16</span><span>19</span><span>21</span></div>
+    </div></div>`;
+  },
+
+  /* One turn of the clock is a year in Uge and in Måned (52 weeks, 12 months); År is five years. */
+  _v3Buckets(span) {
+    const ov = this._state?.receipts?.overview;
+    const g = ov?.[span];
+    if (!g?.buckets?.length) return [];
+    const today = localToday();
+    const curKey = span === "week" ? V3.sundayOf(today) : span === "month" ? today.slice(0, 7) : today.slice(0, 4);
+    const src = span === "year" ? g.buckets.slice(-5) : g.buckets;
+    return src.map((b, i) => {
+      const groups = { ...(b.groups || {}) };
+      const gsum = Object.values(groups).reduce((a, x) => a + x, 0);
+      if (b.spent > gsum + 1) groups.none = (groups.none || 0) + (b.spent - gsum);
+      let label, short = "", long = "";
+      if (span === "week") {
+        const m0 = new Date(`${b.key}T12:00:00`).getMonth();
+        const prev = i ? new Date(`${src[i - 1].key}T12:00:00`).getMonth() : -1;
+        label = `Uge ${V3.weekNo(b.key)}`; short = i && m0 !== prev ? V3.MONTHS[m0] : ""; long = V3.span(b.key);
+      } else if (span === "month") {
+        const mo = Number(b.key.slice(5)) - 1;
+        label = `${V3.cap(V3.MONTHS_LONG[mo])} ${b.key.slice(0, 4)}`; short = V3.MONTHS[mo];
+      } else { label = b.key; short = b.key; }
+      return { key: b.key, label, short, long, spent: b.spent, saved: b.saved, trips: b.count, groups, days: b.days || null, current: b.key === curKey };
+    });
+  },
+
+  _v3SpendDial(B) {
+    const s = this._v3s();
+    const C = 220, R0 = 114, RL = 86, N = B.length, SEC = 360 / N, gap = N > 40 ? 1.3 : N > 20 ? 2.4 : N > 8 ? 3.2 : 5;
+    const b = this._state.budget;
+    const weekly = b ? (b.period === "week" ? b.weekly : (b.monthly * 12) / 52) : 0;
+    const max = Math.max(...B.map((x) => x.spent), s.span === "week" ? weekly : 0, 1);
+    const maxS = Math.max(...B.map((x) => x.saved), 1);
+    const rOf = (v) => R0 + (v / max) * RL;
+    const done = B.filter((x) => x.spent > 0 && !x.current);
+    const avg = done.reduce((a, x) => a + x.spent, 0) / (done.length || 1);
+    const hi = done.reduce((a, x) => (!a || x.spent > a.spent ? x : a), null);
+    const lo = done.reduce((a, x) => (!a || x.spent < a.spent ? x : a), null);
+    let out = `<circle cx="${C}" cy="${C}" r="${R0 + RL + 4}" fill="var(--rema-subtle)" opacity=".55"/><circle cx="${C}" cy="${C}" r="${R0 - 2}" fill="var(--card-background-color)"/>`;
+    for (const f of [0.5, 1]) out += `<circle cx="${C}" cy="${C}" r="${R0 + RL * f}" fill="none" stroke="var(--divider-color)" stroke-width="1"/>`;
+    B.forEach((x, i) => {
+      const a0 = i * SEC + gap / 2, a1 = (i + 1) * SEC - gap / 2;
+      let r = R0;
+      const tot = Object.values(x.groups).reduce((p, q) => p + q, 0) || 1;
+      out += `<g class="bar" style="animation-delay:${((i / N) * 0.6).toFixed(2)}s">`;
+      for (const g of V3.ORDER) {
+        const v = x.groups[g];
+        if (!v) continue;
+        const h = (((v / tot) * x.spent) / max) * RL;
+        if (h < 0.4) { r += h; continue; }
+        out += `<path class="gs${s.solo && s.solo !== g ? " dim" : ""}" data-g="${g}" d="${V3.sector(C, C, r, r + h, a0, a1)}" fill="var(--g-${g})" stroke="var(--card-background-color)" stroke-width="${N > 40 ? 0.8 : 1.2}"/>`;
+        r += h;
+      }
+      if (x.current && x.spent === 0) out += `<path d="${V3.sector(C, C, R0, R0 + 6, a0, a1)}" fill="none" stroke="var(--v3-soft)" stroke-dasharray="2 3"/>`;
+      if (x.saved > 0) { const h = 3 + (x.saved / maxS) * 16; out += `<path class="save" d="${V3.sector(C, C, R0 - 5 - h, R0 - 5, a0 + Math.min(1.2, gap / 2), a1 - Math.min(1.2, gap / 2))}"/>`; }
+      out += "</g>";
+      if (x.short) { const [tx, ty] = V3.P(C, C, R0 + RL + 26, (i + 0.5) * SEC); out += `<text class="tlab" x="${tx.toFixed(1)}" y="${ty.toFixed(1)}">${x.short}</text>`; }
+    });
+    if (done.length) {
+      out += `<circle class="avg" cx="${C}" cy="${C}" r="${rOf(avg).toFixed(1)}"/>`;
+      const [ax, ay] = V3.P(C, C, rOf(avg) + 2, 0);
+      out += `<rect x="${(ax - 34).toFixed(1)}" y="${(ay - 17).toFixed(1)}" width="68" height="15" rx="7.5" fill="var(--card-background-color)" stroke="var(--divider-color)"/><text class="ringlab" x="${ax.toFixed(1)}" y="${(ay - 9).toFixed(1)}" text-anchor="middle" dominant-baseline="middle">snit ${V3.fmt(avg)}</text>`;
+    }
+    if (s.span === "week" && weekly) out += `<circle class="bud" cx="${C}" cy="${C}" r="${rOf(weekly).toFixed(1)}"/>`;
+    for (const [x, sym] of [[hi, "▲"], [lo, "▼"]]) {
+      if (!x) continue;
+      const i = B.indexOf(x);
+      const [mx, my] = V3.P(C, C, rOf(x.spent) + 9, (i + 0.5) * SEC);
+      out += `<text class="mark" x="${mx.toFixed(1)}" y="${my.toFixed(1)}" style="fill:${sym === "▲" ? "var(--v3-bad)" : "var(--v3-good)"}">${sym}</text>`;
+    }
+    out += `<path class="sel" id="v3-selpath" d=""/>`;
+    return { svg: out, avg, hi, lo, max, SEC, gap, C, R0, RL };
+  },
+
+  _v3SelPath() {
+    const s = this._v3s();
+    const sp = s.sp;
+    const x = sp?.B[s.sel];
+    if (!x) return "";
+    const a0 = s.sel * sp.SEC + sp.gap / 2 - 1, a1 = (s.sel + 1) * sp.SEC - sp.gap / 2 + 1;
+    return V3.sector(sp.C, sp.C, sp.R0 - 25, Math.max(sp.R0 + (x.spent / sp.max) * sp.RL, sp.R0 + 6) + 4, a0, a1);
+  },
+
+  _v3Center(x) {
+    const s = this._v3s();
+    const topG = Object.entries(x.groups).filter(([g]) => g !== "none").sort((p, q) => q[1] - p[1])[0];
+    const daysMax = x.days ? Math.max(...x.days, 1) : 1;
+    // A Sunday-first week, in the order of the week clock's days.
+    return `<span class="lab">${esc(x.label)}${x.current ? (s.span === "year" ? " · til nu" : " · i gang") : ""}</span>
+      <span class="big num" id="v3-bcbig">${V3.krd(x.spent)}</span>
+      <span class="saved num">${x.saved ? `sparet ${V3.krd(x.saved)}` : "&nbsp;"}</span>
+      <span class="meta">${x.trips} ${x.trips === 1 ? "tur" : "ture"}${topG ? ` · mest ${esc(V3.GNAME[topG[0]].split(" ")[0].toLowerCase())}` : ""}</span>
+      ${x.days ? `<div class="minidays">${x.days.map((v) => `<i class="${v === daysMax && v > 0 ? "hi" : ""}" style="height:${Math.max(3, (v / daysMax) * 26).toFixed(1)}px"></i>`).join("")}</div><div class="minilab">${V3.DAYS.map((d) => `<span>${d[0]}</span>`).join("")}</div>` : `<span class="meta">${V3.krd(x.spent / Math.max(1, x.trips))} pr. tur</span>`}`;
+  },
+
+  _v3SpendCard() {
+    const s = this._v3s();
+    if (!this._isRema()) return "";
+    const B = this._v3Buckets(s.span);
+    const seg = `<div class="seg" role="tablist">${[["week", "Uge"], ["month", "Måned"], ["year", "År"]].map(([k, t]) => `<button class="${s.span === k ? "on" : ""}" data-action="v3-span" data-arg="${k}">${t}</button>`).join("")}</div>`;
+    if (!B.length || !B.some((x) => x.spent > 0)) {
+      return `<div class="card spend"><div class="row between wrap"><div><div class="kicker">Forbrug &amp; besparelse</div><h2>REMA-forbrug</h2></div>${seg}</div>
+        <p class="sub">Når der er kvitteringer, vises jeres REMA 1000-forbrug her – uge for uge, måned for måned og år for år, med varegrupperne og det, I har sparet på tilbud.</p></div>`;
+    }
+    if (s.selSpan !== s.span || s.sel == null || !B[s.sel]) {
+      s.selSpan = s.span;
+      s.sel = B.length - 1;
+      while (s.sel > 0 && B[s.sel].spent === 0) s.sel -= 1;
+    }
+    const d = this._v3SpendDial(B);
+    s.sp = { B, ...d };
+    const x = B[s.sel];
+    const gTot = {};
+    for (const b of B) for (const [g, v] of Object.entries(b.groups)) gTot[g] = (gTot[g] || 0) + v;
+    const classified = V3.GROUPS.reduce((a, g) => a + (gTot[g.k] || 0), 0);
+    const total = B.reduce((a, b) => a + b.spent, 0), savedT = B.reduce((a, b) => a + b.saved, 0);
+    const live = B.at(-1).spent === 0 ? B.slice(0, -1) : B;
+    const third = s.span === "week" ? 8 : 4;
+    const newer = live.slice(-third), older = live.slice(-third * 2, -third);
+    const sumG = (L, g) => L.reduce((a, b) => a + (b.groups[g] || 0), 0);
+    const word = { week: "uge", month: "måned", year: "år" }[s.span];
+    const anim = this._v3Anim("spend", `${s.span}|${total}|${B.length}`);
+    return `<div class="card spend${anim}" id="v3-spend">
+      <div class="row between wrap"><div><div class="kicker">Forbrug &amp; besparelse</div><h2>${{ week: "Et år i uger", month: "Et år i måneder", year: "Fem år" }[s.span]}</h2>
+        <p class="sub">${s.span === "year" ? "Hvert felt er et år." : `Én omgang er et år: hver stråle er ${s.span === "week" ? "en uge" : "en måned"}, med månederne på kanten.`} Farverne er varegrupperne, den mørke kant indad er sparet på tilbud. Træk eller tryk for at gå i tiden.</p></div>
+        ${seg}</div>
+      <div class="big-dial" id="v3-bd">
+        <svg class="bd" viewBox="0 0 440 440" role="img" aria-label="REMA-forbrug pr. ${word}">${d.svg}</svg>
+        <div class="bcenter" id="v3-bcenter">${this._v3Center(x)}</div>
+        <div class="tip" id="v3-tip"></div>
+      </div>
+      <div class="stats4">
+        <div class="stat"><span>▲ Højest</span><b class="num">${d.hi ? V3.krd(d.hi.spent) : "–"}</b><span>${d.hi ? esc(d.hi.label) : ""}</span></div>
+        <div class="stat"><span>▼ Lavest</span><b class="num">${d.lo ? V3.krd(d.lo.spent) : "–"}</b><span>${d.lo ? esc(d.lo.label) : ""}</span></div>
+        <div class="stat"><span>Snit</span><b class="num">${V3.krd(d.avg)}</b><span>pr. ${word}</span></div>
+        <div class="stat"><span>Sparet</span><b class="num" style="color:var(--v3-good)">${V3.krd(savedT)}</b><span>${total + savedT ? Math.round((savedT / (total + savedT)) * 100) : 0} % rabat</span></div>
+      </div>
+      <div class="legend">${V3.ORDER.filter((g) => gTot[g] > 1).map((g) => `<button class="lg${s.solo === g ? " solo" : s.solo ? " off" : ""}" data-action="v3-solo" data-arg="${g}">${V3.dot(g)}${g === "none" ? "Uden varelinjer" : esc(V3.GNAME[g])}</button>`).join("")}</div>
+      <div class="tiles">${V3.GROUPS.map(({ k, name }) => { const v = gTot[k] || 0; const n = sumG(newer, k), o = sumG(older, k); const tr = o > 0 ? Math.round(((n - o) / o) * 100) : null; return `<button class="tile${s.solo === k ? " solo" : ""}" data-action="v3-solo" data-arg="${k}"><span class="glow" style="background:var(--g-${k})"></span>${V3.art(k)}<b>${esc(name)}</b><span class="v num">${V3.krd(v)}</span>
+        <span class="row between"><span class="s">${Math.round((v / (classified || 1)) * 100)} %</span>${tr != null && s.span !== "year" ? `<span class="trend ${tr > 0 ? "up" : "down"}">${tr > 0 ? "↑" : "↓"} ${Math.abs(tr)} %</span>` : ""}</span></button>`; }).join("")}</div>
+      <p class="foot">${s.span === "year" ? "Procenterne er af de kroner, der har varelinjer." : `Pilene sammenligner de seneste ${third} ${s.span === "week" ? "uger" : "måneder"} med de ${third} før.`} Kun REMA 1000-kvitteringer.</p>
+    </div>`;
+  },
+
+  _v3Select(i) {
+    const s = this._v3s();
+    if (i === s.sel || !s.sp?.B[i]) return;
+    s.sel = i;
+    const root = this.shadowRoot;
+    root.querySelector("#v3-selpath")?.setAttribute("d", this._v3SelPath());
+    const center = root.querySelector("#v3-bcenter");
+    if (center) center.innerHTML = this._v3Center(s.sp.B[i]);
+  },
+
+  _v3ApplySolo() {
+    const s = this._v3s();
+    const root = this.shadowRoot;
+    root.querySelectorAll("#v3-bd .gs").forEach((p) => p.classList.toggle("dim", !!s.solo && p.dataset.g !== s.solo));
+    root.querySelectorAll('#v3-spend [data-action="v3-solo"]').forEach((el) => {
+      el.classList.toggle("solo", s.solo === el.dataset.arg);
+      el.classList.toggle("off", !!s.solo && s.solo !== el.dataset.arg && el.classList.contains("lg"));
+    });
+  },
+
+  _v3BindDial() {
+    const s = this._v3s();
+    const el = this.shadowRoot.querySelector("#v3-bd");
+    if (!el || el._v3bound || !s.sp) return;
+    el._v3bound = true;
+    this.shadowRoot.querySelector("#v3-selpath")?.setAttribute("d", this._v3SelPath());
+    const tip = this.shadowRoot.querySelector("#v3-tip");
+    const idx = (e) => { const r = el.getBoundingClientRect(); const x = e.clientX - r.left - r.width / 2, y = e.clientY - r.top - r.height / 2; const d = Math.hypot(x, y) / (r.width / 2); let a = (Math.atan2(x, -y) * 180) / Math.PI; if (a < 0) a += 360; return { i: Math.floor(a / s.sp.SEC) % s.sp.B.length, d }; };
+    let drag = false;
+    el.addEventListener("pointerdown", (e) => { const { i, d } = idx(e); if (d < 0.3) return; drag = true; el.setPointerCapture?.(e.pointerId); this._v3Select(i); });
+    el.addEventListener("pointermove", (e) => {
+      const { i, d } = idx(e);
+      if (drag) { this._v3Select(i); return; }
+      if (e.pointerType !== "mouse" || d < 0.45 || d > 1.02) { tip?.classList.remove("on"); return; }
+      const x = s.sp.B[i];
+      const r = el.getBoundingClientRect();
+      tip.innerHTML = `<b>${esc(x.label)}</b> · ${V3.krd(x.spent)}<br>${x.saved ? `sparet ${V3.krd(x.saved)} · ` : ""}${x.trips} ${x.trips === 1 ? "tur" : "ture"}`;
+      tip.style.left = `${e.clientX - r.left}px`;
+      tip.style.top = `${e.clientY - r.top}px`;
+      tip.classList.add("on");
+    });
+    const stop = () => { drag = false; };
+    el.addEventListener("pointerup", stop);
+    el.addEventListener("pointercancel", stop);
+    el.addEventListener("pointerleave", () => tip?.classList.remove("on"));
+  },
+
+  /* The bottom: everything saved, everything spent, five years. */
+  _v3Story() {
+    const Y = (this._state?.receipts?.overview?.year?.buckets || []).filter((y) => y.count).slice(-5);
+    if (!Y.length || !this._isRema()) return "";
+    const total = Y.reduce((a, y) => a + y.spent, 0), saved = Y.reduce((a, y) => a + y.saved, 0), trips = Y.reduce((a, y) => a + y.count, 0);
+    const now = new Date();
+    const last = Y.at(-1);
+    const curYear = String(now.getFullYear()) === last.key;
+    const dayOfYear = Math.round((now - new Date(now.getFullYear(), 0, 1)) / 864e5) + 1;
+    const proj = curYear ? (last.spent * 365) / dayOfYear : last.spent;
+    const max = Math.max(...Y.map((y) => y.spent), proj, 1);
+    const W = 320, H = 170, bw = 40, gx = (W - 20) / Y.length;
+    const yOf = (v) => H - 24 - (v / max) * (H - 54);
+    const fill = Math.min(1, saved / Math.max(1, total * 0.25));
+    const first = this._state.receipts.list?.at(-1)?.date;
+    const since = first ? `siden ${V3.MONTHS_LONG[new Date(first).getMonth()]} ${new Date(first).getFullYear()}` : "";
+    const k = (v) => (v >= 1000 ? `${V3.fmt(v / 1000, 0)}k` : V3.fmt(v));
+    const anim = this._v3Anim("story", `${total}|${saved}`);
+    return `<div class="story${anim}">
+    <div class="card"><div class="kicker">Sparet på tilbud</div>
+      <div class="row between" style="align-items:flex-end">
+        <div><div class="huge good num" data-count="${saved}">${V3.krd(saved)}</div><p class="sub">${total + saved ? Math.round((saved / (total + saved)) * 100) : 0} % af hele bonen · i år ${V3.krd(last.saved)}</p></div>
+        <svg viewBox="0 0 90 110" width="90" aria-hidden="true">
+          <defs><clipPath id="v3jar"><path d="M18 30 h54 q6 0 6 8 v58 q0 10 -10 10 h-46 q-10 0 -10 -10 v-58 q0 -8 6 -8Z"/></clipPath></defs>
+          <g clip-path="url(#v3jar)"><rect x="0" y="${(106 - 76 * fill).toFixed(0)}" width="90" height="110" fill="var(--v3-good)" opacity=".18"/>
+            ${Array.from({ length: Math.max(3, Math.round(12 * fill)) }, (_, i) => `<ellipse class="coin" style="animation-delay:${i * 0.12}s" cx="${22 + (i % 4) * 15 + (Math.floor(i / 4) % 2) * 7}" cy="${98 - Math.floor(i / 4) * 9}" rx="9" ry="4" fill="#F2C14E" stroke="#C9972A" stroke-width="1.2"/>`).join("")}</g>
+          <path d="M18 30 h54 q6 0 6 8 v58 q0 10 -10 10 h-46 q-10 0 -10 -10 v-58 q0 -8 6 -8Z" fill="none" stroke="var(--v3-soft)" stroke-width="2.4"/>
+          <rect x="22" y="18" width="46" height="12" rx="4" fill="var(--v3-good)"/>
+          <g class="drop"><ellipse cx="45" cy="8" rx="8" ry="3.6" fill="#F2C14E" stroke="#C9972A" stroke-width="1.2"/></g>
+        </svg>
+      </div></div>
+    <div class="card"><div class="kicker">Brugt i REMA i alt</div>
+      <div class="row between" style="align-items:flex-end">
+        <div><div class="huge num" data-count="${total}">${V3.krd(total)}</div><p class="sub">${trips} ture ${since} · ${V3.krd(total / Math.max(1, trips))} pr. tur</p></div>
+        <svg viewBox="0 0 80 110" width="80" aria-hidden="true">
+          <path d="M14 8 h52 v86 l-6.5 -5 -6.5 5 -6.5 -5 -6.5 5 -6.5 -5 -6.5 5 -6.5 -5 -6.5 5Z" fill="var(--card-background-color)" stroke="var(--v3-soft)" stroke-width="2" stroke-linejoin="round"/>
+          ${Array.from({ length: 7 }, (_, i) => `<path d="M22 ${20 + i * 9} h${18 + ((i * 7) % 14)} M56 ${20 + i * 9} h-6" stroke="var(--divider-color)" stroke-width="3" stroke-linecap="round"/>`).join("")}
+          <path d="M22 84 h36" stroke="var(--v3-ink)" stroke-width="3.2" stroke-linecap="round"/>
+        </svg>
+      </div></div>
+    <div class="card years"><div class="kicker">${Y.length} års udvikling</div>
+      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Forbrug pr. år">
+        <line x1="10" x2="${W - 10}" y1="${H - 24}" y2="${H - 24}" stroke="var(--divider-color)"/>
+        ${Y.map((y, i) => { const x = 10 + gx * i + (gx - bw) / 2, cur = i === Y.length - 1 && curYear; return `
+          ${cur ? `<rect x="${x.toFixed(1)}" y="${yOf(proj).toFixed(1)}" width="${bw}" height="${(yOf(y.spent) - yOf(proj)).toFixed(1)}" rx="4" fill="none" stroke="var(--rema-accent)" stroke-dasharray="3 3"/>` : ""}
+          <rect class="col" style="animation-delay:${i * 0.1}s" x="${x.toFixed(1)}" y="${yOf(y.spent).toFixed(1)}" width="${bw}" height="${(H - 24 - yOf(y.spent)).toFixed(1)}" rx="4" fill="var(--rema-accent)" opacity="${cur ? 1 : (0.55 + i * 0.1).toFixed(2)}"/>
+          <text x="${(x + bw / 2).toFixed(1)}" y="${(yOf(cur ? proj : y.spent) - 7).toFixed(1)}" text-anchor="middle" class="ylab">${k(y.spent)}${cur ? `→${k(proj)}` : ""}</text>
+          <text x="${(x + bw / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" class="yname">${y.key}</text>`; }).join("")}
+      </svg>
+      <p class="sub">${curYear ? `${last.key} til nu ${V3.krd(last.spent)}; stiplet, hvor året ender i samme tempo.` : ""}</p></div></div>`;
+  },
+
+  /* The receipt, as REMA prints it: each line's price is one piece's. */
+  _v3OpenBon(id) {
+    this._modal = { kind: "v3-bon", id, loading: true, receipt: null, error: null };
+    this._renderModal();
+    this._ws("middagsro/receipt", { receipt_id: id })
+      .then((r) => { if (this._modal?.kind === "v3-bon" && this._modal.id === id) { this._modal.receipt = r; this._modal.loading = false; this._renderModal(); } })
+      .catch((err) => { if (this._modal?.kind === "v3-bon" && this._modal.id === id) { this._modal.loading = false; this._modal.error = err?.message || "Kvitteringen kunne ikke hentes."; this._renderModal(); } });
+  },
+
+  _v3BonModal(m) {
+    const close = `<button class="x" data-action="modal-close" aria-label="Luk">×</button>`;
+    let inner;
+    if (m.loading) inner = `${close}<p class="r-dim" style="justify-content:center;padding:30px 0"><span class="spinner small"></span>&nbsp;Henter kvitteringen …</p>`;
+    else if (m.error || !m.receipt) inner = `${close}<p>${esc(m.error || "Kvitteringen kunne ikke hentes.")}</p>`;
+    else inner = close + this._v3Paper(m.receipt);
+    return `<div class="scrim" data-action="modal-close"></div><div class="v3 v3-sheet"><div class="paper" role="dialog" aria-modal="true" aria-label="Kvittering">${inner}<div class="r-zig"></div></div></div>`;
+  },
+
+  _v3Paper(r) {
+    const n2 = (v) => V3.fmt(v, 2);
+    const t = r.date ? new Date(r.date) : null;
+    const lines = r.items || [];
+    const g = {};
+    let pieces = 0;
+    for (const l of lines) {
+      const q = l.quantity || 1;
+      pieces += q;
+      if (l.price != null && l.price > 0) { const k = V3.groupOf(l.name); g[k] = (g[k] || 0) + q * l.price; }
+    }
+    const sorted = V3.ORDER.filter((k) => g[k]).sort((a, b) => g[b] - g[a]);
+    const st = r.store || {};
+    const pay = r.card_type || (r.payment_source ? V3.cap(String(r.payment_source)) : "Kort");
+    return `<div class="r-head"><div class="r-logo">REMA 1000</div><div>${esc(st.name || "")}</div>${st.address ? `<div class="r-dim">${esc(st.address)}${st.city ? `, ${esc(st.zip || "")} ${esc(st.city)}` : ""}</div>` : ""}
+        ${t ? `<div class="r-dim">${V3.DAYS_LONG[t.getDay()]} ${t.getDate()}. ${V3.MONTHS_LONG[t.getMonth()]} ${t.getFullYear()} · kl. ${String(t.getHours()).padStart(2, "0")}.${String(t.getMinutes()).padStart(2, "0")}</div>` : ""}
+        ${r.display_id ? `<div class="r-dim">Bon ${esc(r.display_id)}</div>` : ""}</div>
+      ${sorted.length ? `<div class="r-groups">${sorted.map((k) => `<i style="flex-grow:${g[k].toFixed(2)};background:var(--g-${k})" title="${esc(V3.GNAME[k])}: ${esc(V3.krd(g[k], 2))}"></i>`).join("")}</div>
+      <div class="r-legend">${sorted.slice(0, 4).map((k) => `<span><i style="background:var(--g-${k})"></i>${esc(V3.GNAME[k].split(" ")[0])} ${V3.fmt(g[k])}</span>`).join("")}</div>` : ""}
+      <div class="r-lines">${lines.map((l) => { const q = l.quantity || 1, tot = l.price != null ? q * l.price : null, dis = (l.discount || 0) * q; return `<div class="r-line"><span class="r-dot" style="background:var(--g-${V3.groupOf(l.name)})"></span><span class="r-n">${esc(V3.clean(l.name))}${q > 1 && l.price != null ? `<small>${q} × ${n2(l.price)}</small>` : ""}</span><span class="r-p">${tot != null ? n2(tot) : ""}</span></div>${dis ? `<div class="r-line r-off"><span></span><span class="r-n">Rabat</span><span class="r-p">−${n2(dis)}</span></div>` : ""}${l.deposit ? `<div class="r-line r-dimline"><span></span><span class="r-n">Pant</span><span class="r-p">${n2(l.deposit * q)}</span></div>` : ""}`; }).join("")}</div>
+      <div class="r-sum">${r.gross != null ? `<div><span>Før rabat</span><span>${n2(r.gross)}</span></div>` : ""}${r.total_discount ? `<div class="r-off"><span>Rabat i alt</span><span>−${n2(r.total_discount)}</span></div>` : ""}<div class="r-total"><span>I alt</span><span>${n2(r.total)}</span></div>${r.total_vat != null ? `<div class="r-dim"><span>Heraf moms</span><span>${n2(r.total_vat)}</span></div>` : ""}<div class="r-dim"><span>Betalt med ${esc(pay)}${r.masked_pan ? ` ${esc(r.masked_pan)}` : ""}</span><span>${pieces} varer</span></div></div>`;
+  },
+});
+
+/* Indkøb: the list in the other webshops. Varer: the top 20. Sundhed: the basket's plate. */
+Object.assign(V3_METHODS, {
+  _v3Fees(shop) {
+    const f = this._v3s().fees;
+    if (shop.store === "nemlig") {
+      const zones = Math.max(1, Math.min(4, Number(f.zones) || 2));
+      const fee = Number(f.nemlig) + Math.min(23.8, zones * 5.95);
+      return { fee, text: `${V3.fmt(f.nemlig)} kr. levering + ${zones} × 5,95 kr. pakkegebyr`, sub: "Levering til døren" };
+    }
+    if (f.bilka === "pickup") return { fee: 58, text: "19 kr. levering + 39 kr. pakkeservice", sub: shop.pickup ? `Pickup · ${shop.pickup}` : "Pickup i pakkeboks" };
+    return { fee: 0, text: "Pakkeservicegebyr vises i kurven", sub: shop.pickup ? `Afhent i ${shop.pickup}` : "Afhent i Bilka" };
+  },
+
+  _v3CompareKey(plan) {
+    return `${plan.id}|${plan.shopping.length}|${plan.total}`;
+  },
+
+  _v3LoadCompare(plan) {
+    const s = this._v3s();
+    const key = this._v3CompareKey(plan);
+    if (s.cmp[key] || s.cmpLoading === key) return;
+    s.cmpLoading = key;
+    this._ws("middagsro/baskets/compare", { plan_id: plan.id })
+      .then((data) => { s.cmp[key] = { data }; })
+      .catch((err) => { s.cmp[key] = { error: err?.message || String(err) }; })
+      .finally(() => { if (s.cmpLoading === key) s.cmpLoading = null; if (this._tab === "shopping") this._render(); });
+  },
+
+  _v3Compare() {
+    const plan = this._plan;
+    if (!plan || plan.kind === "freezer") return "";
+    const stores = this._state?.stores || [];
+    const s = this._v3s();
+    const info = `<div class="card compare v3-cmp-info"><div class="kicker">Hvad koster kurven andre steder?</div><h2>Sammenlign med Nemlig.com og Bilka ToGo</h2>
+      <p class="sub">Tilføj Nemlig.com eller Bilka ToGo som butik i Middagsro (Indstillinger › Enheder og tjenester › Middagsro › Tilføj post). Så søges ugens liste dér med jeres egne priser, og varerne kan lægges i den butiks kurv – ${esc(this._chainName(this._storeId()))} bliver ved med at være madplanens butik.</p></div>`;
+    if (stores.length < 2) return info;
+    const key = this._v3CompareKey(plan);
+    const got = s.cmp[key];
+    if (!got) {
+      this._v3LoadCompare(plan);
+      return `<div class="card compare"><div class="kicker">Hvad koster kurven andre steder?</div><p class="sub"><span class="spinner small"></span> Søger listen i de andre butikker …</p></div>`;
+    }
+    if (got.error) return `<div class="card compare"><div class="kicker">Hvad koster kurven andre steder?</div><div class="banner error">${esc(got.error)}</div><button class="btn" data-action="v3-cmp-retry">Prøv igen</button></div>`;
+    const { own, shops } = got.data;
+    if (!shops.length) return info;
+    const opts = [
+      { key: "own", name: own.name, sub: "Madplanens butik", goods: own.total, fee: 0, feeText: "Ingen gebyrer", color: "var(--g-mejeri)", count: own.priced, of: own.count },
+      ...shops.map((x, i) => { const f = this._v3Fees(x); return { key: x.entry_id, shop: x, name: x.name, sub: f.sub, goods: x.total, fee: x.items.length ? f.fee : 0, feeText: f.text, color: ["var(--g-kolonial)", "var(--g-drikke)"][i % 2], count: x.items.length, of: own.count }; }),
+    ];
+    const max = Math.max(...opts.map((o) => o.goods + o.fee), 1);
+    const full = opts.filter((o) => (o.key === "own" || o.count === o.of) && o.goods > 0);
+    const best = (full.length ? full : opts).reduce((a, o) => (o.goods + o.fee < a.goods + a.fee ? o : a));
+    const f = s.fees;
+    const anim = this._v3Anim("cmp", `${key}|${f.bilka}|${f.nemlig}|${f.zones}`);
+    return `<div class="card compare${anim}">
+      <div class="row between wrap"><div><div class="kicker">Hvad koster kurven andre steder?</div><h2>${esc(opts.map((o) => o.name).join(", ").replace(/, ([^,]*)$/, " og $1"))}</h2>
+        <p class="sub">De samme ${own.count} varer, søgt med jeres egne priser – med levering og gebyrer. Middagsro lægger kun varerne i kurven; I vælger selv tid og bestiller.</p></div>
+        <span class="pill good">Billigst: ${esc(best.name)}</span></div>
+      <div class="race">${opts.map((o, i) => { const tot = o.goods + o.fee, diff = tot - opts[0].goods; return `<div class="lane" style="animation-delay:${i * 0.1}s">
+        <div class="ln-head"><span class="mono big" style="background:${o.color}">${esc(o.name[0])}</span><div><b>${esc(o.name)}</b><small>${esc(o.sub)}</small></div><span class="ln-tot num">${V3.krd(tot, 2)}</span></div>
+        <div class="ln-bar"><i class="goods" style="width:${((o.goods / max) * 100).toFixed(1)}%;background:${o.color}"></i><i class="fee" style="width:${((o.fee / max) * 100).toFixed(1)}%"></i></div>
+        <div class="ln-foot"><span>Varer ${V3.krd(o.goods, 2)}${o.count < o.of ? ` · ${o.count} af ${o.of} fundet` : ""}</span><span>${esc(o.feeText)}</span>${o.key === "own" ? "" : `<span class="${diff > 0 ? "up" : "down"}">${diff > 0 ? "+" : "−"}${V3.krd(Math.abs(diff), 2)} mod ${esc(opts[0].name)}</span>`}</div>
+        ${o.key === "own" ? "" : o.shop.basket ? `<button class="btn ${o === best ? "primary" : ""} xfer" data-action="v3-xfer" data-arg="${esc(o.key)}" ${o.count ? "" : "disabled"}>${V3.ic("truck", 16)} Læg i kurven hos ${esc(o.name)}</button>` : `<span class="sub">Log ind på ${esc(o.name)} i Middagsro for at lægge varerne i kurven.</span>`}</div>`; }).join("")}</div>
+      <details class="fees"${s.feesOpen ? " open" : ""} data-fold="v3fees"><summary>Gebyrer og levering</summary>
+        <div class="fee-grid">
+          ${shops.some((x) => x.store !== "nemlig") ? `<label>Bilka ToGo <select data-bind="v3fee" data-field="bilka"><option value="pickup" ${f.bilka === "pickup" ? "selected" : ""}>Pickup i pakkeboks (19 + 39 kr.)</option><option value="store" ${f.bilka === "store" ? "selected" : ""}>Afhent i Bilka (gebyr i kurven)</option></select></label>` : ""}
+          ${shops.some((x) => x.store === "nemlig") ? `<label>Nemlig.com levering <input type="range" min="0" max="69" step="1" value="${f.nemlig}" data-bind="v3fee" data-field="nemlig"><span class="num" id="v3-nfee">${f.nemlig} kr.</span></label>
+          <label>Nemlig.com pakkegebyr <select data-bind="v3fee" data-field="zones">${[1, 2, 3, 4].map((z) => `<option value="${z}" ${Number(f.zones) === z ? "selected" : ""}>${z} ${z === 1 ? "zone" : "zoner"} · ${V3.fmt(Math.min(23.8, z * 5.95), 2)} kr.</option>`).join("")}</select></label>` : ""}
+        </div>
+        <p class="foot">Nemlig.com tager 0–69 kr. for levering alt efter tidspunkt og postnummer og 5,95 kr. i pakkegebyr pr. temperaturzone (højst 23,80 kr.). Bilka ToGo-pickup koster 19 kr. i levering og 39 kr. i pakkeservicegebyr; ved afhentning i varehuset og hjemmelevering står gebyret i kurven. Begge har et minimumskøb.</p>
+      </details></div>`;
+  },
+
+  _v3OpenTransfer(entryId) {
+    const plan = this._plan;
+    const got = plan && this._v3s().cmp[this._v3CompareKey(plan)];
+    const shop = got?.data?.shops?.find((x) => x.entry_id === entryId);
+    if (!shop) return;
+    this._modal = { kind: "v3-xfer", shop, busy: false, result: null, error: null };
+    this._renderModal();
+  },
+
+  _v3XferModal(m) {
+    const x = m.shop;
+    const url = x.store === "nemlig" ? "https://www.nemlig.com" : "https://www.bilkatogo.dk";
+    const done = m.result;
+    const failed = new Set(done?.failed || []);
+    return `<div class="scrim" data-action="modal-close"></div><div class="v3 v3-sheet"><div class="xsheet" role="dialog" aria-modal="true" aria-label="Læg i kurven hos ${esc(x.name)}">
+      <button class="x" data-action="modal-close" aria-label="Luk">×</button>
+      <div class="kicker">Læg i kurven</div><h2>Hos ${esc(x.name)}</h2>
+      <p class="sub">Middagsro lægger de fundne varer i jeres kurv hos ${esc(x.name)} – mindst så mange, som listen skal bruge. Ingen ordre bliver gennemført; det gør I selv hos butikken.</p>
+      <div class="xprog"><i style="width:${done ? 100 : m.busy ? 65 : 0}%"></i></div>
+      <div class="xlist">${x.items.map((it, i) => `<div class="xl" style="animation-delay:${(0.05 + i * 0.04).toFixed(2)}s"><span class="xdot ${done && failed.has(it.product.id) ? "miss" : "ok"}">${done && failed.has(it.product.id) ? "!" : "✓"}</span><span>${esc(it.name)}<small> · ${esc(it.product.name)}${it.packages > 1 ? ` · ${it.packages} stk.` : ""}</small></span><small>${V3.fmt(it.cost, 2)}</small></div>`).join("")}
+        ${x.missing.map((n) => `<div class="xl"><span class="xdot miss">?</span><span>${esc(n)}</span><small>Ikke fundet – vælg selv</small></div>`).join("")}</div>
+      ${m.error ? `<div class="banner error">${esc(m.error)}</div>` : ""}
+      ${done
+        ? `<div class="xdone on"><b>${done.added + done.already} af ${x.items.length} varer ligger i kurven${done.already ? ` (${done.already} lå der i forvejen)` : ""}</b>${done.failed.length ? `<span class="sub">${done.failed.length} kom ikke med – prøv igen, eller læg dem selv i kurven.</span>` : ""}<a class="btn primary big" href="${url}" target="_blank" rel="noopener noreferrer">Åbn kurven hos ${esc(x.name)} ›</a></div>`
+        : `<div class="row wrap dlg-foot"><button class="btn" data-action="modal-close" ${m.busy ? "disabled" : ""}>Annullér</button><span class="spacer"></span><button class="btn primary" data-action="v3-xfer-go" ${m.busy || !x.items.length ? "disabled" : ""}>${m.busy ? '<span class="spinner small"></span> Lægger i kurven …' : `${V3.ic("truck", 16)} Læg ${x.items.length} varer i kurven`}</button></div>`}
+    </div></div>`;
+  },
+
+  _v3Transfer() {
+    const m = this._modal;
+    if (m?.kind !== "v3-xfer" || m.busy) return;
+    m.busy = true;
+    m.error = null;
+    this._renderModal();
+    const items = m.shop.items.map((it) => ({ product_id: it.product.id, packages: it.packages }));
+    this._ws("middagsro/baskets/transfer", { target_entry_id: m.shop.entry_id, items })
+      .then((result) => { m.result = result; })
+      .catch((err) => { m.error = err?.message || String(err); })
+      .finally(() => { m.busy = false; if (this._modal === m) this._renderModal(); });
+  },
+
+  /* Varer: the top 20, with REMA's own pictures. */
+  _v3TopItems() {
+    const items = this._state?.receipts?.items || [];
+    if (items.length < 3) return "";
+    const s = this._v3s();
+    const L = [...items].sort((a, b) => (s.sort === "kr" ? (b.total_spent || 0) - (a.total_spent || 0) : b.count - a.count)).slice(0, 20);
+    this._v3LoadImages(L.map((p) => p.name));
+    const img = (p) => V3.pic(s.img[p.name], p.group || V3.groupOf(p.name));
+    const pod = [L[1], L[0], L[2]];
+    const receipts = this._state.receipts.count || 0;
+    const card = (p, i) => {
+      const lo = p.min_price ?? p.last_price ?? 0, hi = p.max_price ?? lo, last = p.last_price ?? lo;
+      const pos = hi > lo ? ((last - lo) / (hi - lo)) * 100 : 50;
+      return `<div class="vprod" style="animation-delay:${(i * 0.03).toFixed(2)}s"><div class="ph">${img(p)}<span class="rank">${i + 1}</span><span class="gdot" title="${esc(V3.GNAME[p.group] || "")}">${V3.art(p.group || "hjem", "").replace("<svg", '<svg width="26" height="26"')}</span>${p.frequent ? '<span class="badge">Fast vare</span>' : ""}</div>
+      <b>${esc(V3.clean(p.name))}</b><div class="meta"><span>${p.count}× købt</span><strong>${V3.krd(p.total_spent || 0)}</strong></div>
+      <div class="range" title="Prisspænd pr. stk."><i style="left:${pos.toFixed(0)}%"></i></div><div class="range-lab"><span>${V3.fmt(lo, 2)}</span><span>senest ${V3.fmt(last, 2)}</span><span>${V3.fmt(hi, 2)}</span></div></div>`;
+    };
+    const anim = this._v3Anim("items", `${s.sort}|${items.length}|${Object.keys(s.img).length}`);
+    return `<div class="v3${anim}"><div class="card">
+      <div class="row between wrap"><div><div class="kicker">Varer</div><h2>Jeres top 20</h2><p class="sub">Af ${V3.fmt(items.length)} forskellige varer på ${V3.fmt(receipts)} kvitteringer.${this._isRema() ? " Billederne er REMA's egne." : ""}</p></div>
+        <div class="seg">${[["kr", "Mest brugt"], ["c", "Oftest købt"]].map(([k, t]) => `<button class="${s.sort === k ? "on" : ""}" data-action="v3-sort" data-arg="${k}">${t}</button>`).join("")}</div></div>
+      <div class="podium">${pod.filter(Boolean).map((p) => `<div class="pod"><div class="ph">${img(p)}</div><b>${esc(V3.clean(p.name))}</b><small>${s.sort === "kr" ? V3.krd(p.total_spent || 0) : `${p.count}× købt`}</small><div class="pstep">${L.indexOf(p) + 1}</div></div>`).join("")}</div>
+    </div>
+    ${L.length > 3 ? `<div class="card"><div class="kicker">Resten af top 20</div><div class="shelf">${L.slice(3).map((p, i) => card(p, i + 3)).join("")}</div>
+      <p class="foot">Prisspændet er pr. stk. på tværs af alle køb: billigst, senest og dyrest.</p></div>` : ""}</div>`;
+  },
+
+  _v3LoadImages(names) {
+    const s = this._v3s();
+    if (!this._isRema()) return;
+    const want = names.filter((n) => !(n in s.img) && !s.imgAsked.has(n));
+    if (!want.length) return;
+    want.forEach((n) => s.imgAsked.add(n));
+    this._ws("middagsro/items/images", { names: want.slice(0, 40) })
+      .then((found) => { Object.assign(s.img, found || {}); if (this._tab === "history") this._render(); })
+      .catch(() => { want.forEach((n) => { if (!(n in s.img)) s.img[n] = null; }); });
+  },
+
+  /* Sundhed: what the receipts say you bought, as a plate. */
+  _v3Plate() {
+    const ov = this._state?.receipts?.overview;
+    const weeks = (ov?.week?.buckets || []).slice(-8);
+    const food = ["frugt", "kod", "mejeri", "brod", "kolonial", "snacks"];
+    const g = Object.fromEntries(food.map((f) => [f, 0]));
+    for (const w of weeks) for (const f of food) g[f] += w.groups?.[f] || 0;
+    const tot = food.reduce((a, f) => a + g[f], 0);
+    if (!this._isRema() || tot < 50) return "";
+    const C = 150;
+    let a = 0;
+    let plate = `<circle cx="${C}" cy="${C}" r="140" fill="var(--rema-subtle)"/><circle cx="${C}" cy="${C}" r="128" fill="var(--card-background-color)" stroke="var(--divider-color)"/>`;
+    const order = [...food].sort((x, y) => g[y] - g[x]).filter((f) => g[f] > 0);
+    for (const f of order) {
+      const sw = (g[f] / tot) * 360;
+      plate += `<path class="petal" style="transform-origin:150px 150px" d="${V3.sector(C, C, 36, 118, a + 0.8, a + sw - 0.8)}" fill="var(--g-${f})" opacity=".9"/>`;
+      const [x, y] = V3.P(C, C, 80, a + sw / 2);
+      if (sw > 26) plate += `<g transform="translate(${(x - 17).toFixed(1)} ${(y - 17).toFixed(1)}) scale(.53)"><circle cx="32" cy="32" r="30" fill="var(--card-background-color)" opacity=".92"/>${V3.ART[f](f)}</g>`;
+      a += sw;
+    }
+    plate += `<circle cx="${C}" cy="${C}" r="34" fill="var(--card-background-color)"/><text x="${C}" y="${C - 4}" text-anchor="middle" class="pl-big">${Math.round((g.frugt / tot) * 100)} %</text><text x="${C}" y="${C + 14}" text-anchor="middle" class="pl-small">GRØNT</text>`;
+    const months = (ov?.month?.buckets || []).filter((b) => food.some((f) => b.groups?.[f]));
+    let chart = "";
+    if (months.length >= 2) {
+      const shares = months.map((b) => { const t = food.reduce((p, f) => p + (b.groups[f] || 0), 0) || 1; return [b.key, ((b.groups.frugt || 0) / t) * 100, ((b.groups.snacks || 0) / t) * 100]; });
+      const top = Math.max(30, Math.ceil(Math.max(...shares.map((s) => Math.max(s[1], s[2]))) / 10) * 10);
+      const W = this._v3Phone() ? 380 : 960, H = this._v3Phone() ? 200 : 210;
+      const x = (i) => 36 + (i / (shares.length - 1)) * (W - 130), y = (v) => H - 26 - (v / top) * (H - 46);
+      const line = (j) => shares.map((s, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(s[j]).toFixed(1)}`).join("");
+      const ticks = Array.from({ length: top / 10 + 1 }, (_, i) => i * 10);
+      chart = `<div style="margin-top:16px"><div class="row between wrap"><b>Grønt mod søde sager, måned for måned</b><span class="sub" style="margin:0">andel af madkronerne</span></div>
+        <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;margin-top:6px" role="img" aria-label="Andel frugt og grønt og andel snacks pr. måned">
+          ${ticks.map((v) => `<line x1="36" x2="${W - 94}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="var(--divider-color)"/><text x="28" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" class="ax">${v}</text>`).join("")}
+          <path d="${line(1)}" fill="none" stroke="var(--g-frugt)" stroke-width="2"/><path d="${line(2)}" fill="none" stroke="var(--g-snacks)" stroke-width="2"/>
+          ${shares.map((s, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(s[1]).toFixed(1)}" r="4" fill="var(--g-frugt)" stroke="var(--card-background-color)" stroke-width="2"><title>${esc(s[0])}: grønt ${Math.round(s[1])} %</title></circle><circle cx="${x(i).toFixed(1)}" cy="${y(s[2]).toFixed(1)}" r="4" fill="var(--g-snacks)" stroke="var(--card-background-color)" stroke-width="2"><title>${esc(s[0])}: søde ${Math.round(s[2])} %</title></circle><text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" class="ax">${V3.MONTHS[Number(s[0].slice(5)) - 1]}</text>`).join("")}
+          <text x="${(x(shares.length - 1) + 8).toFixed(1)}" y="${(y(shares.at(-1)[1]) + 3).toFixed(1)}" class="axv">Grønt ${Math.round(shares.at(-1)[1])}</text>
+          <text x="${(x(shares.length - 1) + 8).toFixed(1)}" y="${(y(shares.at(-1)[2]) + 3).toFixed(1)}" class="axv">Søde ${Math.round(shares.at(-1)[2])}</text>
+        </svg></div>`;
+    }
+    const anim = this._v3Anim("plate", `${tot}`);
+    return `<div class="v3${anim}"><div class="card"><div class="kicker">Det, I faktisk købte · seneste 8 uger</div><h2>Kurvens tallerken</h2>
+      <p class="sub">Fra kvitteringerne, ikke madplanen: madkronerne fordelt på varegrupper (drikke og non-food er ikke med).</p>
+      <div class="plate-wrap" style="margin-top:10px">
+        <div class="plate"><svg viewBox="0 0 300 300" role="img" aria-label="Madkronerne fordelt på varegrupper">${plate}</svg></div>
+        <div><div class="share">${order.map((f) => `<div class="sh">${V3.art(f, "")}<div><b>${esc(V3.GNAME[f])}</b><div class="bar"><i style="width:${((g[f] / g[order[0]]) * 100).toFixed(1)}%;background:var(--g-${f})"></i></div></div><span class="p">${Math.round((g[f] / tot) * 100)} %</span></div>`).join("")}</div>
+          <p class="sub" style="margin-top:12px">Frugt og grønt fik ${V3.krd(g.frugt)} – snacks og slik ${V3.krd(g.snacks)}.</p></div>
+      </div>${chart}</div></div>`;
+  },
+
+  /* ------------------------------------------------------------------ after a redraw */
+  _v3Pics(root = this.shadowRoot) {
+    root.querySelectorAll("img[data-fb]").forEach((img) => {
+      if (img._v3fb) return;
+      img._v3fb = true;
+      const swap = () => { if (img.isConnected) img.outerHTML = V3.art(img.dataset.fb, ""); };
+      if (img.complete && img.naturalWidth === 0 && img.src) swap();
+      else img.addEventListener("error", swap, { once: true });
+    });
+  },
+
+  _v3After() {
+    const root = this.shadowRoot;
+    this._v3Pics(root);
+    this._v3BindDial();
+    root.querySelectorAll("#content [data-count]").forEach((el) => {
+      if (el.closest(".still")) return;
+      const to = Number(el.dataset.count);
+      el.dataset.v = 0;
+      el.removeAttribute("data-count");
+      V3.countUp(el, to, el.classList.contains("huge") ? 1400 : 800);
+    });
+    if (!this._v3Keys) {
+      this._v3Keys = true;
+      root.addEventListener("keydown", (ev) => {
+        if (ev.key !== "Enter") return;
+        const el = ev.target;
+        if (el?.dataset?.v3book) { ev.preventDefault(); this._v3Book(el.dataset.v3book); }
+        else if (el?.dataset?.bind === "v3q") { ev.preventDefault(); this._v3QuickAdd(el); }
+      });
+    }
+  },
+
+  _v3QuickAdd(from) {
+    const s = this._v3s();
+    const q = s.q.trim();
+    if (!q) return;
+    const hit = s.hitsQ === q && s.hits[0];
+    if (hit) return this._v3QuickPick(0, from);
+    this._v3QuickText(from);
+  },
+
+  _v3QuickPick(i, from) {
+    const s = this._v3s();
+    const p = s.hits[i];
+    if (!p) return;
+    this._v3Fly(from, V3.clean(p.name).split(" ")[0]);
+    s.q = ""; s.hits = []; s.hitsQ = "";
+    this._addToRemaList(p.id, p.name);
+  },
+
+  _v3QuickText(from) {
+    const s = this._v3s();
+    const name = s.q.trim();
+    if (!name || !this._plan) return;
+    this._v3Fly(from, name.split(" ")[0]);
+    s.q = ""; s.hits = []; s.hitsQ = "";
+    this._editPlan(() => this._ws("middagsro/plan/add", { plan_id: this._plan.id, name, part: "main" }), `${name} er tilføjet til indkøbslisten.`);
+  },
+
+  /* ------------------------------------------------------------------ events */
+  _v3Click(action, arg, el) {
+    const s = this._v3s();
+    const handlers = {
+      "v3-hw": () => { s.hw = Number(arg) || 0; this._render(); },
+      "v3-book": () => this._v3Book(arg),
+      "v3-add": () => {
+        s.amt = V3.fmt(this._v3Amount(s.amt) + Number(arg), 0).replace(/\./g, "");
+        const input = el.closest(".glass, .kbook")?.querySelector("[data-v3book]");
+        if (input) { input.value = s.amt; input.focus(); }
+      },
+      "v3-week": () => { s.week = Number(arg); s.day = null; this._render(); },
+      "v3-day": () => this._v3PickDay(Number(arg)),
+      "v3-bon": () => this._v3OpenBon(arg),
+      "v3-span": () => { if (s.span !== arg) { s.span = arg; s.sel = null; this._render(); } },
+      "v3-solo": () => { s.solo = s.solo === arg ? null : arg; this._v3ApplySolo(); },
+      "v3-sort": () => { s.sort = arg; this._render(); },
+      "v3-qadd": () => this._v3QuickAdd(el),
+      "v3-qpick": () => this._v3QuickPick(Number(arg), el),
+      "v3-qtext": () => this._v3QuickText(el),
+      "v3-qfill": () => {
+        s.q = arg;
+        const input = this.shadowRoot.querySelector('[data-bind="v3q"]');
+        if (input) { input.value = arg; input.focus(); }
+        this._v3Search();
+      },
+      "v3-xfer": () => this._v3OpenTransfer(arg),
+      "v3-xfer-go": () => this._v3Transfer(),
+      "v3-cmp-retry": () => { s.cmp = {}; this._render(); },
+    };
+    const fn = handlers[action];
+    if (!fn) return false;
+    fn();
+    return true;
+  },
+
+  _v3Input(el, ev) {
+    const ds = el.dataset;
+    const s = this._v3s();
+    if (ds.bind === "v3amt") { s.amt = el.value; return true; }
+    if (ds.bind === "v3q") {
+      if (ev.type !== "input") return true;
+      s.q = el.value;
+      this._v3RenderQuick();
+      this._soon("v3q", () => this._v3Search(), 260);
+      return true;
+    }
+    if (ds.bind === "v3fee") {
+      const v = ds.field === "bilka" ? el.value : Number(el.value);
+      s.fees[ds.field] = v;
+      try { localStorage.setItem(V3_FEES, JSON.stringify(s.fees)); } catch { /* not kept */ }
+      if (ds.field === "nemlig" && ev.type === "input") {
+        const out = this.shadowRoot.querySelector("#v3-nfee");
+        if (out) out.textContent = `${v} kr.`;
+        return true;
+      }
+      s.feesOpen = true;
+      this._render();
+      return true;
+    }
+    return false;
+  },
+});
+
+Object.assign(Rema1000Panel.prototype, V3_METHODS);
+
+const V3_STYLE = `
+.v3 .num {font-variant-numeric: tabular-nums;}
+.v3 .disp {font-family: var(--display); letter-spacing: -.025em;}
+.v3 .brand {display: flex; align-items: center; gap: 10px;}
+.v3 .logo {width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--rema-accent); color: var(--rema-on-accent);}
+.v3 .wordmark {font-family: var(--display); font-weight: 650; font-size: 21px; letter-spacing: -.025em;}
+.v3 .spacer {flex: 1;}
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+.v3 .card {position: relative; background: var(--rema-card); border-radius: var(--ha-card-border-radius); border: 1px solid var(--line);
+  box-shadow: var(--ha-card-box-shadow); padding: 18px; margin-bottom: 16px; overflow: hidden;}
+.v3 .kicker {font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--soft);}
+.v3 h2 {margin: 2px 0 0; font-family: var(--display); font-size: 22px; font-weight: 650; letter-spacing: -.02em;}
+.v3 .sub {margin: 4px 0 0; color: var(--soft); font-size: 13.5px; line-height: 1.45;}
+.v3 .row {display: flex; align-items: center; gap: 10px;}
+.v3 .wrap {flex-wrap: wrap;}
+.v3 .between {justify-content: space-between;}
+.v3 .grid2 {display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; align-items: start;}
+@media (max-width: 860px) {
+  .v3 .grid2 {grid-template-columns: minmax(0, 1fr);}
+}
+.v3 .pill {display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 650; background: var(--rema-subtle); color: var(--soft);}
+.v3 .pill.good {background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--good);}
+.v3 .pill.bad {background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad);}
+.v3 .pill.acc {background: var(--rema-tint); color: var(--rema-accent);}
+.v3 .seg {display: inline-flex; padding: 3px; border-radius: 999px; background: var(--rema-subtle);}
+.v3 .seg button {border: 0; background: none; padding: 7px 16px; border-radius: 999px; font-weight: 650; font-size: 13.5px; color: var(--soft); cursor: pointer; transition: all .2s;}
+.v3 .seg button.on {background: var(--card-background-color); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.14);}
+.v3 .hero {background:
+  radial-gradient(120% 70% at 50% -10%, color-mix(in srgb, var(--rema-accent) 16%, transparent), transparent 60%), var(--rema-card);}
+.v3 .hero-top {display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap;}
+.v3 .weekpick {display: flex; gap: 6px;}
+.v3 .wk {width: 46px; border: 1px solid var(--line); background: var(--card-background-color); border-radius: 14px; padding: 6px 0 5px; cursor: pointer; display: grid; justify-items: center; gap: 2px; transition: border-color .2s, transform .2s;}
+.v3 .wk:hover {transform: translateY(-1px);}
+.v3 .wk.on {border-color: var(--rema-accent); box-shadow: 0 0 0 3px var(--rema-tint);}
+.v3 .wk svg {width: 28px; height: 28px;}
+.v3 .wk span {font-size: 10.5px; font-weight: 700; color: var(--soft);}
+.v3 .dialwrap {position: relative; width: min(100%, 420px); aspect-ratio: 1; margin: 6px auto 0;}
+.v3 .dialwrap svg.dial {position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible;}
+.v3 .dial .face {fill: var(--rema-subtle);}
+.v3 .dial .track {fill: none; stroke: color-mix(in srgb, var(--ink) 9%, transparent);}
+.v3 .dial .tick {stroke: var(--line); stroke-width: 1.4;}
+.v3 .dial .daylab {font: 700 9.5px var(--ha-font-family-body); letter-spacing: .08em; fill: var(--soft); text-anchor: middle; dominant-baseline: middle;}
+.v3 .dial .daylab.today {fill: var(--rema-accent);}
+.v3 .dial .petal {transform-box: view-box; transform-origin: 200px 200px; animation: petal .7s cubic-bezier(.2,.8,.2,1) both;}
+@keyframes petal { from { transform: scale(.6); opacity: 0; } }
+.v3 .dial .ghost {fill: none; stroke: var(--soft); stroke-width: 1.2; stroke-dasharray: 2.5 3.5; opacity: .55;}
+.v3 .dial .seg-arc {fill: none; stroke-linecap: butt; animation: sweep 1.3s cubic-bezier(.45,.05,.25,1) both;}
+@keyframes sweep { from { stroke-dashoffset: var(--len); } }
+.v3 .dial .over {fill: none; stroke: var(--bad); stroke-linecap: round; animation: sweep 1.2s .9s cubic-bezier(.45,.05,.25,1) both; filter: url(#glow);}
+.v3 .dial .pace {stroke: var(--ink); stroke-width: 2.2; stroke-linecap: round;}
+.v3 .dial .needle {stroke: var(--ink); stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 2 4;}
+.v3 .center {position: absolute; inset: 27%; border-radius: 50%; display: grid; place-content: center; text-align: center; gap: 2px; pointer-events: none;}
+.v3 .center .lab {font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--soft);}
+.v3 .center .big {font-family: var(--display); font-weight: 680; font-size: clamp(24px, 6.6vw, 36px); letter-spacing: -.035em; line-height: 1.02;}
+.v3 .center .big.bad {color: var(--bad);}
+.v3 .center .small {font-size: 12.5px; color: var(--soft);}
+.v3 .center .chip {justify-self: center; margin-top: 4px;}
+.v3 .kbook {display: grid; gap: 10px; margin-top: 8px; padding: 14px; border-radius: 18px; background: var(--rema-subtle);}
+.v3 .kbook-row {display: flex; gap: 8px; align-items: center;}
+.v3 .kamount {flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 16px; border-radius: 16px; background: var(--card-background-color); border: 1.5px solid var(--line); transition: border-color .2s, box-shadow .2s;}
+.v3 .kamount:focus-within {border-color: var(--rema-accent); box-shadow: 0 0 0 4px var(--rema-tint);}
+.v3 .kamount input {flex: 1; min-width: 0; width: 100%; border: 0; outline: 0; background: none; color: var(--ink); font: 650 24px var(--display); letter-spacing: -.02em;}
+.v3 .kamount span {color: var(--soft); font-weight: 600;}
+.v3 .kgo {height: 52px; padding: 0 20px; border: 0; border-radius: 16px; background: var(--rema-accent); color: var(--rema-on-accent); font-weight: 700; font-size: 15px; cursor: pointer; transition: transform .15s;}
+.v3 .kgo:active {transform: scale(.97);}
+.v3 .kquick {display: flex; gap: 6px; flex-wrap: wrap;}
+.v3 .kquick button {border: 1px solid var(--line); background: var(--card-background-color); border-radius: 999px; padding: 6px 12px; font-weight: 650; font-size: 13px; cursor: pointer;}
+.v3 .kquick button:hover {border-color: var(--rema-accent); color: var(--rema-accent);}
+.v3 .buys {display: grid; gap: 6px; margin-top: 12px;}
+.v3 .buy {display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 14px; background: var(--card-background-color); border: 1px solid var(--line); animation: rise .4s both;}
+.v3 .buy .ic {width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center;}
+.v3 .buy b {font-size: 14px;}
+.v3 .buy small {display: block; color: var(--soft); font-size: 12px;}
+.v3 .buy .amt {font-weight: 700; font-variant-numeric: tabular-nums;}
+.v3 .undo {border: 0; background: none; color: var(--soft); cursor: pointer; font-size: 12px; text-decoration: underline;}
+.v3 .stats4 {display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 14px;}
+@media (max-width: 520px) {
+  .v3 .stats4 {grid-template-columns: repeat(2, minmax(0, 1fr));}
+}
+.v3 .stat {padding: 10px 12px; border-radius: 14px; background: var(--rema-subtle);}
+.v3 .stat span {display: block; font-size: 11.5px; color: var(--soft); font-weight: 600;}
+.v3 .stat b {font-family: var(--display); font-size: 19px; font-weight: 650; letter-spacing: -.02em;}
+.v3 .groupbar {display: flex; height: 10px; border-radius: 999px; overflow: hidden; gap: 2px; background: var(--rema-subtle); margin-top: 10px;}
+.v3 .groupbar i {display: block; height: 100%; transition: flex-grow .5s ease;}
+.v3 .legend {display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;}
+.v3 .lg {display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: 999px; border: 1px solid var(--line); background: var(--card-background-color); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: opacity .2s, border-color .2s;}
+.v3 .lg svg {width: 24px; height: 24px;}
+.v3 .lg .v {color: var(--soft); font-weight: 600; font-variant-numeric: tabular-nums;}
+.v3 .lg.off {opacity: .38;}
+.v3 .lg.solo {border-color: var(--ink);}
+.v3 .sunday {padding: 0;}
+.v3 .scene {display: block; width: 100%; height: auto;}
+.v3 .sunday-body {padding: 16px 18px 18px;}
+.v3 .rhythm {display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-top: 12px; align-items: end;}
+.v3 .rd {display: grid; justify-items: center; gap: 6px;}
+.v3 .rd .bub {border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #fff; background: color-mix(in srgb, var(--rema-accent) 40%, var(--rema-subtle)); transition: transform .3s;}
+.v3 .rd.top .bub {background: var(--rema-accent); box-shadow: 0 10px 24px -10px var(--rema-accent);}
+.v3 .rd span {font-size: 11px; font-weight: 700; color: var(--soft); letter-spacing: .06em;}
+.v3 .rd small {font-size: 11px; color: var(--soft); font-variant-numeric: tabular-nums;}
+.v3 .hours {display: flex; align-items: flex-end; gap: 2px; height: 46px; margin-top: 12px;}
+.v3 .hours i {flex: 1; border-radius: 3px 3px 0 0; background: color-mix(in srgb, var(--rema-accent) 28%, var(--rema-subtle)); min-height: 2px;}
+.v3 .hours i.peak {background: var(--rema-accent);}
+.v3 .hourlab {display: flex; justify-content: space-between; font-size: 10.5px; color: var(--soft); margin-top: 4px;}
+.v3 .big-dial {position: relative; width: min(100%, 560px); aspect-ratio: 1; margin: 4px auto 0; touch-action: none;}
+.v3 .big-dial svg {position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible;}
+.v3 .bd .bar {transition: opacity .25s ease; transform-box: view-box; transform-origin: 220px 220px; animation: grow .8s cubic-bezier(.2,.8,.2,1) both;}
+@keyframes grow { from { transform: scale(.45); opacity: 0; } }
+.v3 .bd .bar.dim {opacity: .22;}
+.v3 .bd .save {fill: var(--ink); opacity: .32;}
+.v3 .bd .avg {fill: none; stroke: var(--ink); stroke-width: 1.2; stroke-dasharray: 3 5; opacity: .55;}
+.v3 .bd .bud {fill: none; stroke: var(--rema-accent); stroke-width: 1.4; stroke-dasharray: 1 4; stroke-linecap: round;}
+.v3 .bd .ringlab {font: 650 10px var(--ha-font-family-body); fill: var(--soft);}
+.v3 .bd .tlab {font: 700 9.5px var(--ha-font-family-body); fill: var(--soft); text-anchor: middle; dominant-baseline: middle;}
+.v3 .bd .mark {font: 700 10px var(--ha-font-family-body); text-anchor: middle; dominant-baseline: middle; fill: var(--ink);}
+.v3 .bd .sel {fill: none; stroke: var(--ink); stroke-width: 1.6;}
+.v3 .bd .hand {stroke: var(--ink); stroke-width: 1.4; stroke-dasharray: 2 4;}
+.v3 .bcenter {position: absolute; inset: 31%; border-radius: 50%; display: grid; place-content: center; text-align: center; gap: 3px; pointer-events: none;}
+.v3 .bcenter .lab {font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--soft);}
+.v3 .bcenter .big {font-family: var(--display); font-weight: 680; font-size: clamp(24px, 6.4vw, 40px); letter-spacing: -.035em; line-height: 1;}
+.v3 .bcenter .saved {color: var(--good); font-weight: 700; font-size: 13px;}
+.v3 .bcenter .meta {color: var(--soft); font-size: 12px;}
+.v3 .minidays {display: flex; gap: 3px; justify-content: center; align-items: flex-end; height: 26px; margin-top: 4px;}
+.v3 .minidays i {width: 9px; border-radius: 3px; background: color-mix(in srgb, var(--ink) 18%, transparent); min-height: 3px;}
+.v3 .minidays i.hi {background: var(--rema-accent);}
+.v3 .minilab {display: flex; gap: 3px; justify-content: center;}
+.v3 .minilab span {width: 9px; font-size: 7.5px; font-weight: 700; color: var(--soft);}
+.v3 .tip {position: absolute; z-index: 3; pointer-events: none; padding: 8px 10px; border-radius: 12px; background: var(--ink); color: var(--card-background-color); font-size: 12.5px; line-height: 1.35; transform: translate(-50%, calc(-100% - 12px)); white-space: nowrap; opacity: 0; transition: opacity .15s;}
+.v3 .tip.on {opacity: 1;}
+.v3 .tiles {display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px;}
+@media (max-width: 720px) {
+  .v3 .tiles {grid-template-columns: repeat(2, minmax(0, 1fr));}
+}
+.v3 .tile {position: relative; padding: 12px; border-radius: 18px; background: var(--rema-subtle); overflow: hidden; cursor: pointer; transition: transform .2s; border: 1px solid transparent;}
+.v3 .tile:hover {transform: translateY(-2px);}
+.v3 .tile.solo {border-color: var(--ink);}
+.v3 .tile svg.art {width: 58px; height: 58px; display: block;}
+.v3 .tile b {display: block; font-size: 13px; margin-top: 6px;}
+.v3 .tile .v {font-family: var(--display); font-weight: 650; font-size: 20px; letter-spacing: -.02em;}
+.v3 .tile .s {font-size: 12px; color: var(--soft);}
+.v3 .tile .glow {position: absolute; right: -30px; top: -30px; width: 110px; height: 110px; border-radius: 50%; opacity: .16;}
+.v3 .trend {font-size: 12px; font-weight: 700;}
+.v3 .trend.up {color: var(--bad);}
+.v3 .trend.down {color: var(--good);}
+.v3 .story {display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px;}
+@media (max-width: 860px) {
+  .v3 .story {grid-template-columns: 1fr;}
+}
+.v3 .story .card {margin: 0;}
+.v3 .huge {font-family: var(--display); font-weight: 700; font-size: 38px; letter-spacing: -.04em; line-height: 1; margin-top: 8px;}
+.v3 .huge.good {color: var(--good);}
+.v3 .years svg {width: 100%; height: auto; display: block; margin-top: 8px;}
+.v3 .podium {display: grid; grid-template-columns: 1fr 1.18fr 1fr; gap: 12px; align-items: end; margin-top: 14px;}
+.v3 .pod {position: relative; display: grid; justify-items: center; text-align: center; gap: 6px;}
+.v3 .pod .ph {position: relative; width: 100%; max-width: 240px; aspect-ratio: 1; border-radius: 22px; background: radial-gradient(70% 70% at 50% 40%, var(--card-background-color), var(--rema-subtle)); display: grid; place-items: center; overflow: hidden;}
+.v3 .pod .ph img, .v3 .pod .ph svg {width: 78%; height: 78%; object-fit: contain; filter: drop-shadow(0 14px 18px rgba(0,0,0,.18)); animation: float 5s ease-in-out infinite;}
+@keyframes float { 50% { transform: translateY(-6px); } }
+.v3 .pod .pstep {width: 100%; border-radius: 14px 14px 6px 6px; display: grid; place-items: center; font-family: var(--display); font-size: 26px; font-weight: 750; color: var(--rema-on-accent); background: var(--rema-accent);}
+.v3 .pod:nth-child(1) .pstep {height: 54px; opacity: .78;}
+.v3 .pod:nth-child(2) .pstep {height: 76px;}
+.v3 .pod:nth-child(3) .pstep {height: 40px; opacity: .6;}
+.v3 .pod b {font-size: 13.5px; line-height: 1.25;}
+.v3 .pod small {color: var(--soft); font-size: 12px;}
+.v3 .shelf {display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; margin-top: 16px;}
+.v3 .vprod {position: relative; display: grid; gap: 8px; padding: 10px; border-radius: 18px; background: var(--rema-subtle); border: 1px solid transparent; transition: transform .2s, border-color .2s; animation: rise .5s both;}
+.v3 .vprod:hover {transform: translateY(-2px); border-color: var(--line);}
+.v3 .vprod .ph {position: relative; aspect-ratio: 4/3; border-radius: 14px; background: var(--card-background-color); display: grid; place-items: center; overflow: hidden;}
+.v3 .vprod .ph img, .v3 .vprod .ph svg {width: 76%; height: 84%; object-fit: contain;}
+.v3 .vprod .rank {position: absolute; left: 8px; top: 8px; min-width: 26px; height: 26px; padding: 0 7px; border-radius: 999px; background: var(--ink); color: var(--card-background-color); font-size: 12px; font-weight: 800; display: grid; place-items: center;}
+.v3 .vprod .gdot {position: absolute; right: 8px; top: 8px;}
+.v3 .vprod b {font-size: 13px; line-height: 1.25; min-height: 32px;}
+.v3 .vprod .meta {display: flex; justify-content: space-between; font-size: 12px; color: var(--soft); font-variant-numeric: tabular-nums;}
+.v3 .vprod .meta strong {color: var(--ink);}
+.v3 .range {position: relative; height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 10%, transparent);}
+.v3 .range i {position: absolute; top: -4px; width: 14px; height: 14px; border-radius: 50%; background: var(--card-background-color); border: 3px solid var(--rema-accent); transform: translateX(-50%);}
+.v3 .range-lab {display: flex; justify-content: space-between; font-size: 11px; color: var(--soft); font-variant-numeric: tabular-nums;}
+.v3 .badge {position: absolute; right: 8px; bottom: 8px; font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--rema-tint); color: var(--rema-accent);}
+.v3 .plate-wrap {display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 18px; align-items: center;}
+@media (max-width: 720px) {
+  .v3 .plate-wrap {grid-template-columns: 1fr;}
+}
+.v3 .plate svg {width: 100%; height: auto; display: block;}
+.v3 .share {display: grid; gap: 8px;}
+.v3 .sh {display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 10px; align-items: center;}
+.v3 .sh svg {width: 30px; height: 30px;}
+.v3 .sh .bar {height: 8px; border-radius: 999px; background: var(--rema-subtle); overflow: hidden; margin-top: 4px;}
+.v3 .sh .bar i {display: block; height: 100%; border-radius: 999px;}
+.v3 .sh b {font-size: 13.5px;}
+.v3 .sh .p {font-weight: 700; font-variant-numeric: tabular-nums;}
+.v3 .pl {display: grid; justify-items: center; gap: 6px; text-align: center;}
+.v3 .foot {color: var(--soft); font-size: 12px; line-height: 1.5; margin-top: 10px;}
+.v3 .sunpulse {animation: pulse 6s ease-in-out infinite; transform-box: fill-box; transform-origin: center;}
+@keyframes pulse { 50% { transform: scale(1.12); opacity: .8; } }
+.v3 .cloud {animation: drift 16s ease-in-out infinite alternate;}
+.v3 .cloud.c2 {animation-duration: 22s;}
+@keyframes drift { from { transform: translateX(-18px); } to { transform: translateX(18px); } }
+.v3 .bob {animation: bob 4.5s ease-in-out infinite; transform-box: view-box; transform-origin: 250px 206px;}
+@keyframes bob { 50% { transform: translateY(-3px) rotate(-.6deg); } }
+.v3 .coin {animation: coin .5s cubic-bezier(.2,.8,.2,1) both;}
+@keyframes coin { from { transform: translateY(-40px); opacity: 0; } }
+.v3 .drop {animation: drop 2.6s cubic-bezier(.5,0,.75,0) infinite;}
+@keyframes drop { 0% { transform: translateY(-8px); opacity: 0; } 20% { opacity: 1; } 70% { transform: translateY(40px); opacity: 1; } 71%, 100% { opacity: 0; transform: translateY(40px); } }
+.v3 .col {transform-box: fill-box; transform-origin: bottom; animation: colup .8s cubic-bezier(.2,.8,.2,1) both;}
+@keyframes colup { from { transform: scaleY(0); } }
+.v3 .seg-arc {stroke-dasharray: 100;}
+@media (max-width: 560px) {
+  .v3 .wordmark {font-size: 18px;}
+  .v3 .hero-top .weekpick {width: 100%; justify-content: space-between;}
+  .v3 .wk {width: 44px;}
+}
+.v3 .bd .sel {stroke-linejoin: round; stroke-width: 1.4; opacity: .75;}
+.v3 .center .small {max-width: 150px;}
+.v3 .dial .day {cursor: pointer; transition: opacity .25s ease;}
+.v3 .dial .day.dim {opacity: .3;}
+.v3 .dial .day.on .daylab {fill: var(--rema-accent);}
+.v3 .dial .day.on > path:first-child {fill: var(--rema-tint);}
+.v3 .bd .gs {transition: opacity .25s ease;}
+.v3 .bd .gs.dim {opacity: .14;}
+.v3 .buy.open {cursor: pointer; transition: border-color .2s, transform .15s;}
+.v3 .buy.open:hover {border-color: var(--rema-accent);}
+.v3 .buy.open:active {transform: scale(.99);}
+.v3 .buy .chev {color: var(--rema-accent); font-weight: 700; font-size: 11.5px;}
+.v3 .mini-g {display: flex; gap: 1.5px; height: 5px; margin-top: 5px; border-radius: 999px; overflow: hidden; max-width: 220px;}
+.v3 .mini-g i {display: block; height: 100%;}
+.v3 .paper {position: relative; width: min(100%, 400px); max-height: calc(100dvh - 40px); overflow: auto; padding: 22px 22px 28px; border-radius: 6px 6px 0 0;
+  background: #FFFEFB; color: #1d1d1f; font: 13px ui-monospace, "SF Mono", Menlo, Consolas, monospace; box-shadow: 0 30px 60px -20px rgba(0,0,0,.5);}
+:host([dark]) .v3 .paper {background: #F4F1EA;}
+.v3 .paper .x {position: sticky; top: 0; float: right; width: 32px; height: 32px; margin: -8px -8px 0 0; border: 0; border-radius: 50%; background: #EEE; font-size: 20px; cursor: pointer; color: #333;}
+.v3 .r-head {text-align: center; display: grid; gap: 2px; padding-bottom: 12px; border-bottom: 1.5px dashed #BBB;}
+.v3 .r-logo {font: 900 22px Inter, sans-serif; letter-spacing: -.02em; color: #1d3a8a;}
+.v3 .r-dim {color: #777; font-size: 12px; display: flex; justify-content: space-between; gap: 8px;}
+.v3 .r-head .r-dim {justify-content: center;}
+.v3 .r-groups {display: flex; gap: 2px; height: 8px; margin: 12px 0 6px; border-radius: 999px; overflow: hidden;}
+.v3 .r-groups i {display: block;}
+.v3 .r-legend {display: flex; flex-wrap: wrap; gap: 4px 12px; font: 600 11px Inter, sans-serif; color: #555; margin-bottom: 10px;}
+.v3 .r-legend span {display: inline-flex; align-items: center; gap: 5px;}
+.v3 .r-legend i {width: 8px; height: 8px; border-radius: 2px;}
+.v3 .r-lines {display: grid; gap: 4px; padding: 8px 0 12px; border-bottom: 1.5px dashed #BBB;}
+.v3 .r-line {display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 8px; align-items: baseline;}
+.v3 .r-dot {width: 7px; height: 7px; border-radius: 2px; align-self: center;}
+.v3 .r-n small {display: block; color: #888; font-size: 11.5px;}
+.v3 .r-p {font-variant-numeric: tabular-nums;}
+.v3 .r-off {color: #C2410C;}
+.v3 .r-sum {display: grid; gap: 4px; padding-top: 10px;}
+.v3 .r-sum > div {display: flex; justify-content: space-between;}
+.v3 .r-total {font-weight: 800; font-size: 16px; padding: 6px 0; border-top: 1.5px solid #222; border-bottom: 1.5px solid #222; margin: 4px 0;}
+.v3 .r-zig {position: absolute; left: 0; right: 0; bottom: -10px; height: 12px; background: linear-gradient(-45deg, transparent 6px, #FFFEFB 0) 0 0/12px 12px repeat-x, linear-gradient(45deg, transparent 6px, #FFFEFB 0) 0 0/12px 12px repeat-x;}
+.v3 .btn {display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 40px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--card-background-color); color: var(--ink); font-weight: 650; font-size: 14px; cursor: pointer; text-decoration: none; transition: transform .15s, border-color .2s, background .2s;}
+.v3 .btn:hover {border-color: var(--rema-accent);}
+.v3 .btn:active {transform: scale(.97);}
+.v3 .btn.primary {background: var(--rema-accent); border-color: transparent; color: var(--rema-on-accent); box-shadow: 0 8px 20px -10px var(--rema-accent);}
+.v3 .btn.big {height: 48px; padding: 0 20px; font-size: 15px; border-radius: 14px;}
+.v3 .i {fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none;}
+.v3 .tag {display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--rema-subtle); color: var(--soft);}
+.v3 .tag.t-rester {background: color-mix(in srgb, var(--g-mejeri) 14%, transparent); color: var(--g-mejeri);}
+.v3 .tag.t-ude {background: color-mix(in srgb, var(--soft) 14%, transparent);}
+.v3 .tag.t-frost {background: color-mix(in srgb, var(--g-drikke) 16%, transparent); color: var(--g-drikke);}
+.v3 .tag.now {background: var(--rema-accent); color: var(--rema-on-accent);}
+.v3 .tag.offer {background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad);}
+.v3 .kicker.light {color: rgba(255,255,255,.8);}
+.v3 .hdr {position: relative; color: #fff; overflow: hidden; isolation: isolate;}
+.v3 .hdr.big {min-height: clamp(520px, 58vw, 600px);}
+.v3 .hdr.small {min-height: 200px;}
+.v3 .scene-wrap {position: absolute; inset: 0; z-index: -1;}
+.v3 .scene-svg {width: 100%; height: 100%; display: block;}
+.v3 .hdr::after {content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(5,10,30,.38) 0%, rgba(5,10,30,0) 34%, rgba(5,10,30,0) 62%, rgba(5,10,30,.5) 100%); pointer-events: none;}
+.v3 .hdr.small::after {background: linear-gradient(90deg, rgba(5,10,30,.55), rgba(5,10,30,.05) 70%), linear-gradient(0deg, rgba(5,10,30,.45), transparent 50%);}
+:host([dark]) .v3 .scene-svg {filter: brightness(.86) saturate(.95);}
+.v3 .hdr-top {display: flex; align-items: center; gap: 10px; max-width: 1180px; margin: 0 auto; padding: 14px 16px 0;}
+.v3 .brand {display: flex; align-items: center; gap: 10px; border: 0; background: none; color: #fff; cursor: pointer; padding: 0;}
+.v3 .logo {width: 40px; height: 40px; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 22px -8px rgba(0,0,0,.6);}
+.v3 .logo svg {width: 100%; height: 100%; display: block;}
+.v3 .wordmark {font-family: var(--display); font-weight: 750; font-size: 23px; letter-spacing: -.03em; text-shadow: 0 2px 14px rgba(0,0,0,.35);}
+.v3 .prof-wrap {position: relative;}
+.v3 .prof {width: 40px; height: 40px; border-radius: 50%; border: 2px solid rgba(255,255,255,.7); background: linear-gradient(135deg, #6E4AFF, #FF7A59); color: #fff; font-weight: 800; font-size: 16px; cursor: pointer; box-shadow: 0 8px 22px -8px rgba(0,0,0,.6);}
+.v3 .prof-menu {position: absolute; right: 0; top: 48px; z-index: 30; min-width: 220px; padding: 6px; border-radius: 16px; background: var(--card-background-color); color: var(--ink); border: 1px solid var(--line); box-shadow: 0 24px 48px -16px rgba(0,0,0,.4);}
+.v3 .prof-menu button {display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 0; background: none; border-radius: 10px; font-weight: 600; font-size: 14px; cursor: pointer; text-align: left;}
+.v3 .prof-menu button:hover {background: var(--rema-subtle);}
+.v3 .hero-copy {max-width: 1180px; margin: 0 auto; padding: 26px 18px 0; text-shadow: 0 2px 18px rgba(0,0,0,.35);}
+.v3 .hello {margin: 4px 0 0; font-family: var(--display); font-size: clamp(38px, 6.4vw, 64px); font-weight: 760; letter-spacing: -.04em; line-height: 1;}
+.v3 .hero-sub {margin: 10px 0 0; font-size: clamp(15px, 1.8vw, 18px); opacity: .95; max-width: 520px;}
+.v3 .page-title {max-width: 1180px; margin: 0 auto; padding: 18px 18px 0; text-shadow: 0 2px 14px rgba(0,0,0,.35);}
+.v3 .page-title h1 {margin: 0; font-family: var(--display); font-size: clamp(28px, 4vw, 38px); font-weight: 760; letter-spacing: -.035em;}
+.v3 .page-title p {margin: 4px 0 0; opacity: .92; font-size: 14px;}
+.v3 .glass {background: rgba(14, 20, 44, .42); border: 1px solid rgba(255,255,255,.22); backdrop-filter: blur(18px) saturate(1.3); -webkit-backdrop-filter: blur(18px) saturate(1.3); border-radius: 24px; box-shadow: 0 30px 60px -30px rgba(0,0,0,.7);}
+.v3 .budget-glass {position: absolute; right: max(16px, calc((100vw - 1180px) / 2 + 16px)); bottom: 70px; width: min(400px, calc(100% - 32px)); padding: 16px; display: grid; gap: 12px; animation: rise .6s .15s both;}
+.v3 .hb-top {display: flex; gap: 14px; align-items: center;}
+.v3 .hb-ring {width: 84px; height: 84px; flex: none;}
+.v3 .hb-num {display: grid; gap: 2px;}
+.v3 .hb-num b {font-family: var(--display); font-size: 34px; font-weight: 760; letter-spacing: -.035em; line-height: 1;}
+.v3 .hb-num span:last-child {font-size: 13px; opacity: .85;}
+.v3 .hb-days {display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;}
+.v3 .hbd {display: grid; justify-items: center; gap: 4px;}
+.v3 .hbd .bar {position: relative; width: 100%; max-width: 30px; height: 40px; border-radius: 8px; background: rgba(255,255,255,.12); display: flex; flex-direction: column-reverse; overflow: hidden;}
+.v3 .hbd .bar i {display: block; width: 100%;}
+.v3 .hbd .bar em {position: absolute; left: 0; right: 0; top: 0; background: rgba(14,20,44,.0);}
+.v3 .hbd small {font-size: 10.5px; font-weight: 700; opacity: .75;}
+.v3 .hbd.now small {opacity: 1; color: #7CF2C8;}
+.v3 .hbd.now .bar {box-shadow: inset 0 0 0 1.5px #7CF2C8;}
+.v3 .hb-book {display: flex; gap: 8px;}
+.v3 .hb-amt {flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 14px; border-radius: 14px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.26); transition: background .2s, box-shadow .2s;}
+.v3 .hb-amt:focus-within {background: rgba(255,255,255,.22); box-shadow: 0 0 0 4px rgba(124,242,200,.25);}
+.v3 .hb-amt input {flex: 1; min-width: 0; width: 100%; border: 0; outline: 0; background: none; color: #fff; font: 650 18px var(--ha-font-family-body);}
+.v3 .hb-amt input::placeholder {color: rgba(255,255,255,.7); font-weight: 500; font-size: 15px;}
+.v3 .hb-go {height: 48px; padding: 0 18px; border: 0; border-radius: 14px; background: #fff; color: #10182E; font-weight: 750; font-size: 15px; cursor: pointer;}
+.v3 .hb-quick {display: flex; gap: 6px; flex-wrap: wrap; align-items: center;}
+.v3 .hb-quick button {border: 1px solid rgba(255,255,255,.3); background: rgba(255,255,255,.08); color: #fff; border-radius: 999px; padding: 5px 11px; font-weight: 650; font-size: 12.5px; cursor: pointer;}
+.v3 .hb-quick .hb-link {margin-left: auto; border: 0; background: none; opacity: .9;}
+@media (max-width: 700px) {
+  .v3 .hdr.big {min-height: 0; padding-bottom: 64px;}
+  .v3 .budget-glass {position: relative; right: auto; bottom: auto; margin: 150px 16px 0; width: auto; padding: 14px; gap: 10px;}
+  .v3 .hb-days {display: none;}
+  .v3 .hb-num b {font-size: 28px;}
+  .v3 .hb-ring {width: 64px; height: 64px;}
+  .v3 .hero-copy {padding-top: 18px;}
+}
+.v3 .strip {display: grid; grid-auto-flow: column; grid-auto-columns: minmax(138px, 1fr); gap: 10px; margin-top: 14px; overflow-x: auto; padding: 4px 2px 10px; scroll-snap-type: x mandatory;}
+.v3 .dtile {scroll-snap-align: start; position: relative; display: grid; justify-items: center; align-content: start; gap: 4px; padding: 12px 10px 12px; border-radius: 20px; border: 1px solid var(--line); background: var(--rema-subtle); cursor: pointer; text-align: center; transition: transform .2s, border-color .2s, box-shadow .2s; animation: rise .5s both;}
+.v3 .dtile:hover {transform: translateY(-3px);}
+.v3 .dtile.now {background: linear-gradient(180deg, var(--rema-tint), var(--rema-subtle)); border-color: var(--rema-accent); box-shadow: 0 14px 30px -18px var(--rema-accent);}
+.v3 .dtile.on {border-color: var(--ink);}
+.v3 .dtile.past {opacity: .62;}
+.v3 .dt-day {font-size: 12px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; color: var(--soft);}
+.v3 .dtile.now .dt-day {color: var(--rema-accent);}
+.v3 .dt-date {font-size: 12px; color: var(--soft);}
+.v3 .dish-art {width: 92px; height: 92px; margin: 4px 0; filter: drop-shadow(0 8px 10px rgba(0,0,0,.08)); transition: transform .3s;}
+.v3 .dtile:hover .dish-art {transform: rotate(-8deg) scale(1.04);}
+.v3 .dtile b {font-size: 13px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; min-height: 48px;}
+.v3 .dt-meta {display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 11.5px; color: var(--soft);}
+.v3 .plan-foot {display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line);}
+.v3 .pf-stat {display: grid;}
+.v3 .pf-stat b {font-family: var(--display); font-size: 22px; letter-spacing: -.02em;}
+.v3 .pf-stat span {font-size: 12px; color: var(--soft);}
+.v3 .quickadd {background: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--rema-accent) 14%, transparent), transparent 55%), var(--rema-card);}
+.v3 .cart {position: relative; width: 52px; height: 52px; border-radius: 16px; border: 1px solid var(--line); background: var(--card-background-color); color: var(--ink); cursor: pointer; display: grid; place-items: center;}
+.v3 .cart-n {position: absolute; top: -6px; right: -6px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; background: var(--rema-accent); color: var(--rema-on-accent); font-size: 12px; font-weight: 800; display: grid; place-items: center;}
+.v3 .cart.pop {animation: pop .45s cubic-bezier(.3,1.6,.5,1);}
+@keyframes pop { 40% { transform: scale(1.18) rotate(-6deg); } }
+.v3 .qbar {display: flex; align-items: center; gap: 10px; height: 64px; margin-top: 14px; padding: 0 8px 0 18px; border-radius: 22px; background: var(--card-background-color); border: 2px solid var(--line); color: var(--soft); transition: border-color .2s, box-shadow .25s;}
+.v3 .qbar:focus-within, .v3 .qbar.typing {border-color: var(--rema-accent); box-shadow: 0 0 0 6px var(--rema-tint), 0 18px 40px -24px var(--rema-accent); color: var(--rema-accent);}
+.v3 .qbar input {flex: 1; min-width: 0; width: 100%; border: 0; outline: 0; background: none; color: var(--ink); font: 600 18px var(--ha-font-family-body);}
+.v3 .qbar input::placeholder {color: var(--soft); font-weight: 500;}
+.v3 .qgo {width: 48px; height: 48px; border-radius: 16px; border: 0; background: var(--rema-accent); color: var(--rema-on-accent); cursor: pointer; display: grid; place-items: center; flex: none;}
+.v3 .qbar.small {height: 50px; border-radius: 16px; padding-left: 14px; margin-top: 12px;}
+.v3 .qbar.small input {font-size: 15px;}
+.v3 .qbar.small .qgo {width: 38px; height: 38px; border-radius: 12px;}
+.v3 .qhits {display: grid; gap: 6px; margin-top: 8px;}
+.v3 .qhit {display: grid; grid-template-columns: 44px minmax(0, 1fr) auto 32px; gap: 12px; align-items: center; padding: 6px 8px; border-radius: 14px; border: 1px solid var(--line); background: var(--card-background-color); cursor: pointer; text-align: left; animation: rise .25s both;}
+.v3 .qhit:hover {border-color: var(--rema-accent);}
+.v3 .qimg {width: 44px; height: 44px; border-radius: 10px; background: #fff; display: grid; place-items: center; overflow: hidden;}
+.v3 .qimg img, .v3 .qimg svg {width: 86%; height: 86%; object-fit: contain;}
+.v3 .qname {font-weight: 650; font-size: 14px;}
+.v3 .qprice {color: var(--soft); font-size: 12.5px; font-variant-numeric: tabular-nums;}
+.v3 .qplus {width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--rema-tint); color: var(--rema-accent);}
+.v3 .qchips {display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 12px;}
+.v3 .qchips button {border: 1px solid var(--line); background: var(--card-background-color); border-radius: 999px; padding: 7px 13px; font-weight: 650; font-size: 13px; cursor: pointer;}
+.v3 .qchips button:hover {border-color: var(--rema-accent); color: var(--rema-accent);}
+.v3 .onlist {margin-top: 16px;}
+.v3 .ol-chips {display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;}
+.v3 .olc {display: inline-flex; align-items: center; gap: 6px; padding: 5px 6px 5px 11px; border-radius: 999px; background: var(--rema-subtle); font-size: 13px; font-weight: 600;}
+.v3 .olc.fresh {background: var(--rema-tint); color: var(--rema-accent); animation: pop .4s;}
+.v3 .olc button {width: 20px; height: 20px; border-radius: 50%; border: 0; background: rgba(0,0,0,.06); color: inherit; cursor: pointer; display: grid; place-items: center;}
+.v3 .mono {width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; color: #fff; font: 800 15px var(--display); flex: none;}
+.v3 .mono.big {width: 44px; height: 44px; border-radius: 14px; font-size: 19px;}
+.v3 .mono.m0 {background: var(--g-mejeri);}
+.v3 .mono.m1 {background: var(--g-brod); color: #2a1d00;}
+.v3 .mono.m2 {background: var(--g-hjem);}
+.v3 .mono.m3 {background: var(--g-drikke);}
+.v3 .mono.m4 {background: var(--g-kod);}
+.v3 .mono.m5 {background: var(--g-kolonial);}
+.v3 .compare {background: radial-gradient(100% 70% at 0% 100%, color-mix(in srgb, var(--g-drikke) 10%, transparent), transparent 60%), var(--rema-card);}
+.v3 .race {display: grid; gap: 12px; margin-top: 14px;}
+.v3 .lane {padding: 14px; border-radius: 20px; background: var(--rema-subtle); display: grid; gap: 10px; animation: rise .5s both;}
+.v3 .ln-head {display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 12px; align-items: center;}
+.v3 .ln-head b {font-size: 16px;}
+.v3 .ln-head small {display: block; color: var(--soft); font-size: 12.5px;}
+.v3 .ln-tot {font-family: var(--display); font-size: 24px; font-weight: 750; letter-spacing: -.02em;}
+.v3 .ln-bar {display: flex; gap: 3px; height: 14px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 6%, transparent); overflow: hidden;}
+.v3 .ln-bar i {display: block; height: 100%; border-radius: 999px; animation: fill 1s cubic-bezier(.2,.8,.2,1) both; transform-origin: left;}
+.v3 .ln-bar .fee {background: repeating-linear-gradient(45deg, var(--soft) 0 3px, transparent 3px 6px); opacity: .6;}
+@keyframes fill { from { transform: scaleX(0); } }
+.v3 .ln-foot {display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--soft);}
+.v3 .ln-foot .up {color: var(--bad); font-weight: 700;}
+.v3 .ln-foot .down {color: var(--good); font-weight: 700;}
+.v3 .xfer {justify-self: start;}
+.v3 .fees {margin-top: 14px;}
+.v3 .fees summary {cursor: pointer; font-weight: 700;}
+.v3 .fee-grid {display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 10px;}
+.v3 .fee-grid label {display: grid; gap: 6px; font-size: 13px; font-weight: 650;}
+.v3 .fee-grid select {height: 38px; border-radius: 10px; border: 1px solid var(--line); background: var(--card-background-color); color: var(--ink); padding: 0 8px; font: inherit;}
+.v3 .fee-grid input[type=range] {accent-color: var(--rema-accent);}
+.v3 .xsheet {position: relative; width: min(100%, 520px); max-height: calc(100dvh - 40px); overflow: auto; padding: 22px; border-radius: 24px; background: var(--card-background-color); color: var(--ink); box-shadow: 0 40px 80px -30px rgba(0,0,0,.6); animation: rise .3s both;}
+.v3 .xsheet .x {position: absolute; right: 14px; top: 14px; width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--rema-subtle); color: var(--ink); font-size: 20px; cursor: pointer;}
+.v3 .xprog {height: 8px; border-radius: 999px; background: var(--rema-subtle); overflow: hidden; margin: 14px 0 10px;}
+.v3 .xprog i {display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--rema-accent), #7CF2C8); transition: width 1.8s cubic-bezier(.4,0,.2,1);}
+.v3 .xlist {display: grid; gap: 4px;}
+.v3 .xl {display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 14px; animation: rise .3s both;}
+.v3 .xl small {color: var(--soft); font-size: 12px;}
+.v3 .xdot {width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #fff;}
+.v3 .xdot.ok {background: var(--good);}
+.v3 .xdot.miss {background: var(--warning-color, #E0A52E);}
+.v3 .xdone {display: none; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line);}
+.v3 .xdone.on {display: grid; animation: rise .4s both;}
+.v3 .tw {animation: twinkle 3.5s ease-in-out infinite;}
+@keyframes twinkle { 50% { opacity: .25; } }
+.v3 .steam {animation: steam 3s ease-in-out infinite;}
+@keyframes steam { 0% { transform: translateY(4px); opacity: 0; } 40% { opacity: 1; } 100% { transform: translateY(-10px); opacity: 0; } }
+.v3 .smoke {animation: smoke 6s ease-in-out infinite; transform-box: fill-box;}
+@keyframes smoke { 0% { transform: translate(0, 6px); opacity: 0; } 30% { opacity: 1; } 100% { transform: translate(12px, -24px); opacity: 0; } }
+.v3 .hdr .cloud {animation: drift 30s ease-in-out infinite alternate;}
+.v3 .btn.small {height: 32px; padding: 0 12px; font-size: 13px; border-radius: 10px;}
+.v3 .btn.danger {color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--line));}
+.v3 .link {border: 0; background: none; padding: 0; color: var(--rema-accent); font-weight: 650; cursor: pointer; text-decoration: underline;}
+@keyframes spinin { from { transform: rotate(-40deg) scale(.7); opacity: 0; } }
+:host([dark]) .v3 .btn.surprise {background: linear-gradient(135deg, #3A2A33, #2A2448); color: #F1EFFA;}
+@keyframes ring { 20% { transform: rotate(18deg); } 40% { transform: rotate(-14deg); } 60% { transform: rotate(8deg); } }
+@media (max-width: 700px) {
+  .v3 .card {padding: 16px; border-radius: 20px; margin-bottom: 12px;}
+  .v3 h2 {font-size: 20px;}
+  .v3 .hdr.big {padding-bottom: 18px;}
+  .v3 .hdr.small {min-height: 132px;}
+  .v3 .page-title {padding-top: 12px;}
+  .v3 .page-title h1 {font-size: 30px;}
+  .v3 .hdr-top {padding: 12px 14px 0;}
+  .v3 .logo {width: 36px; height: 36px; border-radius: 11px;}
+  .v3 .wordmark {font-size: 21px;}
+  .v3 .prof {width: 36px; height: 36px; font-size: 15px;}
+  .v3 .hello {font-size: 40px;}
+  .v3 .budget-glass {margin-top: calc(100vw - 138px);}
+  .v3 .xsheet, .v3 .paper {width: 100%; max-width: none; max-height: 92dvh; border-radius: 26px 26px 0 0; padding-bottom: env(safe-area-inset-bottom); animation: sheetup .32s cubic-bezier(.2,.8,.2,1) both;}
+  .v3 .paper {padding: 22px 18px calc(28px + env(safe-area-inset-bottom));}
+  .v3 .xsheet {padding: 20px 18px calc(24px + env(safe-area-inset-bottom));}
+  .v3 .seg:not(.fit) {max-width: 100%; overflow-x: auto; scrollbar-width: none;}
+  .v3 .seg:not(.fit)::-webkit-scrollbar {display: none;}
+  .v3 .seg button {white-space: nowrap; flex: none; padding: 7px 13px;}
+  .v3 .plan-actions .btn {flex: 1 1 auto;}
+  .v3 .strip {grid-auto-columns: 132px; margin: 12px -16px 0; padding: 4px 16px 10px; scroll-padding: 16px;}
+  .v3 .plan-foot {gap: 14px;}
+  .v3 .plan-foot .spacer {display: none;}
+  .v3 .plan-foot .btn, .v3 .plan-foot .pill {flex: 1 1 auto;}
+  .v3 .qbar {height: 56px; padding-left: 14px;}
+  .v3 .qbar input {font-size: 16px;}
+  .v3 .qgo {width: 42px; height: 42px;}
+  .v3 .shelf {grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;}
+  .v3 .podium {gap: 8px;}
+  .v3 .pod b {font-size: 12px;}
+  .v3 .pod .pstep {font-size: 20px;}
+  .v3 .ln-tot {font-size: 20px;}
+  .v3 .bcenter {inset: 32%;}
+  .v3 .bcenter .big {font-size: 22px;}
+  .v3 .bcenter .lab {font-size: 9.5px;}
+  .v3 .bcenter .meta, .v3 .bcenter .saved {font-size: 10.5px;}
+  .v3 .minidays {height: 18px;}
+  .v3 .minidays i {width: 6px;}
+  .v3 .minilab span {width: 6px; font-size: 6px;}
+  .v3 .center .big {font-size: 28px;}
+  .v3 .center .small {font-size: 11.5px;}
+  .v3 .weekpick {width: 100%; justify-content: space-between;}
+  .v3 .wk {width: 15%;}
+  .v3 .stats4 {gap: 6px;}
+  .v3 .stat b {font-size: 17px;}
+  .v3 .huge {font-size: 32px;}
+}
+@keyframes sheetup { from { transform: translateY(40%); opacity: .4; } }
+@media (max-width: 380px) {
+  .v3 .hello {font-size: 34px;}
+}
+  /* ===================== Middagsro 3: the street, the clocks, the plates ===================== */
+  :host { --ink: var(--primary-text-color); --soft: var(--secondary-text-color); --line: var(--divider-color);
+    --good: var(--success-color, #0E9F6E); --bad: var(--error-color, #E34948);
+    --display: "Inter Display", Inter, var(--ha-font-family-body, system-ui), sans-serif;
+    --v3-ink: var(--ink); --v3-soft: var(--soft); --v3-good: var(--good); --v3-bad: var(--bad); --v3-display: var(--display);
+    /* Varegrupper: eight hues in a fixed, validated order. */
+    --g-mejeri: #2a78d6; --g-kolonial: #eb6834; --g-drikke: #1baf7a; --g-brod: #eda100;
+    --g-snacks: #e87ba4; --g-frugt: #008300; --g-hjem: #6250d6; --g-kod: #e34948; --g-none: #A9B2C3; }
+  :host([dark]) { --g-mejeri: #3987e5; --g-kolonial: #d95926; --g-drikke: #199e70; --g-brod: #c98500;
+    --g-snacks: #d55181; --g-frugt: #0ca30c; --g-hjem: #9085e9; --g-kod: #e66767; --g-none: #4A556B; }
+  :host([look="hverdag"]) { --display: Figtree, var(--ha-font-family-body, system-ui), sans-serif; }
+  :host([embed]) .hdr-host { display: none !important; }
+
+  /* The header: the street, alive. The toolbar and the tabs live in it. */
+  .hdr-host { position: relative; z-index: 5; }
+  .hdr .toolbar { position: relative; top: auto; z-index: 2; max-width: 1180px; margin: 0 auto; height: auto;
+    min-height: calc(60px + var(--rema-safe-top, 0px)); padding: calc(10px + var(--rema-safe-top, 0px)) 16px 0;
+    background: none; border: 0; color: #fff; --app-header-text-color: #fff; --sidebar-icon-color: #fff; }
+  .hdr .toolbar ha-menu-button { color: #fff; }
+  .hdr .brand { cursor: pointer; border-radius: 14px; }
+  .hdr .brand:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+  .hdr .logo { width: 40px; height: 40px; border-radius: 12px; background: none; box-shadow: 0 8px 22px -8px rgba(0,0,0,.6); }
+  .hdr .wordmark { color: #fff; font-family: var(--display); font-weight: 750; font-size: 23px; letter-spacing: -.03em; text-shadow: 0 2px 14px rgba(0,0,0,.35); }
+  .hdr .prof { width: 40px; height: 40px; border: 2px solid rgba(255,255,255,.75); background: linear-gradient(135deg, #6E4AFF, #FF7A59); color: #fff; font-weight: 800; font-size: 16px; box-shadow: 0 8px 22px -8px rgba(0,0,0,.6); }
+  .hdr .prof-menu { z-index: 30; color: var(--primary-text-color); text-shadow: none; }
+  .hdr #busy { color: #fff; }
+  .hdr .timer-chip:not(:empty) { position: fixed; top: calc(12px + var(--rema-safe-top, 0px)); right: 70px; z-index: 7; box-shadow: 0 8px 20px -8px rgba(0,0,0,.5); }
+
+  .v3 .hdr .page-title, .v3 .hdr .hero-copy { padding-left: 18px; padding-right: 18px; }
+  .v3 .hdr.small { min-height: 206px; }
+  .v3 .hdr.small .page-title { padding-bottom: 64px; }
+  .v3 .page-title p b { font-weight: 700; }
+  @media (min-width: 701px) {
+    .hdr nav.tabs { position: absolute; left: 0; right: 0; bottom: 0; top: auto; z-index: 3; max-width: 1180px; margin: 0 auto;
+      padding: 0 12px 12px; background: none; border: 0; gap: 4px; scrollbar-width: none; }
+    .hdr nav.tabs::-webkit-scrollbar { display: none; }
+    .hdr nav.tabs .tab { flex: none; height: 40px; padding: 0 14px; margin: 0; border: 0; border-radius: 999px; background: rgba(255,255,255,.14); color: #fff;
+      font-weight: 650; font-size: 14px; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+    .hdr nav.tabs .tab:hover { background: rgba(255,255,255,.26); }
+    .hdr nav.tabs .tab.active { background: #fff; color: #10182E; box-shadow: 0 10px 24px -12px rgba(0,0,0,.6); }
+    .hdr nav.tabs .tab.customize { margin-left: auto; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; opacity: .85; }
+    .more-sheet:not([hidden]) { top: 120px; }
+  }
+  /* A phone: the street stays, the tabs float at the bottom like the iPhone's own bar. */
+  @media (max-width: 700px) {
+    :host { --rema-tabbar: calc(78px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); }
+    .hdr nav.tabs { left: 10px; right: 10px; bottom: calc(10px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); padding: 6px; gap: 2px;
+      border-radius: 26px; border: 1px solid var(--divider-color); border-top: 1px solid var(--divider-color);
+      background: color-mix(in srgb, var(--card-background-color) 82%, transparent);
+      -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); box-shadow: 0 18px 40px -18px rgba(0,0,0,.45); }
+    .hdr nav.tabs .tab { color: var(--secondary-text-color); border-radius: 20px; padding: 7px 2px 6px; font-size: 10.5px; font-weight: 650; }
+    .hdr nav.tabs .tab.active { color: var(--rema-accent); background: var(--rema-tint); }
+    .hdr nav.tabs .tab.active svg { stroke-width: 2.2; }
+    .hdr .toolbar { padding: calc(8px + var(--rema-safe-top, 0px)) 10px 0; min-height: 0; gap: 6px; }
+    .hdr .logo { width: 36px; height: 36px; border-radius: 11px; }
+    .hdr .wordmark { font-size: 21px; }
+    .hdr .prof { width: 36px; height: 36px; font-size: 15px; }
+    .v3 .hdr.small { min-height: 132px; }
+    .v3 .hdr.small .page-title { padding-bottom: 18px; }
+    .hdr .timer-chip:not(:empty) { right: 58px; }
+  }
+
+  /* Text drawn in the clocks. */
+  .v3 .dial .dayval { font: 750 9.5px var(--ha-font-family-body, sans-serif); fill: var(--ink); }
+  .v3 .dial .overval { font: 800 11px var(--ha-font-family-body, sans-serif); fill: var(--bad); }
+  .v3 .dial .nowlab { font: 700 9.5px var(--ha-font-family-body, sans-serif); fill: var(--soft); }
+  .v3 .years .ylab { font: 700 10.5px var(--ha-font-family-body, sans-serif); fill: var(--ink); }
+  .v3 .years .yname { font: 650 11px var(--ha-font-family-body, sans-serif); fill: var(--soft); }
+  .v3 .pl-big { font: 750 20px var(--display); fill: var(--ink); }
+  .v3 .pl-small { font: 650 9.5px var(--ha-font-family-body, sans-serif); fill: var(--soft); }
+  .v3 .ax { font: 600 9.5px var(--ha-font-family-body, sans-serif); fill: var(--soft); }
+  .v3 .axv { font: 700 10.5px var(--ha-font-family-body, sans-serif); fill: var(--ink); }
+  .v3 .hero-week { background: radial-gradient(120% 70% at 50% -10%, color-mix(in srgb, var(--rema-accent) 16%, transparent), transparent 60%), var(--rema-card); }
+  .v3 .dial .day { cursor: pointer; }
+  .v3 .buy { width: 100%; text-align: left; font: inherit; color: inherit; border: 1px solid var(--line); background: var(--card-background-color); }
+  .v3 .buy .amt { text-align: right; }
+  .v3 .note-line { margin-top: 8px; }
+  .v3 .more-book { font-size: 13.5px; }
+  .v3 .more-book summary { cursor: pointer; color: var(--soft); font-weight: 650; }
+  .v3 .more-book .book { padding: 8px 0 0; background: none; }
+  .v3 .lg, .v3 .tile { font: inherit; color: inherit; text-align: left; cursor: pointer; }
+  .v3 .tile { border: 1px solid transparent; display: block; width: 100%; }
+  .v3 .qname small { display: block; color: var(--soft); font-weight: 500; font-size: 12px; }
+  .v3 .qhit { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+  .v3 .dtile { font: inherit; color: inherit; cursor: pointer; }
+  .v3 .dtile.skipped { opacity: .55; }
+  .v3 .plan-home { background: radial-gradient(110% 80% at 0% 0%, var(--rema-tint), transparent 60%), var(--rema-card); }
+  .v3-section { margin: 26px 4px 10px; font-size: 13px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--secondary-text-color); }
+  /* Redrawn without a change: no animation again. */
+  .v3 .still, .v3 .still *, .v3.still, .v3.still * { animation: none !important; }
+  .v3-fly { position: fixed; z-index: 50; padding: 6px 12px; border-radius: 999px; background: var(--rema-accent); color: var(--rema-on-accent); font-weight: 700; font-size: 13px; pointer-events: none; transition: transform .6s cubic-bezier(.5,-0.3,.6,1), opacity .6s; }
+  /* The receipt and the basket, as sheets. */
+  .v3-sheet { position: fixed; inset: 0; z-index: 21; display: grid; place-items: center; padding: 20px; pointer-events: none; }
+  .v3-sheet > * { pointer-events: auto; }
+  .v3 .xsheet .x, .v3 .paper .x { cursor: pointer; }
+  .v3 .xl small { margin-left: 2px; }
+  @media (max-width: 700px) { .v3-sheet { padding: 0; place-items: end stretch; } }
+
+  /* Madplan: the dishes drawn on their plates. */
+  .day.art { grid-template-columns: 56px 130px minmax(0, 1fr) auto; }
+  .day .d-art { width: 56px; height: 56px; transition: transform .3s; filter: drop-shadow(0 4px 6px rgba(0,0,0,.06)); }
+  .day.art:hover .d-art { transform: rotate(-8deg); }
+  @media (max-width: 700px) {
+    .day.art { grid-template-columns: 52px minmax(0, 1fr); column-gap: 12px; row-gap: 2px; }
+    .day.art .d-art { grid-row: 1 / span 3; width: 52px; height: 52px; align-self: center; }
+  }
+  .dialog-top.day-hero { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; gap: 14px; align-items: center; }
+  .day-hero .dlg-art { width: 84px; height: 84px; animation: spinin .6s cubic-bezier(.2,.8,.2,1) both; }
+  .day-hero h2 { margin: 0; }
+  @media (max-width: 700px) { .dialog-top.day-hero { grid-template-columns: 64px minmax(0, 1fr) auto; } .day-hero .dlg-art { width: 64px; height: 64px; } }
+  /* Popups become sheets from the bottom on a phone, like on iPhone. */
+  @media (max-width: 700px) {
+    .dialog { left: 0; right: 0; top: auto; bottom: 0; transform: none; width: 100%; max-height: 92dvh; border-radius: 24px 24px 0 0;
+      padding-bottom: calc(18px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); animation: sheetup .3s cubic-bezier(.2,.8,.2,1) both; }
+  }
+
+  /* Keep the screen on, as a switch. */
+  .v3-wake { display: grid; grid-template-columns: 36px minmax(0, 1fr) 46px; gap: 10px; align-items: center; width: 100%; margin: 10px 0 4px; padding: 10px 12px;
+    border-radius: 16px; border: 1px solid var(--divider-color); background: var(--rema-subtle); color: var(--primary-text-color); text-align: left; font: inherit; cursor: pointer; }
+  .v3-wake .wk-sun { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; font-size: 19px; background: var(--card-background-color); transition: transform .4s, background .3s; }
+  .v3-wake b { display: block; font-size: 14px; }
+  .v3-wake small { color: var(--secondary-text-color); font-size: 12px; }
+  .v3-wake .wk-sw { width: 46px; height: 28px; border-radius: 999px; background: color-mix(in srgb, var(--primary-text-color) 18%, transparent); position: relative; transition: background .3s; }
+  .v3-wake .wk-sw i { position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.25); transition: transform .3s cubic-bezier(.3,1.4,.5,1); }
+  .v3-wake.on { background: color-mix(in srgb, var(--g-brod) 18%, var(--rema-subtle)); border-color: var(--g-brod); }
+  .v3-wake.on .wk-sun { background: var(--g-brod); transform: rotate(90deg); }
+  .v3-wake.on .wk-sw { background: var(--g-brod); }
+  .v3-wake.on .wk-sw i { transform: translateX(18px); }
+  @media (prefers-reduced-motion: reduce) { .v3 *, .v3-wake * { animation: none !important; transition: none !important; } }
+  /* The panel's own .num is a step badge; here it only means tabular figures. */
+  :where(.v3) .num { flex: initial; width: auto; height: auto; border-radius: 0; background: none; color: inherit; display: revert; font-size: inherit; align-items: initial; justify-content: initial; }
+  #hdr-body { position: static; }
+  #hdr-body > * { position: relative; z-index: 1; }
+  .v3 #hdr-body > .budget-glass { position: absolute; }
+  @media (max-width: 700px) { .v3 #hdr-body > .budget-glass { position: relative; } }
+  :where(.v3) button { font-family: inherit; color: inherit; }
+
+`;
+const STYLE = STYLE_BASE + V3_STYLE;
 
 if (!customElements.get("middagsro-panel")) customElements.define("middagsro-panel", Rema1000Panel);
 
