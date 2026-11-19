@@ -23,9 +23,11 @@ import asyncio
 import base64
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, time as clock_time, timedelta
+import hashlib
 import json
 import logging
 import re
+import secrets
 import time
 from typing import Any
 from urllib.parse import unquote
@@ -43,17 +45,18 @@ LOGIN_ORIGIN = f"https://{LOGIN_HOST}"
 SITES = ("https://shop.rema1000.dk", "https://rema1000.dk")
 API_BASE = "https://api.digital.rema1000.dk/api"
 
-# The account's digital receipts (kvitteringer) live on the REMA 1000 Scan Selv
-# backend, an Azure API-management gateway. This endpoint was confirmed live
-# (dk.rema1000.app 1.8.15): GET on it exists but the gateway validates a Scan
-# Selv-audience JWT and rejects the webshop token the client holds, answering
-# 401 "Invalid token" (there is no subscription key — none exists in the app).
-# The shared account signs in fine, but receipts additionally need a token
-# minted through the Scan Selv app's own OAuth2+PKCE flow (authorize at
-# api.digital.rema1000.dk/api/oauth2/authorize, redirect dk.rema1000.app://
-# logincallback), which needs that flow's client_id/scope and is not yet
-# implemented. Until then the call fails soft (see RemaReceiptsCoordinator):
-# the sensor stays empty and the action returns a clear error.
+# Digital receipts (kvitteringer) live on the REMA 1000 Scan Selv backend (an
+# Azure API-management gateway), which validates a Scan Selv-audience token —
+# the webshop token the client holds is refused there. So receipts use the
+# Scan Selv app's own OAuth2+PKCE sign-in (reverse-engineered from
+# dk.rema1000.app 1.8.15): authorize with the account's e-mail/password at the
+# login host, exchange the code for a Scan Selv token, and call the gateway
+# with it. All values below are the app's own.
+SCAN_CLIENT_ID = "scan-and-pay"
+SCAN_REDIRECT_URI = "dk.rema1000.app://logincallback"
+AUTHORIZE_URL = "https://api.digital.rema1000.dk/api/oauth2/authorize"
+TOKEN_NEW_URL = "https://apim-rema-scan-prod.azure-api.net/v1/token/new"
+TOKEN_RENEW_URL = "https://apim-rema-scan-prod.azure-api.net/v1/token/renew"
 RECEIPTS_URL = "https://apim-rema-scan-prod.azure-api.net/v1/user/receipts"
 
 TJEK_DEFAULT_BASE = "https://squid-api.tjek.com"
@@ -741,6 +744,14 @@ def _jwt_claims(token: str) -> dict[str, Any]:
     return claims
 
 
+def _pkce_pair() -> tuple[str, str]:
+    """A PKCE (verifier, S256 challenge) pair, both base64url without padding."""
+    verifier = base64.urlsafe_b64encode(secrets.token_bytes(64)).decode().rstrip("=")
+    digest = hashlib.sha256(verifier.encode()).digest()
+    challenge = base64.urlsafe_b64encode(digest).decode().rstrip("=")
+    return verifier, challenge
+
+
 def _is_json(text: str) -> bool:
     try:
         json.loads(text)
@@ -780,6 +791,10 @@ class RemaClient:
         self._expires_at: float = 0
         self._user_id: int | None = None
         self._lock = asyncio.Lock()
+        # Scan Selv token (for digital receipts), separate from the webshop one.
+        self._scan_token: str | None = None
+        self._scan_refresh: str | None = None
+        self._scan_expires_at: float = 0
         self._tjek: tuple[str, str] | None = None
         self._tjek_lock = asyncio.Lock()
         self._tjek_failed_at: float | None = None
@@ -1029,59 +1044,195 @@ class RemaClient:
 
     # ------------------------------------------------------------ receipts
 
-    async def _async_token_get(self, url: str, *, retry: bool = True) -> tuple[int, str]:
-        """GET a full URL with the account's Bearer token; return (status, body).
+    async def _async_ensure_scan_token(self) -> None:
+        """Make sure a valid Scan Selv access token is held (renew or sign in)."""
+        async with self._lock:
+            if self._scan_token and self._scan_expires_at - time.time() > TOKEN_REFRESH_MARGIN:
+                return
+            if self._scan_refresh:
+                try:
+                    await self._async_scan_renew()
+                except RemaConnectionError:
+                    raise
+                except RemaError as err:
+                    _LOGGER.debug("Scan token renew failed, signing in again: %s", err)
+                else:
+                    return
+            await self._async_scan_login()
 
-        The account's own headers are sent (the Scan Selv app uses these). A
-        token the host rejects is renewed once.
-        """
-        await self._async_ensure_token()
-        token = self._access_token
-        headers = {
-            **BASE_HEADERS,
-            "Authorization": f"Bearer {token}",
-            "Origin": self._site or SITES[0],
-            "X-App-Platform": "android",
-            "X-App-Version": "1.8.15",
-            "X-App-Language": "da",
-        }
+    async def _async_scan_login(self) -> None:
+        """Run the Scan Selv OAuth2/PKCE sign-in and store its tokens."""
+        verifier, challenge = _pkce_pair()
+        authorize = str(
+            URL(AUTHORIZE_URL).with_query(
+                {
+                    "client_id": SCAN_CLIENT_ID,
+                    "response_type": "code",
+                    "code_challenge_method": "S256",
+                    "code_challenge": challenge,
+                    "redirect_uri": SCAN_REDIRECT_URI,
+                    "screen": "login",
+                    "lang": "da",
+                }
+            )
+        )
+        code = await self._async_scan_authorize(authorize)
+        data = await self._async_scan_token_request(
+            TOKEN_NEW_URL,
+            {"codeVerifier": verifier, "code": code, "redirectUri": SCAN_REDIRECT_URI},
+            "token exchange",
+        )
+        self._set_scan_token(data)
+
+    async def _async_scan_authorize(self, url: str) -> str:
+        """Follow the authorize flow (signing in once) and return the auth code."""
+        logged_in = False
+        current = url
+        for _ in range(20):
+            try:
+                async with self._session.get(
+                    current,
+                    allow_redirects=False,
+                    headers={**BASE_HEADERS, "Accept": "text/html"},
+                    timeout=REQUEST_TIMEOUT,
+                ) as resp:
+                    await resp.read()
+                    status, location, final = resp.status, resp.headers.get("Location"), resp.url
+            except (aiohttp.ClientError, TimeoutError) as err:
+                raise RemaConnectionError(f"Could not reach REMA 1000: {err}") from err
+            if status in (301, 302, 303, 307, 308) and location:
+                if location.startswith(SCAN_REDIRECT_URI):
+                    code = URL(location).query.get("code")
+                    if not code:
+                        raise RemaApiError("Scan sign-in callback had no code")
+                    return code
+                current = str(final.join(URL(location)))
+                continue
+            if status < 400:
+                # A page, not a redirect: the login form. Submit credentials once.
+                if not logged_in and final.host == LOGIN_HOST:
+                    current = await self._async_scan_credentials(str(final))
+                    logged_in = True
+                    continue
+                raise RemaApiError(f"Scan sign-in stopped at {final.host} (HTTP {status})")
+            raise RemaApiError(f"Scan sign-in returned HTTP {status}", status)
+        raise RemaApiError("Scan sign-in: too many redirects")
+
+    async def _async_scan_credentials(self, referer: str) -> str:
+        """POST the account's e-mail/password; return the continuation URL."""
         try:
-            async with self._session.request(
-                "GET", url, headers=headers, timeout=REQUEST_TIMEOUT
+            async with self._session.post(
+                LOGIN_API_URL,
+                json={"email": self._email, "password": self._password},
+                headers={
+                    **BASE_HEADERS,
+                    "X-Language": "da",
+                    "Origin": LOGIN_ORIGIN,
+                    "Referer": referer,
+                },
+                timeout=REQUEST_TIMEOUT,
             ) as resp:
-                if resp.status == 401 and retry:
-                    await self._async_ensure_token(stale=token)
-                    return await self._async_token_get(url, retry=False)
-                return resp.status, await resp.text()
+                text = await resp.text()
+                if resp.status in (401, 422) or (resp.status == 400 and _is_json(text)):
+                    raise RemaAuthError("E-mail or password was rejected")
+                if resp.status >= 400:
+                    raise RemaApiError(f"Login returned HTTP {resp.status}", resp.status)
+                data = _json_or_error(text, "login")
         except (aiohttp.ClientError, TimeoutError) as err:
             raise RemaConnectionError(f"Could not reach REMA 1000: {err}") from err
+        redirect = data.get("redirect_uri") if isinstance(data, dict) else None
+        if not redirect:
+            raise RemaApiError("Login response had no redirect_uri")
+        return re.sub(r"^http://", "https://", redirect)
+
+    async def _async_scan_renew(self) -> None:
+        """Renew the Scan Selv token with the refresh token."""
+        if not self._scan_refresh:
+            raise RemaAuthError("No Scan Selv refresh token")
+        data = await self._async_scan_token_request(
+            TOKEN_RENEW_URL, {"refreshToken": self._scan_refresh}, "token renew"
+        )
+        self._set_scan_token(data)
+
+    async def _async_scan_token_request(self, url: str, body: dict[str, Any], what: str) -> Any:
+        """POST a Scan Selv token request (new or renew) and return the JSON."""
+        try:
+            async with self._session.post(
+                url,
+                json=body,
+                headers={**BASE_HEADERS, "Tokenless": "Yes", "Accept": "application/json"},
+                timeout=REQUEST_TIMEOUT,
+            ) as resp:
+                text = await resp.text()
+                if resp.status in (401, 403):
+                    raise RemaAuthError(f"Scan {what} was rejected (HTTP {resp.status})")
+                if resp.status >= 400:
+                    raise RemaApiError(f"Scan {what} returned HTTP {resp.status}: {text[:200]}")
+                return _json_or_error(text, f"scan {what}")
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise RemaConnectionError(f"Could not reach REMA 1000: {err}") from err
+
+    def _set_scan_token(self, data: Any) -> None:
+        """Store the Scan Selv tokens from a TokenData response."""
+        if not isinstance(data, dict):
+            raise RemaApiError("Scan token response could not be read")
+        access = _first(data, "accessToken", "access_token", "token")
+        if not access:
+            raise RemaApiError("Scan token response had no access token")
+        self._scan_token = str(access)
+        refresh = _first(data, "refreshToken", "refresh_token")
+        if refresh:
+            self._scan_refresh = str(refresh)
+        expires_in = _first(data, "expiresIn", "expires_in", "accessTokenExpiresIn")
+        if expires_in is not None:
+            self._scan_expires_at = time.time() + int(expires_in)
+        else:
+            try:
+                self._scan_expires_at = float(_jwt_claims(self._scan_token).get("exp") or 0)
+            except RemaApiError:
+                self._scan_expires_at = time.time() + 3000
 
     async def async_get_receipts(
         self, *, since: datetime | None = None, limit: int | None = None
     ) -> list[Receipt]:
         """The account's digital receipts (kvitteringer), newest first.
 
-        Reads the Scan Selv backend (see RECEIPTS_URL). That gateway needs a
-        Scan Selv-audience token, which the webshop login does not provide, so
-        today this answers 401 and is surfaced as a clear, soft error rather
-        than prompting a re-login. ``limit`` keeps only the newest few.
+        Signs in to the Scan Selv backend (its own token) and reads
+        ``user/receipts``. ``since`` limits how far back; ``limit`` keeps only
+        the newest few.
         """
-        status, body_text = await self._async_token_get(RECEIPTS_URL)
-        if status == 401:
-            # Not a login problem with the account; keep it soft (not
-            # RemaAuthError, which would prompt a full re-login).
-            raise RemaApiError(
-                "The Scan Selv receipts backend rejected the account token. Reading "
-                "receipts needs the Scan Selv app's own authorization, which Middagsro "
-                "does not have yet.",
-                401,
-            )
-        if status >= 400:
-            raise RemaApiError(f"Receipts returned HTTP {status}: {body_text[:200]}", status)
-        data = _json_or_error(body_text, "receipts") if body_text.strip() else []
-        raw_list: Any = (
-            _first(data, "data", "receipts", "items") if isinstance(data, dict) else data
-        )
+        await self._async_ensure_scan_token()
+        return await self._async_fetch_receipts(since, limit, retry=True)
+
+    async def _async_fetch_receipts(
+        self, since: datetime | None, limit: int | None, *, retry: bool
+    ) -> list[Receipt]:
+        """GET the receipts with the Scan Selv token; renew once on a 401."""
+        params: dict[str, Any] = {}
+        if since is not None:
+            params["since"] = since.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        headers = {
+            **BASE_HEADERS,
+            "Authorization": f"Bearer {self._scan_token}",
+            "Accept": "application/json",
+            "X-App-Platform": "android",
+            "X-App-Version": "1.8.15",
+        }
+        try:
+            async with self._session.get(
+                RECEIPTS_URL, params=params or None, headers=headers, timeout=REQUEST_TIMEOUT
+            ) as resp:
+                text = await resp.text()
+                if resp.status == 401 and retry:
+                    self._scan_expires_at = 0  # force a renew / re-sign-in
+                    await self._async_ensure_scan_token()
+                    return await self._async_fetch_receipts(since, limit, retry=False)
+                if resp.status >= 400:
+                    raise RemaApiError(f"Receipts returned HTTP {resp.status}: {text[:200]}")
+                data = _json_or_error(text, "receipts") if text.strip() else []
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise RemaConnectionError(f"Could not reach REMA 1000: {err}") from err
+        raw_list: Any = _first(data, "data", "receipts", "items") if isinstance(data, dict) else data
         receipts: list[Receipt] = []
         for entry in raw_list if isinstance(raw_list, list) else []:
             try:
