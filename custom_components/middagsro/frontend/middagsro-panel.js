@@ -776,6 +776,7 @@ class Rema1000Panel extends HTMLElement {
     if (key === "health") this._loadHealth();
     this._render();
     this._syncPath();
+    this._toTop(); // a page always opens from the top
     const content = this.shadowRoot.querySelector("#content");
     if (content && direction) {
       content.classList.remove("from-left", "from-right");
@@ -5956,22 +5957,12 @@ class Rema1000Panel extends HTMLElement {
     }
     const rows = list
       .map(
-        (r) => `<li class="hist receipt-row" data-action="view-receipt" data-arg="${esc(r.id)}" role="button" tabindex="0">
-          <div class="what">
-            <b>REMA 1000${r.store ? ` ${esc(r.store)}` : r.city ? ` ${esc(r.city)}` : ""}</b>
-            <span class="muted small">${esc(longDate(r.date))} · ${r.items} vare${r.items === 1 ? "" : "r"}</span>
-          </div>
-          <div class="receipt-amt">
-            <b>${kr(r.total)}</b>
-            ${r.total_discount ? `<span class="save small">spar ${kr(r.total_discount)}</span>` : ""}
-          </div>
-          <span class="chev" aria-hidden="true">›</span>
-        </li>`
+        (r) => this._v3ReceiptRow(r)
       )
       .join("");
-    return `<div class="card"><h1>Indkøb</h1>
-      <p class="muted">Dine kvitteringer fra REMA 1000. Tryk på en for at se den.</p>
-      <ul class="history receipts">${rows}</ul></div>`;
+    return `<div class="v3"><div class="card"><div class="kicker">Indkøb</div><h2>${list.length} kvitteringer fra REMA 1000</h2>
+      <p class="sub">Tryk på en kvittering for at se bonen.</p>
+      <div class="hlist">${rows}</div></div></div>`;
   }
 
   _receiptDetailView() {
@@ -6376,9 +6367,7 @@ class Rema1000Panel extends HTMLElement {
           </div>
           <div class="mc-main"><div>${phone}</div><div class="mc-cards">${MSG_KINDS.map(kcard).join("")}</div></div>`);
       },
-      look: () => card(`<h2 class="flush">Udseende</h2>
-        <p class="muted small">Gemmes for dig. Theme Studio følger jeres Home Assistant-theme.</p>
-        <div class="row wrap">${this._looks().map((k) => `<button class="btn${this._look() === k ? " primary" : ""}" data-action="look" data-arg="${k}" aria-pressed="${this._look() === k}">${LOOK_NAMES[k]}</button>`).join("")}</div>`),
+      look: () => card(this._v3Looks()),
       watch: () => card(`<h2 class="flush">Besked om tilbud</h2>
         <p class="muted">Få besked, når noget fra overvågningslisten under Favoritter kommer på tilbud hos ${esc(this._shopName())} eller en af jeres andre butikker – kun da, og kun én gang pr. tilbud.</p>
         <label class="field">Send besked til
@@ -7569,7 +7558,7 @@ const V3_METHODS = {
     const now = new Date();
     const wk = V3.weekNo(V3.sundayOf(localToday()));
     return `<div class="hero-copy"><div class="kicker light">${V3.DAYS_LONG[now.getDay()]} ${now.getDate()}. ${V3.MONTHS_LONG[now.getMonth()]} · uge ${wk}</div>
-        <h1 class="hello">${V3.greet(this._v3Hour())}${this._hass?.user?.name ? `, ${esc(String(this._hass.user.name).split(" ")[0])}` : ""}</h1>
+        <h1 class="hello">${V3.greet(this._v3Hour())}</h1>
         <p class="hero-sub">${this._v3Tonight()}</p></div>
       <div class="glass budget-glass">${this._v3HeroBudget()}</div>`;
   },
@@ -7706,14 +7695,15 @@ const V3_METHODS = {
     }).join("");
     const dinners = (w?.entries || []).filter((e) => e.day && e.day.dish && !["rester", "egen", "tom"].includes(e.day.type)).length;
     const rest = (w?.entries || []).filter((e) => e.day && (e.day.type === "rester" || e.day.uses_leftovers_from)).length;
-    const left = plan.shopping.filter((l) => !l.buy_from && !l.buy_at && !l.sent).length;
+    const owner = (shown[0] || w?.entries?.[0] || { plan }).plan;
+    const left = owner.shopping.filter((l) => !l.buy_from && !l.buy_at && !l.sent).length;
     return `<div class="card plan-home">
       <div class="row between wrap"><div><div class="kicker">${esc(w ? `Madplan uge ${w.week}` : plan.title || "Madplan")}</div><h2>${idx === 0 ? "Denne uges aftensmad" : "Næste uges aftensmad"}</h2>
-        <p class="sub">${plan.summary && idx === weeks.length - 1 ? `${esc(plan.summary)} ` : ""}Tryk på en dag for at se opskriften eller skifte retten.</p></div>
+        <p class="sub">${owner.summary ? `${esc(owner.summary)} ` : ""}Tryk på en dag for at se opskriften eller skifte retten.</p></div>
         ${weeks.length > 1 ? `<div class="seg">${weeks.slice(0, 2).map((x, i) => `<button class="${idx === i ? "on" : ""}" data-action="v3-hw" data-arg="${i}">${i === 0 ? "Denne uge" : "Næste uge"}</button>`).join("")}</div>` : ""}</div>
       <div class="strip">${tiles || '<p class="sub">Ingen dage i ugen.</p>'}</div>
       <div class="plan-foot">
-        <span class="pf-stat"><b class="num">${kr0(plan.total)}</b><span>indkøb til planen</span></span>
+        <span class="pf-stat"><b class="num">${kr0(owner.total)}</b><span>indkøb til ugen</span></span>
         <span class="pf-stat"><b class="num">${dinners}</b><span>aftener at lave</span></span>
         <span class="pf-stat"><b class="num">${rest}</b><span>restedage</span></span>
         <span class="spacer"></span>
@@ -8550,6 +8540,7 @@ Object.assign(V3_METHODS, {
     const root = this.shadowRoot;
     this._v3Pics(root);
     this._v3BindDial();
+    this._v3BindDrag();
     root.querySelectorAll("#content [data-count]").forEach((el) => {
       if (el.closest(".still")) return;
       const to = Number(el.dataset.count);
@@ -8606,7 +8597,12 @@ Object.assign(V3_METHODS, {
         this._run(() => this._ws("middagsro/day/move", { plan_id: planId, date, direction }), direction === "up" ? "Retten er flyttet en dag tidligere." : "Retten er flyttet en dag senere.");
       },
       "v3-pw": () => { s.pw = Number(arg) || 0; s.pwPlan = this._plan?.id; this._render(); },
-      tab: () => { if (arg === "recipes" && this._tab !== "recipes") this._recipesSub = "collection"; return false; },
+      tab: () => {
+        if (arg === "recipes" && this._tab !== "recipes") this._recipesSub = "collection";
+        // The tab you are on, tapped again: back to the top.
+        if (arg === this._tab) requestAnimationFrame(() => this.shadowRoot.querySelector("#top")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+        return false;
+      },
       "v3-hw": () => { s.hw = Number(arg) || 0; this._render(); },
       "v3-book": () => this._v3Book(arg),
       "v3-add": () => {
@@ -8713,7 +8709,7 @@ Object.assign(V3_METHODS, {
     return ["like", "dislike", "favorite"].map((a) => `<button class="vrate${on[a] ? " on" : ""}" data-action="rate-day" data-arg="${esc(plan.id)}|${esc(day.date)}|${a}" aria-label="${RATE_LABELS[a]}: ${esc(cooked.dish)}" aria-pressed="${on[a]}" ${this._busy ? "disabled" : ""}>${glyph[a]}</button>`).join("");
   },
 
-  _v3Prow(e, i) {
+  _v3Prow(e, i, drag = false) {
     const today = localToday();
     const d = new Date(`${e.date}T12:00:00`), now = e.date === today, past = e.date < today;
     const day = e.day;
@@ -8735,7 +8731,8 @@ Object.assign(V3_METHODS, {
       e.plan.surprise ? '<span class="tag">Overraskelse</span>' : "",
       recipe?.times_planned ? `<span class="muted">lavet ${recipe.times_planned}×</span>` : "",
     ].join("");
-    return `<div class="prow${now ? " now" : ""}${past ? " past" : ""}" style="animation-delay:${(i * 0.04).toFixed(2)}s">
+    const grip = drag ? `<span class="pr-drag" title="Træk for at flytte" aria-label="Træk for at flytte ${esc(day.dish || "retten")}"><svg viewBox="0 0 12 20" aria-hidden="true"><g fill="currentColor"><circle cx="3" cy="3" r="1.6"/><circle cx="9" cy="3" r="1.6"/><circle cx="3" cy="10" r="1.6"/><circle cx="9" cy="10" r="1.6"/><circle cx="3" cy="17" r="1.6"/><circle cx="9" cy="17" r="1.6"/></g></svg></span>` : "";
+    return `<div class="prow${now ? " now" : ""}${past ? " past" : ""}${drag ? " has-drag" : ""}"${drag ? ` data-date="${esc(e.date)}" data-plan="${esc(e.plan.id)}"` : ""} style="animation-delay:${(i * 0.04).toFixed(2)}s">${grip}
       <button class="pr-open" data-action="day-menu" data-arg="${arg}" aria-label="Åbn ${esc(day.dish || "dagen")}"><span class="pr-date"><span>${V3.DAYS[d.getDay()]}</span><b>${d.getDate()}</b><small>${V3.MONTHS[d.getMonth()]}</small></span>
       ${V3.dishArt(day.dish || "", "pr-art")}
       <span class="pr-main"><b class="${day.dish ? "" : "muted"}">${esc(day.dish || "Ingen ret – tryk for at vælge en")}</b><span class="pr-meta">${meta}</span></span></button>
@@ -8759,7 +8756,9 @@ Object.assign(V3_METHODS, {
     const earlier = w.entries.filter((e) => e.date < today);
     const owner = (upcoming[0] || w.entries.at(-1) || { plan }).plan;
     const latest = owner.id === plan.id;
-    const rows = (upcoming.length ? upcoming : earlier).map((e, i) => this._v3Prow(e, i)).join("");
+    const canDrag = (e) => !!e.day?.dish && e.date >= today && !e.skipped;
+    const dragging = upcoming.filter(canDrag).length >= 2;
+    const rows = (upcoming.length ? upcoming : earlier).map((e, i) => this._v3Prow(e, i, dragging && canDrag(e))).join("");
     const past = upcoming.length && earlier.length
       ? `<details class="pr-past" data-fold="pastdays"${this._folds?.has("pastdays") ? " open" : ""}><summary>Tidligere i ugen · ${earlier.length} ${earlier.length === 1 ? "dag" : "dage"}</summary><div class="prows">${earlier.map((e, i) => this._v3Prow(e, i)).join("")}</div></details>`
       : "";
@@ -8793,7 +8792,8 @@ Object.assign(V3_METHODS, {
         ${waiting.length ? `<div class="banner warn">${waiting.length === 1 ? "1 ny ret venter" : `${waiting.length} nye retter venter`} på godkendelse: ${waiting.map((d) => esc(d.dish)).join(", ")}. Listen sendes først, når de er godkendt eller skiftet ud – tryk på retten.</div>` : ""}
         ${this._planHelp ? '<p class="sub help-text">Tryk på en ret for at se opskriften, skifte den ud eller flytte den. 👍, 👎 og ♥ gemmer retten i opskriftsamlingen – tryk igen for at fortryde.</p>' : ""}
         ${latest ? this._inventoryUsage(plan) : ""}
-        <div class="prows">${rows || '<p class="sub">Ingen dage i ugen.</p>'}</div>
+        ${dragging ? `<p class="dnd-hint"><span class="dnd-ic"><svg viewBox="0 0 12 20" aria-hidden="true"><g fill="currentColor"><circle cx="3" cy="3" r="1.6"/><circle cx="9" cy="3" r="1.6"/><circle cx="3" cy="10" r="1.6"/><circle cx="9" cy="10" r="1.6"/><circle cx="3" cy="17" r="1.6"/><circle cx="9" cy="17" r="1.6"/></g></svg></span>Træk i håndtaget til venstre for at flytte en ret til en anden dag – de andre retter rykker med.</p>` : ""}
+        <div class="prows${dragging ? " dnd" : ""}">${rows || '<p class="sub">Ingen dage i ugen.</p>'}</div>
         ${past}
         ${latest ? this._lunchHtml(plan) : ""}
         ${latest && (checklist || plan.deviations) ? `<details class="plan-checks"><summary>Krav-tjekliste</summary><ul class="checklist">${checklist}</ul>${plan.deviations ? `<p class="muted">${esc(plan.deviations)}</p>` : ""}</details>` : ""}
@@ -8952,6 +8952,112 @@ Object.assign(V3_METHODS, {
     const near = (step) => { const d = new Date(`${m.date}T12:00:00`); d.setDate(d.getDate() + step); const iso = V3.ymd(d); return (plan.days || []).find((x) => x.date === iso); };
     const btn = (dir, other, label) => `<button class="btn small" data-action="v3-move" data-arg="${esc(plan.id)}|${esc(m.date)}|${dir}" ${!other || other.date < today || m.busy ? "disabled" : ""}>${label}</button>`;
     return `<div class="row wrap day-move"><span class="muted small">Flyt retten</span>${btn("up", near(-1), "↑ En dag tidligere")}${btn("down", near(1), "↓ En dag senere")}</div>`;
+  },
+});
+
+/* Historik's receipts, and moving dinners in the plan by dragging them. */
+Object.assign(V3_METHODS, {
+  _v3ReceiptRow(r) {
+    const t = r.date ? new Date(r.date) : null;
+    const g = r.groups || {};
+    return `<button class="buy open" data-action="v3-bon" data-arg="${esc(r.id)}"><span class="ic" style="background:var(--rema-tint);color:var(--rema-accent)">${V3.ic("receipt", 20)}</span>
+      <span><b>REMA 1000${r.store ? ` ${esc(r.store)}` : r.city ? ` ${esc(r.city)}` : ""}</b><small>${t ? `${V3.DAYS_LONG[t.getDay()]} ${t.getDate()}. ${V3.MONTHS[t.getMonth()]} ${t.getFullYear() !== new Date().getFullYear() ? `${t.getFullYear()} ` : ""}kl. ${String(t.getHours()).padStart(2, "0")}.${String(t.getMinutes()).padStart(2, "0")}` : ""} · ${r.items} ${r.items === 1 ? "linje" : "linjer"}${r.total_discount ? ` · sparet ${V3.krd(r.total_discount, 2)}` : ""}</small>
+      ${Object.keys(g).length ? `<span class="mini-g">${V3.ORDER.filter((k) => g[k]).map((k) => `<i style="flex-grow:${g[k]};background:var(--g-${k})"></i>`).join("")}</span>` : ""}</span>
+      <span class="amt">${V3.krd(r.total, 2)}<br><small class="chev">Se bon ›</small></span></button>`;
+  },
+
+  // Drag a dinner by its handle to another day: it moves day by day, the others make room.
+  _v3BindDrag() {
+    const list = this.shadowRoot.querySelector(".prows.dnd");
+    if (!list || list._v3dnd) return;
+    list._v3dnd = true;
+    list.addEventListener("pointerdown", (ev) => {
+      const handle = ev.target.closest(".pr-drag");
+      if (!handle || this._busy || (ev.pointerType === "mouse" && ev.button !== 0)) return;
+      const row = handle.closest(".prow");
+      const rows = [...list.querySelectorAll(":scope > .prow[data-date]")].filter((r) => r.dataset.plan === row.dataset.plan);
+      const from = rows.indexOf(row);
+      if (from < 0 || rows.length < 2) return;
+      ev.preventDefault();
+      const scroll = () => window.scrollY || document.documentElement.scrollTop || 0;
+      const y0 = scroll();
+      const rects = rows.map((r) => { const b = r.getBoundingClientRect(); return { top: b.top + y0, h: b.height }; });
+      const gap = rows[1] ? rects[1].top - rects[0].top - rects[0].h : 8;
+      const startY = ev.clientY + y0;
+      let to = from, auto = 0, lastY = ev.clientY;
+      try { handle.setPointerCapture(ev.pointerId); } catch { /* old browsers */ }
+      row.classList.add("dragging");
+      list.classList.add("dragging");
+      const place = () => {
+        const dy = lastY + scroll() - startY;
+        row.style.transform = `translateY(${dy}px)`;
+        const mid = rects[from].top + rects[from].h / 2 + dy;
+        to = rows.length - 1;
+        for (let i = 0; i < rows.length; i += 1) if (mid < rects[i].top + rects[i].h) { to = i; break; }
+        const h = rects[from].h + gap;
+        rows.forEach((r, i) => {
+          if (i === from) return;
+          const shift = from < to && i > from && i <= to ? -h : from > to && i < from && i >= to ? h : 0;
+          r.style.transform = shift ? `translateY(${shift}px)` : "";
+        });
+      };
+      const tick = () => { if (!auto) return; window.scrollBy(0, auto); place(); requestAnimationFrame(tick); };
+      const move = (e) => {
+        lastY = e.clientY;
+        const was = auto;
+        auto = e.clientY < 90 ? -8 : e.clientY > innerHeight - 140 ? 8 : 0;
+        if (auto && !was) requestAnimationFrame(tick);
+        place();
+      };
+      const end = (commit) => {
+        auto = 0;
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", onUp);
+        handle.removeEventListener("pointercancel", onCancel);
+        rows.forEach((r) => { r.style.transform = ""; });
+        row.classList.remove("dragging");
+        list.classList.remove("dragging");
+        if (commit && to !== from) this._v3DragMove(row.dataset.plan, rows[from].dataset.date, rows[to].dataset.date);
+      };
+      const onUp = () => end(true);
+      const onCancel = () => end(false);
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", onUp);
+      handle.addEventListener("pointercancel", onCancel);
+    });
+  },
+
+  _v3DragMove(planId, fromDate, toDate) {
+    const steps = V3.daysBetween(fromDate, toDate);
+    if (!steps) return;
+    const direction = steps < 0 ? "up" : "down";
+    const name = this._planOf(planId)?.days.find((d) => d.date === fromDate)?.dish || "Retten";
+    this._run(async () => {
+      let date = fromDate;
+      for (let i = 0; i < Math.abs(steps); i += 1) {
+        await this._ws("middagsro/day/move", { plan_id: planId, date, direction });
+        date = V3.ymd(V3.addDays(date, direction === "up" ? -1 : 1));
+      }
+    }, `${name} er flyttet til ${V3.DAYS_LONG[new Date(`${toDate}T12:00:00`).getDay()]}.`);
+  },
+});
+
+/* Udseende: the three looks as cards, as in the prototype. */
+const V3_LOOKS = {
+  studio: "Følger jeres Home Assistant-tema",
+  frisk: "Lys og blå – præcis som prototypen",
+  hverdag: "Lilla og rund, som Hverdagsro",
+};
+Object.assign(V3_METHODS, {
+  _v3Looks() {
+    const ha = getComputedStyle(document.documentElement);
+    const v = (name, fallback) => (ha.getPropertyValue(name) || "").trim() || fallback;
+    const studio = [v("--primary-color", "#03a9f4"), v("--primary-background-color", "#fafafa"), v("--primary-text-color", "#212121")];
+    const sw = { studio, frisk: ["#1664FF", "#EEF1F7", "#0B2147"], hverdag: ["#6E4AFF", "#F1EEFB", "#1B1530"] };
+    return `<div class="v3"><h2 class="flush">Udseende</h2>
+      <p class="sub">Gemmes for dig på denne konto. Mørk eller lys følger Home Assistant.</p>
+      <div class="looks-big">${this._looks().map((k) => `<button class="lookcard${this._look() === k ? " on" : ""}" data-action="look" data-arg="${k}" aria-pressed="${this._look() === k}">
+        <span class="sw">${sw[k].map((c) => `<i style="background:${esc(c)}"></i>`).join("")}</span><b>${esc(LOOK_NAMES[k])}</b><small>${esc(V3_LOOKS[k])}</small></button>`).join("")}</div></div>`;
   },
 });
 
@@ -9452,8 +9558,21 @@ const V3_STYLE = `
 .v3 .stile b {display: block; font-size: 14.5px;}
 .v3 .stile small {color: var(--soft); font-size: 12.5px;}
 .v3 .spanel {animation: rise .35s both;}
+.v3 .looks-big {display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 12px;}
+.v3 .lookcard {display: grid; gap: 4px; padding: 12px; border-radius: 16px; border: 1.5px solid var(--line); background: var(--card-background-color); cursor: pointer; text-align: left;}
+.v3 .lookcard.on {border-color: var(--rema-accent); box-shadow: 0 0 0 3px var(--rema-tint);}
+.v3 .lookcard small {color: var(--soft);}
 .v3 .sw {display: flex; gap: 4px; margin-bottom: 6px;}
 .v3 .sw i {width: 26px; height: 26px; border-radius: 8px;}
+.v3 .sw-studio i:nth-child(1) {background: #1664FF;}
+.v3 .sw-studio i:nth-child(2) {background: #EEF1F7;}
+.v3 .sw-studio i:nth-child(3) {background: #0B2147;}
+.v3 .sw-frisk i:nth-child(1) {background: #00A884;}
+.v3 .sw-frisk i:nth-child(2) {background: #F2F4F7;}
+.v3 .sw-frisk i:nth-child(3) {background: #111827;}
+.v3 .sw-hverdag i:nth-child(1) {background: #6E4AFF;}
+.v3 .sw-hverdag i:nth-child(2) {background: #F1EEFB;}
+.v3 .sw-hverdag i:nth-child(3) {background: #1B1530;}
 .v3 .tw {animation: twinkle 3.5s ease-in-out infinite;}
 @keyframes twinkle { 50% { opacity: .25; } }
 .v3 .steam {animation: steam 3s ease-in-out infinite;}
@@ -9873,6 +9992,50 @@ const V3_STYLE = `
   @media (min-width: 701px) { .more-sheet .more-item.mg.desktop-primary { display: none; } }
   /* Spisekammer */
   .v3 .pantry-empty { margin-bottom: 16px; }
+  /* Drag and drop in the plan: a handle you can see. */
+  .v3 .prow.has-drag { grid-template-columns: 36px minmax(0, 1fr) auto; padding-left: 0; }
+  .v3 .pr-drag { align-self: stretch; display: grid; place-items: center; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+    color: color-mix(in srgb, var(--rema-accent) 70%, var(--soft)); border-radius: 18px 0 0 18px;
+    background: color-mix(in srgb, var(--rema-accent) 9%, transparent); border-right: 1.5px dashed color-mix(in srgb, var(--rema-accent) 40%, transparent); }
+  .v3 .pr-drag svg { width: 12px; height: 20px; }
+  .v3 .pr-drag:hover { color: var(--rema-accent); background: var(--rema-tint); }
+  .v3 .pr-drag:active { cursor: grabbing; }
+  .v3 .prows.dnd .prow { animation-fill-mode: backwards; }
+  .v3 .prows.dragging { user-select: none; -webkit-user-select: none; }
+  .v3 .prows.dragging .prow:not(.dragging) { transition: transform .18s ease; }
+  .v3 .prow.dragging { position: relative; z-index: 6; cursor: grabbing; background: var(--card-background-color); border-color: var(--rema-accent);
+    box-shadow: 0 22px 44px -18px rgba(0,0,0,.55), 0 0 0 2px var(--rema-tint); }
+  .v3 .prow.dragging .pr-drag { color: var(--rema-on-accent); background: var(--rema-accent); }
+  .v3 .dnd-hint { display: flex; align-items: center; gap: 10px; margin: 14px 0 0; padding: 9px 12px; border-radius: 14px; font-size: 12.5px; color: var(--soft);
+    background: color-mix(in srgb, var(--rema-accent) 6%, transparent); border: 1.5px dashed color-mix(in srgb, var(--rema-accent) 35%, transparent); }
+  .v3 .dnd-ic { flex: none; width: 26px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--rema-accent); background: var(--rema-tint); }
+  .v3 .dnd-ic svg { width: 10px; height: 18px; }
+  @media (max-width: 700px) {
+    .v3 .prow.has-drag { grid-template-columns: 32px minmax(0, 1fr); padding: 0 0 8px; }
+    .v3 .prow.has-drag .pr-drag { grid-row: 1 / span 2; }
+    .v3 .prow.has-drag .pr-tools { grid-column: 2; padding-left: 84px; }
+  }
+  /* ---- The looks. Frisk is the prototype exactly; Hverdag and Theme Studio wear the same design. */
+  :host([look="frisk"]) { --primary-background-color: #EEF1F7; --card-background-color: #FFFFFF; --ha-card-background: #FFFFFF; --secondary-background-color: #F1F4FA;
+    --primary-text-color: #0B2147; --secondary-text-color: #56637E; --divider-color: #E3E8F2; --primary-color: #1664FF; --text-primary-color: #fff;
+    --app-header-background-color: #FFFFFF; --app-header-text-color: #0B2147;
+    --ha-card-border-radius: 20px; --ha-card-box-shadow: 0 1px 2px rgba(11,33,71,.05), 0 12px 32px -18px rgba(11,33,71,.28);
+    --ha-font-family-body: Inter, "Segoe UI", system-ui, sans-serif; --display: Inter, system-ui, sans-serif;
+    --success-color: #0E9F6E; --warning-color: #E0A52E; --error-color: #E34948; --theme-studio-card-backdrop-filter: none;
+    --mdc-theme-primary: #1664FF; }
+  :host([look="frisk"][dark]) { --primary-background-color: #0B1220; --card-background-color: #121B2E; --ha-card-background: #121B2E; --secondary-background-color: #18233A;
+    --primary-text-color: #EAF0FB; --secondary-text-color: #9AA8C3; --divider-color: #22304B; --primary-color: #5B93FF;
+    --app-header-background-color: #121B2E; --app-header-text-color: #EAF0FB;
+    --ha-card-box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 18px 40px -22px rgba(0,0,0,.8); --success-color: #2DD4A7; --mdc-theme-primary: #5B93FF; }
+  :host([look="hverdag"]) { --display: Figtree, var(--ha-font-family-body, system-ui), sans-serif; --success-color: #0E9F6E; --warning-color: #E0A52E; --error-color: #E34948; }
+  :host([look="hverdag"][dark]) { --success-color: #2DD4A7; }
+  :host([look="studio"]) { --display: var(--ha-font-family-body, Inter, system-ui), sans-serif; }
+  :host([look="frisk"]) .card, :host([look="hverdag"]) .card { border: 1px solid var(--divider-color); box-shadow: var(--ha-card-box-shadow); }
+  :host([look="frisk"]) .v3 .card, :host([look="hverdag"]) .v3 .card { border: 1px solid var(--line); }
+  :host([dark]) .v3 .scene-svg { filter: brightness(.86) saturate(.95); }
+  :host([look="frisk"]) main, :host([look="frisk"]) { background: var(--primary-background-color); }
+  .v3 .lookcard { font: inherit; color: inherit; text-align: left; }
+  .v3 .lookcard b { font-size: 15px; }
 
 `;
 const STYLE = STYLE_BASE + V3_STYLE;
