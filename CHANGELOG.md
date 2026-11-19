@@ -2,6 +2,12 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.20.0b2] - 2026-11-19
+
+### Fixed
+- **Kvitteringslisten:** butiksnavnet vises nu som "REMA 1000 Kolding" i stedet for den dobbelte "Kolding · Kolding".
+- **Kvitteringsvisning:** betalingslinjen viser korttype når den kendes, ellers "BETALT" (ikke en rå kode).
+
 ## [2.20.0b1] - 2026-11-19
 
 ### Added
