@@ -5819,7 +5819,7 @@ class Rema1000Panel extends HTMLElement {
       .map(
         (r) => `<li class="hist receipt-row" data-action="view-receipt" data-arg="${esc(r.id)}" role="button" tabindex="0">
           <div class="what">
-            <b>${esc(r.store || "REMA 1000")}${r.city ? ` · ${esc(r.city)}` : ""}</b>
+            <b>REMA 1000${r.store ? ` ${esc(r.store)}` : r.city ? ` ${esc(r.city)}` : ""}</b>
             <span class="muted small">${esc(longDate(r.date))} · ${r.items} vare${r.items === 1 ? "" : "r"}</span>
           </div>
           <div class="receipt-amt">
@@ -5865,7 +5865,7 @@ class Rema1000Panel extends HTMLElement {
       })
       .join("");
     const num = (v) => (v == null ? "" : Number(v).toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-    const pay = r.card_type || (r.payment_source || "").toUpperCase() || "BETALT";
+    const pay = r.card_type || "BETALT";
     return `${back}
       <div class="card receipt-paper">
         <div class="rc-head">REMA 1000</div>
