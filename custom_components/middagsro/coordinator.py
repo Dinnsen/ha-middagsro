@@ -34,7 +34,7 @@ from .const import (
     RECEIPTS_SCAN_INTERVAL,
     STORAGE_VERSION,
 )
-from .receipts import aggregate_items
+from .receipts import aggregate_items, spending_overview
 from .store_client import BilkaStoreClient
 
 if TYPE_CHECKING:
@@ -329,6 +329,8 @@ class RemaReceiptsCoordinator(DataUpdateCoordinator[list[Receipt]]):
         self._cache: list[Receipt] = []
         # Per-item statistics across the whole history (the "Varer" tab).
         self.items: list[dict[str, Any]] = []
+        # Spend grouped by week/month/year for the economy overview.
+        self.overview: dict[str, Any] = {}
 
     async def _load_stored(self) -> list[Receipt]:
         """Read the persisted receipts, if any."""
@@ -358,8 +360,9 @@ class RemaReceiptsCoordinator(DataUpdateCoordinator[list[Receipt]]):
         )
 
     def _recompute(self, receipts: list[Receipt]) -> None:
-        """Refresh the per-item statistics."""
+        """Refresh the per-item statistics and the spend overview."""
         self.items = aggregate_items(receipts)
+        self.overview = spending_overview(receipts)
 
     async def _async_update_data(self) -> list[Receipt]:
         """Fetch receipts since the newest known one, merge, persist."""

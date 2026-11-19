@@ -162,6 +162,7 @@ def _receipts_payload(coordinator: Any) -> dict[str, Any]:
     return {
         "list": [receipt_summary(receipt) for receipt in receipts],
         "items": coordinator.items,
+        "overview": coordinator.overview,
         "count": len(receipts),
     }
 

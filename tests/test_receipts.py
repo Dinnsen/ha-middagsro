@@ -9,7 +9,7 @@ from yarl import URL
 
 from custom_components.middagsro import api
 from custom_components.middagsro.api import Receipt, ReceiptItem, RemaApiError, RemaAuthError
-from custom_components.middagsro.receipts import aggregate_items, receipt_summary
+from custom_components.middagsro.receipts import aggregate_items, receipt_summary, spending_overview
 from homeassistant.core import HomeAssistant
 
 from .test_api import FakeResponse, logged_in, token
@@ -252,6 +252,57 @@ def test_aggregate_items_flags_frequent_over_five() -> None:
     assert agg[0]["frequent"] is True
 
 
+def test_spending_overview_groups_and_summarises() -> None:
+    """Receipts roll up by week/month/year with high, low, average and saved."""
+    receipts = [
+        Receipt.from_api(
+            {
+                "id": "s1",
+                "paymentDate": "2026-09-10T10:00:00Z",
+                "totalPrice": 5000,
+                "totalDiscount": 500,
+            }
+        ),
+        Receipt.from_api(
+            {
+                "id": "s2",
+                "paymentDate": "2026-10-05T10:00:00Z",
+                "totalPrice": 10000,
+                "totalDiscount": 1000,
+            }
+        ),
+        Receipt.from_api(
+            {
+                "id": "s3",
+                "paymentDate": "2026-10-20T10:00:00Z",
+                "totalPrice": 20000,
+                "totalDiscount": 2000,
+            }
+        ),
+    ]
+    overview = spending_overview(receipts)
+    assert set(overview) == {"week", "month", "year"}
+    month = overview["month"]
+    # Two months: sep (50) and oct (100 + 200 = 300).
+    assert {b["key"]: b["spent"] for b in month["buckets"]} == {"2026-09": 50.0, "2026-10": 300.0}
+    assert month["high"] == {"key": "2026-10", "spent": 300.0}
+    assert month["low"] == {"key": "2026-09", "spent": 50.0}
+    assert month["avg"] == 175.0  # (50 + 300) / 2
+    assert month["saved_total"] == 35.0  # 5 + 10 + 20
+    assert month["total"] == 350.0
+    year = overview["year"]
+    assert {b["key"]: b["spent"] for b in year["buckets"]} == {"2026": 350.0}
+    assert year["saved_total"] == 35.0
+
+
+def test_spending_overview_empty() -> None:
+    """No receipts gives empty buckets and zeroed stats."""
+    overview = spending_overview([])
+    assert overview["week"]["buckets"] == []
+    assert overview["week"]["high"] is None
+    assert overview["week"]["avg"] == 0.0
+
+
 def test_receipt_summary_is_compact() -> None:
     """The list summary carries the amounts and store but not the lines."""
     summary = receipt_summary(
@@ -459,6 +510,9 @@ async def test_receipts_drive_coordinator_sensors_and_panel(
     assert [r.id for r in coordinator.data] == ["r-1", "r-2"]
     kaffe = next(i for i in coordinator.items if i["name"] == "KAFFE")
     assert kaffe["count"] == 2 and kaffe["times"] == 2
+    # The spend overview is built too.
+    assert set(coordinator.overview) == {"week", "month", "year"}
+    assert coordinator.overview["month"]["total"] == round(168.75 + 79.70, 2)
 
     # The latest-purchase sensors read the newest receipt.
     total = hass.states.get("sensor.middagsro_latest_purchase")

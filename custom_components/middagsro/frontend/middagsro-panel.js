@@ -361,6 +361,7 @@ class Rema1000Panel extends HTMLElement {
     this._dayKinds = {}; // ISO date -> {kind, text}: what a day of the next plan is this week
     this._sites = { query: "", results: [], loading: false, error: null, searched: false, opening: null };
     this._budgetSpan = "month";
+    this._spendSpan = "month"; // the REMA-spend overview: "week" / "month" / "year"
     // The Historik page: which sub-tab, and the receipt opened in the detail view.
     this._histSub = "indkob"; // "indkob" (receipts), "plans" (meal plans), "varer" (items)
     this._receiptId = null; // the receipt being opened / shown (null = the list)
@@ -1091,6 +1092,10 @@ class Rema1000Panel extends HTMLElement {
       },
       "budget-view": () => {
         this._budgetSpan = arg;
+        this._render();
+      },
+      "spend-span": () => {
+        this._spendSpan = arg;
         this._render();
       },
       "hist-sub": () => {
@@ -5610,7 +5615,64 @@ class Rema1000Panel extends HTMLElement {
         <div class="stat"><span class="muted small">Brugt i ${MONTHS_SHORT[Number(m.first.slice(5, 7)) - 1]}.</span><b>${kr0(m.spent)}</b><span class="muted small">af ${kr0(m.budget)}</span></div>
         <div class="stat"><span class="muted small">Prognose</span><b class="${forecastDiff > 0 ? "over" : "ok"}">${kr0(m.forecast)}</b><span class="muted small">${forecastDiff > 0 ? `${kr0(forecastDiff)} over` : `${kr0(-forecastDiff)} under`}</span></div>
       </div>
-      ${seg}${body}`;
+      ${seg}${body}
+      ${this._spendOverview()}`;
+  }
+
+  _spendLabel(span, key) {
+    if (span === "week") return `u.${Number(key.slice(6))}`;
+    if (span === "year") return key;
+    return `${MONTHS_SHORT[Number(key.slice(5, 7)) - 1]} ${key.slice(2, 4)}`;
+  }
+
+  _spendOverview() {
+    const ov = this._state.receipts && this._state.receipts.overview;
+    if (!ov || !this._isRema()) return "";
+    const span = ["week", "month", "year"].includes(this._spendSpan) ? this._spendSpan : "month";
+    const g = ov[span];
+    const seg = `<div class="seg subnav">${[["week", "Uge"], ["month", "Måned"], ["year", "År"]]
+      .map(([k, l]) => `<button class="${span === k ? "active" : ""}" data-action="spend-span" data-arg="${k}">${l}</button>`)
+      .join("")}</div>`;
+    if (!g || !g.buckets.length) {
+      return `<div class="card spend-card"><h2 class="flush">REMA-forbrug</h2>
+        ${seg}
+        <p class="muted">Når der er kvitteringer, vises dit REMA 1000-forbrug her pr. uge, måned og år – med højeste, laveste, gennemsnit og hvor meget du har sparet på tilbud.</p></div>`;
+    }
+    const buckets = g.buckets;
+    const n = buckets.length;
+    const max = Math.max(...buckets.map((x) => x.spent), 1);
+    const W = 324, H = 148, L = 6, Rt = 318, T = 10, B = 120;
+    const step = (Rt - L) / n;
+    const bw = Math.max(5, step * 0.62);
+    const everyLabel = n <= 13 ? 1 : Math.ceil(n / 8);
+    const per = span === "week" ? "uge" : span === "month" ? "måned" : "år";
+    const bars = buckets
+      .map((bk, i) => {
+        const h = ((B - T) * bk.spent) / max;
+        const x = L + step * i + (step - bw) / 2;
+        const y = B - h;
+        const lab = this._spendLabel(span, bk.key);
+        const text = i % everyLabel === 0 || i === n - 1
+          ? `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 5}" class="axis" text-anchor="middle">${esc(lab)}</text>`
+          : "";
+        return `<g class="spend-bar" style="--d:${(i * 0.03).toFixed(2)}s">
+          <rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, h).toFixed(1)}" rx="3"><title>${esc(lab)}: ${kr0(bk.spent)}${bk.saved ? ` · sparet ${kr0(bk.saved)}` : ""} · ${bk.count} ${bk.count === 1 ? "køb" : "køb"}</title></rect>
+          ${text}</g>`;
+      })
+      .join("");
+    const stat = (label, value, sub) => `<div class="stat"><span class="muted small">${label}</span><b>${value}</b><span class="muted small">${sub}</span></div>`;
+    return `<div class="card spend-card">
+      <h2 class="flush">REMA-forbrug</h2>
+      ${seg}
+      <div class="stats spend-stats">
+        ${stat("Højeste", g.high ? kr0(g.high.spent) : "–", g.high ? esc(this._spendLabel(span, g.high.key)) : "")}
+        ${stat("Laveste", g.low ? kr0(g.low.spent) : "–", g.low ? esc(this._spendLabel(span, g.low.key)) : "")}
+        ${stat("Gennemsnit", kr0(g.avg), `pr. ${per}`)}
+        ${`<div class="stat save-stat"><span class="muted small">Sparet på tilbud</span><b>${kr0(g.saved_total)}</b><span class="muted small">i alt</span></div>`}
+      </div>
+      <svg class="spend-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="REMA-forbrug pr. ${per}">${bars}</svg>
+      <p class="muted small">Kun REMA 1000-kvitteringer. Viser de seneste ${n} ${per === "år" ? "år" : per + "er"}.</p>
+    </div>`;
   }
 
   _budgetMonth(b) {
@@ -6198,7 +6260,7 @@ class Rema1000Panel extends HTMLElement {
         <p class="muted small">Beskeden går samme sted hen som overvågningens (Overvågning og beskeder${f.watch_notify ? "" : " – vælg en modtager dér"}).</p>
         <h3>Kontér automatisk</h3>
         ${this._isRema() ? `<label class="check"><input type="checkbox" data-path="book_receipts" ${f.book_receipts ? "checked" : ""}> Kontér mine REMA 1000-kvitteringer automatisk</label>
-        <p class="muted small">Hver digital kvittering fra REMA 1000 bogføres som et køb i Økonomi, så du kan droppe Apple Pay-genvejen. Kun kvitteringer fra den dag, du slår det til, konteres – din hidtidige historik røres ikke. ${f.book_receipts && f.book_receipts_since ? `Konterer fra ${esc(longDate(f.book_receipts_since))}.` : ""}${f.monthly_budget ? "" : " <b>Sæt et madbudget ovenfor først.</b>"}</p>` : ""}
+        <p class="muted small">Hver digital kvittering fra REMA 1000 bogføres som et køb i Økonomi – også hele din hidtidige historik – så du kan droppe Apple Pay-genvejen (den er der stadig til køb uden for REMA). ${f.book_receipts && f.book_receipts_since ? `Konterer fra ${esc(longDate(f.book_receipts_since))}.` : "Dækker hele historikken."}${f.monthly_budget ? "" : " <b>Sæt et madbudget ovenfor først.</b>"}</p>` : ""}
         <p class="muted small">Handlingen <b>middagsro.register_purchase</b> konterer et køb (beløb og butik) og svarer med, hvad der er tilbage af ugen. Betaler I med Apple Pay, kan en automatisering i Genveje-appen (Personlig › Transaktion › Wallet, butikker: REMA 1000, Netto …) kalde den med <i>Beløb</i> og <i>Forhandler</i> via Home Assistant-appens "Udfør handling" – så konteres købet af sig selv, når I betaler. Med Siri kan en genvej spørge om beløbet og kalde den samme handling.</p>`),
       messages: () => {
         f.messages ||= {};
@@ -6894,6 +6956,15 @@ const STYLE = `
   .rc-foot { border-top: 1px solid #d9e0f0; margin-top: 10px; padding-top: 10px; }
   .rc-save span:last-child, .rc-save { color: #e8930c; font-weight: 700; }
   .rc-bon { text-align: center; margin-top: 14px; word-break: break-all; }
+  /* Økonomi – the REMA spend overview */
+  .spend-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .spend-stats .save-stat b { color: var(--rema-accent); }
+  .spend-chart { width: 100%; height: auto; margin-top: 8px; overflow: visible; }
+  .spend-bar rect { fill: var(--rema-accent); transform-box: fill-box; transform-origin: bottom; animation: spendGrow .5s cubic-bezier(.2,.75,.25,1) both; animation-delay: var(--d, 0s); cursor: pointer; transition: fill .15s; }
+  .spend-bar:hover rect { fill: color-mix(in srgb, var(--rema-accent) 72%, #000); }
+  .spend-chart .axis { fill: var(--secondary-text-color); font-size: 9px; }
+  @keyframes spendGrow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+  @media (max-width: 560px) { .spend-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   /* Varer – the bought-items list */
   .item-row .item-stats { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
   .item-row .count { font-weight: 700; }
