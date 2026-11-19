@@ -51,7 +51,10 @@ async def test_state(
     assert state["ai_entities"] == [{"entity_id": ai_task, "name": "Assistant", "kind": "ai_task"}]
     assert state["catalogs"]["current"]["label"] == "Uge 42"
     assert state["rema_list"]["total"] == 21.9
-    assert state["receipts"] == {"list": [], "items": [], "count": 0}
+    assert state["receipts"]["list"] == []
+    assert state["receipts"]["items"] == []
+    assert state["receipts"]["count"] == 0
+    assert set(state["receipts"]["overview"]) == {"week", "month", "year"}
     assert "fish" in state["options"]["allergies"]
     assert state["default_start"] == "2026-10-18"
     assert (state["timeline"], state["timeline_plans"]) == ([], [])  # the plan has ended

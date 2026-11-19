@@ -2,6 +2,16 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.21.0b1] - 2026-11-19
+
+### Added
+- **Økonomi-overblik over REMA-forbrug.** Nederst på Økonomi-siden vises nu et grafisk, interaktivt overblik bygget direkte fra kvitteringerne: skift mellem **Uge / Måned / År**, med **højeste** og **laveste** forbrug, **gennemsnit** pr. periode og **sparet på tilbud** i alt. Animerede søjler med detaljer ved berøring. Kun REMA 1000-kvitteringer, så intet tælles dobbelt med de øvrige bogførte køb.
+- **Hele REMA-historikken konteres i budgettet.** Slår du automatisk kontering til, bogføres nu hele din kvitteringshistorik (ikke kun fra i dag), så månederne bagud fyldes med reelt REMA-forbrug. Dedupet, så intet bogføres to gange.
+
+### Notes
+- Apple Pay-genvejen (`middagsro.register_purchase`) er uændret og bruges fortsat til køb uden for REMA.
+- Beta.
+
 ## [2.20.0b2] - 2026-11-19
 
 ### Fixed

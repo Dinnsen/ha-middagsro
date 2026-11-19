@@ -82,6 +82,63 @@ def aggregate_items(receipts: list[Receipt]) -> list[dict[str, Any]]:
     return items
 
 
+def _bucket_keys(day: Any) -> dict[str, str]:
+    """The week/month/year bucket keys for a date."""
+    iso_year, iso_week, _ = day.isocalendar()
+    return {
+        "week": f"{iso_year}-W{iso_week:02d}",
+        "month": f"{day.year}-{day.month:02d}",
+        "year": f"{day.year}",
+    }
+
+
+# How many of the most recent buckets to send per granularity (keeps the chart
+# legible and the payload small); stats are computed over what is sent.
+_WINDOW = {"week": 26, "month": 12, "year": 6}
+
+
+def _granularity(buckets: dict[str, dict[str, Any]], limit: int) -> dict[str, Any]:
+    """Order a granularity's buckets, keep the most recent, and sum up the stats."""
+    ordered = [buckets[key] for key in sorted(buckets)]
+    shown = ordered[-limit:]
+    with_spend = [b for b in shown if b["count"]]
+    high = max(with_spend, key=lambda b: b["spent"], default=None)
+    low = min(with_spend, key=lambda b: b["spent"], default=None)
+    avg = round(sum(b["spent"] for b in with_spend) / len(with_spend), 2) if with_spend else 0.0
+    return {
+        "buckets": shown,
+        "high": {"key": high["key"], "spent": high["spent"]} if high else None,
+        "low": {"key": low["key"], "spent": low["spent"]} if low else None,
+        "avg": avg,
+        "saved_total": round(sum(b["saved"] for b in shown), 2),
+        "total": round(sum(b["spent"] for b in shown), 2),
+    }
+
+
+def spending_overview(receipts: list[Receipt]) -> dict[str, Any]:
+    """REMA spend grouped by week, month and year, with high/low/average/saved.
+
+    Built straight from the receipts (not the budget), so it is REMA-only and
+    never double-counts the family's other booked purchases. Each granularity:
+    ``{buckets: [{key, spent, saved, count}], high, low, avg, saved_total, total}``.
+    """
+    grans: dict[str, dict[str, dict[str, Any]]] = {"week": {}, "month": {}, "year": {}}
+    for receipt in receipts:
+        if receipt.date is None or not receipt.total:
+            continue
+        day = receipt.date.date()
+        total = round(float(receipt.total), 2)
+        saved = round(float(receipt.total_discount or 0.0), 2)
+        for gran, key in _bucket_keys(day).items():
+            bucket = grans[gran].get(key)
+            if bucket is None:
+                bucket = grans[gran][key] = {"key": key, "spent": 0.0, "saved": 0.0, "count": 0}
+            bucket["spent"] = round(bucket["spent"] + total, 2)
+            bucket["saved"] = round(bucket["saved"] + saved, 2)
+            bucket["count"] += 1
+    return {gran: _granularity(grans[gran], _WINDOW[gran]) for gran in grans}
+
+
 def receipt_summary(receipt: Receipt) -> dict[str, Any]:
     """A compact receipt for the list (the lines are fetched on demand)."""
     store = receipt.store
