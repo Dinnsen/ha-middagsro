@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,7 +10,14 @@ from yarl import URL
 
 from custom_components.middagsro import api
 from custom_components.middagsro.api import Receipt, ReceiptItem, RemaApiError, RemaAuthError
-from custom_components.middagsro.receipts import aggregate_items, receipt_summary, spending_overview
+from custom_components.middagsro.groups import GROUPS, group_of
+from custom_components.middagsro.receipts import (
+    aggregate_items,
+    line_total,
+    receipt_groups,
+    receipt_summary,
+    spending_overview,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
@@ -234,7 +241,10 @@ def test_aggregate_items_counts_prices_and_frequent() -> None:
     milk = agg[0]
     assert milk["count"] == 4  # 1 + 2 + 1 quantities
     assert milk["times"] == 3  # three receipts
+    assert milk["min_price"] == 9.95  # the price of one piece, not the line's
     assert milk["max_price"] == 11.95
+    assert milk["total_spent"] == 42.80  # 10.95 + 2 x 9.95 + 11.95
+    assert milk["group"] == "mejeri"
     assert milk["last_date"] == "2026-11-13T10:00:00+00:00"
     assert milk["last_price"] == 11.95
     assert milk["frequent"] is False
@@ -283,7 +293,7 @@ def test_spending_overview_groups_and_summarises() -> None:
         ),
     ]
     overview = spending_overview(receipts)
-    assert set(overview) == {"week", "month", "year"}
+    assert set(overview) == {"week", "month", "year", "rhythm"}
     month = overview["month"]
     # Two months: sep (50) and oct (100 + 200 = 300).
     assert {b["key"]: b["spent"] for b in month["buckets"]} == {"2026-09": 50.0, "2026-10": 300.0}
@@ -301,6 +311,7 @@ def test_spending_overview_empty() -> None:
     """No receipts gives empty buckets and zeroed stats."""
     overview = spending_overview([])
     assert overview["week"]["buckets"] == []
+    assert overview["rhythm"]["weekdays"] == [[0, 0.0]] * 7
     assert overview["week"]["high"] is None
     assert overview["week"]["avg"] == 0.0
 
@@ -321,6 +332,80 @@ def test_receipt_summary_is_compact() -> None:
     assert summary["store"] == "Kolding"
     assert summary["city"] == "Kolding"
     assert "items" in summary and isinstance(summary["items"], int)
+
+
+def test_line_total_multiplies_the_piece_price() -> None:
+    """A line's price is one piece's: two at 9,95 cost 19,90."""
+    assert line_total(ReceiptItem(name="Mælk", quantity=2, price=9.95)) == 19.90
+    assert line_total(ReceiptItem(name="Mælk", price=9.95)) == 9.95
+    assert line_total(ReceiptItem(name="Pose")) is None
+
+
+def test_group_of_names() -> None:
+    """The name decides the varegruppe; what matches nothing is "hjem"."""
+    assert group_of("LETMÆLK 1,5% ARLA, ØKOLOGISK") == "mejeri"
+    assert group_of("HEL LAKSEFILET REMA 1000") == "kod"
+    assert group_of("X-LARGE BLEER REMA 1000, 15-30 KG") == "hjem"
+    assert group_of("VEJ SELV SLIK") == "snacks"
+    assert group_of("ØKO. BANANER FAIRTRADE LAND/KL.: SE VAREN") == "frugt"
+    assert group_of("CHOKO MYSLI REMA 1000") == "brod"
+    assert group_of("PEPSI MAX 24 PAK") == "drikke"
+    assert group_of("BASMATI RIS REMA 1000") == "kolonial"
+    assert group_of("POLITIBIL SPEEDCAR") == "hjem"
+    assert group_of(None) == "hjem"
+    assert len(GROUPS) == 8
+
+
+def test_receipt_groups_scale_to_the_total() -> None:
+    """The groups keep their shares and add up to what was paid."""
+    receipt = Receipt.from_api(
+        {
+            "id": "g1",
+            "paymentDate": "2026-11-15T14:00:00Z",
+            "totalPrice": 4000,
+            "items": [
+                {"shelfText1": "LETMÆLK", "price": 1000, "quantity": 2},
+                {"shelfText1": "HAVSALT CHIPS", "price": 1000},
+                {"shelfText1": "PANT", "price": 0},
+            ],
+        }
+    )
+    groups = receipt_groups(receipt)
+    assert groups == {"mejeri": 26.67, "snacks": 13.33}
+    assert receipt_summary(receipt)["groups"] == groups
+    assert receipt_groups(Receipt.from_api({"id": "g2", "totalPrice": 100})) == {}
+
+
+def test_spending_overview_weeks_start_on_sunday_and_keep_a_year() -> None:
+    """Weeks run Sunday to Saturday, in local time, 52 of them, with groups and days."""
+    cph = timezone(timedelta(hours=1))
+    receipts = [
+        # Saturday 23.30 UTC is Sunday 00.30 in Copenhagen: the next week.
+        Receipt.from_api(
+            {
+                "id": "w1",
+                "paymentDate": "2026-11-14T23:30:00Z",
+                "totalPrice": 10000,
+                "totalDiscount": 1000,
+                "items": [{"shelfText1": "HAKKET OKSEKØD", "price": 10000}],
+            }
+        ),
+        Receipt.from_api(
+            {"id": "w2", "paymentDate": "2026-11-13T15:00:00Z", "totalPrice": 5000, "items": []}
+        ),
+    ]
+    overview = spending_overview(receipts, cph, date(2026, 11, 19))
+    weeks = {b["key"]: b for b in overview["week"]["buckets"]}
+    assert len(overview["week"]["buckets"]) == 52
+    assert weeks["2026-11-15"]["spent"] == 100.0
+    assert weeks["2026-11-15"]["groups"] == {"kod": 100.0}
+    assert weeks["2026-11-15"]["days"][0] == 100.0  # Sunday
+    assert weeks["2026-11-08"]["days"][5] == 50.0  # Friday
+    assert weeks["2026-11-01"]["count"] == 0  # a week without trips is still there
+    rhythm = overview["rhythm"]
+    assert rhythm["weekdays"][0] == [1, 100.0] and rhythm["weekdays"][5] == [1, 50.0]
+    assert rhythm["sunday_hours"][0] == 1 and rhythm["hours"][16] == 1
+    assert overview["month"]["buckets"][0]["groups"] == {"kod": 100.0}
 
 
 # --------------------------------------------------------------- client (scan sign-in)
@@ -513,7 +598,7 @@ async def test_receipts_drive_coordinator_sensors_and_panel(
     kaffe = next(i for i in coordinator.items if i["name"] == "KAFFE")
     assert kaffe["count"] == 2 and kaffe["times"] == 2
     # The spend overview is built too.
-    assert set(coordinator.overview) == {"week", "month", "year"}
+    assert set(coordinator.overview) == {"week", "month", "year", "rhythm"}
     assert coordinator.overview["month"]["total"] == round(168.75 + 79.70, 2)
 
     # The latest-purchase sensors read the newest receipt.

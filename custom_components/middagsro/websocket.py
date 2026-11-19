@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 import functools
 import logging
@@ -16,6 +17,10 @@ from homeassistant.helpers.event import async_call_later, async_track_time_chang
 from homeassistant.util import dt as dt_util
 
 from .api import Catalog, RemaError
+from .baskets import (
+    async_compare as async_baskets_compare,
+    async_transfer as async_baskets_transfer,
+)
 from .budget import (
     async_book as async_budget_book,
     async_delete as async_purchase_delete,
@@ -2147,10 +2152,90 @@ async def ws_line_left(
     )
 
 
+# ------------------------------------------------------------------ webshops and images
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "middagsro/baskets/compare", ENTRY: str, vol.Required("plan_id"): str}
+)
+@websocket_api.async_response
+@_wrap
+async def ws_baskets_compare(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The plan's list here and in the other installed webshops (Nemlig.com, Bilka ToGo)."""
+    entry = _entry(hass, msg)
+    plan = entry.runtime_data.store.get_plan(msg["plan_id"])
+    if plan is None:
+        raise ValueError("Madplanen findes ikke længere. Genindlæs siden og prøv igen.")
+    connection.send_result(msg["id"], await async_baskets_compare(hass, entry, plan))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/baskets/transfer",
+        ENTRY: str,
+        vol.Required("target_entry_id"): str,
+        vol.Required("items"): vol.All(
+            [{vol.Required("product_id"): int, vol.Optional("packages", default=1): int}],
+            vol.Length(max=100),
+        ),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_baskets_transfer(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Put the found products in that webshop's basket (never orders)."""
+    entry = _entry(hass, msg)
+    connection.send_result(
+        msg["id"], await async_baskets_transfer(hass, entry, msg["target_entry_id"], msg["items"])
+    )
+
+
+_IMAGES = f"{DOMAIN}_item_images"
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/items/images",
+        ENTRY: str,
+        vol.Required("names"): vol.All([str], vol.Length(max=40)),
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_item_images(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """A picture for receipt lines (by name, from REMA's search; kept while HA runs)."""
+    client = _entry(hass, msg).runtime_data.client
+    cache: dict[str, str | None] = hass.data.setdefault(_IMAGES, {})
+    gate = asyncio.Semaphore(4)
+
+    async def one(name: str) -> None:
+        if name in cache:
+            return
+        async with gate:
+            try:
+                products = await client.async_search_products(name, 1)
+            except (RemaError, HomeAssistantError, TimeoutError, OSError):
+                return
+        cache[name] = next((p.image for p in products if p.image), None)
+
+    names = list(dict.fromkeys(n.strip() for n in msg["names"] if n.strip()))
+    await asyncio.gather(*(one(name) for name in names))
+    connection.send_result(msg["id"], {name: cache.get(name) for name in names})
+
+
 def async_register_websocket(hass: HomeAssistant) -> None:
     """Register the panel's commands."""
     for command in (
         ws_state,
+        ws_baskets_compare,
+        ws_baskets_transfer,
+        ws_item_images,
         ws_inventory_edit,
         ws_inventory_delete,
         ws_inventory_consume,

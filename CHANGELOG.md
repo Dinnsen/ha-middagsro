@@ -2,6 +2,25 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [3.0.0b1] - 2026-11-19
+
+### Added
+- **Ny forside med "Jeres rytme".** Panelet åbner nu på en forside med en levende gade i toppen: himlen følger klokken, køkkenet damper, og butikken viser ÅBENT/LUKKET. Her er ugens madbudget med ring, dagene og et felt til at kontere et beløb (+100/+250/+500), ugens aftensmad som tallerkener (Denne uge / Næste uge – tryk på en dag for opskrift, skift og rester) og et lyn-søgefelt, der sætter varer på REMA-listen.
+- **Header på alle sider** med Middagsro-logoet og profilknappen; stor på forsiden og en lavere udgave på de andre sider. På telefonen ligger fanerne i en svævende bundbjælke (Forside, Madplan, Indkøb, Økonomi, Mere), og popups åbner som ark nedefra.
+- **Økonomi tegnet om:** ugen som et ur (søndag øverst, dagene stablet i varegruppernes farver, NU-viseren og stiplet "plejer"), kontér et beløb direkte, tryk på en dag for dens køb og på en REMA-kvittering for at se bonen. "Jeres rytme" viser jeres store handelsdag, og Forbrug & besparelse er ét stort ur: et år i uger, et år i måneder eller fem år, med varegrupper, sparet på tilbud, snit og budget – tryk eller træk for at gå i tiden. Nederst: sparet i alt, brugt i REMA i alt og 5 års udvikling. Måned, uger, år og køb ligger stadig nedenunder.
+- **Varer:** jeres top 20 med REMA's egne billeder og prisspænd pr. stk.
+- **Sundhed:** "Kurvens tallerken" – hvad kvitteringerne siger, I faktisk købte de seneste 8 uger – og grønt mod søde sager måned for måned.
+- **Indkøb: hvad koster kurven andre steder?** Er Nemlig.com eller Bilka ToGo tilføjet som butik ved siden af REMA, søges ugens liste dér med jeres egne priser og vises med levering og pakkegebyrer, og varerne kan lægges i den butiks kurv. REMA bliver madplanens butik; Middagsro bestiller aldrig.
+- Madplanens retter er tegnet som tallerkener, og "Hold skærmen tændt" er nu en kontakt.
+
+### Changed
+- "Tilbud og priser" er flyttet fra Madplan til toppen af Indkøb, og konteringen er flyttet fra Madplan til forsiden og Økonomi.
+- Kvitteringernes varelinjer regnes nu rigtigt: REMA's pris er for ét stk., så en linje koster pris × antal (Varer, kvitteringer og forbrug).
+- Ugerne i forbruget går fra søndag til lørdag i dansk tid, og alle 52 uger vises.
+
+### Notes
+- Beta.
+
 ## [2.22.1b1] - 2026-11-19
 
 ### Changed

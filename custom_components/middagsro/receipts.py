@@ -7,13 +7,19 @@ turn the whole history into:
   lowest and highest unit price, and the most recent one, and
 * compact receipt summaries for the "Indkøb" tab (the full receipt, with its
   lines, is sent on demand).
+
+A line's ``price`` is what one piece cost (after its discount), and ``quantity``
+how many: the line's total is the two multiplied. Every receipt is also split on
+the eight varegrupper (groups.py), scaled to what the receipt cost.
 """
 
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta, tzinfo
 from typing import Any
 
-from .api import Receipt
+from .api import Receipt, ReceiptItem
+from .groups import GROUPS, group_of
 
 # An item bought more than this many times is flagged as a regular buy.
 FREQUENT_THRESHOLD = 5
@@ -24,12 +30,31 @@ def normalize_name(name: str | None) -> str:
     return " ".join(str(name or "").lower().split())
 
 
-def _unit_price(price: float | None, quantity: int | None) -> float | None:
-    """The price of one unit, from a line's printed price and its quantity."""
-    if price is None:
+def line_total(item: ReceiptItem) -> float | None:
+    """What a line cost: the price of one piece times how many."""
+    if item.price is None:
         return None
-    qty = quantity or 1
-    return round(price / qty, 2) if qty else round(price, 2)
+    return round(item.price * (item.quantity or 1), 2)
+
+
+def receipt_groups(receipt: Receipt) -> dict[str, float]:
+    """What a receipt went to, per varegruppe, scaled to what was paid.
+
+    The lines do not always add up to the total (deposits, rounding), so the
+    groups keep their shares and the receipt's total decides the size.
+    """
+    sums: dict[str, float] = {}
+    for item in receipt.items:
+        total = line_total(item)
+        if total is None or total <= 0:
+            continue
+        group = group_of(item.name)
+        sums[group] = sums.get(group, 0.0) + total
+    lines = sum(sums.values())
+    paid = float(receipt.total) if receipt.total else lines
+    if not lines or not paid:
+        return {}
+    return {g: round(sums[g] / lines * paid, 2) for g in GROUPS if sums.get(g)}
 
 
 def aggregate_items(receipts: list[Receipt]) -> list[dict[str, Any]]:
@@ -58,10 +83,11 @@ def aggregate_items(receipts: list[Receipt]) -> list[dict[str, Any]]:
                     "last_price": None,
                     "last_date": None,
                     "total_spent": 0.0,
+                    "group": group_of(item.name),
                 }
             entry["count"] += item.quantity or 1
             entry["times"] += 1
-            unit = _unit_price(item.price, item.quantity)
+            unit = round(item.price, 2) if item.price is not None else None
             if unit is not None:
                 entry["min_price"] = (
                     unit if entry["min_price"] is None else min(entry["min_price"], unit)
@@ -69,8 +95,9 @@ def aggregate_items(receipts: list[Receipt]) -> list[dict[str, Any]]:
                 entry["max_price"] = (
                     unit if entry["max_price"] is None else max(entry["max_price"], unit)
                 )
-            if item.price is not None:
-                entry["total_spent"] = round(entry["total_spent"] + item.price, 2)
+            total = line_total(item)
+            if total is not None:
+                entry["total_spent"] = round(entry["total_spent"] + total, 2)
             if when and (entry["last_date"] is None or when > entry["last_date"]):
                 entry["last_date"] = when
                 if unit is not None:
@@ -82,19 +109,47 @@ def aggregate_items(receipts: list[Receipt]) -> list[dict[str, Any]]:
     return items
 
 
-def _bucket_keys(day: Any) -> dict[str, str]:
-    """The week/month/year bucket keys for a date."""
-    iso_year, iso_week, _ = day.isocalendar()
+def _local(when: datetime, tz: tzinfo | None) -> datetime:
+    """A receipt's time where the family lives (receipts come in UTC)."""
+    if tz is None or when.tzinfo is None:
+        return when
+    return when.astimezone(tz)
+
+
+def _week_start(day: date) -> date:
+    """The Sunday a Middagsro week starts on (the budget's week)."""
+    return day - timedelta(days=(day.weekday() + 1) % 7)
+
+
+def _bucket_keys(day: date) -> dict[str, str]:
+    """The week/month/year bucket keys for a date (weeks start on Sunday)."""
     return {
-        "week": f"{iso_year}-W{iso_week:02d}",
+        "week": _week_start(day).isoformat(),
         "month": f"{day.year}-{day.month:02d}",
         "year": f"{day.year}",
     }
 
 
-# How many of the most recent buckets to send per granularity (keeps the chart
-# legible and the payload small); stats are computed over what is sent.
-_WINDOW = {"week": 26, "month": 12, "year": 6}
+# How many of the most recent buckets to send per granularity: one turn of the
+# panel's clock is a year in weeks and in months, and five years in years.
+_WINDOW = {"week": 52, "month": 12, "year": 6}
+
+
+def _fill_weeks(buckets: dict[str, dict[str, Any]], today: date | None) -> None:
+    """Weeks without a trip are there too, so a year is always 52 weeks round."""
+    if not buckets:
+        return
+    last = _week_start(today) if today else max(date.fromisoformat(k) for k in buckets)
+    for n in range(_WINDOW["week"]):
+        key = (last - timedelta(weeks=n)).isoformat()
+        buckets.setdefault(key, _empty(key, week=True))
+
+
+def _empty(key: str, week: bool = False) -> dict[str, Any]:
+    bucket: dict[str, Any] = {"key": key, "spent": 0.0, "saved": 0.0, "count": 0, "groups": {}}
+    if week:
+        bucket["days"] = [0.0] * 7
+    return bucket
 
 
 def _granularity(buckets: dict[str, dict[str, Any]], limit: int) -> dict[str, Any]:
@@ -115,28 +170,51 @@ def _granularity(buckets: dict[str, dict[str, Any]], limit: int) -> dict[str, An
     }
 
 
-def spending_overview(receipts: list[Receipt]) -> dict[str, Any]:
-    """REMA spend grouped by week, month and year, with high/low/average/saved.
+def spending_overview(
+    receipts: list[Receipt], tz: tzinfo | None = None, today: date | None = None
+) -> dict[str, Any]:
+    """REMA spend by week (from Sunday), month and year, and the family's rhythm.
 
     Built straight from the receipts (not the budget), so it is REMA-only and
     never double-counts the family's other booked purchases. Each granularity:
-    ``{buckets: [{key, spent, saved, count}], high, low, avg, saved_total, total}``.
+    ``{buckets: [{key, spent, saved, count, groups[, days]}], high, low, avg,
+    saved_total, total}``; a week's ``days`` is what each weekday took, Sunday
+    first. ``rhythm`` has every trip by weekday (``[[trips, kroner]] * 7``, Sunday
+    first) and by hour of the day, all of them and Sundays alone.
     """
     grans: dict[str, dict[str, dict[str, Any]]] = {"week": {}, "month": {}, "year": {}}
+    weekdays = [[0, 0.0] for _ in range(7)]
+    hours = [0] * 24
+    sunday_hours = [0] * 24
     for receipt in receipts:
         if receipt.date is None or not receipt.total:
             continue
-        day = receipt.date.date()
+        when = _local(receipt.date, tz)
+        day = when.date()
+        weekday = (day.weekday() + 1) % 7  # Sunday = 0
         total = round(float(receipt.total), 2)
         saved = round(float(receipt.total_discount or 0.0), 2)
+        groups = receipt_groups(receipt)
+        weekdays[weekday][0] += 1
+        weekdays[weekday][1] = round(weekdays[weekday][1] + total, 2)
+        hours[when.hour] += 1
+        if weekday == 0:
+            sunday_hours[when.hour] += 1
         for gran, key in _bucket_keys(day).items():
             bucket = grans[gran].get(key)
             if bucket is None:
-                bucket = grans[gran][key] = {"key": key, "spent": 0.0, "saved": 0.0, "count": 0}
+                bucket = grans[gran][key] = _empty(key, week=gran == "week")
             bucket["spent"] = round(bucket["spent"] + total, 2)
             bucket["saved"] = round(bucket["saved"] + saved, 2)
             bucket["count"] += 1
-    return {gran: _granularity(grans[gran], _WINDOW[gran]) for gran in grans}
+            for group, amount in groups.items():
+                bucket["groups"][group] = round(bucket["groups"].get(group, 0.0) + amount, 2)
+            if gran == "week":
+                bucket["days"][weekday] = round(bucket["days"][weekday] + total, 2)
+    _fill_weeks(grans["week"], today)
+    result: dict[str, Any] = {gran: _granularity(grans[gran], _WINDOW[gran]) for gran in grans}
+    result["rhythm"] = {"weekdays": weekdays, "hours": hours, "sunday_hours": sunday_hours}
+    return result
 
 
 def receipt_summary(receipt: Receipt) -> dict[str, Any]:
@@ -150,6 +228,7 @@ def receipt_summary(receipt: Receipt) -> dict[str, Any]:
         "gross": receipt.gross,
         "total_discount": receipt.total_discount,
         "items": len(receipt.items),
+        "groups": receipt_groups(receipt),
         "store": store.name if store else None,
         "city": store.city if store else None,
     }

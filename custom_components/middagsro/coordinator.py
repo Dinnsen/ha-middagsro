@@ -22,6 +22,7 @@ from homeassistant.exceptions import (
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import (
     Catalog,
@@ -511,7 +512,9 @@ class RemaReceiptsCoordinator(DataUpdateCoordinator[list[Receipt]]):
     def _recompute(self, receipts: list[Receipt]) -> None:
         """Refresh the per-item statistics and the spend overview."""
         self.items = aggregate_items(receipts)
-        self.overview = spending_overview(receipts)
+        self.overview = spending_overview(
+            receipts, dt_util.get_default_time_zone(), dt_util.now().date()
+        )
 
     def _merge_tagged(self, fresh: list[tuple[str, Receipt]]) -> list[Receipt]:
         """Merge freshly fetched receipts into the cache, tagging each by source."""
