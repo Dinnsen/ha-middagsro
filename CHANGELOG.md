@@ -11,6 +11,7 @@ All notable changes to Middagsro. Versions follow `custom_components/middagsro/m
 - Tryk igen på den fane, du står på, så rulles der op til toppen.
 - En side åbner altid fra toppen.
 - Historik › Indkøb: hver kvittering har kvitteringsikonet i venstre side, tidspunkt, antal linjer, hvad der blev sparet og varegrupperne – og åbner bonen ved tryk.
+- **Udseende.** Frisk er nu præcis prototypens udseende: blå (#1664FF), lyse blågrå flader, Inter og runde kort med blød skygge – også i mørk tilstand. Hverdag og Theme Studio bruger det nye design med deres egne farver. Udseende vælges med tre kort med farveprøver.
 
 ### Notes
 - Beta.

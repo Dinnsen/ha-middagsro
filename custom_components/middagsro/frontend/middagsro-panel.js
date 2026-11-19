@@ -6367,9 +6367,7 @@ class Rema1000Panel extends HTMLElement {
           </div>
           <div class="mc-main"><div>${phone}</div><div class="mc-cards">${MSG_KINDS.map(kcard).join("")}</div></div>`);
       },
-      look: () => card(`<h2 class="flush">Udseende</h2>
-        <p class="muted small">Gemmes for dig. Theme Studio følger jeres Home Assistant-theme.</p>
-        <div class="row wrap">${this._looks().map((k) => `<button class="btn${this._look() === k ? " primary" : ""}" data-action="look" data-arg="${k}" aria-pressed="${this._look() === k}">${LOOK_NAMES[k]}</button>`).join("")}</div>`),
+      look: () => card(this._v3Looks()),
       watch: () => card(`<h2 class="flush">Besked om tilbud</h2>
         <p class="muted">Få besked, når noget fra overvågningslisten under Favoritter kommer på tilbud hos ${esc(this._shopName())} eller en af jeres andre butikker – kun da, og kun én gang pr. tilbud.</p>
         <label class="field">Send besked til
@@ -7560,7 +7558,7 @@ const V3_METHODS = {
     const now = new Date();
     const wk = V3.weekNo(V3.sundayOf(localToday()));
     return `<div class="hero-copy"><div class="kicker light">${V3.DAYS_LONG[now.getDay()]} ${now.getDate()}. ${V3.MONTHS_LONG[now.getMonth()]} · uge ${wk}</div>
-        <h1 class="hello">${V3.greet(this._v3Hour())}${this._hass?.user?.name ? `, ${esc(String(this._hass.user.name).split(" ")[0])}` : ""}</h1>
+        <h1 class="hello">${V3.greet(this._v3Hour())}</h1>
         <p class="hero-sub">${this._v3Tonight()}</p></div>
       <div class="glass budget-glass">${this._v3HeroBudget()}</div>`;
   },
@@ -7697,14 +7695,15 @@ const V3_METHODS = {
     }).join("");
     const dinners = (w?.entries || []).filter((e) => e.day && e.day.dish && !["rester", "egen", "tom"].includes(e.day.type)).length;
     const rest = (w?.entries || []).filter((e) => e.day && (e.day.type === "rester" || e.day.uses_leftovers_from)).length;
-    const left = plan.shopping.filter((l) => !l.buy_from && !l.buy_at && !l.sent).length;
+    const owner = (shown[0] || w?.entries?.[0] || { plan }).plan;
+    const left = owner.shopping.filter((l) => !l.buy_from && !l.buy_at && !l.sent).length;
     return `<div class="card plan-home">
       <div class="row between wrap"><div><div class="kicker">${esc(w ? `Madplan uge ${w.week}` : plan.title || "Madplan")}</div><h2>${idx === 0 ? "Denne uges aftensmad" : "Næste uges aftensmad"}</h2>
-        <p class="sub">${plan.summary && idx === weeks.length - 1 ? `${esc(plan.summary)} ` : ""}Tryk på en dag for at se opskriften eller skifte retten.</p></div>
+        <p class="sub">${owner.summary ? `${esc(owner.summary)} ` : ""}Tryk på en dag for at se opskriften eller skifte retten.</p></div>
         ${weeks.length > 1 ? `<div class="seg">${weeks.slice(0, 2).map((x, i) => `<button class="${idx === i ? "on" : ""}" data-action="v3-hw" data-arg="${i}">${i === 0 ? "Denne uge" : "Næste uge"}</button>`).join("")}</div>` : ""}</div>
       <div class="strip">${tiles || '<p class="sub">Ingen dage i ugen.</p>'}</div>
       <div class="plan-foot">
-        <span class="pf-stat"><b class="num">${kr0(plan.total)}</b><span>indkøb til planen</span></span>
+        <span class="pf-stat"><b class="num">${kr0(owner.total)}</b><span>indkøb til ugen</span></span>
         <span class="pf-stat"><b class="num">${dinners}</b><span>aftener at lave</span></span>
         <span class="pf-stat"><b class="num">${rest}</b><span>restedage</span></span>
         <span class="spacer"></span>
@@ -9043,6 +9042,25 @@ Object.assign(V3_METHODS, {
   },
 });
 
+/* Udseende: the three looks as cards, as in the prototype. */
+const V3_LOOKS = {
+  studio: "Følger jeres Home Assistant-tema",
+  frisk: "Lys og blå – præcis som prototypen",
+  hverdag: "Lilla og rund, som Hverdagsro",
+};
+Object.assign(V3_METHODS, {
+  _v3Looks() {
+    const ha = getComputedStyle(document.documentElement);
+    const v = (name, fallback) => (ha.getPropertyValue(name) || "").trim() || fallback;
+    const studio = [v("--primary-color", "#03a9f4"), v("--primary-background-color", "#fafafa"), v("--primary-text-color", "#212121")];
+    const sw = { studio, frisk: ["#1664FF", "#EEF1F7", "#0B2147"], hverdag: ["#6E4AFF", "#F1EEFB", "#1B1530"] };
+    return `<div class="v3"><h2 class="flush">Udseende</h2>
+      <p class="sub">Gemmes for dig på denne konto. Mørk eller lys følger Home Assistant.</p>
+      <div class="looks-big">${this._looks().map((k) => `<button class="lookcard${this._look() === k ? " on" : ""}" data-action="look" data-arg="${k}" aria-pressed="${this._look() === k}">
+        <span class="sw">${sw[k].map((c) => `<i style="background:${esc(c)}"></i>`).join("")}</span><b>${esc(LOOK_NAMES[k])}</b><small>${esc(V3_LOOKS[k])}</small></button>`).join("")}</div></div>`;
+  },
+});
+
 Object.assign(Rema1000Panel.prototype, V3_METHODS);
 for (const key of Object.keys(V3_ICONS)) TAB_ICONS[key] = V3_TAB_ICON(key);
 
@@ -9540,8 +9558,21 @@ const V3_STYLE = `
 .v3 .stile b {display: block; font-size: 14.5px;}
 .v3 .stile small {color: var(--soft); font-size: 12.5px;}
 .v3 .spanel {animation: rise .35s both;}
+.v3 .looks-big {display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 12px;}
+.v3 .lookcard {display: grid; gap: 4px; padding: 12px; border-radius: 16px; border: 1.5px solid var(--line); background: var(--card-background-color); cursor: pointer; text-align: left;}
+.v3 .lookcard.on {border-color: var(--rema-accent); box-shadow: 0 0 0 3px var(--rema-tint);}
+.v3 .lookcard small {color: var(--soft);}
 .v3 .sw {display: flex; gap: 4px; margin-bottom: 6px;}
 .v3 .sw i {width: 26px; height: 26px; border-radius: 8px;}
+.v3 .sw-studio i:nth-child(1) {background: #1664FF;}
+.v3 .sw-studio i:nth-child(2) {background: #EEF1F7;}
+.v3 .sw-studio i:nth-child(3) {background: #0B2147;}
+.v3 .sw-frisk i:nth-child(1) {background: #00A884;}
+.v3 .sw-frisk i:nth-child(2) {background: #F2F4F7;}
+.v3 .sw-frisk i:nth-child(3) {background: #111827;}
+.v3 .sw-hverdag i:nth-child(1) {background: #6E4AFF;}
+.v3 .sw-hverdag i:nth-child(2) {background: #F1EEFB;}
+.v3 .sw-hverdag i:nth-child(3) {background: #1B1530;}
 .v3 .tw {animation: twinkle 3.5s ease-in-out infinite;}
 @keyframes twinkle { 50% { opacity: .25; } }
 .v3 .steam {animation: steam 3s ease-in-out infinite;}
@@ -9984,6 +10015,27 @@ const V3_STYLE = `
     .v3 .prow.has-drag .pr-drag { grid-row: 1 / span 2; }
     .v3 .prow.has-drag .pr-tools { grid-column: 2; padding-left: 84px; }
   }
+  /* ---- The looks. Frisk is the prototype exactly; Hverdag and Theme Studio wear the same design. */
+  :host([look="frisk"]) { --primary-background-color: #EEF1F7; --card-background-color: #FFFFFF; --ha-card-background: #FFFFFF; --secondary-background-color: #F1F4FA;
+    --primary-text-color: #0B2147; --secondary-text-color: #56637E; --divider-color: #E3E8F2; --primary-color: #1664FF; --text-primary-color: #fff;
+    --app-header-background-color: #FFFFFF; --app-header-text-color: #0B2147;
+    --ha-card-border-radius: 20px; --ha-card-box-shadow: 0 1px 2px rgba(11,33,71,.05), 0 12px 32px -18px rgba(11,33,71,.28);
+    --ha-font-family-body: Inter, "Segoe UI", system-ui, sans-serif; --display: Inter, system-ui, sans-serif;
+    --success-color: #0E9F6E; --warning-color: #E0A52E; --error-color: #E34948; --theme-studio-card-backdrop-filter: none;
+    --mdc-theme-primary: #1664FF; }
+  :host([look="frisk"][dark]) { --primary-background-color: #0B1220; --card-background-color: #121B2E; --ha-card-background: #121B2E; --secondary-background-color: #18233A;
+    --primary-text-color: #EAF0FB; --secondary-text-color: #9AA8C3; --divider-color: #22304B; --primary-color: #5B93FF;
+    --app-header-background-color: #121B2E; --app-header-text-color: #EAF0FB;
+    --ha-card-box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 18px 40px -22px rgba(0,0,0,.8); --success-color: #2DD4A7; --mdc-theme-primary: #5B93FF; }
+  :host([look="hverdag"]) { --display: Figtree, var(--ha-font-family-body, system-ui), sans-serif; --success-color: #0E9F6E; --warning-color: #E0A52E; --error-color: #E34948; }
+  :host([look="hverdag"][dark]) { --success-color: #2DD4A7; }
+  :host([look="studio"]) { --display: var(--ha-font-family-body, Inter, system-ui), sans-serif; }
+  :host([look="frisk"]) .card, :host([look="hverdag"]) .card { border: 1px solid var(--divider-color); box-shadow: var(--ha-card-box-shadow); }
+  :host([look="frisk"]) .v3 .card, :host([look="hverdag"]) .v3 .card { border: 1px solid var(--line); }
+  :host([dark]) .v3 .scene-svg { filter: brightness(.86) saturate(.95); }
+  :host([look="frisk"]) main, :host([look="frisk"]) { background: var(--primary-background-color); }
+  .v3 .lookcard { font: inherit; color: inherit; text-align: left; }
+  .v3 .lookcard b { font-size: 15px; }
 
 `;
 const STYLE = STYLE_BASE + V3_STYLE;
