@@ -2,6 +2,11 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.19.0] - 2026-11-19
+
+### Added
+- **Digital receipts now work.** Middagsro signs in to REMA's Scan Selv backend with the account's own OAuth2/PKCE flow (client `scan-and-pay`), using the same e-mail and password, and reads `user/receipts` with that token. The **Seneste kvittering** sensor and the **`middagsro.get_receipts`** action are now live for REMA 1000 accounts. Reverse-engineered and verified live against a real account.
+
 ## [2.18.7] - 2026-11-19
 
 ### Changed

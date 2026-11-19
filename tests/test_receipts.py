@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+from yarl import URL
 
 from custom_components.middagsro import api
-from custom_components.middagsro.api import Receipt, ReceiptItem, RemaApiError
+from custom_components.middagsro.api import Receipt, ReceiptItem, RemaApiError, RemaAuthError
 
 from .test_api import FakeResponse, logged_in, token
 
@@ -129,76 +130,138 @@ def test_receipt_item_from_api_minimal() -> None:
     assert item.price == 9.99
 
 
-# --------------------------------------------------------------- client
+# --------------------------------------------------------------- client (scan sign-in)
+
+CALLBACK = "dk.rema1000.app://logincallback?code=THE-CODE"
+LOGIN_PAGE = "https://login.rema1000.dk/login"
+CONTINUE = "https://login.rema1000.dk/continue"
 
 
-async def test_get_receipts_fetches_and_sorts() -> None:
-    """The newest receipts come back first, within the limit, with a Bearer token."""
+def _authorize_url() -> str:
+    """The exact authorize URL the client builds (PKCE pinned by the test)."""
+    return str(
+        URL(api.AUTHORIZE_URL).with_query(
+            {
+                "client_id": api.SCAN_CLIENT_ID,
+                "response_type": "code",
+                "code_challenge_method": "S256",
+                "code_challenge": "CHAL",
+                "redirect_uri": api.SCAN_REDIRECT_URI,
+                "screen": "login",
+                "lang": "da",
+            }
+        )
+    )
+
+
+def _pin_pkce(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(api, "_pkce_pair", lambda: ("VERIFIER", "CHAL"))
+
+
+def _route_scan_login(session: object, *, tokens: dict | None = None) -> None:
+    """Mock the authorize -> credentials -> code -> token-exchange happy path."""
+    session.on("GET", _authorize_url(), FakeResponse(status=200, url=LOGIN_PAGE))
+    session.on("POST", api.LOGIN_API_URL, FakeResponse(data={"redirect_uri": CONTINUE}))
+    session.on("GET", CONTINUE, FakeResponse(status=302, headers={"Location": CALLBACK}))
+    session.on(
+        "POST",
+        api.TOKEN_NEW_URL,
+        FakeResponse(data=tokens or {"accessToken": token(), "refreshToken": "refresh-1"}),
+    )
+
+
+async def test_get_receipts_signs_in_and_reads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A full Scan Selv sign-in yields the receipts, newest first, with a Bearer."""
+    _pin_pkce(monkeypatch)
     client, session = await logged_in()
+    _route_scan_login(session)
     older = _sample(id="old", paymentDate=1_700_000_000_000)
     newer = _sample(id="new", paymentDate=1_760_000_000_000)
     session.on("GET", RECEIPTS_URL, FakeResponse(data={"data": [older, newer]}))
 
     receipts = await client.async_get_receipts(limit=10)
 
-    assert [r.id for r in receipts] == ["new", "old"]  # newest first
-    _method, _url, kwargs = next(c for c in session.calls if c[1] == RECEIPTS_URL)
+    assert [r.id for r in receipts] == ["new", "old"]
+    # The code was exchanged with the matching PKCE verifier.
+    _m, _u, kwargs = next(c for c in session.calls if c[1] == api.TOKEN_NEW_URL)
+    assert kwargs["json"] == {
+        "codeVerifier": "VERIFIER",
+        "code": "THE-CODE",
+        "redirectUri": api.SCAN_REDIRECT_URI,
+    }
+    # Receipts were read with the Scan Selv Bearer token.
+    _m, _u, kwargs = next(c for c in session.calls if c[1] == RECEIPTS_URL)
     assert kwargs["headers"]["Authorization"].startswith("Bearer ")
 
 
-async def test_get_receipts_limits() -> None:
-    """``limit`` trims the list to the newest few."""
+async def test_get_receipts_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``limit`` keeps only the newest few."""
+    _pin_pkce(monkeypatch)
     client, session = await logged_in()
+    _route_scan_login(session)
     data = {"data": [_sample(id=f"r{i}", paymentDate=1_700_000_000_000 + i) for i in range(5)]}
     session.on("GET", RECEIPTS_URL, FakeResponse(data=data))
-
-    receipts = await client.async_get_receipts(limit=2)
-
-    assert len(receipts) == 2
+    assert len(await client.async_get_receipts(limit=2)) == 2
 
 
-async def test_get_receipts_handles_bare_list() -> None:
-    """A backend that returns a plain list (no envelope) is accepted too."""
+async def test_get_receipts_handles_bare_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A plain list (no envelope) is accepted too."""
+    _pin_pkce(monkeypatch)
     client, session = await logged_in()
+    _route_scan_login(session)
     session.on("GET", RECEIPTS_URL, FakeResponse(data=[_sample()]))
-    receipts = await client.async_get_receipts()
-    assert len(receipts) == 1
+    assert len(await client.async_get_receipts()) == 1
 
 
-async def test_get_receipts_renews_a_rejected_token() -> None:
-    """A 401 renews the access token once and then succeeds."""
+async def test_get_receipts_renews_token() -> None:
+    """With a refresh token held, it renews instead of signing in again."""
     client, session = await logged_in()
-    session.on(
-        "POST",
-        "https://shop.rema1000.dk/api/auth/refresh",
-        FakeResponse(data={"tokens": {"access_token": token()}}),
-    )
+    client._scan_token = "old-token"
+    client._scan_refresh = "refresh-1"
+    client._scan_expires_at = 0  # expired
+    session.on("POST", api.TOKEN_RENEW_URL, FakeResponse(data={"accessToken": token()}))
+    session.on("GET", RECEIPTS_URL, FakeResponse(data=[_sample()]))
+
+    receipts = await client.async_get_receipts()
+
+    assert len(receipts) == 1
+    # It renewed; it did not run a full sign-in (no token/new exchange).
+    assert all(c[1] != api.TOKEN_NEW_URL for c in session.calls)
+    _m, _u, kwargs = next(c for c in session.calls if c[1] == api.TOKEN_RENEW_URL)
+    assert kwargs["json"] == {"refreshToken": "refresh-1"}
+
+
+async def test_get_receipts_renews_on_401(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A 401 from the backend forces a renew and one retry."""
+    _pin_pkce(monkeypatch)
+    client, session = await logged_in()
+    _route_scan_login(session)
+    client._scan_refresh = "refresh-1"
+    session.on("POST", api.TOKEN_RENEW_URL, FakeResponse(data={"accessToken": token()}))
     session.on(
         "GET",
         RECEIPTS_URL,
         FakeResponse(status=401),
-        FakeResponse(data={"data": [_sample()]}),
+        FakeResponse(data=[_sample()]),
     )
-    receipts = await client.async_get_receipts()
-    assert len(receipts) == 1
+    assert len(await client.async_get_receipts()) == 1
 
 
-async def test_get_receipts_soft_error_when_backend_rejects_token() -> None:
-    """A persistent 401 is a soft error (not a re-login prompt)."""
+async def test_get_receipts_bad_password(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A rejected password surfaces as an auth error, not a soft failure."""
+    _pin_pkce(monkeypatch)
     client, session = await logged_in()
-    session.on(
-        "POST",
-        "https://shop.rema1000.dk/api/auth/refresh",
-        FakeResponse(data={"tokens": {"access_token": token()}}),
-    )
-    session.on("GET", RECEIPTS_URL, FakeResponse(status=401))
-    with pytest.raises(RemaApiError, match="Scan Selv"):
+    session.on("GET", _authorize_url(), FakeResponse(status=200, url=LOGIN_PAGE))
+    session.on("POST", api.LOGIN_API_URL, FakeResponse(status=401))
+    with pytest.raises(RemaAuthError):
         await client.async_get_receipts()
 
 
-async def test_get_receipts_raises_on_server_error() -> None:
-    """Other HTTP errors surface as a RemaApiError."""
+async def test_get_receipts_server_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A backend 500 surfaces as a RemaApiError."""
+    _pin_pkce(monkeypatch)
     client, session = await logged_in()
+    _route_scan_login(session)
     session.on("GET", RECEIPTS_URL, FakeResponse(status=500, text="boom"))
     with pytest.raises(RemaApiError):
         await client.async_get_receipts()
