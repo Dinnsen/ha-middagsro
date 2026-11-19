@@ -1232,7 +1232,9 @@ class RemaClient:
                 data = _json_or_error(text, "receipts") if text.strip() else []
         except (aiohttp.ClientError, TimeoutError) as err:
             raise RemaConnectionError(f"Could not reach REMA 1000: {err}") from err
-        raw_list: Any = _first(data, "data", "receipts", "items") if isinstance(data, dict) else data
+        raw_list: Any = (
+            _first(data, "data", "receipts", "items") if isinstance(data, dict) else data
+        )
         receipts: list[Receipt] = []
         for entry in raw_list if isinstance(raw_list, list) else []:
             try:

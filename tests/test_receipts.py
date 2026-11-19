@@ -225,8 +225,8 @@ async def test_get_receipts_renews_token() -> None:
     receipts = await client.async_get_receipts()
 
     assert len(receipts) == 1
-    # It renewed; it did not POST credentials.
-    assert all(c[1] != api.LOGIN_API_URL for c in session.calls)
+    # It renewed; it did not run a full sign-in (no token/new exchange).
+    assert all(c[1] != api.TOKEN_NEW_URL for c in session.calls)
     _m, _u, kwargs = next(c for c in session.calls if c[1] == api.TOKEN_RENEW_URL)
     assert kwargs["json"] == {"refreshToken": "refresh-1"}
 
