@@ -2,6 +2,19 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [3.0.0b3] - 2026-11-19
+
+### Added
+- **Træk og slip i madplanen.** Hver ret har et tydeligt håndtag til venstre: træk retten til en anden dag, så rykker de andre retter med. En stiplet boks over dagene fortæller, at man kan. Retten kan stadig også flyttes fra dagens menu.
+
+### Changed
+- Tryk igen på den fane, du står på, så rulles der op til toppen.
+- En side åbner altid fra toppen.
+- Historik › Indkøb: hver kvittering har kvitteringsikonet i venstre side, tidspunkt, antal linjer, hvad der blev sparet og varegrupperne – og åbner bonen ved tryk.
+
+### Notes
+- Beta.
+
 ## [3.0.0b2] - 2026-11-19
 
 ### Changed
