@@ -291,13 +291,23 @@ def budget_between(store: RemaPlanStore, first: date, last: date) -> float:
 
 
 def week_numbers(store: RemaPlanStore, start: date, ledger: Ledger) -> dict[str, float]:
-    """A week's budget, what the month brings into it, and what is spent in it."""
+    """A week's budget, what the month brings into it, and what is spent in it.
+
+    A weekly budget resets every week (the new week starts fresh on the chosen
+    start day), so nothing carries over; a monthly budget still carries a week's
+    unused amount on to the next weeks of the same month.
+    """
     end = start + timedelta(days=6)
     first = max(start.replace(day=1), since(store))
     before = start - timedelta(days=1)
+    carry = (
+        0.0
+        if store.settings.get("budget_period") == "week"
+        else budget_between(store, first, before) - ledger.spent(first, before)
+    )
     return {
         "budget": budget_between(store, start, end),
-        "carry": budget_between(store, first, before) - ledger.spent(first, before),
+        "carry": carry,
         "spent": ledger.spent(start, end),
     }
 

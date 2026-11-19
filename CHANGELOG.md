@@ -2,6 +2,11 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.22.1b1] - 2026-11-19
+
+### Changed
+- **Ugebudget nulstilles hver uge.** Med et budget pr. uge starter den nye uge nu altid forfra på ugebeløbet (på jeres valgte ugedag – søndag). Ubrugt beløb bæres ikke længere videre, og en uges overforbrug trækkes ikke fra den næste. Et budget pr. måned bærer stadig ugens rest videre inden for måneden som før.
+
 ## [2.22.0b1] - 2026-11-19
 
 ### Added
