@@ -2,6 +2,15 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.22.0b1] - 2026-11-19
+
+### Added
+- **Flere REMA 1000-konti til kvitteringer (op til 5 i alt).** Under Økonomi-indstillinger kan du nu tilføje husstandens andre REMA-logins (op til 4 ekstra). Deres kvitteringer hentes også og konteres i budgettet, så alle jeres REMA-køb – uanset hvem der betaler – tæller med i Økonomi, varestatistikken og forbrugs-overblikket. Loginnene bruges **kun** til kvitteringer; de rører ikke indkøbslister, favoritter eller madplaner. Fjerner du en konto igen, fjernes dens kvitteringer og det, de har konteret, også.
+
+### Notes
+- Ekstra logins valideres ved tilføjelse (forkert adgangskode afvises). Hver kontos kvitteringer flettes på tværs, så intet tælles dobbelt.
+- Beta.
+
 ## [2.21.0b1] - 2026-11-19
 
 ### Added

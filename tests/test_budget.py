@@ -566,3 +566,21 @@ async def test_sync_receipts_honours_since_and_skips_empty() -> None:
     added = await bg.async_sync_receipts(store, receipts, since=date(2026, 10, 1))
     assert added == 1
     assert [p["id"] for p in store.purchases] == ["rcpt_new"]
+
+
+async def test_unbook_receipts_removes_booked_purchases() -> None:
+    """Removing a login's receipts also removes what they booked."""
+    store = FakeStore()
+    await bg.async_sync_receipts(
+        store,
+        [
+            _Receipt("aaa", "2026-10-13T10:00:00+00:00", 100.0),
+            _Receipt("bbb", "2026-10-14T10:00:00+00:00", 50.0),
+        ],
+    )
+    assert len(store.purchases) == 2
+    removed = await bg.async_unbook_receipts(store, ["aaa"])
+    assert removed == 1
+    assert {p["id"] for p in store.purchases} == {"rcpt_bbb"}
+    # Unknown ids remove nothing.
+    assert await bg.async_unbook_receipts(store, ["zzz"]) == 0

@@ -394,6 +394,21 @@
     },
     "receipt_not_found": {
       "message": "Kvitteringen blev ikke fundet."
+    },
+    "receipt_login_missing": {
+      "message": "Skriv e-mail og adgangskode til kontoen."
+    },
+    "receipt_login_exists": {
+      "message": "Den konto er allerede tilføjet."
+    },
+    "receipt_login_too_many": {
+      "message": "Du kan højst tilføje {max} ekstra konti."
+    },
+    "receipt_login_auth": {
+      "message": "Kunne ikke logge ind på {email}. Tjek e-mail og adgangskode."
+    },
+    "receipt_login_failed": {
+      "message": "Kunne ikke hente kvitteringer: {error}"
     }
   },
   "issues": {

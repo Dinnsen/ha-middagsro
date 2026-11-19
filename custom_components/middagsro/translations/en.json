@@ -394,6 +394,21 @@
     },
     "receipt_not_found": {
       "message": "The receipt was not found."
+    },
+    "receipt_login_missing": {
+      "message": "Enter the account's e-mail and password."
+    },
+    "receipt_login_exists": {
+      "message": "That account is already added."
+    },
+    "receipt_login_too_many": {
+      "message": "You can add at most {max} extra accounts."
+    },
+    "receipt_login_auth": {
+      "message": "Could not sign in to {email}. Check the e-mail and password."
+    },
+    "receipt_login_failed": {
+      "message": "Could not fetch receipts: {error}"
     }
   },
   "issues": {

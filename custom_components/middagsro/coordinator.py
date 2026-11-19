@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
+import uuid
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    HomeAssistantError,
+    ServiceValidationError,
+)
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -311,6 +318,9 @@ class RemaReceiptsCoordinator(DataUpdateCoordinator[list[Receipt]]):
 
     # The history is bounded so a very old account cannot grow without limit.
     MAX_KEEP = 2000
+    # The account's own login plus up to this many extra receipt-only logins.
+    MAX_EXTRA_LOGINS = 4
+    PRIMARY = "primary"
 
     def __init__(self, hass: HomeAssistant, entry: RemaConfigEntry, client: RemaClient) -> None:
         """Initialize the coordinator."""
@@ -325,15 +335,145 @@ class RemaReceiptsCoordinator(DataUpdateCoordinator[list[Receipt]]):
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.receipts"
         )
+        # Extra receipt-only logins (other household REMA accounts) are kept apart.
+        self._logins_store: Store[dict[str, Any]] = Store(
+            hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.receipt_logins"
+        )
+        self._logins: list[dict[str, str]] = []
+        self._extra_clients: dict[str, RemaClient] = {}
         self._loaded = False
         self._cache: list[Receipt] = []
+        # Which login each receipt came from (receipt id -> "primary" or a login id),
+        # and which logins a full history has already been pulled for.
+        self._sources: dict[str, str] = {}
+        self._known: set[str] = set()
         # Per-item statistics across the whole history (the "Varer" tab).
         self.items: list[dict[str, Any]] = []
         # Spend grouped by week/month/year for the economy overview.
         self.overview: dict[str, Any] = {}
 
-    async def _load_stored(self) -> list[Receipt]:
-        """Read the persisted receipts, if any."""
+    # ---------------------------------------------------- extra receipt logins
+
+    async def async_load_logins(self) -> None:
+        """Read the stored extra receipt logins and build their clients."""
+        try:
+            raw = await self._logins_store.async_load() or {}
+        except HomeAssistantError as err:
+            _LOGGER.warning("Could not read the extra receipt logins: %s", err)
+            raw = {}
+        self._logins = [
+            {
+                "id": str(lg.get("id") or uuid.uuid4().hex[:8]),
+                "email": str(lg["email"]),
+                "password": str(lg.get("password") or ""),
+                "label": str(lg.get("label") or lg["email"]),
+            }
+            for lg in raw.get("logins") or []
+            if isinstance(lg, dict) and lg.get("email")
+        ]
+        self._rebuild_clients()
+
+    def _rebuild_clients(self) -> None:
+        """Make a fresh client (own session) for each extra login."""
+        self._extra_clients = {
+            lg["id"]: RemaClient(async_create_clientsession(self.hass), lg["email"], lg["password"])
+            for lg in self._logins
+        }
+
+    def logins_public(self) -> list[dict[str, Any]]:
+        """The extra logins for the panel (without passwords), with receipt counts."""
+        counts = Counter(self._sources.values())
+        return [
+            {
+                "id": lg["id"],
+                "email": lg["email"],
+                "label": lg["label"],
+                "count": counts.get(lg["id"], 0),
+            }
+            for lg in self._logins
+        ]
+
+    async def async_add_login(self, email: str, password: str, label: str) -> dict[str, Any]:
+        """Add an extra REMA login used only for its receipts. Validates the sign-in."""
+        email = email.strip()
+        if not email or not password:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="receipt_login_missing"
+            )
+        if any(lg["email"].lower() == email.lower() for lg in self._logins):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="receipt_login_exists"
+            )
+        if len(self._logins) >= self.MAX_EXTRA_LOGINS:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="receipt_login_too_many",
+                translation_placeholders={"max": str(self.MAX_EXTRA_LOGINS)},
+            )
+        client = RemaClient(async_create_clientsession(self.hass), email, password)
+        try:
+            await client.async_get_receipts(limit=1)
+        except RemaAuthError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="receipt_login_auth",
+                translation_placeholders={"email": email},
+            ) from err
+        except RemaError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="receipt_login_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
+        login = {
+            "id": uuid.uuid4().hex[:8],
+            "email": email,
+            "password": password,
+            "label": label.strip() or email,
+        }
+        self._logins.append(login)
+        self._extra_clients[login["id"]] = client
+        await self._logins_store.async_save({"logins": self._logins})
+        await self.async_request_refresh()
+        return {"id": login["id"], "email": email, "label": login["label"]}
+
+    async def async_remove_login(self, login_id: str) -> list[str]:
+        """Remove an extra login and its receipts. Returns the dropped receipt ids."""
+        before = len(self._logins)
+        self._logins = [lg for lg in self._logins if lg["id"] != login_id]
+        if len(self._logins) == before:
+            return []
+        self._extra_clients.pop(login_id, None)
+        self._known.discard(login_id)
+        await self._logins_store.async_save({"logins": self._logins})
+        removed = [rid for rid, src in self._sources.items() if src == login_id]
+        if removed:
+            gone = set(removed)
+            self._cache = [r for r in self._cache if r.id not in gone]
+            for rid in removed:
+                self._sources.pop(rid, None)
+            await self._persist()
+            self._recompute(self._cache)
+            self.async_set_updated_data(self._cache)
+        return removed
+
+    # ------------------------------------------------------------- fetch cycle
+
+    def _sources_and_clients(self) -> list[tuple[str, RemaClient]]:
+        """The primary account and each extra login, with its client."""
+        extra = [(lg["id"], self._extra_clients[lg["id"]]) for lg in self._logins]
+        return [(self.PRIMARY, self.client), *extra]
+
+    def _since_for(self, source: str) -> datetime | None:
+        """Fetch only receipts newer than this source's newest known one."""
+        newest = max(
+            (r.date for r in self._cache if self._sources.get(r.id) == source and r.date),
+            default=None,
+        )
+        return newest - timedelta(days=2) if newest else None
+
+    async def _load_stored(self) -> None:
+        """Read the persisted receipts and their source map."""
         try:
             raw = await self._store.async_load() or {}
         except HomeAssistantError as err:  # a damaged file: start over
@@ -345,58 +485,86 @@ class RemaReceiptsCoordinator(DataUpdateCoordinator[list[Receipt]]):
                 out.append(Receipt.from_dict(stored))
             except (TypeError, ValueError):
                 continue
-        return out
+        self._cache = out
+        self._sources = {
+            str(k): str(v) for k, v in (raw.get("sources") or {}).items() if isinstance(v, str)
+        }
+        for receipt in out:  # receipts from before the source map default to the primary
+            self._sources.setdefault(receipt.id, self.PRIMARY)
+        self._known = {str(s) for s in raw.get("known") or []}
+        if out and self.PRIMARY not in self._known:
+            self._known.add(self.PRIMARY)
 
-    @staticmethod
-    def _merge(old: list[Receipt], fresh: list[Receipt]) -> list[Receipt]:
-        """Combine known and newly fetched receipts, newest first (fresh wins)."""
-        by_id: dict[str, Receipt] = {r.id: r for r in old}
-        for receipt in fresh:
-            by_id[receipt.id] = receipt
-        return sorted(
-            by_id.values(),
-            key=lambda r: r.date or datetime.min.replace(tzinfo=UTC),
-            reverse=True,
-        )
+    async def _persist(self) -> None:
+        """Save the receipts, their source map and which logins are fully fetched."""
+        try:
+            await self._store.async_save(
+                {
+                    "receipts": [r.as_dict() for r in self._cache],
+                    "sources": self._sources,
+                    "known": sorted(self._known),
+                }
+            )
+        except HomeAssistantError as err:
+            _LOGGER.warning("Could not save the receipts: %s", err)
 
     def _recompute(self, receipts: list[Receipt]) -> None:
         """Refresh the per-item statistics and the spend overview."""
         self.items = aggregate_items(receipts)
         self.overview = spending_overview(receipts)
 
+    def _merge_tagged(self, fresh: list[tuple[str, Receipt]]) -> list[Receipt]:
+        """Merge freshly fetched receipts into the cache, tagging each by source."""
+        by_id: dict[str, Receipt] = {r.id: r for r in self._cache}
+        for source, receipt in fresh:
+            by_id[receipt.id] = receipt
+            self._sources[receipt.id] = source
+        merged = sorted(
+            by_id.values(),
+            key=lambda r: r.date or datetime.min.replace(tzinfo=UTC),
+            reverse=True,
+        )[: self.MAX_KEEP]
+        kept = {r.id for r in merged}
+        self._sources = {rid: src for rid, src in self._sources.items() if rid in kept}
+        return merged
+
     async def _async_update_data(self) -> list[Receipt]:
-        """Fetch receipts since the newest known one, merge, persist."""
+        """Fetch receipts from the primary account and each extra login, merge, persist."""
         if not self._loaded:
-            self._cache = await self._load_stored()
+            await self._load_stored()
             self._loaded = True
         stored = self._cache
-        newest = max((r.date for r in stored if r.date), default=None)
-        since = newest - timedelta(days=2) if newest else None
-        try:
-            fresh = await self.client.async_get_receipts(since=since)
-        except RemaAuthError as err:
-            raise ConfigEntryAuthFailed(
-                translation_domain=DOMAIN,
-                translation_key="auth_failed",
-                translation_placeholders={"email": self.config_entry.data[CONF_EMAIL]},
-            ) from err
-        except RemaError as err:
-            if stored:
-                # The backend is down, but keep showing the known history.
-                _LOGGER.debug("Keeping stored receipts after a fetch error: %s", err)
-                self._recompute(stored)
-                return stored
+        fresh: list[tuple[str, Receipt]] = []
+        primary_failed = False
+        for source, client in self._sources_and_clients():
+            since = self._since_for(source) if source in self._known else None
+            try:
+                got = await client.async_get_receipts(since=since)
+            except RemaAuthError as err:
+                if source == self.PRIMARY:
+                    raise ConfigEntryAuthFailed(
+                        translation_domain=DOMAIN,
+                        translation_key="auth_failed",
+                        translation_placeholders={"email": self.config_entry.data[CONF_EMAIL]},
+                    ) from err
+                _LOGGER.warning("Extra receipt login %s could not sign in", source)
+                continue
+            except RemaError as err:
+                if source == self.PRIMARY:
+                    primary_failed = True
+                _LOGGER.debug("Receipts fetch failed for %s: %s", source, err)
+                continue
+            self._known.add(source)
+            fresh += [(source, receipt) for receipt in got]
+        if primary_failed and not stored:
             raise UpdateFailed(
                 translation_domain=DOMAIN,
                 translation_key="update_failed",
-                translation_placeholders={"error": str(err)},
-            ) from err
-        merged = self._merge(stored, fresh)[: self.MAX_KEEP]
-        if merged != stored:
+                translation_placeholders={"error": "scan backend"},
+            )
+        merged = self._merge_tagged(fresh)
+        if merged != stored or fresh:
             self._cache = merged
-            try:
-                await self._store.async_save({"receipts": [r.as_dict() for r in merged]})
-            except HomeAssistantError as err:
-                _LOGGER.warning("Could not save the receipts: %s", err)
+            await self._persist()
         self._recompute(merged)
         return merged

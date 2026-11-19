@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from yarl import URL
@@ -11,6 +12,7 @@ from custom_components.middagsro import api
 from custom_components.middagsro.api import Receipt, ReceiptItem, RemaApiError, RemaAuthError
 from custom_components.middagsro.receipts import aggregate_items, receipt_summary, spending_overview
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 
 from .test_api import FakeResponse, logged_in, token
 
@@ -561,3 +563,65 @@ async def test_receipts_booked_into_budget_on_refresh(
     assert {"rcpt_r-1", "rcpt_r-2"} <= booked
     amount = next(p["amount"] for p in store.purchases if p["id"] == "rcpt_r-1")
     assert amount == 168.75
+
+
+async def test_extra_receipt_logins(
+    hass: object,
+    init_integration: object,
+    mock_client: object,
+) -> None:
+    """An extra login's receipts are merged, booked and removable."""
+    assert isinstance(hass, HomeAssistant)
+    coordinator = init_integration.runtime_data.receipts
+    mock_client.async_get_receipts.return_value = [
+        Receipt.from_api({"id": "mine", "paymentDate": "2026-10-13T10:00:00Z", "totalPrice": 10000})
+    ]
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert {r.id for r in coordinator.data} == {"mine"}
+
+    # Adding a login builds a fresh client; patch it to a fake member account.
+    member = MagicMock()
+    member.async_get_receipts = AsyncMock(
+        return_value=[
+            Receipt.from_api(
+                {"id": "hers", "paymentDate": "2026-10-12T10:00:00Z", "totalPrice": 5000}
+            )
+        ]
+    )
+    with (
+        patch("custom_components.middagsro.coordinator.RemaClient", return_value=member),
+        patch("custom_components.middagsro.coordinator.async_create_clientsession"),
+    ):
+        added = await coordinator.async_add_login("katrine@example.dk", "pw", "Katrine")
+        await hass.async_block_till_done()
+
+    assert added["label"] == "Katrine"
+    assert {r.id for r in coordinator.data} == {"mine", "hers"}
+    public = coordinator.logins_public()
+    assert public[0]["email"] == "katrine@example.dk"
+    assert public[0]["count"] == 1  # one receipt tagged to this login
+    assert "password" not in public[0]
+
+    # Removing the login drops its receipt and reports it (for un-booking).
+    removed = await coordinator.async_remove_login(added["id"])
+    assert removed == ["hers"]
+    assert {r.id for r in coordinator.data} == {"mine"}
+    assert coordinator.logins_public() == []
+
+
+async def test_add_login_rejects_bad_credentials(
+    hass: object,
+    init_integration: object,
+) -> None:
+    """A login that cannot sign in is refused and not stored."""
+    coordinator = init_integration.runtime_data.receipts
+    bad = MagicMock()
+    bad.async_get_receipts = AsyncMock(side_effect=RemaAuthError("no"))
+    with (
+        patch("custom_components.middagsro.coordinator.RemaClient", return_value=bad),
+        patch("custom_components.middagsro.coordinator.async_create_clientsession"),
+        pytest.raises(ServiceValidationError),
+    ):
+        await coordinator.async_add_login("bad@example.dk", "wrong", "")
+    assert coordinator.logins_public() == []
