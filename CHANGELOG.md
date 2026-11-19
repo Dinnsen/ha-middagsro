@@ -2,6 +2,20 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [3.0.0b2] - 2026-11-19
+
+### Changed
+- **Hele panelet har nu prototypens design 1:1.** Madplan med uge-faner, ugens dage som tallerkener (👍 👎 ♥ ⋯), stort beløb og knapper, "Ny madplan"-kortet med Første dag, Ønsker, Tilpas dagene og Overrask os, og Månedens frysermad. Opskrifter åbner på samlingen som kort med tegnede retter. Indkøb med "Ugens tilbud i jeres butikker", billigere varer fra listen og en ren indkøbsliste. Favoritter som produktkort med tilbudsmærke og klokke. Spisekammer, Historik og Indstillinger (fliser) i samme stil.
+- **"Mere" er et ark med fliser** nederst på telefonen, og fanen viser navnet på den side, du er på. Fanerne har prototypens ikoner.
+- Madplanen og forsidens uge starter med dagen i dag; de tidligere dage i ugen ligger foldet under "Tidligere i ugen".
+- Økonomi: trykker du på en dag i ugeuret, viser varegrupperne og beløbene nu den dags køb.
+- "Tøm kurv" er blevet til **"Fjern købte varer"**: kun de varer, der er krydset af på REMA-listen, fjernes – resten bliver stående.
+- "Vi handler i" (skift butik) er flyttet fra toppen af hver side til Indstillinger › Butik.
+- En ret flyttes nu en dag op eller ned fra dagens menu.
+
+### Notes
+- Beta.
+
 ## [3.0.0b1] - 2026-11-19
 
 ### Added

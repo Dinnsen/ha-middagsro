@@ -871,14 +871,20 @@ async def ws_list_add(
     connection.send_result(msg["id"], True)
 
 
-@websocket_api.websocket_command({vol.Required("type"): "middagsro/list/clear", ENTRY: str})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/list/clear",
+        ENTRY: str,
+        vol.Optional("bought_only", default=False): bool,
+    }
+)
 @websocket_api.async_response
 @_wrap
 async def ws_list_clear(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Remove everything from the primary REMA list."""
-    removed = await _entry(hass, msg).runtime_data.shopping_list.async_clear()
+    """Remove the items from the primary REMA list (or only those already bought)."""
+    removed = await _entry(hass, msg).runtime_data.shopping_list.async_clear(msg["bought_only"])
     connection.send_result(msg["id"], {"removed": removed})
 
 

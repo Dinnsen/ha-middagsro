@@ -14,7 +14,7 @@ from custom_components.middagsro.api import RemaError
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .conftest import make_plan
+from .conftest import list_item, make_list, make_plan
 
 
 @pytest.fixture
@@ -208,6 +208,20 @@ async def test_products_and_list(
     msg = await _ws(client, 4, type="middagsro/list/clear")
     assert msg["result"] == {"removed": 3}
     mock_client.async_delete_items.assert_awaited_with(777, [1, 2, 3])
+
+    # Only what is ticked off: the rest stays on the list.
+    mock_client.async_delete_items.reset_mock()
+    mock_client.async_get_primary_list.return_value = make_list(
+        list_item(1, "Mælk", bought=True), list_item(2, "Brød"), list_item(3, "Ost", bought=True)
+    )
+    msg = await _ws(client, 5, type="middagsro/list/clear", bought_only=True)
+    assert msg["result"] == {"removed": 2}
+    mock_client.async_delete_items.assert_awaited_with(777, [1, 3])
+    mock_client.async_delete_items.reset_mock()
+    mock_client.async_get_primary_list.return_value = make_list(list_item(2, "Brød"))
+    msg = await _ws(client, 6, type="middagsro/list/clear", bought_only=True)
+    assert msg["result"] == {"removed": 0}
+    mock_client.async_delete_items.assert_not_awaited()
 
 
 async def test_running_plan_and_note(
