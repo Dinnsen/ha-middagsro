@@ -2,6 +2,11 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.19.2b1] - 2026-11-19
+
+### Fixed
+- **Receipts request headers.** Send the app's required headers on the Scan Selv calls — `X-App-DeviceId` (a per-install id, which was missing), `X-App-Platform: Android`, `X-App-Version`, `X-App-Language` and a matching User-Agent — so the backend no longer answers 400 "Malformed request". (Beta.)
+
 ## [2.19.1] - 2026-11-19
 
 ### Fixed

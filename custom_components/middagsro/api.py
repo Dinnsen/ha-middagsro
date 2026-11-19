@@ -31,6 +31,7 @@ import secrets
 import time
 from typing import Any
 from urllib.parse import unquote
+import uuid
 from zoneinfo import ZoneInfo
 
 import aiohttp
@@ -796,6 +797,7 @@ class RemaClient:
         self._scan_token: str | None = None
         self._scan_refresh: str | None = None
         self._scan_expires_at: float = 0
+        self._device_id = str(uuid.uuid4())  # the app sends a per-install X-App-DeviceId
         self._tjek: tuple[str, str] | None = None
         self._tjek_lock = asyncio.Lock()
         self._tjek_failed_at: float | None = None
@@ -1045,6 +1047,16 @@ class RemaClient:
 
     # ------------------------------------------------------------ receipts
 
+    def _app_headers(self) -> dict[str, str]:
+        """The headers the Scan Selv app puts on every backend request."""
+        return {
+            "X-App-Platform": "Android",
+            "X-App-Version": "1.8.15",
+            "X-App-Language": "da",
+            "X-App-DeviceId": self._device_id,
+            "User-Agent": "okhttp/4.12.0",
+        }
+
     async def _async_ensure_scan_token(self) -> None:
         """Make sure a valid Scan Selv access token is held (renew or sign in)."""
         async with self._lock:
@@ -1161,7 +1173,7 @@ class RemaClient:
             async with self._session.post(
                 url,
                 json=body,
-                headers={**BASE_HEADERS, "Tokenless": "Yes", "Accept": "application/json"},
+                headers={**self._app_headers(), "Tokenless": "Yes", "Accept": "application/json"},
                 timeout=REQUEST_TIMEOUT,
             ) as resp:
                 text = await resp.text()
@@ -1214,11 +1226,9 @@ class RemaClient:
         start = since or RECEIPTS_SINCE_DEFAULT
         params = {"since": start.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")}
         headers = {
+            **self._app_headers(),
             "Accept": "application/json",
             "Authorization": f"Bearer {self._scan_token}",
-            "X-App-Platform": "android",
-            "X-App-Version": "1.8.15",
-            "X-App-Language": "da",
         }
         try:
             async with self._session.get(
