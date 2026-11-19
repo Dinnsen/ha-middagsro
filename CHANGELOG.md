@@ -2,6 +2,27 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [3.0.0] - 2026-11-19
+
+Middagsro 3 – et helt nyt panel. Denne udgave samler betaerne 2.20.0b1–3.0.0b4; detaljerne står under hver beta nedenfor.
+
+### Added
+- **Ny forside** med en levende gade i toppen, ugens madbudget med kontering, ugens aftensmad som tallerkener (fra i dag) og lyn-tilføj til REMA-listen.
+- **Nyt design overalt:** header på alle sider, svævende fanebjælke på telefonen, Mere-menu som fliser og indstillinger som fliser.
+- **Økonomi:** ugen som et ur (tryk på en dag for dens varegrupper og beløb), jeres rytme, forbrug og besparelse som ét stort ur over uger, måneder og år, samt bonen for hver REMA-kvittering.
+- **Madplan:** træk og slip med et tydeligt håndtag, og retten kan også flyttes fra dagens menu.
+- **Indkøb:** tilbud øverst, hvad kurven koster i Nemlig.com og Bilka ToGo, og varer kan lægges i deres kurv. REMA er madplanens butik, og Middagsro bestiller aldrig.
+- **Varer og Sundhed:** top 20 med billeder og prisspænd, og kurvens tallerken.
+- **Udseende:** Frisk er det nye designs eget udseende; Hverdag og Theme Studio bruger det med deres egne farver.
+
+### Changed
+- "Fjern købte varer" fjerner kun de afkrydsede varer fra REMA-listen.
+- Kvitteringslinjer regnes som pris × antal, og ugerne går fra søndag til lørdag i dansk tid.
+- Et tryk på den aktive fane ruller til toppen, og sider åbner fra toppen.
+
+### Fixed
+- Profilmenuen skæres ikke længere af bag siden.
+
 ## [3.0.0b4] - 2026-11-19
 
 ### Fixed
