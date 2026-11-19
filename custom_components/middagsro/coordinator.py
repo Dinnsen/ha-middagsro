@@ -197,11 +197,13 @@ class RemaShoppingListCoordinator(DataUpdateCoordinator[ShoppingList]):
                 await self.async_refresh()
         return changed
 
-    async def async_clear(self) -> int:
-        """Remove every item from the primary list. Returns how many."""
+    async def async_clear(self, bought_only: bool = False) -> int:
+        """Remove the items from the primary list (only the bought ones). Returns how many."""
         async with self._change:
             shopping_list = await self.client.async_get_primary_list()
-            ids = [item.id for item in shopping_list.items]
+            ids = [item.id for item in shopping_list.items if item.bought or not bought_only]
+            if not ids:
+                return 0
             await self.client.async_delete_items(shopping_list.id, ids)
             await self.async_refresh()
             return len(ids)

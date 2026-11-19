@@ -321,7 +321,7 @@ class Rema1000Panel extends HTMLElement {
     this._search = { query: "", results: [], loading: false };
     this._editFav = null;
     this._settingsSection = null; // the open sub-page of the settings
-    this._recipesSub = "week"; // "week" (the plan's recipes) or "collection"
+    this._recipesSub = "collection"; // "week" (the plan's recipes) or "collection"
     this._rc = { query: "", sort: "newest", filter: "all", link: "", importing: false, scanning: false };
     // REMA 1000's own recipes: the chosen category, the pages read, and a day to put one on.
     this._rr = { key: "popular", query: "", page: 0, last: 1, total: 0, recipes: [], tags: [], loading: false, error: null };
@@ -980,11 +980,11 @@ class Rema1000Panel extends HTMLElement {
           `Tilføjet til ${this._listName()}.`
         ),
       "clear-list": () => {
-        const count = this._state?.rema_list?.items?.length || 0;
+        const bought = (this._state?.rema_list?.items || []).filter((i) => i.bought).length;
         const name = this._listName();
-        if (!count) return this._say(`${name[0].toUpperCase()}${name.slice(1)} er allerede tom.`);
-        if (!confirm(`Fjern alle ${count} varer fra ${name}?${this._isRema() || this._state?.shop?.bilka_cart ? " Kurven/listen bliver også tom i appen." : ""}`)) return;
-        this._run(() => this._ws("middagsro/list/clear"), `${name[0].toUpperCase()}${name.slice(1)} er tømt.`);
+        if (!bought) return this._say(`Der er ingen afkrydsede varer på ${name}.`);
+        if (!confirm(`Fjern de ${bought} købte varer fra ${name}? Resten bliver stående.`)) return;
+        this._run(() => this._ws("middagsro/list/clear", { bought_only: true }), `${bought} købte ${bought === 1 ? "vare er" : "varer er"} fjernet fra ${name}.`);
       },
       generate: () => this._run(() => this._generate(), GENERATING_MESSAGE),
       "freezer-generate": () => this._run(
@@ -3197,7 +3197,7 @@ class Rema1000Panel extends HTMLElement {
     const count = data.offers?.length;
     return `
       <div class="settings-head">
-        <button class="btn back" data-action="chain-close">‹ Madplan</button>
+        <button class="btn back" data-action="chain-close">‹ Tilbage</button>
         ${this._chainLogo(id, "big")}
         <h1>Tilbud i ${esc(c.name)}</h1>
       </div>
@@ -3821,8 +3821,8 @@ class Rema1000Panel extends HTMLElement {
     const style = key => `--desktop-order:${desktop.indexOf(key)};--mobile-order:${mobile.indexOf(key)}`;
     nav.innerHTML = TABS.map(([key, label]) => `<button class="tab${classes(key)}" style="${style(key)}" data-action="tab" data-arg="${key}">${TAB_ICONS[key] || ""}<span>${label}</span></button>`).join("")
       + `<button class="tab more ${desktop.length === TABS.length ? "no-desktop-extra" : ""}" data-action="more" aria-expanded="false"></button><button class="tab customize" data-action="nav-open">Tilpas menu</button>`;
-    this.shadowRoot.querySelector(".more-sheet").innerHTML = TABS.map(([key, label]) => `<button class="more-item${classes(key)}" data-action="tab" data-arg="${key}">${TAB_ICONS[key] || ""}<span>${label}</span></button>`).join("")
-      + '<button class="more-item" data-action="nav-open">Tilpas menu</button>';
+    this.shadowRoot.querySelector(".more-sheet").innerHTML = `<div class="ms-grab"></div><div class="ms-top"><h2>Mere</h2><button class="ms-x" data-action="more" aria-label="Luk">×</button></div><div class="more-grid">${TABS.map(([key, label]) => `<button class="more-item mg${classes(key)}" data-action="tab" data-arg="${key}"><span class="st-ic">${TAB_ICONS[key] || ""}</span><b>${label}</b></button>`).join("")}</div>`
+      + '<button class="ms-custom" data-action="nav-open">Tilpas menu</button>';
     nav.dataset.signature = signature;
   }
 
@@ -3939,12 +3939,12 @@ class Rema1000Panel extends HTMLElement {
           shopping: () => this._shoppingView(),
           favorites: () => this._favoritesView(),
           budget: () => this._budgetView(),
-          inventory: () => `<div class="card"><h1>Spisekammer</h1><p class="muted">Hold styr på råvarerne, I allerede har hjemme.</p></div>${this._inventoryCard(true)}`,
+          inventory: () => `${this._v3PantryArt()}${this._inventoryCard(true)}`,
           health: () => this._healthView(),
           history: () => this._historyView(),
           settings: () => this._settingsView(),
         }[this._tab]();
-        if (this._tab === "plan" && this._chain) body = this._chainView();
+        if ((this._tab === "plan" || this._tab === "shopping") && this._chain) body = this._chainView();
         if (this._tab === "plan") body += CREDIT;
       } catch (err) {
         // One odd field must not blank the whole panel.
@@ -3997,7 +3997,9 @@ class Rema1000Panel extends HTMLElement {
     if (more) {
       more.classList.toggle("active", this._moreOpen || !this._navigation[matchMedia("(max-width: 700px)").matches ? "mobile" : "desktop"].includes(this._tab));
       more.setAttribute("aria-expanded", String(!!this._moreOpen));
-      more.innerHTML = this._moreOpen ? `${CLOSE_ICON}<span>Luk</span>` : `${MORE_ICON}<span>Mere</span>`;
+      const phoneNav = matchMedia("(max-width: 700px)").matches;
+      const inMore = !this._navigation[phoneNav ? "mobile" : "desktop"].includes(this._tab);
+      more.innerHTML = this._moreOpen ? `${CLOSE_ICON}<span>Luk</span>` : `${MORE_ICON}<span>${inMore ? TABS.find(([k]) => k === this._tab)?.[1] || "Mere" : "Mere"}</span>`;
     }
     for (const sel of [".more-sheet", ".more-scrim"]) {
       const el = root.querySelector(sel);
@@ -4012,7 +4014,7 @@ class Rema1000Panel extends HTMLElement {
       focused && root.querySelector("#content")?.contains(focused) && focused.matches("input, textarea, select")
         ? { key: this._fieldKey(focused), start: focused.selectionStart, end: focused.selectionEnd, scroll: focused.scrollTop }
         : null;
-    root.querySelector("#content").innerHTML = `${this._embed ? "" : this._storeChooser()}<div id="status">${this._statusHtml()}</div>${body}`;
+    root.querySelector("#content").innerHTML = `<div id="status">${this._statusHtml()}</div>${body}`;
     this._renderToast();
     try { this._v3Header(); this._v3After(); } catch (err) { console.error("Middagsro: the header could not be drawn", err); }
     if (keep?.key) {
@@ -4234,6 +4236,7 @@ class Rema1000Panel extends HTMLElement {
         <div class="row wrap">
           <button class="btn" data-action="day-own-dish" ${dis} title="AI'en skriver rettens varer på indkøbslisten og laver opskriften">${m.busy === "own" ? '<span class="spinner small"></span> Finder varer …' : aiLabel("Køb ind til retten")}</button>
         </div>
+        ${this._v3MoveRow(m)}
         ${m.dish && !m.written && !m.leftovers ? `<div class="row wrap dialog-actions">
           <button class="btn" data-action="day-recipe" ${dis}>Se opskriften</button>
           ${this._mealieButton(m.planId, m.date)}
@@ -5268,10 +5271,10 @@ class Rema1000Panel extends HTMLElement {
               ].join("");
               const need = line.amount && line.unit && line.unit !== "pk" ? `${line.amount} ${line.unit}` : "";
               return `<li class="line tappable ${this._isRema() && line.id ? "has-send" : ""} ${line.skipped ? "is-skipped" : ""}" data-action="line-menu" data-arg="${esc(line.id || "")}">
-                ${p?.image ? `<img src="${esc(p.image)}" alt="" loading="lazy">` : '<span class="noimg">?</span>'}
+                <span class="limg">${V3.pic(p?.image, V3.groupOf(line.name))}</span>
                 <div class="what">
-                  <span class="title"><b>${esc(p ? p.name : line.name)}</b> ${badges}</span>
-                  <span class="muted">${esc(p?.underline || (this._state?.shop?.bilka_cart ? "Vælg en vare" : "Tilføjes som fritekst"))}${need ? ` · behov ${esc(need)}` : ""}</span>
+                  <span class="title"><b>${esc(line.must_have || line.added || !line.name ? (p ? V3.clean(p.name) : line.name) : line.name)}</b> ${badges}</span>
+                  <span class="muted">${need ? `${esc(need)} · ` : ""}${esc(p ? `${V3.clean(p.name)}${p.underline ? ` · ${p.underline.toLowerCase()}` : ""}` : this._state?.shop?.bilka_cart ? "Vælg en vare" : "Tilføjes som fritekst")}</span>
                   ${line.offer_name ? `<span class="muted">Avisvare: ${esc(line.offer_name)}${line.swapped_from ? ` – i stedet for ${esc(line.swapped_from)}` : ""}</span>` : ""}
                   ${line.note ? `<span class="note">${esc(line.note)}</span>` : ""}
                   ${line.use_note ? `<span class="muted">${esc(line.use_note)}${!line.use_mode ? "" : line.left ? ` – har ${esc(String(line.left).replace(".", ","))} ${esc(line.unit)} tilbage` : line.sent ? "" : " – tryk for at skrive, hvad I har tilbage"}</span>` : ""}
@@ -5281,7 +5284,7 @@ class Rema1000Panel extends HTMLElement {
                         <span>${esc(compare.lines[line.id].heading)}: spar ${kr(compare.lines[line.id].saving)}</span></button>`
                     : ""}
                 </div>
-                <div class="cost">${p && p.price != null ? `${line.packages} × ${kr(p.price)}<b>${kr(line.cost)}</b>` : line.packages > 1 ? `${line.packages} stk.` : "–"}</div>
+                <div class="cost">${p && p.price != null ? `${line.packages > 1 ? `${line.packages} × ${kr(p.price)}` : ""}<b>${kr(line.cost)}</b>` : line.packages > 1 ? `${line.packages} stk.` : "–"}</div>
                 ${this._isRema() && line.id
                   ? `<button class="icon-btn to-rema-line" data-action="send-line" data-arg="${esc(line.id)}" ${this._busy ? "disabled" : ""}
                       title="Læg varen på REMA-listen i appen nu" aria-label="Læg ${esc(p ? p.name : line.name)} på REMA-listen nu">${this._chainLogo(REMA_ID, "tiny")}<span class="plus">+</span></button>`
@@ -5311,7 +5314,7 @@ class Rema1000Panel extends HTMLElement {
       const onList = plan.shopping.filter((l) => l.sent && l.on_list).length;
       planHtml = `<div class="card shop-card">
         <div class="row between wrap">
-          <div><h1>${lateLines.length ? "Indkøb på indkøbsdagen" : "Indkøbsliste"}</h1><p class="muted">${esc(plan.title)}${lateLines.length ? ` · plus ${lateLines.length} varer ${esc(dayShort(lateDay))}` : ""}</p></div>
+          <div><div class="kicker">${lateLines.length ? "Indkøb på indkøbsdagen" : "Indkøbsliste"} · ${esc(plan.title)}</div><h1>${mainLines.length} ${mainLines.length === 1 ? "vare" : "varer"}</h1>${lateLines.length ? `<p class="muted">plus ${lateLines.length} varer ${esc(dayShort(lateDay))}</p>` : ""}</div>
           <div class="row shop-head">
             ${this._hasPrices()
               ? `<div class="price ${plan.budget && plan.total > plan.budget ? "over" : ""}"><span class="big">${kr(sentCount ? basketTotal : plan.total)}</span>
@@ -5361,19 +5364,19 @@ class Rema1000Panel extends HTMLElement {
     }
     const remaItems = rema?.items?.length
       ? rema.items
-          .map((i) => `<li class="${i.bought ? "bought" : ""}">${i.amount > 1 ? `${i.amount} × ` : ""}${esc(i.name)}</li>`)
+          .map((i) => `<li class="${i.bought ? "bought" : ""}"><span class="limg">${V3.art(V3.groupOf(i.name), "")}</span><span class="lname"><b>${esc(V3.clean(i.name))}</b><small>${i.amount} stk.${i.bought ? " · købt" : ""}</small></span></li>`)
           .join("")
       : "<li class='muted'>Listen er tom.</li>";
-    return `${this._chainsCard()}${this._olderBanner()}${this._inventoryUsage(plan, null, true)}${planHtml}<div class="v3">${this._v3Compare()}</div>
+    return `${this._chainsCard()}<div class="shopv">${this._olderBanner()}${this._inventoryUsage(plan, null, true)}${planHtml}</div><div class="v3">${this._v3Compare()}</div><div class="shopv">
       <div class="card">
         <div class="row between wrap">
-          <h2>På ${this._listName()} lige nu${rema && this._isRema() ? ` (${esc(rema.name)})` : ""}</h2>
-          <button class="btn small danger" data-action="clear-list" ${this._busy || !rema?.items?.length ? "disabled" : ""}>Tøm kurv</button>
+          <div><div class="kicker">${this._isRema() ? "REMA-appens liste" : "Indkøbslisten"}${rema && this._isRema() ? ` · ${esc(rema.name)}` : ""}</div><h2>${(rema?.items || []).filter((i) => !i.bought).length} på ${this._listName()} lige nu</h2></div>
+          <button class="btn small" data-action="clear-list" ${this._busy || !rema?.items?.some((i) => i.bought) ? "disabled" : ""}>Fjern købte varer</button>
         </div>
         <ul class="rema">${remaItems}</ul>
         ${rema && this._isRema() ? `<p class="muted">Anslået pris for det, der mangler: ${kr(rema.total)}</p>` : ""}
         ${!this._isRema() && this._state.settings.ha_todo_entity ? `<p class="muted small">Det, der sendes, kommer også på ${esc(this._hass?.states?.[this._state.settings.ha_todo_entity]?.attributes?.friendly_name || this._state.settings.ha_todo_entity)}.</p>` : ""}
-      </div>`;
+      </div></div>`;
   }
 
   _productCard(p) {
@@ -5854,7 +5857,7 @@ class Rema1000Panel extends HTMLElement {
     // Another shop has no favourites in an app: the watch list, and something to watch.
     if (!this._isRema()) {
       const q = this._favSearch.query;
-      return `${this._watchHtml()}
+      return `<div class="v3 favv">${this._watchHtml()}
         <div class="card">
           <h2 class="flush">Overvåg en vare</h2>
           <p class="muted small">Skriv, hvad I gerne vil have besked om, når det kommer på tilbud – fx kaffe eller laks. Middagsro leder i ${esc(this._shopGen())} og jeres andre butikkers aviser.</p>
@@ -5862,7 +5865,7 @@ class Rema1000Panel extends HTMLElement {
             <input class="grow" type="search" data-bind="favsearch" value="${esc(q)}" placeholder="Fx kaffe" enterkeyhint="done">
             <button class="btn small primary" data-action="watch-text">Overvåg</button>
           </div>
-        </div>`;
+        </div></div>`;
     }
     const week = this._favWeek;
     const data = this._favCache[week];
@@ -5884,14 +5887,14 @@ class Rema1000Panel extends HTMLElement {
         ${data?.fallback ? '<div class="banner info">Næste uges avis er ikke udkommet endnu – her er denne uges tilbud indtil da.</div>' : ""}
         <h2>${next ? `På tilbud${from}` : "På tilbud nu"} (${offers.length})</h2>
         ${offers.length
-          ? `<div class="prod-grid">${offers.map((p) => this._productCard(p)).join("")}</div>`
+          ? `<div class="pgrid">${offers.map((p) => this._productCard(p)).join("")}</div>`
           : `<p class="muted">Ingen af dine favoritter er på tilbud ${next ? "i næste uge" : "lige nu"}.</p>`}`;
     }
     const count = data?.products?.length;
-    return `${this._watchHtml()}
+    return `<div class="v3 favv">${this._watchHtml()}
       <div class="card">
         <div class="row between wrap">
-          <div><h1>Dine favoritter</h1>
+          <div><div class="kicker">Dine favoritter</div><h1>${data?.on_offer && count != null ? `${data.on_offer.length} af jeres ${count} favoritter er på tilbud` : "Dine favoritter"}</h1>
           <p class="muted">Varer med hjerte i REMA 1000-appen og dem, I har tilføjet her${count != null ? ` – ${count} i alt` : ""}. Tryk på klokken for at overvåge en vare.</p></div>
           <button class="btn small" data-action="fav-refresh" ${this._favsLoading ? "disabled" : ""}>
             ${this._favsLoading ? '<span class="spinner small"></span>' : "Opdatér"}</button>
@@ -5906,7 +5909,7 @@ class Rema1000Panel extends HTMLElement {
           <ul class="favlist" id="fav-all">${this._favRows()}</ul>
         </details>
       </div>
-      ${this._favSearchHtml()}`;
+      ${this._favSearchHtml()}</div>`;
   }
 
   _historyView() {
@@ -6465,7 +6468,7 @@ class Rema1000Panel extends HTMLElement {
           <div><h1>${esc(open.title)}</h1><p class="muted small">${esc(open.summary)}</p></div>
         </div>
         ${html[open.key]()}
-        ${open.key === "shop" ? '<p class="muted small">Skift mellem allerede tilføjede butikker i “Vi handler i” øverst på siden.</p>' : ""}
+        ${open.key === "shop" ? this._storeChooser() || '<p class="muted small">Tilføj Nemlig.com eller Bilka ToGo som butik under Enheder og tjenester › Middagsro › Tilføj post – så kan I skifte her og sammenligne kurven under Indkøb.</p>' : ""}
         ${open.form || this._dirty ? savebar : ""}`;
     }
     const row = (sec) => `<button class="setting-row" data-action="settings-section" data-arg="${sec.key}">
@@ -6479,15 +6482,10 @@ class Rema1000Panel extends HTMLElement {
       { title: "Opskrifter og sundhed", help: "Opskriftskilder og ønsker til næring.", keys: ["sites", "nutrition", "mealie"] },
       { title: "Opsætning og beskeder", help: "AI, tilbudsbeskeder og adgang på telefonen.", keys: ["ai", "watch", "app"] },
     ];
-    return `
-      <div class="settings-intro">
-        <h1>Indstillinger</h1>
-        <p class="muted">Start med familien og ugens madplan. Du kan rette flere sider og gemme ændringerne samlet.</p>
-      </div>
-      <div class="settings-groups">${groups.map(group => `<section class="card settings-group">
-        <h2 class="flush">${group.title}</h2><p class="muted small">${group.help}</p>
-        <div class="setting-rows">${group.keys.map(key => row(sections.find(sec => sec.key === key))).join("")}</div>
-      </section>`).join("")}</div>
+    const order = ["shop", "plan", "ai", "budget", "family", "dishes", "rules", "shopping", "nutrition", "chains", "watch", "messages", "look", "sites", "mealie", "app"];
+    const keys = [...order.filter((k) => sections.some((sec) => sec.key === k)), ...groups.flatMap((g) => g.keys).filter((k) => !order.includes(k) && sections.some((sec) => sec.key === k))];
+    void row;
+    return `<div class="v3"><div class="sgrid">${keys.map((key) => { const sec = sections.find((x) => x.key === key); return `<button class="stile" data-action="settings-section" data-arg="${sec.key}"><span class="st-ic">${sec.icon}</span><span><b>${esc(sec.title)}</b><small>${esc(sec.summary)}</small></span></button>`; }).join("")}</div></div>
       ${this._dirty ? savebar : ""}`;
   }
 }
@@ -7489,6 +7487,7 @@ const V3 = (() => {
     receipt: '<path d="M7 3h10v18l-2.5-1.6L12 21l-2.5-1.6L7 21Z M9.5 8h5 M9.5 11.5h5 M9.5 15h3"/>',
     phone: '<rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 18.5h3"/>',
     pen: '<path d="M5 19l1-4L16 5l3 3L9 18Z M14 7l3 3"/>',
+    send: '<path d="M4 12 20 4l-4.5 16-3.5-6.5Z"/><path d="M12 13.5 20 4"/>',
     home: '<path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5h-5v5H5a1 1 0 0 1-1-1Z"/>',
   };
   const ic = (k, s = 20) => `<svg class="i" viewBox="0 0 24 24" width="${s}" height="${s}" aria-hidden="true">${ICON[k] || ""}</svg>`;
@@ -7581,10 +7580,10 @@ const V3_METHODS = {
     const b = st.budget;
     const title = V3_TITLES[this._tab] || "Middagsro";
     const sub = {
-      plan: () => (plan ? esc(plan.title || "") : "Ingen madplan endnu"),
+      plan: () => (plan ? `Uge ${plan.week || V3.weekNo(V3.sundayOf(plan.start_date))} · ${V3.span(V3.sundayOf(plan.start_date))}` : "Ingen madplan endnu"),
       recipes: () => (this._recipesSub === "collection" ? `${(st.recipes || []).length} retter i samlingen` : "Ugens opskrifter"),
-      shopping: () => (plan ? `${plan.shopping.filter((l) => !l.skipped).length} varer · ${kr(plan.total)}${st.rema_list ? ` · ${st.rema_list.items.filter((i) => !i.bought).length} på ${esc(this._listName())}` : ""}` : esc(this._listName())),
-      favorites: () => "Varer I køber igen og igen",
+      shopping: () => (plan ? `Til uge ${plan.week || ""} · ${plan.shopping.filter((l) => !l.skipped).length} varer${st.rema_list ? ` + ${st.rema_list.items.filter((i) => !i.bought).length} på ${esc(this._listName())}` : ""}` : esc(this._listName())),
+      favorites: () => (this._isRema() ? `${this._favCache?.current?.products?.length ?? ""} varer fra REMA 1000 · overvågning af tilbud`.trim() : "Overvågning af tilbud"),
       budget: () => (b ? `Uge ${b.week.week} · ${kr0(Math.abs(b.week.remaining))} ${b.week.remaining < 0 ? "over" : "tilbage"}` : "Madbudget og forbrug"),
       health: () => "Det, I køber, og det, I spiser",
       inventory: () => "Det, I allerede har hjemme",
@@ -7693,7 +7692,9 @@ const V3_METHODS = {
     const idx = Math.min(s.hw, Math.max(0, weeks.length - 1));
     const w = weeks[idx];
     const today = localToday();
-    const tiles = (w?.entries || []).map((e, i) => {
+    // This week starts with today; the days gone are on the Madplan page.
+    const shown = idx === 0 && (w?.entries || []).some((e) => e.date >= today) ? w.entries.filter((e) => e.date >= today) : w?.entries || [];
+    const tiles = shown.map((e, i) => {
       const d = new Date(`${e.date}T12:00:00`), now = e.date === today, past = e.date < today;
       const day = e.day;
       const dish = e.skipped ? "Springes over" : day?.dish || "Ingen ret";
@@ -7932,13 +7933,26 @@ Object.assign(V3_METHODS, {
     }).join("");
   },
 
+  // The week's groups, or the chosen day's.
+  _v3Legend(m) {
+    const s = this._v3s();
+    const g = s.day == null ? m.groups : m.dayG[s.day] || {};
+    const total = Object.values(g).reduce((a, x) => a + x, 0);
+    const head = s.day == null ? "" : `<span class="lg-head">${esc(V3.cap(V3.DAYS_LONG[m.jsDay(s.day)]))} · ${V3.krd(total, 2)}</span>`;
+    const chips = V3.ORDER.filter((k) => g[k] > 0.5).map((k) => `<span class="lg">${V3.dot(k)}${esc(V3.GNAME[k])} <span class="v">${V3.fmt(g[k])}</span></span>`).join("");
+    return head + (chips || (s.day == null ? "" : '<span class="sub">Intet købt den dag.</span>'));
+  },
+
   _v3PickDay(d) {
     const s = this._v3s();
     s.day = s.day === d ? null : d;
     const root = this.shadowRoot;
     root.querySelectorAll(".dial .day").forEach((g) => { const k = Number(g.dataset.arg); g.classList.toggle("on", s.day === k); g.classList.toggle("dim", s.day != null && s.day !== k); });
+    const m = this._v3WeekModel(this._v3WeekIndex());
     const box = root.querySelector("#v3-buys");
-    if (box) box.innerHTML = this._v3Buys(this._v3WeekModel(this._v3WeekIndex()));
+    if (box) box.innerHTML = this._v3Buys(m);
+    const legend = root.querySelector("#v3-wlegend");
+    if (legend) legend.innerHTML = this._v3Legend(m);
   },
 
   _v3BudgetCard() {
@@ -7976,7 +7990,7 @@ Object.assign(V3_METHODS, {
         <div>
           <div class="dialwrap">
             <svg class="dial" viewBox="0 0 400 400" role="img" aria-label="Ugens forbrug: ${esc(V3.krd(m.spent))} af ${esc(V3.krd(m.budget))}">${this._v3WeekDial(m)}</svg>
-            <div class="center">
+            <div class="wcenter">
               <span class="lab">${left >= 0 ? "Tilbage" : "Over budget"}</span>
               <span class="big num${left < 0 ? " bad" : ""}" data-count="${Math.abs(left)}">${V3.krd(Math.abs(left))}</span>
               <span class="small">${cur ? (left > 0 ? `≈ ${V3.krd(left / daysLeft)} pr. dag · ${daysLeft} ${daysLeft === 1 ? "dag" : "dage"}` : "Resten af ugen") : `brugt ${V3.krd(m.spent)}`}</span>
@@ -8002,7 +8016,7 @@ Object.assign(V3_METHODS, {
             <div class="stat"><span>${cur ? "Tempo nu" : "Forskel"}</span><b class="num">${cur ? V3.krd(pace) : `${left >= 0 ? "−" : "+"}${V3.krd(Math.abs(left))}`}</b></div>
             <div class="stat"><span>${V3.cap(V3.MONTHS_LONG[Number(month.first.slice(5, 7)) - 1])} · af ${V3.fmt(month.budget)}</span><b class="num">${V3.krd(month.spent)}</b></div>
           </div>
-          <div class="legend">${V3.ORDER.filter((g) => m.groups[g] > 1).map((g) => `<span class="lg">${V3.dot(g)}${esc(V3.GNAME[g])} <span class="v">${V3.fmt(m.groups[g])}</span></span>`).join("")}</div>
+          <div class="legend" id="v3-wlegend">${this._v3Legend(m)}</div>
           <div class="buys" id="v3-buys">${this._v3Buys(m)}</div>
         </div>
       </div></div>`;
@@ -8447,7 +8461,7 @@ Object.assign(V3_METHODS, {
     const card = (p, i) => {
       const lo = p.min_price ?? p.last_price ?? 0, hi = p.max_price ?? lo, last = p.last_price ?? lo;
       const pos = hi > lo ? ((last - lo) / (hi - lo)) * 100 : 50;
-      return `<div class="vprod" style="animation-delay:${(i * 0.03).toFixed(2)}s"><div class="ph">${img(p)}<span class="rank">${i + 1}</span><span class="gdot" title="${esc(V3.GNAME[p.group] || "")}">${V3.art(p.group || "hjem", "").replace("<svg", '<svg width="26" height="26"')}</span>${p.frequent ? '<span class="badge">Fast vare</span>' : ""}</div>
+      return `<div class="vprod" style="animation-delay:${(i * 0.03).toFixed(2)}s"><div class="ph">${img(p)}<span class="rank">${i + 1}</span><span class="gdot" title="${esc(V3.GNAME[p.group] || "")}">${V3.art(p.group || "hjem", "").replace("<svg", '<svg width="26" height="26"')}</span>${p.frequent ? '<span class="vbadge">Fast vare</span>' : ""}</div>
       <b>${esc(V3.clean(p.name))}</b><div class="meta"><span>${p.count}× købt</span><strong>${V3.krd(p.total_spent || 0)}</strong></div>
       <div class="range" title="Prisspænd pr. stk."><i style="left:${pos.toFixed(0)}%"></i></div><div class="range-lab"><span>${V3.fmt(lo, 2)}</span><span>senest ${V3.fmt(last, 2)}</span><span>${V3.fmt(hi, 2)}</span></div></div>`;
     };
@@ -8585,6 +8599,14 @@ Object.assign(V3_METHODS, {
   _v3Click(action, arg, el) {
     const s = this._v3s();
     const handlers = {
+      "v3-move": () => {
+        const [planId, date, direction] = String(arg).split("|");
+        this._modal = null;
+        this._renderModal();
+        this._run(() => this._ws("middagsro/day/move", { plan_id: planId, date, direction }), direction === "up" ? "Retten er flyttet en dag tidligere." : "Retten er flyttet en dag senere.");
+      },
+      "v3-pw": () => { s.pw = Number(arg) || 0; s.pwPlan = this._plan?.id; this._render(); },
+      tab: () => { if (arg === "recipes" && this._tab !== "recipes") this._recipesSub = "collection"; return false; },
       "v3-hw": () => { s.hw = Number(arg) || 0; this._render(); },
       "v3-book": () => this._v3Book(arg),
       "v3-add": () => {
@@ -8613,8 +8635,7 @@ Object.assign(V3_METHODS, {
     };
     const fn = handlers[action];
     if (!fn) return false;
-    fn();
-    return true;
+    return fn() !== false;
   },
 
   _v3Input(el, ev) {
@@ -8645,7 +8666,297 @@ Object.assign(V3_METHODS, {
   },
 });
 
+/* Madplan, opskrifter, favoritter, spisekammer and the rest, drawn as in the prototype. */
+const V3_ICONS = {
+  home: '<path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5h-5v5H5a1 1 0 0 1-1-1Z"/>',
+  plan: '<rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M4 9.5h16M9 3.5v3M15 3.5v3M8 13h3M8 16.5h6"/>',
+  recipes: '<path d="M6 4h9a3 3 0 0 1 3 3v13H8a2 2 0 0 1-2-2Z"/><path d="M6 18a2 2 0 0 1 2-2h10M10 8h5M10 11h4"/>',
+  shopping: '<path d="M5 8h14l-1.4 10.2a2 2 0 0 1-2 1.8H8.4a2 2 0 0 1-2-1.8Z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/>',
+  favorites: '<path d="M12 19.5s-7-4.3-7-9.6A4 4 0 0 1 12 7.3a4 4 0 0 1 7 2.6c0 5.3-7 9.6-7 9.6Z"/>',
+  budget: '<circle cx="12" cy="12" r="8"/><path d="M12 4v8l5.5 5.5"/>',
+  health: '<path d="M12 20s-6.5-3.8-6.5-9A3.5 3.5 0 0 1 12 8.8 3.5 3.5 0 0 1 18.5 11c0 5.2-6.5 9-6.5 9Z"/><path d="M8 12.5h2.2l1.2-2 1.6 4 1.2-2H16"/>',
+  inventory: '<rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M5 10h14M8.5 6.8v1M8.5 13v2.5"/>',
+  history: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v3.2h3.2M12 8v4.2l2.8 1.8"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3.5v2.2M12 18.3v2.2M3.5 12h2.2M18.3 12h2.2M6 6l1.6 1.6M16.4 16.4 18 18M6 18l1.6-1.6M16.4 7.6 18 6"/>',
+};
+const V3_TAB_ICON = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true">${V3_ICONS[k] || ""}</svg>`;
+const V3_KIND_HINT = { ai: "AI'en finder en ret", skip: "Ingen aftensmad", rest: "Rester af dagen før", rye: "Ingen madlavning", veg: "AI'en finder en vegetarret" };
+
+Object.assign(V3_METHODS, {
+  /* ------------------------------------------------------------------ Madplan */
+  _v3AllWeeks() {
+    const plan = this._plan;
+    const tl = this._timeline();
+    let entries;
+    if (tl) entries = tl.filter((e) => e.day || e.skipped);
+    else {
+      entries = [
+        ...(plan.days || []).map((d) => ({ date: d.date, day: d, plan, skipped: false })),
+        ...(plan.skipped || []).map((date) => ({ date, day: null, plan, skipped: true })),
+      ].sort((a, b) => a.date.localeCompare(b.date));
+      entries.forEach((e) => (e.week = plan.week || V3.weekNo(V3.sundayOf(e.date))));
+    }
+    const weeks = [];
+    for (const e of entries) {
+      let w = weeks.find((x) => x.week === e.week);
+      if (!w) weeks.push((w = { week: e.week, entries: [] }));
+      w.entries.push(e);
+    }
+    return { weeks, timeline: !!tl };
+  },
+
+  _v3RateRow(plan, day) {
+    const { cooked, recipe } = this._recipeForDay(plan, day);
+    if (!cooked?.dish || cooked.type === "tom" || cooked.type === "egen") return "";
+    const on = { like: recipe?.rating === "like", dislike: recipe?.rating === "dislike", favorite: !!recipe?.favorite };
+    const glyph = { like: "👍", dislike: "👎", favorite: "♥" };
+    return ["like", "dislike", "favorite"].map((a) => `<button class="vrate${on[a] ? " on" : ""}" data-action="rate-day" data-arg="${esc(plan.id)}|${esc(day.date)}|${a}" aria-label="${RATE_LABELS[a]}: ${esc(cooked.dish)}" aria-pressed="${on[a]}" ${this._busy ? "disabled" : ""}>${glyph[a]}</button>`).join("");
+  },
+
+  _v3Prow(e, i) {
+    const today = localToday();
+    const d = new Date(`${e.date}T12:00:00`), now = e.date === today, past = e.date < today;
+    const day = e.day;
+    const arg = `${esc(e.plan.id)}|${esc(e.date)}`;
+    if (e.skipped || !day) {
+      return `<div class="prow skipped${past ? " past" : ""}" style="animation-delay:${(i * 0.04).toFixed(2)}s">
+        <button class="pr-open" data-action="day-menu-skipped" data-arg="${arg}"><span class="pr-date"><span>${V3.DAYS[d.getDay()]}</span><b>${d.getDate()}</b><small>${V3.MONTHS[d.getMonth()]}</small></span>
+        ${V3.dishArt("", "pr-art")}<span class="pr-main"><b class="muted">Springes over</b><span class="pr-meta">Tryk for at ændre</span></span></button>
+        <div class="pr-tools"><button class="more-b" data-action="day-menu-skipped" data-arg="${arg}" aria-label="Mere">⋯</button></div></div>`;
+    }
+    const type = TYPE_LABELS[day.type] ?? day.type;
+    const { recipe } = this._recipeForDay(e.plan, day);
+    const meta = [
+      now ? '<span class="tag now">I aften</span>' : "",
+      day.total_minutes ? `${V3.ic("clock", 13)} ${day.total_minutes} min` : "",
+      type ? `<span class="tag t-${esc(day.type)}">${esc(type)}</span>` : "",
+      day.mealie ? '<span class="tag">Mealie</span>' : "",
+      day.new_dish ? '<span class="tag t-new">Ny ret – godkend</span>' : "",
+      e.plan.surprise ? '<span class="tag">Overraskelse</span>' : "",
+      recipe?.times_planned ? `<span class="muted">lavet ${recipe.times_planned}×</span>` : "",
+    ].join("");
+    return `<div class="prow${now ? " now" : ""}${past ? " past" : ""}" style="animation-delay:${(i * 0.04).toFixed(2)}s">
+      <button class="pr-open" data-action="day-menu" data-arg="${arg}" aria-label="Åbn ${esc(day.dish || "dagen")}"><span class="pr-date"><span>${V3.DAYS[d.getDay()]}</span><b>${d.getDate()}</b><small>${V3.MONTHS[d.getMonth()]}</small></span>
+      ${V3.dishArt(day.dish || "", "pr-art")}
+      <span class="pr-main"><b class="${day.dish ? "" : "muted"}">${esc(day.dish || "Ingen ret – tryk for at vælge en")}</b><span class="pr-meta">${meta}</span></span></button>
+      <div class="pr-tools">${this._v3RateRow(e.plan, day)}<button class="more-b" data-action="day-menu" data-arg="${arg}" aria-label="Mere om ${esc(day.dish || "dagen")}">⋯</button></div></div>`;
+  },
+
+  _planView() {
+    const plan = this._plan;
+    if (plan?.kind === "freezer") return this._freezerView(plan);
+    const s = this._v3s();
+    const cat = this._state.catalogs || {};
+    if (!plan) {
+      return `<div class="v3">${this._v3GenCard("Lav madplan", true)}${this._freezerCard()}</div>`;
+    }
+    const { weeks, timeline } = this._v3AllWeeks();
+    const today = localToday();
+    const auto = Math.max(0, weeks.findIndex((w) => w.entries.some((e) => e.date >= today)));
+    const idx = s.pw != null && weeks[s.pw] && s.pwPlan === plan.id ? s.pw : auto;
+    const w = weeks[idx] || { week: plan.week, entries: [] };
+    const upcoming = w.entries.filter((e) => e.date >= today);
+    const earlier = w.entries.filter((e) => e.date < today);
+    const owner = (upcoming[0] || w.entries.at(-1) || { plan }).plan;
+    const latest = owner.id === plan.id;
+    const rows = (upcoming.length ? upcoming : earlier).map((e, i) => this._v3Prow(e, i)).join("");
+    const past = upcoming.length && earlier.length
+      ? `<details class="pr-past" data-fold="pastdays"${this._folds?.has("pastdays") ? " open" : ""}><summary>Tidligere i ugen · ${earlier.length} ${earlier.length === 1 ? "dag" : "dage"}</summary><div class="prows">${earlier.map((e, i) => this._v3Prow(e, i)).join("")}</div></details>`
+      : "";
+    const left = owner.shopping.filter((l) => !l.buy_from && !l.buy_at && !l.sent).length;
+    const lines = owner.shopping.filter((l) => !l.skipped).length;
+    const pill = owner.status === "generating" ? ["acc", "Laves …"] : owner.status === "sent" ? (left ? ["acc", `Sendt · ${left} nye varer`] : ["good", "Sendt til listen"]) : ["acc", "Kladde – ikke sendt endnu"];
+    const title = timeline ? `Madplan uge ${w.week}` : owner.title;
+    const first = w.entries[0]?.date, last = w.entries.at(-1)?.date;
+    const fa = first ? new Date(`${first}T12:00:00`) : null, la = last ? new Date(`${last}T12:00:00`) : null;
+    const period = fa && la ? (fa.getMonth() === la.getMonth() ? `${fa.getDate()}.–${la.getDate()}. ${V3.MONTHS_LONG[la.getMonth()]}` : `${fa.getDate()}. ${V3.MONTHS[fa.getMonth()]}–${la.getDate()}. ${V3.MONTHS[la.getMonth()]}`) : "";
+    const over = latest && plan.budget && plan.total > plan.budget;
+    const broken = latest ? (plan.checklist || []).filter((c) => !c.ok) : [];
+    const waiting = latest ? (plan.days || []).filter((d) => d.new_dish) : [];
+    const checklist = (plan.checklist || []).map((c) => `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.requirement)}</li>`).join("");
+    const mealie = this._state.mealie?.available ? `<button class="btn" data-action="mealie-sync" ${this._busy ? "disabled" : ""}>Sæt ugen i Mealie</button>` : "";
+    const actions = latest
+      ? `<button class="btn primary big" data-action="send" ${this._busy || !left ? "disabled" : ""}>${V3.ic("send", 18)} ${left ? (plan.status === "sent" ? `Send ${left} nye varer til ${this._listName()}` : `Send ${left} varer til ${this._listName()}`) : "Sendt ✓"}</button>
+        ${plan.shopping.some((l) => l.buy_from) ? `<p class="sub later">+ ${plan.shopping.filter((l) => l.buy_from).length} varer købes senere – se Indkøb</p>` : ""}
+        <button class="btn" data-action="tab" data-arg="shopping">Se indkøbslisten</button><button class="btn" data-action="open-day" data-arg="">Start madlavning</button>${mealie}`
+      : `<button class="btn" data-action="tab" data-arg="shopping">Se indkøbslisten</button><button class="btn" data-action="open-day" data-arg="">Start madlavning</button>${mealie}`;
+    const anim = this._v3Anim("plan", `${owner.id}|${idx}|${w.entries.length}`);
+    return `${this._olderBanner()}${this._updateBanner(plan)}<div class="v3${anim}">
+      <div class="card plan-head">
+        <div class="row between wrap">${weeks.length > 1 ? `<div class="seg">${weeks.map((x, i) => `<button class="${i === idx ? "on" : ""}" data-action="v3-pw" data-arg="${i}">Uge ${x.week}</button>`).join("")}</div>` : "<span></span>"}
+          <span class="row"><span class="pill ${pill[0]}">${pill[1]}</span><button class="help-q" data-action="plan-help" aria-expanded="${this._planHelp ? "true" : "false"}" aria-label="Hjælp" title="Hjælp">?</button></span></div>
+        <div class="ph-grid"><div><h2>${esc(title)}</h2>
+          <p class="sub">${esc(period)}${owner.summary ? ` · ${esc(owner.summary)}` : ""} Tryk på en dag for opskrift, skift og rester.</p></div>
+          <div class="ph-price${over ? " over" : ""}"><b class="num">${V3.krd(owner.total, 2)}</b><span>${lines} varer at købe${latest && plan.budget ? ` · budget ${kr0(plan.budget)}` : ""}</span></div></div>
+        ${over ? '<div class="banner warn">Planen er over budget. Prøv at lave en ny, eller ret budgettet i indstillingerne.</div>' : ""}
+        ${broken.length ? `<div class="banner warn">AI'en kunne ikke overholde ${broken.length === 1 ? "ét krav" : `${broken.length} krav`}, selv efter at have prøvet igen:<ul class="checklist">${broken.map((c) => `<li class="bad">✗ ${esc(c.requirement)}</li>`).join("")}</ul>Tryk på retten for at skifte den ud, eller lav en ny madplan.</div>` : ""}
+        ${waiting.length ? `<div class="banner warn">${waiting.length === 1 ? "1 ny ret venter" : `${waiting.length} nye retter venter`} på godkendelse: ${waiting.map((d) => esc(d.dish)).join(", ")}. Listen sendes først, når de er godkendt eller skiftet ud – tryk på retten.</div>` : ""}
+        ${this._planHelp ? '<p class="sub help-text">Tryk på en ret for at se opskriften, skifte den ud eller flytte den. 👍, 👎 og ♥ gemmer retten i opskriftsamlingen – tryk igen for at fortryde.</p>' : ""}
+        ${latest ? this._inventoryUsage(plan) : ""}
+        <div class="prows">${rows || '<p class="sub">Ingen dage i ugen.</p>'}</div>
+        ${past}
+        ${latest ? this._lunchHtml(plan) : ""}
+        ${latest && (checklist || plan.deviations) ? `<details class="plan-checks"><summary>Krav-tjekliste</summary><ul class="checklist">${checklist}</ul>${plan.deviations ? `<p class="muted">${esc(plan.deviations)}</p>` : ""}</details>` : ""}
+        <div class="vplan-actions">${actions}</div>
+      </div>
+      ${this._v3GenCard()}
+      ${this._freezerCard()}
+      <p class="sub cat-line">${esc([cat.current ? `Aktuel avis: ${cat.current.label || ""} (til ${shortDate(localDay(cat.current.valid_to))})` : "", cat.upcoming ? `Næste avis: ${cat.upcoming.label || ""} fra ${shortDate(localDay(cat.upcoming.valid_from))}` : "Næste uges avis er ikke udkommet endnu"].filter(Boolean).join(" · "))}</p>
+    </div>`;
+  },
+
+  /* Ny madplan: first day, wishes, the days, and the two buttons. */
+  _v3GenCard(label = "Lav ny madplan", first = false) {
+    const generating = this._state?.status?.state === "generating";
+    const note = this._state?.note;
+    const cat = this._state?.catalogs || {};
+    const last = this._lastAvisDay();
+    const dates = this._planDates();
+    const shop = this._shopName();
+    const tailored = dates.filter((iso) => { const k = this._kindOf(iso), d = this._defaultKind(iso); return k.kind !== d.kind || (k.kind === "fixed" && k.text !== d.text) || (k.kind === "pick" && this._picks[iso]); }).length;
+    const kinds = dates.map((iso) => {
+      const k = this._kindOf(iso);
+      const pick = this._picks[iso];
+      const d = new Date(`${iso}T12:00:00`);
+      const extra = k.kind === "pick"
+        ? pick
+          ? `<span class="pick-chip"><button class="link" data-action="pick-open" data-arg="${iso}" title="Skift retten">${esc(pick.dish)}</button><button class="icon-btn" data-action="pick-remove" data-arg="${iso}" aria-label="Fjern ${esc(pick.dish)}">${CLOSE_ICON}</button></span>`
+          : `<button class="btn small" data-action="pick-open" data-arg="${iso}">Find ret i opskrifter</button>`
+        : k.kind === "fixed"
+          ? `<input type="text" data-bind="daykindtext" data-field="${iso}" value="${esc(k.text || "")}" placeholder="Fx pizza" aria-label="Fast ret">`
+          : `<span class="kd-hint">${V3_KIND_HINT[k.kind] || ""}</span>`;
+      return `<div class="kday k-${k.kind}"><span class="kd-d"><b>${V3.DAYS[d.getDay()]}</b>${d.getDate()}/${d.getMonth() + 1}</span>
+        <select data-bind="daykind" data-field="${iso}" aria-label="Hvad er ${esc(dateLabel(iso).toLowerCase())}">${Object.entries(DAY_KIND_LABELS).map(([key, l]) => `<option value="${key}" ${k.kind === key ? "selected" : ""}>${l}</option>`).join("")}</select>${extra}</div>`;
+    }).join("");
+    const open = tailored || this._folds?.has("days");
+    return `<div class="card gen">
+      <div class="gen-art">${AI_ICON.replace('class="ai"', 'class="ai" width="34" height="34"')}</div>
+      <div class="gen-body"><div class="kicker">Ny madplan</div><h2>${first ? "Lav jeres første madplan" : "Lad AI'en lægge næste uge"}</h2>
+        <p class="sub">Ud fra tilbuddene i ${esc(shop)}${cat.upcoming ? ` (${esc(cat.upcoming.label || "")} fra ${esc(shortDate(localDay(cat.upcoming.valid_from)))})` : ""}, jeres favoritter og indstillinger.</p>
+        <div class="gen-row"><label class="fld inline">Første dag<input type="date" data-bind="start" value="${esc(this._startDate || "")}" ${last ? `max="${esc(last)}"` : ""}></label></div>
+        ${cat.current && !cat.upcoming && last ? '<p class="sub">Næste uges avis er ikke ude endnu. Hele den valgte periode planlægges med kendte priser og tilbud på indkøbsdagen.</p>' : ""}
+        <div class="wish${note ? " has" : ""}">
+          <div class="wish-h"><span class="wish-ic">💬</span><div><b>Ønsker til madplanen</b><small>${note ? "Bruges i næste madplan" : "Fx “mere fisk”, “noget nyt med kylling”, “gæster lørdag”"}</small></div><button class="btn" data-action="note-open">${note ? "Ret ønsker" : "Skriv ønsker"}</button></div>
+          ${note ? `<p class="wish-note">“${esc(note)}”</p>` : ""}
+        </div>
+        ${kinds ? `<details class="tailor" data-fold="days"${open ? " open" : ""}><summary><b>Tilpas dagene</b>${tailored ? ` <span class="tag now">${tailored} ${tailored === 1 ? "dag" : "dage"}</span>` : ""}<small>Som under Faste dage i indstillingerne – ændr dem for netop denne uge.</small></summary>
+          <div class="kinds">${kinds}</div><p class="foot">En rugbrødsdag laves der ikke mad, og der købes ikke noget til.</p></details>` : ""}
+        ${(this._state?.freezer_inventory || []).length ? `<label class="check"><input type="checkbox" data-bind="use-freezer" ${this._useFreezer !== false ? "checked" : ""}> Brug råvarer fra spisekammeret i denne madplan</label>` : ""}
+        <div class="row wrap gen-go"><button class="btn primary big" data-action="generate" ${generating || this._busy ? "disabled" : ""}>${generating ? '<span class="spinner small"></span> Laves …' : `${AI_ICON} ${esc(label)}`}</button>
+          <button class="btn big surprise" data-action="surprise" ${generating || this._busy ? "disabled" : ""} title="Retter I aldrig har fået – fra andre køkkener og med overraskende smage">✨ Overrask os</button></div></div>
+    </div>`;
+  },
+
+  _freezerCard() {
+    const count = (this._state?.freezer_plans || []).length;
+    return `<details class="card freezer" data-fold="freezer"${this._folds?.has("freezer") ? " open" : ""}><summary><b>Månedens frysermad${count ? ` <span class="tag">${count} ${count === 1 ? "plan" : "planer"}</span>` : ""}</b><small>Lav mad til fryseren én dag og spis af den hele måneden.</small></summary>${this._freezerControls(false)}</details>`;
+  },
+
+  /* ------------------------------------------------------------------ Opskrifter */
+  _collectionRows() {
+    const list = this._filteredRecipes();
+    if (!list.length) {
+      return (this._state.recipes || []).length
+        ? '<p class="sub">Ingen opskrifter passer til søgningen.</p>'
+        : '<p class="sub">Opskriftsamlingen er tom. Giv en ret 👍 eller ♥ på madplanen, indsæt et link til en opskrift, eller skriv en ny.</p>';
+    }
+    const src = (r) => (r.source === "rema" ? "REMA 1000" : r.source === "link" ? "Fra link" : r.source === "web" ? r.site || "Fra nettet" : r.source === "scan" ? "Fra kogebog" : r.source === "manual" ? "Egen opskrift" : r.source === "plan" ? "Fra planen" : "");
+    return `<div class="rgrid">${list.map((r, i) => `<div class="rcard" style="animation-delay:${Math.min(i, 20) * 0.025}s">
+        <button class="rc-open" data-action="rc-open" data-arg="${esc(r.id)}">${V3.dishArt(r.name, "rc-art")}${r.favorite ? '<span class="rc-heart">♥</span>' : r.rating === "dislike" ? '<span class="rc-heart no">👎</span>' : ""}
+        <b>${esc(r.name)}</b>
+        <span class="vrc-meta">${src(r) ? `<span class="tag">${esc(src(r))}</span>` : ""}${r.type === "vegetar" ? '<span class="tag t-veg">Vegetar</span>' : ""}<span>${r.times_planned ? `lavet ${r.times_planned}×` : "ikke lavet endnu"}${r.total_minutes ? ` · ${r.total_minutes} min` : ""}</span>${this._hasPrices() && !r.ready && r.missing ? `<span class="tag t-new">Mangler ${r.missing} ${r.missing === 1 ? "vare" : "varer"}</span>` : ""}</span></button>
+        ${this._recipeRateButtons(r)}</div>`).join("")}</div>`;
+  },
+
+  _collectionView() {
+    const seg = Object.entries(RECIPE_FILTERS).map(([k, l]) => `<button class="${this._rc.filter === k ? "on" : ""}" data-action="rc-filter" data-arg="${k}">${k === "favorite" ? "♥ " : ""}${l}</button>`).join("");
+    return `<div class="v3">
+      <div class="card">
+        <div class="row between wrap"><div class="seg">${seg}</div>
+          <label class="fld inline sortf">Sortér<select data-bind="rc" data-field="sort">${Object.entries(RECIPE_SORTS).map(([k, l]) => `<option value="${k}" ${this._rc.sort === k ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
+        <div class="qbar small">${V3.ic("search", 18)}<input type="search" data-bind="rc" data-field="query" value="${esc(this._rc.query)}" placeholder="Søg i opskrifter og ingredienser" aria-label="Søg i opskrifter">${this._rc.query ? '<button class="qx" data-action="clear-field" data-arg="rc" aria-label="Ryd">×</button>' : ""}</div>
+        <div id="rc-list" class="rc-list">${this._collectionRows()}</div>
+      </div>
+      <div class="card addrecipe"><div class="kicker">Tilføj en opskrift</div><h2>Fra et link, en kogebog eller jer selv</h2>
+        <div class="qbar small">${V3.ic("plus", 18)}<input type="url" inputmode="url" data-bind="rc" data-field="link" value="${esc(this._rc.link)}" placeholder="Indsæt et link til en opskrift" aria-label="Link til en opskrift">
+          <button class="qgo" data-action="rc-import" ${this._rc.importing ? "disabled" : ""} aria-label="Hent opskrift">${this._rc.importing ? '<span class="spinner small"></span>' : V3.ic("plus", 18)}</button></div>
+        <div class="row wrap" style="margin-top:12px">
+          <button class="btn" data-action="rc-scan" ${this._rc.scanning ? "disabled" : ""}>${this._rc.scanning ? '<span class="spinner small"></span> Læser opskriften …' : `${CAMERA_ICON} Scan fra kogebog`}</button>
+          <input type="file" id="scan-input" accept="image/*" multiple hidden>
+          <button class="btn" data-action="rc-new">Skriv selv</button></div>
+        <p class="foot">Opskriften hentes fra siden eller billedet, og du kan rette den, før den gemmes. Linket og billederne gemmes ikke. Tag gerne flere billeder, hvis opskriften fylder mere end én side.</p>
+      </div></div>`;
+  },
+
+  /* ------------------------------------------------------------------ Favoritter */
+  _productCard(p) {
+    const sale = onOffer(p);
+    const until = validTo(p.price_valid_to);
+    const off = sale && p.normal_price && p.normal_price > p.price ? p.normal_price - p.price : 0;
+    return `<div class="pcard${sale ? " onsale" : ""}">
+      <div class="ph">${V3.pic(p.image, V3.groupOf(p.name))}${off ? `<span class="sale-b">−${V3.fmt(off, 2)}</span>` : sale ? '<span class="sale-b">Tilbud</span>' : ""}${this._bell(p).replace('class="bell', 'class="vbell bell')}</div>
+      <b>${esc(V3.cap(String(p.name || "").toLowerCase()))}</b>
+      <small>${esc((p.underline || "").toLowerCase())}</small>
+      <span class="pc-tags">${p.is_advertised ? '<span class="tag t-new">Avisvare</span>' : ""}${p.is_organic ? '<span class="tag t-veg">Øko</span>' : ""}${p.offer_from ? `<span class="tag">fra ${esc(dayShort(p.offer_from))}</span>` : sale && until ? `<span class="muted">til ${esc(until)}</span>` : ""}</span>
+      ${p.avis ? `<small class="avis">Avis: ${esc(p.avis)}${p.avis_quantity ? ` · ${esc(p.avis_quantity)}` : ""}</small>` : ""}
+      ${this._favCheaper(p)}
+      <div class="pc-price"><span class="num${sale ? " now" : ""}">${V3.krd(p.price, 2)}</span>${off ? `<s>${V3.fmt(p.normal_price, 2)}</s>` : ""}<button class="add" data-action="fav-add" data-arg="${esc(p.id)}" ${this._busy ? "disabled" : ""} aria-label="Læg ${esc(p.name)} på ${esc(this._listName())}">${V3.ic("plus", 16)}</button></div>
+    </div>`;
+  },
+
+  /* ------------------------------------------------------------------ Spisekammer */
+  _v3PantryArt() {
+    const n = (this._state?.freezer_inventory || []).length;
+    return `<div class="v3"><div class="card pantry-empty">
+      <svg viewBox="0 0 320 200" class="pantry-art" aria-hidden="true">
+        <rect x="40" y="20" width="110" height="170" rx="12" fill="var(--rema-subtle)" stroke="var(--divider-color)" stroke-width="2"/>
+        <rect x="40" y="20" width="110" height="64" rx="12" fill="color-mix(in srgb, var(--g-mejeri) 16%, var(--rema-subtle))"/>
+        <path d="M58 52h16M58 120v24" stroke="var(--v3-soft)" stroke-width="4" stroke-linecap="round"/>
+        <g class="frost"><path d="M95 50 l0 -14 M88 43 l14 0 M90 38 l10 10 M100 38 l-10 10" stroke="var(--g-mejeri)" stroke-width="2" stroke-linecap="round"/></g>
+        <rect x="170" y="44" width="120" height="8" rx="4" fill="var(--divider-color)"/><rect x="170" y="104" width="120" height="8" rx="4" fill="var(--divider-color)"/><rect x="170" y="164" width="120" height="8" rx="4" fill="var(--divider-color)"/>
+        <g transform="translate(176 6) scale(.6)">${V3.ART.kolonial("kolonial")}</g><g transform="translate(222 66) scale(.6)">${V3.ART.mejeri("mejeri")}</g><g transform="translate(250 6) scale(.6)">${V3.ART.drikke("drikke")}</g><g transform="translate(184 126) scale(.6)">${V3.ART.frugt("frugt")}</g>
+      </svg>
+      <div><div class="kicker">Fryseren og skabet</div><h2>${n ? `${n} ${n === 1 ? "råvare" : "råvarer"} på lager` : "Tomt – endnu"}</h2>
+        <p class="sub">Skriv det, I har hjemme, så bruger madplanen det først, og det kommer ikke på indkøbslisten.</p></div>
+    </div></div>`;
+  },
+});
+
+/* Tilbud og priser at the top of Indkøb, and moving a dinner from its menu. */
+Object.assign(V3_METHODS, {
+  _chainsCard() {
+    const ids = [this._storeId(), ...(this._state.settings.chains || []).filter((id) => id !== this._storeId())];
+    const e = this._everywhere;
+    const cat = this._state.catalogs || {};
+    const compare = this._plan ? this._ensureCompare() : null;
+    const lines = Object.entries(compare?.lines || {}).map(([id, c]) => ({ line: this._plan.shopping.find((l) => l.id === id), ...c })).filter((x) => x.line && !x.line.sent && !x.line.buy_at);
+    return `<div class="v3"><div class="card offers-top">
+      <div class="row between wrap"><div><div class="kicker">Tilbud og priser</div><h2>Ugens tilbud i jeres butikker</h2></div>
+        ${cat.current ? `<span class="pill">Avis ${esc((cat.current.label || "").toLowerCase())}${cat.upcoming ? ` · ${esc((cat.upcoming.label || "").toLowerCase())} fra ${esc(V3.DAYS_LONG[new Date(localDay(cat.upcoming.valid_from) + "T12:00:00").getDay()])}` : ""}</span>` : ""}</div>
+      <div class="chainrow">${ids.map((id, i) => `<button class="vchain${i === 0 ? " on" : ""}" data-action="chain-open" data-arg="${esc(id)}">${this._chainLogo(id, "tiny")}<span>${esc(this._chainName(id))}</span></button>`).join("")}</div>
+      <div class="qbar small">${V3.ic("search", 20)}<input type="search" data-bind="everywhere" value="${esc(e.query)}" placeholder="Søg på en vare i alle butikker – fx kaffe, smør eller laks" enterkeyhint="search" aria-label="Søg på en vare">
+        ${e.query || e.data ? '<button class="qx" data-action="everywhere-clear" aria-label="Ryd">×</button>' : ""}
+        <button class="qgo" data-action="everywhere" ${e.loading ? "disabled" : ""} aria-label="Søg">${e.loading ? '<span class="spinner small"></span>' : V3.ic("search", 18)}</button></div>
+      <div class="ev-out">${e.error ? `<div class="banner error">${esc(e.error)}</div>` : ""}${e.data ? this._everywhereHtml(e.data) : ""}</div>
+      ${lines.length ? `<div class="vcheaper"><span class="kicker">Billigere andre steder · fra jeres liste</span><div class="ch-row">${lines.map((x) => `<button class="ch-card" data-action="chain-move" data-arg="${esc(x.line.id)}|${esc(x.dealer_id)}" title="Køb den i ${esc(this._chainName(x.dealer_id))} i stedet">${this._chainLogo(x.dealer_id, "tiny")}<span><b>${esc(x.heading || x.line.name)}</b><small>${esc(this._chainName(x.dealer_id))}${x.price != null ? ` · ${V3.fmt(x.price, 2)} kr.` : ""}${x.quantity ? ` ${esc(x.quantity)}` : ""}</small></span><span class="save">−${V3.fmt(x.saving || 0, 2)}</span></button>`).join("")}</div></div>` : compare?.loading ? '<p class="sub"><span class="spinner small"></span> Sammenligner listen med de andre butikkers tilbud …</p>' : ""}
+    </div></div>`;
+  },
+
+  // Move the dinner a day up or down, from the day's menu.
+  _v3MoveRow(m) {
+    if (m.skipped || !m.dish) return "";
+    const plan = this._planOf(m.planId);
+    if (!plan) return "";
+    const today = localToday();
+    if (m.date < today) return "";
+    const near = (step) => { const d = new Date(`${m.date}T12:00:00`); d.setDate(d.getDate() + step); const iso = V3.ymd(d); return (plan.days || []).find((x) => x.date === iso); };
+    const btn = (dir, other, label) => `<button class="btn small" data-action="v3-move" data-arg="${esc(plan.id)}|${esc(m.date)}|${dir}" ${!other || other.date < today || m.busy ? "disabled" : ""}>${label}</button>`;
+    return `<div class="row wrap day-move"><span class="muted small">Flyt retten</span>${btn("up", near(-1), "↑ En dag tidligere")}${btn("down", near(1), "↓ En dag senere")}</div>`;
+  },
+});
+
 Object.assign(Rema1000Panel.prototype, V3_METHODS);
+for (const key of Object.keys(V3_ICONS)) TAB_ICONS[key] = V3_TAB_ICON(key);
 
 const V3_STYLE = `
 .v3 .num {font-variant-numeric: tabular-nums;}
@@ -8698,12 +9009,12 @@ const V3_STYLE = `
 .v3 .dial .over {fill: none; stroke: var(--bad); stroke-linecap: round; animation: sweep 1.2s .9s cubic-bezier(.45,.05,.25,1) both; filter: url(#glow);}
 .v3 .dial .pace {stroke: var(--ink); stroke-width: 2.2; stroke-linecap: round;}
 .v3 .dial .needle {stroke: var(--ink); stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 2 4;}
-.v3 .center {position: absolute; inset: 27%; border-radius: 50%; display: grid; place-content: center; text-align: center; gap: 2px; pointer-events: none;}
-.v3 .center .lab {font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--soft);}
-.v3 .center .big {font-family: var(--display); font-weight: 680; font-size: clamp(24px, 6.6vw, 36px); letter-spacing: -.035em; line-height: 1.02;}
-.v3 .center .big.bad {color: var(--bad);}
-.v3 .center .small {font-size: 12.5px; color: var(--soft);}
-.v3 .center .chip {justify-self: center; margin-top: 4px;}
+.v3 .wcenter {position: absolute; inset: 27%; border-radius: 50%; display: grid; place-content: center; text-align: center; gap: 2px; pointer-events: none;}
+.v3 .wcenter .lab {font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--soft);}
+.v3 .wcenter .big {font-family: var(--display); font-weight: 680; font-size: clamp(24px, 6.6vw, 36px); letter-spacing: -.035em; line-height: 1.02;}
+.v3 .wcenter .big.bad {color: var(--bad);}
+.v3 .wcenter .small {font-size: 12.5px; color: var(--soft);}
+.v3 .wcenter .chip {justify-self: center; margin-top: 4px;}
 .v3 .kbook {display: grid; gap: 10px; margin-top: 8px; padding: 14px; border-radius: 18px; background: var(--rema-subtle);}
 .v3 .kbook-row {display: flex; gap: 8px; align-items: center;}
 .v3 .kamount {flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 16px; border-radius: 16px; background: var(--card-background-color); border: 1.5px solid var(--line); transition: border-color .2s, box-shadow .2s;}
@@ -8822,7 +9133,7 @@ const V3_STYLE = `
 .v3 .range {position: relative; height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 10%, transparent);}
 .v3 .range i {position: absolute; top: -4px; width: 14px; height: 14px; border-radius: 50%; background: var(--card-background-color); border: 3px solid var(--rema-accent); transform: translateX(-50%);}
 .v3 .range-lab {display: flex; justify-content: space-between; font-size: 11px; color: var(--soft); font-variant-numeric: tabular-nums;}
-.v3 .badge {position: absolute; right: 8px; bottom: 8px; font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--rema-tint); color: var(--rema-accent);}
+.v3 .vbadge {position: absolute; right: 8px; bottom: 8px; font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--rema-tint); color: var(--rema-accent);}
 .v3 .plate-wrap {display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 18px; align-items: center;}
 @media (max-width: 720px) {
   .v3 .plate-wrap {grid-template-columns: 1fr;}
@@ -8835,7 +9146,24 @@ const V3_STYLE = `
 .v3 .sh .bar i {display: block; height: 100%; border-radius: 999px;}
 .v3 .sh b {font-size: 13.5px;}
 .v3 .sh .p {font-weight: 700; font-variant-numeric: tabular-nums;}
+.v3 .marks {display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px;}
+.v3 .mk {display: grid; justify-items: center; gap: 6px; text-align: center;}
+.v3 .mk svg {width: 100%; max-width: 128px; height: auto;}
+.v3 .mk b {font-size: 13.5px;}
+.v3 .mk small {color: var(--soft); font-size: 12px;}
+.v3 .plates {display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: 12px;}
+@media (max-width: 640px) {
+  .v3 .plates {grid-template-columns: repeat(4, minmax(0, 1fr));}
+}
 .v3 .pl {display: grid; justify-items: center; gap: 6px; text-align: center;}
+.v3 .pl svg {width: 100%; max-width: 74px; height: auto;}
+.v3 .pl span {font-size: 11px; font-weight: 700; color: var(--soft); letter-spacing: .06em;}
+.v3 .pl b {font-size: 12px; line-height: 1.25;}
+.v3 .pl.today svg circle:first-child {stroke: var(--rema-accent); stroke-width: 3;}
+.v3 .advice {display: grid; gap: 10px; margin-top: 10px;}
+.v3 .adv {display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px;}
+.v3 .adv .meter {grid-column: 1 / -1; height: 8px; border-radius: 999px; background: var(--rema-subtle); overflow: hidden;}
+.v3 .adv .meter i {display: block; height: 100%; background: var(--good);}
 .v3 .foot {color: var(--soft); font-size: 12px; line-height: 1.5; margin-top: 10px;}
 .v3 .sunpulse {animation: pulse 6s ease-in-out infinite; transform-box: fill-box; transform-origin: center;}
 @keyframes pulse { 50% { transform: scale(1.12); opacity: .8; } }
@@ -8857,7 +9185,7 @@ const V3_STYLE = `
   .v3 .wk {width: 44px;}
 }
 .v3 .bd .sel {stroke-linejoin: round; stroke-width: 1.4; opacity: .75;}
-.v3 .center .small {max-width: 150px;}
+.v3 .wcenter .small {max-width: 150px;}
 .v3 .dial .day {cursor: pointer; transition: opacity .25s ease;}
 .v3 .dial .day.dim {opacity: .3;}
 .v3 .dial .day.on .daylab {fill: var(--rema-accent);}
@@ -9008,6 +9336,41 @@ const V3_STYLE = `
 .v3 .olc {display: inline-flex; align-items: center; gap: 6px; padding: 5px 6px 5px 11px; border-radius: 999px; background: var(--rema-subtle); font-size: 13px; font-weight: 600;}
 .v3 .olc.fresh {background: var(--rema-tint); color: var(--rema-accent); animation: pop .4s;}
 .v3 .olc button {width: 20px; height: 20px; border-radius: 50%; border: 0; background: rgba(0,0,0,.06); color: inherit; cursor: pointer; display: grid; place-items: center;}
+.v3 .plan-head {background: radial-gradient(100% 60% at 0% 0%, var(--rema-tint), transparent 60%), var(--rema-card);}
+.v3 .ph-grid {display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-top: 12px;}
+.v3 .ph-price {text-align: right; display: grid;}
+.v3 .ph-price b {font-family: var(--display); font-size: 30px; letter-spacing: -.03em;}
+.v3 .ph-price span {color: var(--soft); font-size: 12.5px;}
+.v3 .prows {display: grid; gap: 8px; margin-top: 14px;}
+.v3 .prow {display: grid; grid-template-columns: 52px 76px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 8px 10px 8px 8px; border-radius: 20px; background: var(--rema-subtle); border: 1px solid transparent; animation: rise .45s both; transition: border-color .2s;}
+.v3 .prow:hover {border-color: var(--line);}
+.v3 .prow.now {background: linear-gradient(90deg, var(--rema-tint), var(--rema-subtle)); border-color: var(--rema-accent);}
+.v3 .prow.past {opacity: .6;}
+.v3 .pr-date {display: grid; justify-items: center; line-height: 1.05;}
+.v3 .pr-date span {font-size: 10.5px; font-weight: 800; letter-spacing: .08em; color: var(--soft);}
+.v3 .pr-date b {font-family: var(--display); font-size: 24px;}
+.v3 .pr-date small {font-size: 11px; color: var(--soft);}
+.v3 .pr-art {width: 76px; height: 76px;}
+.v3 .pr-main b {font-size: 15px; line-height: 1.3;}
+.v3 .pr-meta {display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; font-size: 12.5px; color: var(--soft);}
+.v3 .pr-tools {display: flex; gap: 4px;}
+.v3 .vrate, .v3 .more-b {width: 36px; height: 36px; border-radius: 12px; border: 1px solid var(--line); background: var(--card-background-color); cursor: pointer; font-size: 15px; filter: grayscale(1); opacity: .6;}
+.v3 .vrate.on {filter: none; opacity: 1; border-color: var(--rema-accent); background: var(--rema-tint);}
+.v3 .more-b {filter: none; opacity: 1; font-weight: 800; color: var(--soft);}
+@media (max-width: 620px) {
+  .v3 .prow {grid-template-columns: 44px 60px minmax(0, 1fr);}
+  .v3 .pr-art {width: 60px; height: 60px;}
+  .v3 .pr-tools {grid-column: 2 / -1;}
+}
+.v3 .vplan-actions {display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px;}
+.v3 .gen {display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 16px; background: linear-gradient(135deg, color-mix(in srgb, #6E4AFF 12%, var(--rema-card)), color-mix(in srgb, #FF7A59 10%, var(--rema-card)));}
+.v3 .gen-art {width: 76px; height: 76px; border-radius: 22px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, #6E4AFF, #FF7A59); box-shadow: 0 16px 30px -16px #6E4AFF;}
+.v3 .gen-opts {display: flex; flex-wrap: wrap; gap: 10px 14px; margin: 12px 0; align-items: center; font-size: 14px;}
+.v3 .gen-opts select {margin-left: 6px; height: 34px; border-radius: 10px; border: 1px solid var(--line); background: var(--card-background-color); color: var(--ink); padding: 0 8px; font: inherit;}
+.v3 .offers-top {background: radial-gradient(110% 80% at 100% 0%, color-mix(in srgb, var(--g-kolonial) 12%, transparent), transparent 55%), var(--rema-card);}
+.v3 .chainrow {display: flex; gap: 8px; overflow-x: auto; margin-top: 12px; padding-bottom: 4px;}
+.v3 .vchain {flex: none; display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 14px 0 6px; border-radius: 16px; border: 1px solid var(--line); background: var(--card-background-color); font-weight: 650; cursor: pointer;}
+.v3 .vchain.on {border-color: var(--ink);}
 .v3 .mono {width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; color: #fff; font: 800 15px var(--display); flex: none;}
 .v3 .mono.big {width: 44px; height: 44px; border-radius: 14px; font-size: 19px;}
 .v3 .mono.m0 {background: var(--g-mejeri);}
@@ -9016,6 +9379,17 @@ const V3_STYLE = `
 .v3 .mono.m3 {background: var(--g-drikke);}
 .v3 .mono.m4 {background: var(--g-kod);}
 .v3 .mono.m5 {background: var(--g-kolonial);}
+.v3 .vcheaper {margin-top: 14px;}
+.v3 .ch-row {display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; margin-top: 8px;}
+.v3 .ch-card {display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px; border-radius: 16px; background: var(--rema-subtle);}
+.v3 .ch-card b {font-size: 13.5px;}
+.v3 .ch-card small {display: block; color: var(--soft); font-size: 12px;}
+.v3 .ch-card .save {font-weight: 800; color: var(--good); font-variant-numeric: tabular-nums;}
+.v3 .limg {width: 44px; height: 44px; border-radius: 10px; background: #fff; border: 1px solid var(--line); display: grid; place-items: center; overflow: hidden;}
+.v3 .limg img, .v3 .limg svg {width: 84%; height: 84%; object-fit: contain;}
+.v3 .lname b {font-size: 14px; display: block;}
+.v3 .lname small {color: var(--soft); font-size: 12px;}
+.v3 .lprice {font-variant-numeric: tabular-nums; font-weight: 650;}
 .v3 .compare {background: radial-gradient(100% 70% at 0% 100%, color-mix(in srgb, var(--g-drikke) 10%, transparent), transparent 60%), var(--rema-card);}
 .v3 .race {display: grid; gap: 12px; margin-top: 14px;}
 .v3 .lane {padding: 14px; border-radius: 20px; background: var(--rema-subtle); display: grid; gap: 10px; animation: rise .5s both;}
@@ -9049,6 +9423,37 @@ const V3_STYLE = `
 .v3 .xdot.miss {background: var(--warning-color, #E0A52E);}
 .v3 .xdone {display: none; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line);}
 .v3 .xdone.on {display: grid; animation: rise .4s both;}
+.v3 .rgrid {display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-top: 14px;}
+.v3 .rcard {position: relative; display: grid; justify-items: center; gap: 6px; padding: 14px 12px; border-radius: 20px; border: 1px solid var(--line); background: var(--rema-subtle); cursor: pointer; text-align: center; animation: rise .4s both; transition: transform .2s, box-shadow .2s;}
+.v3 .rcard:hover {transform: translateY(-3px); box-shadow: 0 18px 30px -22px rgba(0,0,0,.4);}
+.v3 .rc-art {width: 104px; height: 104px; transition: transform .35s;}
+.v3 .rcard:hover .rc-art {transform: rotate(10deg);}
+.v3 .rcard b {font-size: 13.5px; line-height: 1.3;}
+.v3 .rc-heart {position: absolute; top: 10px; right: 12px; color: var(--bad); font-size: 16px;}
+.v3 .rc-heart.no {color: inherit; font-size: 13px;}
+.v3 .vrc-meta {display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 12px; color: var(--soft);}
+.v3 .fgrid {display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 14px;}
+.v3 .fcard {display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px; border-radius: 22px; background: var(--rema-subtle); animation: rise .45s both;}
+.v3 .fc-art {width: 92px; height: 92px;}
+.v3 .fcard b {font-size: 14.5px; line-height: 1.3;}
+.v3 .fcard .vrc-meta {justify-content: flex-start; margin-top: 6px;}
+.v3 .pantry-empty {display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 20px; align-items: center;}
+@media (max-width: 720px) {
+  .v3 .pantry-empty {grid-template-columns: 1fr;}
+}
+.v3 .pantry-art {width: 100%; height: auto;}
+.v3 .frost {animation: pulse 4s ease-in-out infinite; transform-box: fill-box; transform-origin: center;}
+.v3 .hlist {display: grid; gap: 8px; margin-top: 14px;}
+.v3 .sgrid {display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; margin-bottom: 16px;}
+.v3 .stile {display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; align-items: center; padding: 12px; border-radius: 18px; border: 1px solid var(--line); background: var(--rema-card); cursor: pointer; text-align: left; box-shadow: var(--ha-card-box-shadow); transition: transform .15s, border-color .2s;}
+.v3 .stile:hover {transform: translateY(-2px);}
+.v3 .stile.on {border-color: var(--rema-accent); box-shadow: 0 0 0 3px var(--rema-tint);}
+.v3 .st-ic {width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--rema-tint); color: var(--rema-accent);}
+.v3 .stile b {display: block; font-size: 14.5px;}
+.v3 .stile small {color: var(--soft); font-size: 12.5px;}
+.v3 .spanel {animation: rise .35s both;}
+.v3 .sw {display: flex; gap: 4px; margin-bottom: 6px;}
+.v3 .sw i {width: 26px; height: 26px; border-radius: 8px;}
 .v3 .tw {animation: twinkle 3.5s ease-in-out infinite;}
 @keyframes twinkle { 50% { opacity: .25; } }
 .v3 .steam {animation: steam 3s ease-in-out infinite;}
@@ -9059,9 +9464,78 @@ const V3_STYLE = `
 .v3 .btn.small {height: 32px; padding: 0 12px; font-size: 13px; border-radius: 10px;}
 .v3 .btn.danger {color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--line));}
 .v3 .link {border: 0; background: none; padding: 0; color: var(--rema-accent); font-weight: 650; cursor: pointer; text-decoration: underline;}
+.v3 .note-b {margin: 10px 0; padding: 10px 12px; border-radius: 14px; background: var(--rema-tint); color: var(--ink); font-size: 13.5px; line-height: 1.45;}
+.v3 .seg.fit {display: flex; width: 100%;}
+.v3 .seg.fit button {flex: 1; padding: 8px 6px;}
+.v3 .fld {display: grid; gap: 6px; font-size: 13px; font-weight: 650; margin-top: 12px;}
+.v3 .fld.inline {display: inline-grid; margin: 0;}
+.v3 .fld .row input {flex: 1;}
 @keyframes spinin { from { transform: rotate(-40deg) scale(.7); opacity: 0; } }
+.v3 .prow {grid-template-columns: minmax(0, 1fr) auto; padding: 0 10px 0 0;}
+.v3 .pr-open {display: grid; grid-template-columns: 52px 76px minmax(0, 1fr); gap: 12px; align-items: center; padding: 8px; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; border-radius: 20px; min-width: 0;}
+.v3 .pr-open:hover .pr-art {transform: rotate(-8deg);}
+.v3 .pr-art {transition: transform .3s;}
+@media (max-width: 620px) {
+  .v3 .prow {grid-template-columns: 1fr; padding: 0 0 8px;}
+  .v3 .pr-open {grid-template-columns: 44px 60px minmax(0, 1fr);}
+  .v3 .pr-tools {padding-left: 8px;}
+}
+.v3 .gen {align-items: start;}
+.v3 .gen-body {min-width: 0;}
+.v3 .gen-row {margin: 14px 0 10px;}
+.v3 .wish {padding: 12px; border-radius: 18px; background: var(--card-background-color); border: 1px solid var(--line);}
+.v3 .wish.has {border-color: var(--rema-accent);}
+.v3 .wish-h {display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px; align-items: center;}
+.v3 .wish-ic {font-size: 22px;}
+.v3 .wish-h small {display: block; color: var(--soft); font-size: 12.5px;}
+.v3 .wish-note {margin: 8px 0 0; padding: 8px 12px; border-radius: 12px; background: var(--rema-tint); font-style: italic;}
+.v3 .tailor {margin-top: 10px; padding: 12px; border-radius: 18px; background: var(--card-background-color); border: 1px solid var(--line);}
+.v3 .tailor summary {cursor: pointer; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center;}
+.v3 .tailor summary small {flex-basis: 100%; color: var(--soft); font-size: 12.5px;}
+.v3 .kinds {display: grid; gap: 6px; margin-top: 10px;}
+.v3 .kday {display: grid; grid-template-columns: 70px minmax(0, 180px) minmax(0, 1fr); gap: 10px; align-items: center; padding: 6px 8px; border-radius: 12px; background: var(--rema-subtle);}
+.v3 .kday.k-skip, .v3 .kday.k-rye {opacity: .7;}
+.v3 .kd-d {font-size: 12.5px; color: var(--soft);}
+.v3 .kd-d b {display: block; color: var(--ink); font-size: 12px; letter-spacing: .06em;}
+.v3 .kday select, .v3 .kday input {height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--card-background-color); color: var(--ink); padding: 0 8px; font: inherit; min-width: 0;}
+.v3 .kd-hint {font-size: 12.5px; color: var(--soft);}
+@media (max-width: 560px) {
+  .v3 .kday {grid-template-columns: 56px minmax(0, 1fr);}
+  .v3 .kday > :last-child {grid-column: 1 / -1;}
+}
+.v3 .gen-go {margin-top: 14px;}
+.v3 .btn.surprise {background: linear-gradient(135deg, #FFE6D9, #EDE6FF); border-color: transparent; color: #3A2A66;}
 :host([dark]) .v3 .btn.surprise {background: linear-gradient(135deg, #3A2A33, #2A2448); color: #F1EFFA;}
+.v3 .freezer summary {cursor: pointer; display: grid; gap: 2px;}
+.v3 .freezer summary small {color: var(--soft);}
+.v3 .watch {background: radial-gradient(100% 80% at 100% 0%, color-mix(in srgb, var(--g-brod) 14%, transparent), transparent 60%), var(--rema-card);}
+.v3 .watch .kicker {display: inline-flex; align-items: center; gap: 6px;}
+.v3 .w-list {display: grid; gap: 6px; margin-top: 12px;}
+.v3 .w-item {display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 14px; background: var(--rema-subtle); animation: rise .3s both;}
+.v3 .w-item svg.art, .v3 .w-item > svg {width: 34px; height: 34px;}
+.v3 .w-item small {display: block; color: var(--soft); font-size: 12.5px;}
+.v3 .pgrid {display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin-top: 14px;}
+.v3 .pgrid.small {grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));}
+.v3 .pcard {position: relative; display: grid; gap: 4px; align-content: start; padding: 10px; border-radius: 18px; background: var(--rema-subtle); border: 1px solid transparent; animation: rise .4s both; transition: transform .2s, border-color .2s;}
+.v3 .pcard:hover {transform: translateY(-2px); border-color: var(--line);}
+.v3 .pcard.onsale {background: linear-gradient(180deg, color-mix(in srgb, var(--bad) 8%, var(--rema-subtle)), var(--rema-subtle));}
+.v3 .pcard .ph {position: relative; aspect-ratio: 1; border-radius: 14px; background: #fff; display: grid; place-items: center; overflow: hidden; margin-bottom: 4px;}
+.v3 .pcard .ph img, .v3 .pcard .ph svg {width: 78%; height: 78%; object-fit: contain;}
+.v3 .sale-b {position: absolute; left: 8px; top: 8px; padding: 3px 8px; border-radius: 999px; background: var(--bad); color: #fff; font-size: 11.5px; font-weight: 800;}
+.v3 .vbell {position: absolute; right: 8px; top: 8px; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: rgba(255,255,255,.92); color: #6B7280; cursor: pointer; display: grid; place-items: center; transition: transform .2s, background .2s, color .2s;}
+.v3 .vbell.on {background: var(--g-brod); color: #2a1d00; border-color: transparent; animation: ring .5s;}
+.v3 .w-item .vbell {position: static;}
 @keyframes ring { 20% { transform: rotate(18deg); } 40% { transform: rotate(-14deg); } 60% { transform: rotate(8deg); } }
+.v3 .pcard b {font-size: 13px; line-height: 1.25;}
+.v3 .pcard small {color: var(--soft); font-size: 11.5px; line-height: 1.3;}
+.v3 .pc-price {display: flex; align-items: center; gap: 6px; margin-top: 4px;}
+.v3 .pc-price .num {font-weight: 750; font-size: 14.5px;}
+.v3 .pc-price .now {color: var(--bad);}
+.v3 .pc-price s {color: var(--soft); font-size: 12px;}
+.v3 .pc-price .add {margin-left: auto; width: 32px; height: 32px; border-radius: 10px; border: 0; background: var(--rema-accent); color: var(--rema-on-accent); cursor: pointer; display: grid; place-items: center;}
+.v3 .more-grid {display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 8px 18px 22px;}
+.v3 .mg {display: grid; justify-items: center; gap: 8px; padding: 14px 6px; border-radius: 18px; border: 1px solid var(--line); background: var(--rema-subtle); color: var(--ink); cursor: pointer; font-size: 13px;}
+.v3 .mg.on {border-color: var(--rema-accent); background: var(--rema-tint);}
 @media (max-width: 700px) {
   .v3 .card {padding: 16px; border-radius: 20px; margin-bottom: 12px;}
   .v3 h2 {font-size: 20px;}
@@ -9078,10 +9552,24 @@ const V3_STYLE = `
   .v3 .xsheet, .v3 .paper {width: 100%; max-width: none; max-height: 92dvh; border-radius: 26px 26px 0 0; padding-bottom: env(safe-area-inset-bottom); animation: sheetup .32s cubic-bezier(.2,.8,.2,1) both;}
   .v3 .paper {padding: 22px 18px calc(28px + env(safe-area-inset-bottom));}
   .v3 .xsheet {padding: 20px 18px calc(24px + env(safe-area-inset-bottom));}
+  .v3 .seg.fit button {font-size: 12.5px; padding: 8px 4px;}
   .v3 .seg:not(.fit) {max-width: 100%; overflow-x: auto; scrollbar-width: none;}
   .v3 .seg:not(.fit)::-webkit-scrollbar {display: none;}
   .v3 .seg button {white-space: nowrap; flex: none; padding: 7px 13px;}
-  .v3 .plan-actions .btn {flex: 1 1 auto;}
+  .v3 .prow {grid-template-columns: minmax(0, 1fr); padding: 0 0 8px;}
+  .v3 .pr-open {grid-template-columns: 40px 58px minmax(0, 1fr); gap: 10px; padding: 8px 8px 4px;}
+  .v3 .pr-art {width: 58px; height: 58px;}
+  .v3 .pr-main b {font-size: 14px;}
+  .v3 .pr-tools {grid-column: auto; justify-content: flex-end; padding: 0 8px;}
+  .v3 .vrate, .v3 .more-b {width: 34px; height: 34px;}
+  .v3 .ph-grid {display: grid;}
+  .v3 .ph-price {text-align: left;}
+  .v3 .vplan-actions .btn {flex: 1 1 auto;}
+  .v3 .gen {grid-template-columns: 1fr;}
+  .v3 .gen-art {width: 56px; height: 56px; border-radius: 18px;}
+  .v3 .wish-h {grid-template-columns: 30px minmax(0, 1fr);}
+  .v3 .wish-h .btn {grid-column: 1 / -1; width: 100%;}
+  .v3 .gen-go .btn {flex: 1 1 auto;}
   .v3 .strip {grid-auto-columns: 132px; margin: 12px -16px 0; padding: 4px 16px 10px; scroll-padding: 16px;}
   .v3 .plan-foot {gap: 14px;}
   .v3 .plan-foot .spacer {display: none;}
@@ -9089,10 +9577,25 @@ const V3_STYLE = `
   .v3 .qbar {height: 56px; padding-left: 14px;}
   .v3 .qbar input {font-size: 16px;}
   .v3 .qgo {width: 42px; height: 42px;}
+  .v3 .pgrid, .v3 .pgrid.small, .v3 .rgrid {grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;}
+  .v3 .pcard {padding: 8px;}
+  .v3 .pcard b {font-size: 12.5px;}
+  .v3 .rcard {padding: 12px 8px;}
+  .v3 .rc-art {width: 84px; height: 84px;}
+  .v3 .rcard b {font-size: 12.5px;}
+  .v3 .fgrid {grid-template-columns: 1fr;}
+  .v3 .fcard {grid-template-columns: 72px minmax(0, 1fr) auto;}
+  .v3 .fc-art {width: 72px; height: 72px;}
   .v3 .shelf {grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;}
   .v3 .podium {gap: 8px;}
   .v3 .pod b {font-size: 12px;}
   .v3 .pod .pstep {font-size: 20px;}
+  .v3 .sgrid {grid-template-columns: 1fr; gap: 8px;}
+  .v3 .more-grid {grid-template-columns: repeat(3, minmax(0, 1fr));}
+  .v3 .ch-row {grid-template-columns: 1fr;}
+  .v3 .line .tag.offer {grid-column: 3; grid-row: 2; justify-self: start; margin-top: -4px;}
+  .v3 .lprice {grid-row: 1; grid-column: 4;}
+  .v3 .limg {width: 40px; height: 40px;}
   .v3 .ln-tot {font-size: 20px;}
   .v3 .bcenter {inset: 32%;}
   .v3 .bcenter .big {font-size: 22px;}
@@ -9101,17 +9604,29 @@ const V3_STYLE = `
   .v3 .minidays {height: 18px;}
   .v3 .minidays i {width: 6px;}
   .v3 .minilab span {width: 6px; font-size: 6px;}
-  .v3 .center .big {font-size: 28px;}
-  .v3 .center .small {font-size: 11.5px;}
+  .v3 .wcenter .big {font-size: 28px;}
+  .v3 .wcenter .small {font-size: 11.5px;}
   .v3 .weekpick {width: 100%; justify-content: space-between;}
   .v3 .wk {width: 15%;}
   .v3 .stats4 {gap: 6px;}
   .v3 .stat b {font-size: 17px;}
   .v3 .huge {font-size: 32px;}
+  .v3 .plates {grid-template-columns: repeat(4, minmax(0, 1fr));}
+  .v3 .adv {grid-template-columns: 1fr;}
+  .v3 .adv .sub {margin: 0;}
+  .v3 .marks {gap: 6px;}
+  .v3 .mk b {font-size: 12.5px;}
+  .v3 .mk small {font-size: 11px;}
+  .v3 .kday {grid-template-columns: 52px minmax(0, 1fr);}
+  .v3 .kday > :last-child {grid-column: 1 / -1;}
 }
 @keyframes sheetup { from { transform: translateY(40%); opacity: .4; } }
 @media (max-width: 380px) {
   .v3 .hello {font-size: 34px;}
+  .v3 .pgrid, .v3 .rgrid {gap: 8px;}
+}
+@media (max-width: 700px) {
+  .v3 .pr-tools {justify-content: flex-start; padding: 0 8px 0 116px; margin-top: -6px;}
 }
   /* ===================== Middagsro 3: the street, the clocks, the plates ===================== */
   :host { --ink: var(--primary-text-color); --soft: var(--secondary-text-color); --line: var(--divider-color);
@@ -9249,6 +9764,115 @@ const V3_STYLE = `
   .v3 #hdr-body > .budget-glass { position: absolute; }
   @media (max-width: 700px) { .v3 #hdr-body > .budget-glass { position: relative; } }
   :where(.v3) button { font-family: inherit; color: inherit; }
+  /* ---- 3.0.0b2: the rest of the prototype ---- */
+  .v3 .seg button.active { background: var(--card-background-color); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.14); }
+  .v3 .seg button { cursor: pointer; }
+  .v3 h1 { margin: 2px 0 0; font-family: var(--display); font-size: 22px; font-weight: 650; letter-spacing: -.02em; }
+  /* Madplan */
+  .v3 .pr-open { width: 100%; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 18px; }
+  .v3 .pr-main b { display: block; }
+  .v3 .vrate { font-size: 15px; }
+  .v3 .vrate:disabled { opacity: .4; }
+  .v3 .prow.skipped .pr-art { opacity: .6; }
+  .v3 .pr-past { margin-top: 10px; }
+  .v3 .pr-past > summary { cursor: pointer; color: var(--soft); font-weight: 650; font-size: 13.5px; padding: 6px 2px; }
+  .v3 .pr-past .prows { margin-top: 6px; }
+  .v3 .ph-price.over b { color: var(--bad); }
+  .v3 .plan-head .banner { margin-top: 12px; }
+  .v3 .plan-head .help-q { vertical-align: middle; }
+  .v3 .vplan-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; align-items: center; }
+  .v3 .vplan-actions .later { flex-basis: 100%; margin: 0; }
+  .v3 .tag.t-new { background: color-mix(in srgb, var(--warning-color, #E0A52E) 18%, transparent); color: color-mix(in srgb, var(--warning-color, #E0A52E) 70%, var(--ink)); }
+  .v3 .tag.t-veg, .v3 .tag.t-vegetar { background: color-mix(in srgb, var(--g-frugt) 14%, transparent); color: var(--g-frugt); }
+  .v3 .tag.t-egen { background: color-mix(in srgb, var(--soft) 14%, transparent); }
+  .v3 .gen .gen-art .ai { width: 34px; height: 34px; fill: #fff; stroke: none; }
+  .v3 .gen .btn .ai { width: 18px; height: 18px; fill: currentColor; }
+  .v3 .gen .check { display: flex; gap: 8px; margin-top: 10px; font-size: 13.5px; }
+  .v3 .kday .btn.small { justify-self: start; }
+  .v3 .freezer > summary { list-style: none; }
+  .v3 .freezer > summary::-webkit-details-marker { display: none; }
+  .v3 .freezer[open] > summary { margin-bottom: 10px; }
+  .v3 .cat-line { margin: 0 4px 12px; font-size: 12.5px; }
+  .day-move { margin-top: 12px; gap: 8px; }
+  .day-move .muted { margin-right: 4px; }
+  /* Opskrifter */
+  .v3 .rcard { padding: 0 0 10px; }
+  .v3 .rcard .rc-open { display: grid; justify-items: center; gap: 6px; width: 100%; padding: 14px 12px 6px; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; text-align: center; }
+  .v3 .rcard .rate { justify-content: center; display: flex; }
+  .v3 .vrc-meta { display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 12px; color: var(--soft); }
+  .v3 .sortf select { height: 34px; border-radius: 10px; border: 1px solid var(--line); background: var(--card-background-color); color: var(--ink); padding: 0 8px; font: inherit; }
+  .v3 .qx { width: 30px; height: 30px; border: 0; border-radius: 50%; background: var(--rema-subtle); color: var(--soft); cursor: pointer; font-size: 17px; flex: none; }
+  .v3 .rc-list { margin-top: 4px; }
+  /* Indkøb */
+  .v3 .vchain .chain-logo { width: 34px; height: 34px; }
+  .v3 .ch-card { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; border: 1px solid transparent; }
+  .v3 .ch-card:hover { border-color: var(--rema-accent); }
+  .v3 .ch-card .chain-logo { width: 34px; height: 34px; }
+  .v3 .offers-top .ev-out:not(:empty) { margin-top: 12px; }
+  .shopv .card { border-radius: var(--ha-card-border-radius, 20px); padding: 18px; }
+  .shopv .kicker { font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--secondary-text-color); }
+  .shopv .shop-card h1, .shopv .card > .row > h2, .shopv .card > .row h2 { margin: 2px 0 0; font-family: var(--display); font-size: 22px; font-weight: 650; letter-spacing: -.02em; }
+  .shopv .shop-card > h2 { margin: 16px 0 4px; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--secondary-text-color); }
+  .shopv .lines .line { grid-template-columns: 44px minmax(0, 1fr) auto; gap: 10px; padding: 7px 6px; border: 0; border-radius: 12px; }
+  .shopv .lines .line.has-send { grid-template-columns: 44px minmax(0, 1fr) auto 32px; }
+  .shopv .limg { width: 44px; height: 44px; border-radius: 10px; background: #fff; border: 1px solid var(--divider-color); display: grid; place-items: center; overflow: hidden; flex: none; }
+  .shopv .limg img, .shopv .limg svg { width: 84%; height: 84%; object-fit: contain; border: 0; background: none; border-radius: 0; }
+  .shopv .line .what b { font-size: 14px; }
+  .shopv .line .what .muted { font-size: 12px; }
+  .shopv .line .cost { font-size: 11.5px; }
+  .shopv .line .cost b { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .shopv ul.rema { display: grid; gap: 2px; }
+  .shopv ul.rema li { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; align-items: center; padding: 6px 4px; border-radius: 12px; }
+  .shopv ul.rema li.bought { opacity: .45; }
+  .shopv ul.rema li.bought .lname b { text-decoration: line-through; }
+  .shopv .lname b { display: block; font-size: 14px; } .shopv .lname small { color: var(--secondary-text-color); font-size: 12px; }
+  @media (max-width: 700px) {
+    .shopv .lines .line { grid-template-columns: 40px minmax(0, 1fr) auto; }
+    .shopv .lines .line .cost { grid-column: auto; text-align: right; flex-direction: column; gap: 0; }
+    .shopv .lines .line.has-send { grid-template-columns: 40px minmax(0, 1fr) auto 30px; }
+    .shopv .lines .line.has-send .to-rema-line { grid-column: 4; grid-row: auto; }
+    .shopv .limg { width: 40px; height: 40px; }
+  }
+  /* Favoritter */
+  .v3.favv .watch-card { background: radial-gradient(100% 80% at 100% 0%, color-mix(in srgb, var(--g-brod) 14%, transparent), transparent 60%), var(--rema-card); }
+  .v3.favv .watch-title { font-size: 22px; }
+  .v3.favv .pgrid { margin-top: 14px; }
+  .v3 .pcard .vbell { position: absolute; right: 8px; top: 8px; }
+  .v3 .pcard .vbell svg { width: 15px; height: 15px; }
+  .v3 .pcard .ph img, .v3 .pcard .ph > svg { width: 78%; height: 78%; object-fit: contain; }
+  .v3 .pcard .pc-tags { display: flex; flex-wrap: wrap; gap: 4px; font-size: 11.5px; }
+  .v3 .pcard .pc-tags:empty { display: none; }
+  .v3 .pcard .pc-price .add svg { width: 16px; height: 16px; }
+  .v3.favv .favlist, .v3.favv details > summary { margin-top: 4px; }
+  .v3.favv details > summary { cursor: pointer; font-weight: 650; }
+  /* Indstillinger */
+  .v3 .stile { font: inherit; color: inherit; text-align: left; cursor: pointer; width: 100%; }
+  .v3 .st-ic svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  /* The Mere sheet: tiles, as in the prototype. */
+  .more-sheet .ms-top { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 10px; }
+  .more-sheet .ms-top h2 { margin: 0; font-family: var(--display); font-size: 21px; letter-spacing: -.02em; }
+  .more-sheet .ms-x { width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--rema-subtle); color: var(--primary-text-color); font-size: 19px; cursor: pointer; }
+  .more-sheet .ms-grab { display: none; }
+  .more-sheet .more-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 0 8px 8px; }
+  .more-sheet .more-item.mg { display: grid; justify-items: center; gap: 8px; padding: 14px 6px; border-radius: 18px; border: 1px solid var(--divider-color); background: var(--rema-subtle); color: var(--primary-text-color); text-align: center; font-size: 13.5px; }
+  .more-sheet .more-item.mg b { font-weight: 650; }
+  .more-sheet .more-item.mg.active { border-color: var(--rema-accent); background: var(--rema-tint); color: var(--rema-accent); }
+  .more-sheet .st-ic { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--rema-tint); color: var(--rema-accent); }
+  .more-sheet .st-ic svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .more-sheet .ms-custom { display: block; margin: 4px auto 6px; border: 0; background: none; color: var(--secondary-text-color); font: inherit; font-size: 13px; text-decoration: underline; cursor: pointer; }
+  .more-sheet:not([hidden]) { width: min(420px, calc(100vw - 24px)); padding: 10px; border-radius: 24px; }
+  .more-scrim:not([hidden]) { background: rgba(8,14,28,.35); }
+  @media (max-width: 700px) {
+    .more-sheet:not([hidden]) { left: 0; right: 0; bottom: 0; width: 100%; max-height: 80dvh; border-radius: 26px 26px 0 0; border-bottom: 0;
+      padding: 8px 10px calc(18px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); z-index: 22; animation: sheetup .3s cubic-bezier(.2,.8,.2,1) both; }
+    .more-scrim:not([hidden]) { z-index: 21; }
+    .more-sheet .ms-grab { display: block; width: 40px; height: 5px; border-radius: 999px; background: color-mix(in srgb, var(--primary-text-color) 20%, transparent); margin: 2px auto 6px; }
+    .more-sheet .more-item.mg { display: grid; }
+    .more-sheet .more-item.mg.mobile-primary { display: none; }
+  }
+  @media (min-width: 701px) { .more-sheet .more-item.mg.desktop-primary { display: none; } }
+  /* Spisekammer */
+  .v3 .pantry-empty { margin-bottom: 16px; }
 
 `;
 const STYLE = STYLE_BASE + V3_STYLE;
