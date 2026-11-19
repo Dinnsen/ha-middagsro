@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
-from .api import Catalog
+from .api import Catalog, Receipt
 from .budget import summary as budget_summary
 from .coordinator import (
     RemaConfigEntry,
@@ -44,6 +44,9 @@ async def async_setup_entry(
     # Receipts exist only for REMA 1000 accounts (not Bilka/Nemlig).
     if data.receipts is not None:
         entities.append(RemaLatestReceiptSensor(data.receipts, entry))
+        entities += (
+            RemaReceiptAmountSensor(data.receipts, entry, key) for key in RECEIPT_AMOUNT_SENSORS
+        )
     async_add_entities(entities)
 
 
@@ -355,9 +358,64 @@ class RemaLatestReceiptSensor(RemaEntity[RemaReceiptsCoordinator], SensorEntity)
             "receipt_id": receipt.id,
             "display_id": receipt.display_id,
             "total": receipt.total,
+            "gross": receipt.gross,
+            "total_discount": receipt.total_discount,
             "total_string": receipt.total_string,
             "items": len(receipt.items),
             "store": receipt.store.name if receipt.store else None,
             "card_type": receipt.card_type,
             "masked_pan": receipt.masked_pan,
+        }
+
+
+# Latest purchase amounts: (the Receipt field to read). "total" is what was paid
+# (after discounts); "gross" is the price before discounts ("bruttosubtotal").
+RECEIPT_AMOUNT_SENSORS = {
+    "receipt_last_total": "total",
+    "receipt_last_gross": "gross",
+}
+
+
+class RemaReceiptAmountSensor(RemaEntity[RemaReceiptsCoordinator], SensorEntity):
+    """An amount from the newest digital receipt (paid, or before discounts)."""
+
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_native_unit_of_measurement = "DKK"
+    _attr_suggested_display_precision = 2
+
+    def __init__(
+        self, coordinator: RemaReceiptsCoordinator, entry: RemaConfigEntry, key: str
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, key)
+        self._field = RECEIPT_AMOUNT_SENSORS[key]
+
+    @property
+    def _latest(self) -> Receipt | None:
+        """The newest receipt, if any (the list is kept newest first)."""
+        data = self.coordinator.data
+        return data[0] if data else None
+
+    @property
+    def native_value(self) -> float | None:
+        """The amount from the newest receipt."""
+        receipt = self._latest
+        if receipt is None:
+            return None
+        return receipt.gross if self._field == "gross" else receipt.total
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """The newest purchase, broken down and dated."""
+        receipt = self._latest
+        if receipt is None:
+            return None
+        return {
+            "date": receipt.date.isoformat() if receipt.date else None,
+            "display_id": receipt.display_id,
+            "store": receipt.store.name if receipt.store else None,
+            "items": len(receipt.items),
+            "total": receipt.total,
+            "gross": receipt.gross,
+            "discount": receipt.total_discount,
         }

@@ -173,6 +173,12 @@
       },
       "latest_receipt": {
         "name": "Latest receipt"
+      },
+      "receipt_last_total": {
+        "name": "Latest purchase"
+      },
+      "receipt_last_gross": {
+        "name": "Latest purchase before discounts"
       }
     },
     "todo": {
@@ -385,6 +391,9 @@
     },
     "bad_since": {
       "message": "The 'since' date could not be read. Use e.g. 2026-01-01."
+    },
+    "receipt_not_found": {
+      "message": "The receipt was not found."
     }
   },
   "issues": {

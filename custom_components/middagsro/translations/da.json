@@ -173,6 +173,12 @@
       },
       "latest_receipt": {
         "name": "Seneste kvittering"
+      },
+      "receipt_last_total": {
+        "name": "Seneste køb"
+      },
+      "receipt_last_gross": {
+        "name": "Seneste køb uden rabat"
       }
     },
     "todo": {
@@ -385,6 +391,9 @@
     },
     "bad_since": {
       "message": "Datoen i 'siden' kunne ikke læses. Brug fx 2026-01-01."
+    },
+    "receipt_not_found": {
+      "message": "Kvitteringen blev ikke fundet."
     }
   },
   "issues": {

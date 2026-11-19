@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import logging
 from typing import Any
 
@@ -18,6 +18,7 @@ from homeassistant.helpers.typing import ConfigType
 from .api import Catalog, RemaAuthError, RemaClient, RemaError
 from .bilka import BILKA_ID
 from .bilka_cart import CONF_PICKUP
+from .budget import async_sync_receipts
 from .const import DOMAIN, STORAGE_VERSION
 from .coordinator import (
     RemaConfigEntry,
@@ -175,6 +176,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
         receipts=receipts,
     )
 
+    async def _async_book_receipts() -> None:
+        """Book new digital receipts into the food budget, if the family chose to."""
+        if receipts is None or receipts.data is None:
+            return
+        if not store.settings.get("book_receipts") or not store.settings.get("monthly_budget"):
+            return
+        raw_since = store.settings.get("book_receipts_since")
+        since: date | None = None
+        if raw_since:
+            try:
+                since = date.fromisoformat(str(raw_since)[:10])
+            except ValueError:
+                since = None
+        try:
+            added = await async_sync_receipts(store, receipts.data, since=since)
+        except HomeAssistantError as err:
+            _LOGGER.warning("Could not book receipts into the budget: %s", err)
+            return
+        if added:
+            planner._notify()  # the budget's sensors and the panel follow
+
+    if receipts is not None:
+
+        @callback
+        def _receipts_updated() -> None:
+            hass.async_create_task(_async_book_receipts())
+
+        entry.async_on_unload(receipts.async_add_listener(_receipts_updated))
+        await _async_book_receipts()
+
     @callback
     def _offers_updated() -> None:
         if offers.data:
@@ -216,6 +247,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> Non
     for name, version in (
         ("mealplans", STORE_VERSION),
         ("catalogs", STORAGE_VERSION),
+        ("receipts", STORAGE_VERSION),
         ("list", 1),
         ("bilka_transfers", 1),
         ("nemlig_transfers", 1),

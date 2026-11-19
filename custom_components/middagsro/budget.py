@@ -27,6 +27,7 @@ from .dishes import household_portions
 from .phone import async_tell
 
 if TYPE_CHECKING:
+    from .api import Receipt
     from .mealplan import MealPlanner
     from .storage import RemaPlanStore
 
@@ -128,6 +129,65 @@ async def async_add(store: RemaPlanStore, raw: Any) -> dict[str, Any]:
     del store.purchases[: max(0, len(store.purchases) - MAX_PURCHASES)]
     await store.async_save()
     return purchase
+
+
+RECEIPT_SOURCE = "rema_receipt"
+
+
+def receipt_purchase_id(receipt_id: str) -> str:
+    """The budget-purchase id for a digital receipt, so booking is idempotent."""
+    return f"rcpt_{receipt_id}"
+
+
+def _receipt_note(receipt: Receipt) -> str:
+    """A short note naming the store and how many items were on the receipt."""
+    store = receipt.store
+    name = store.name if store and store.name else ""
+    where = name if name and "rema" in name.lower() else f"REMA 1000 {name}".strip()
+    count = len(receipt.items)
+    note = f"{where} · {count} vare{'r' if count != 1 else ''}"
+    return note[:120]
+
+
+async def async_sync_receipts(
+    store: RemaPlanStore, receipts: list[Receipt], *, since: date | None = None
+) -> int:
+    """Book digital receipts as budget purchases, skipping ones already booked.
+
+    Each receipt keeps a stable purchase id, so running this again never
+    double-books. ``since`` leaves receipts older than that day untouched, so
+    turning the feature on does not rewrite the family's existing history.
+    Returns how many new purchases were booked.
+    """
+    existing = {p["id"] for p in store.purchases}
+    added = 0
+    for receipt in receipts:
+        if receipt.date is None or not receipt.total or receipt.total <= 0:
+            continue
+        day = receipt.date.date()
+        if since is not None and day < since:
+            continue
+        pid = receipt_purchase_id(receipt.id)
+        if pid in existing:
+            continue
+        store.purchases.append(
+            {
+                "id": pid,
+                "date": day.isoformat(),
+                "amount": round(float(receipt.total), 2),
+                "store": REMA_ID,
+                "note": _receipt_note(receipt),
+                "source": RECEIPT_SOURCE,
+                "created": dt_util.now().isoformat(timespec="seconds"),
+            }
+        )
+        existing.add(pid)
+        added += 1
+    if added:
+        store.purchases.sort(key=lambda p: (p["date"], p["created"]))
+        del store.purchases[: max(0, len(store.purchases) - MAX_PURCHASES)]
+        await store.async_save()
+    return added
 
 
 async def async_edit(store: RemaPlanStore, purchase_id: str, raw: Any) -> dict[str, Any]:

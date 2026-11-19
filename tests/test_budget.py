@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 from unittest.mock import patch
 
@@ -509,3 +509,60 @@ async def test_action_sensors_and_notification(
     await store.async_set_settings({**store.settings, "monthly_budget": 0})
     with pytest.raises(ServiceValidationError):
         await hass.services.async_call(DOMAIN, "register_purchase", {"amount": 10}, blocking=True)
+
+
+# ------------------------------------------------- booking digital receipts
+
+
+class _Store:
+    """The store block of a receipt, as async_sync_receipts reads it."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+class _Receipt:
+    """Just what async_sync_receipts needs of a receipt."""
+
+    def __init__(
+        self, rid: str, when: str, total: float | None, items: int = 1, store: str = "Kolding"
+    ) -> None:
+        self.id = rid
+        self.date = datetime.fromisoformat(when) if when else None
+        self.total = total
+        self.items = [object()] * items
+        self.store = _Store(store)
+
+
+async def test_sync_receipts_books_once_and_is_idempotent() -> None:
+    """Receipts become budget purchases, with no double-booking on a re-run."""
+    store = FakeStore()
+    receipts = [
+        _Receipt("aaa", "2026-10-13T15:21:13+00:00", 168.75, items=13),
+        _Receipt("bbb", "2026-10-14T09:00:00+00:00", 79.70, items=5),
+    ]
+    added = await bg.async_sync_receipts(store, receipts)
+    assert added == 2
+    assert {p["id"] for p in store.purchases} == {"rcpt_aaa", "rcpt_bbb"}
+    booked = next(p for p in store.purchases if p["id"] == "rcpt_aaa")
+    assert booked["amount"] == 168.75
+    assert booked["store"] == REMA_ID
+    assert booked["source"] == "rema_receipt"
+    assert "13 varer" in booked["note"]
+    # Running again books nothing new.
+    assert await bg.async_sync_receipts(store, receipts) == 0
+    assert len(store.purchases) == 2
+
+
+async def test_sync_receipts_honours_since_and_skips_empty() -> None:
+    """Receipts before `since`, or without a usable total/date, are left out."""
+    store = FakeStore()
+    receipts = [
+        _Receipt("old", "2026-09-30T10:00:00+00:00", 50.0),
+        _Receipt("new", "2026-10-05T10:00:00+00:00", 60.0),
+        _Receipt("free", "2026-10-06T10:00:00+00:00", 0.0),
+        _Receipt("undated", "", 70.0),
+    ]
+    added = await bg.async_sync_receipts(store, receipts, since=date(2026, 10, 1))
+    assert added == 1
+    assert [p["id"] for p in store.purchases] == ["rcpt_new"]

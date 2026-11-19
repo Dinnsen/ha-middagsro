@@ -2,6 +2,22 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.20.0b1] - 2026-11-19
+
+### Added
+- **Historik har nu tre faner: Indkøb, Madplaner og Varer** (kun REMA 1000).
+  - **Indkøb** viser dine kvitteringer. Tryk på en, og den vises som i REMA 1000-appen – butik, dato, varelinjer (med "2 á 2,95" og "Rabat per stk."), Total, Heraf moms, Bruttosubtotal, Rabat total og Bon ID.
+  - **Varer** samler alle købte varer på tværs af kvitteringer: antal købt i alt, hvor mange gange, laveste/højeste pris og seneste pris. Varer købt mere end 5 gange markeres med ★. Søgefelt og nøgletal øverst.
+- **Hele kvitteringshistorikken hentes og gemmes.** Kvitteringer trækkes inkrementelt (kun nye siden sidst) og gemmes lokalt, så varestatistik og Økonomi har alle køb – også efter genstart eller hvis Scan Selv-backend er nede.
+- **Nye sensorer for seneste køb:** *Seneste køb* (betalt pris, dvs. med rabat) og *Seneste køb uden rabat* (bruttosubtotal), begge med dato, butik, antal varer og rabat som attributter. *Seneste kvittering* (dato) viser nu også brutto og rabat.
+- **Kontér kvitteringer automatisk i Økonomi.** En ny indstilling under Madbudget bogfører hver REMA 1000-kvittering som et køb, så Apple Pay-genvejen kan droppes. Kun kvitteringer fra den dag, du slår det til, konteres – den hidtidige historik røres ikke. Idempotent, så intet dobbeltbogføres.
+
+### Fixed
+- **Butiksadresse på kvitteringer.** Adressen læses nu fra det indlejrede `address`-objekt, så postnr., by og vej udfyldes korrekt i stedet for en rå tekstklump.
+
+### Notes
+- Beta. Nye websocket-kommando `middagsro/receipt` (henter én fuld kvittering på forespørgsel) og felt `receipts` i panel-state.
+
 ## [2.19.2b1] - 2026-11-19
 
 ### Fixed
