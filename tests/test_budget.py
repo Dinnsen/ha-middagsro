@@ -358,6 +358,21 @@ def test_weekly_budget() -> None:
     assert data["week"]["budget"] == 1400
     assert data["month"]["budget"] == 6200  # October's 31 days of 200 kr.
 
+    # A weekly budget resets every week: last week's underspend does not carry in,
+    # and last week's overspend is not taken from this week either.
+    saver = FakeStore(
+        [buy("2026-10-05", 100)], budget_period="week", weekly_budget=1400, monthly_budget=6083
+    )
+    wk = bg.summary(saver, TODAY)["week"]
+    assert wk["carry"] == 0
+    assert wk["available"] == wk["budget"]
+    spender = FakeStore(
+        [buy("2026-10-05", 5000)], budget_period="week", weekly_budget=1400, monthly_budget=6083
+    )
+    wk = bg.summary(spender, TODAY)["week"]
+    assert wk["carry"] == 0
+    assert wk["available"] == wk["budget"]
+
 
 # ------------------------------------------------------------------ in Home Assistant
 
