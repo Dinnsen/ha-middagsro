@@ -2,6 +2,15 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [3.0.0b4] - 2026-11-19
+
+### Fixed
+- Profilmenuen (tryk på profilknappen) blev skåret af nederst bag siden, når toppen var lav. Nu ligger den altid over siden og lukker, når man ruller eller trykker et andet sted.
+- Udseende i mørk tilstand: farveprøverne viser de mørke farver, så ingen af dem forsvinder mod baggrunden.
+
+### Notes
+- Beta.
+
 ## [3.0.0b3] - 2026-11-19
 
 ### Added

@@ -1583,6 +1583,13 @@ class Rema1000Panel extends HTMLElement {
       prof: () => {
         const menu = this.shadowRoot.querySelector(".prof-menu");
         menu.hidden = !menu.hidden;
+        if (!menu.hidden) {
+          const r = el.getBoundingClientRect();
+          menu.style.top = `${Math.round(r.bottom + 8)}px`;
+          menu.style.right = `${Math.max(8, Math.round(window.innerWidth - r.right))}px`;
+          const close = () => { menu.hidden = true; el.setAttribute("aria-expanded", "false"); };
+          setTimeout(() => { window.addEventListener("scroll", close, { once: true, capture: true }); window.addEventListener("resize", close, { once: true }); }, 0);
+        }
         this.shadowRoot.querySelector(".prof").setAttribute("aria-expanded", String(!menu.hidden));
       },
       look: () => this._setLook(arg),
@@ -3969,12 +3976,7 @@ class Rema1000Panel extends HTMLElement {
           <span class="spacer"></span>
           <span id="timerchip" class="timer-chip" data-action="tab" data-arg="recipes"></span>
           <span id="busy"></span>
-          <span class="prof-wrap"><button class="prof" data-action="prof" aria-haspopup="menu" aria-expanded="false" aria-label="Profil og indstillinger"></button>
-            <span class="prof-menu" role="menu" hidden>
-              <button role="menuitem" data-action="settings-open" data-arg="">${TAB_ICONS.settings || ""}<span>Indstillinger</span></button>
-              <button role="menuitem" data-action="settings-open" data-arg="messages">${BELL_ICON}<span>Beskeder</span></button>
-              <button role="menuitem" data-action="settings-open" data-arg="look">${SETTING_ICONS.look}<span>Udseende</span></button>
-            </span></span>
+          <span class="prof-wrap"><button class="prof" data-action="prof" aria-haspopup="menu" aria-expanded="false" aria-label="Profil og indstillinger"></button></span>
         </div>
         <div id="hdr-body"></div>
         <nav class="tabs" aria-label="Middagsro"></nav>
@@ -3983,6 +3985,11 @@ class Rema1000Panel extends HTMLElement {
         <div class="more-sheet" hidden></div>
         <main id="content"></main>
         <div id="modal"></div>
+        <div class="v3 prof-host prof-wrap"><span class="prof-menu" role="menu" hidden>
+              <button role="menuitem" data-action="settings-open" data-arg="">${TAB_ICONS.settings || ""}<span>Indstillinger</span></button>
+              <button role="menuitem" data-action="settings-open" data-arg="messages">${BELL_ICON}<span>Beskeder</span></button>
+              <button role="menuitem" data-action="settings-open" data-arg="look">${SETTING_ICONS.look}<span>Udseende</span></button>
+            </span></div>
         <div id="toast" role="status" aria-live="polite"></div>`;
     }
     this._renderNavigation();
@@ -9053,7 +9060,9 @@ Object.assign(V3_METHODS, {
     const ha = getComputedStyle(document.documentElement);
     const v = (name, fallback) => (ha.getPropertyValue(name) || "").trim() || fallback;
     const studio = [v("--primary-color", "#03a9f4"), v("--primary-background-color", "#fafafa"), v("--primary-text-color", "#212121")];
-    const sw = { studio, frisk: ["#1664FF", "#EEF1F7", "#0B2147"], hverdag: ["#6E4AFF", "#F1EEFB", "#1B1530"] };
+    const sw = this.hasAttribute("dark")
+      ? { studio, frisk: ["#5B93FF", "#0B1220", "#EAF0FB"], hverdag: ["#9B83FF", "#0F0E19", "#F1EFFA"] }
+      : { studio, frisk: ["#1664FF", "#EEF1F7", "#0B2147"], hverdag: ["#6E4AFF", "#F1EEFB", "#1B1530"] };
     return `<div class="v3"><h2 class="flush">Udseende</h2>
       <p class="sub">Gemmes for dig på denne konto. Mørk eller lys følger Home Assistant.</p>
       <div class="looks-big">${this._looks().map((k) => `<button class="lookcard${this._look() === k ? " on" : ""}" data-action="look" data-arg="${k}" aria-pressed="${this._look() === k}">
@@ -10036,6 +10045,10 @@ const V3_STYLE = `
   :host([look="frisk"]) main, :host([look="frisk"]) { background: var(--primary-background-color); }
   .v3 .lookcard { font: inherit; color: inherit; text-align: left; }
   .v3 .lookcard b { font-size: 15px; }
+  /* The profile menu sits outside the header, so nothing clips it. */
+  .prof-host { position: static; }
+  .prof-host .prof-menu { position: fixed; top: 64px; right: 12px; z-index: 60; color: var(--primary-text-color); text-shadow: none; }
+  .v3 .lookcard .sw i { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary-text-color) 18%, transparent); }
 
 `;
 const STYLE = STYLE_BASE + V3_STYLE;
