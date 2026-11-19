@@ -2,6 +2,11 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [2.19.1] - 2026-11-19
+
+### Fixed
+- **Receipts request:** always send the required `since` filter (ISO-8601 with ms, defaulting to far back for all receipts) and use the app's own request headers, so the backend no longer answers 400 "Malformed request". The Scan Selv token itself is accepted.
+
 ## [2.19.0] - 2026-11-19
 
 ### Added
