@@ -118,6 +118,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> bool
     receipts: RemaReceiptsCoordinator | None = None
     if store_id == REMA:
         receipts = RemaReceiptsCoordinator(hass, entry, client)
+        await receipts.async_load_logins()
         await receipts.async_refresh()
 
     def catalogs() -> tuple[Catalog | None, Catalog | None]:
@@ -248,6 +249,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: RemaConfigEntry) -> Non
         ("mealplans", STORE_VERSION),
         ("catalogs", STORAGE_VERSION),
         ("receipts", STORAGE_VERSION),
+        ("receipt_logins", STORAGE_VERSION),
         ("list", 1),
         ("bilka_transfers", 1),
         ("nemlig_transfers", 1),

@@ -190,6 +190,17 @@ async def async_sync_receipts(
     return added
 
 
+async def async_unbook_receipts(store: RemaPlanStore, receipt_ids: list[str]) -> int:
+    """Remove budget purchases booked from the given receipts. Returns how many."""
+    drop = {receipt_purchase_id(rid) for rid in receipt_ids}
+    kept = [p for p in store.purchases if p["id"] not in drop]
+    removed = len(store.purchases) - len(kept)
+    if removed:
+        store.purchases = kept
+        await store.async_save()
+    return removed
+
+
 async def async_edit(store: RemaPlanStore, purchase_id: str, raw: Any) -> dict[str, Any]:
     """Change a purchase (amount, date, shop or note)."""
     old = next((p for p in store.purchases if p["id"] == purchase_id), None)

@@ -20,6 +20,7 @@ from .budget import (
     async_book as async_budget_book,
     async_delete as async_purchase_delete,
     async_edit as async_purchase_edit,
+    async_unbook_receipts,
     summary as budget_summary,
 )
 from .candidates import SORTS as CANDIDATE_SORTS, async_candidates
@@ -163,6 +164,8 @@ def _receipts_payload(coordinator: Any) -> dict[str, Any]:
         "list": [receipt_summary(receipt) for receipt in receipts],
         "items": coordinator.items,
         "overview": coordinator.overview,
+        "logins": coordinator.logins_public(),
+        "max_logins": coordinator.MAX_EXTRA_LOGINS,
         "count": len(receipts),
     }
 
@@ -425,6 +428,56 @@ async def ws_receipt(
     if receipt is None:
         raise ServiceValidationError(translation_domain=DOMAIN, translation_key="receipt_not_found")
     connection.send_result(msg["id"], receipt.as_dict())
+
+
+def _no_receipts() -> ServiceValidationError:
+    return ServiceValidationError(translation_domain=DOMAIN, translation_key="receipts_rema_only")
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/receipt_login/add",
+        ENTRY: str,
+        vol.Required("email"): str,
+        vol.Required("password"): str,
+        vol.Optional("label", default=""): str,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_receipt_login_add(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Add an extra REMA login used only to pull its receipts into the budget."""
+    coordinator = _entry(hass, msg).runtime_data.receipts
+    if coordinator is None:
+        raise _no_receipts()
+    await coordinator.async_add_login(msg["email"], msg["password"], msg["label"])
+    connection.send_result(msg["id"], {"logins": coordinator.logins_public()})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "middagsro/receipt_login/remove",
+        ENTRY: str,
+        vol.Required("login_id"): str,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_receipt_login_remove(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Remove an extra receipt login, its receipts and anything it booked."""
+    entry = _entry(hass, msg)
+    coordinator = entry.runtime_data.receipts
+    if coordinator is None:
+        raise _no_receipts()
+    removed = await coordinator.async_remove_login(msg["login_id"])
+    if removed:
+        await async_unbook_receipts(entry.runtime_data.store, removed)
+        entry.runtime_data.planner._notify()
+    connection.send_result(msg["id"], {"logins": coordinator.logins_public()})
 
 
 @websocket_api.websocket_command(
@@ -2106,6 +2159,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_notice_seen,
         ws_plan,
         ws_receipt,
+        ws_receipt_login_add,
+        ws_receipt_login_remove,
         ws_settings,
         ws_store_switch,
         ws_store_ask,

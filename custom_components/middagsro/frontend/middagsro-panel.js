@@ -362,6 +362,7 @@ class Rema1000Panel extends HTMLElement {
     this._sites = { query: "", results: [], loading: false, error: null, searched: false, opening: null };
     this._budgetSpan = "month";
     this._spendSpan = "month"; // the REMA-spend overview: "week" / "month" / "year"
+    this._rl = { email: "", password: "", label: "" }; // add-an-extra-receipt-login form
     // The Historik page: which sub-tab, and the receipt opened in the detail view.
     this._histSub = "indkob"; // "indkob" (receipts), "plans" (meal plans), "varer" (items)
     this._receiptId = null; // the receipt being opened / shown (null = the list)
@@ -1097,6 +1098,22 @@ class Rema1000Panel extends HTMLElement {
       "spend-span": () => {
         this._spendSpan = arg;
         this._render();
+      },
+      "rl-add": () =>
+        this._run(async () => {
+          await this._ws("middagsro/receipt_login/add", {
+            email: this._rl.email.trim(),
+            password: this._rl.password,
+            label: this._rl.label.trim(),
+          });
+          this._rl = { email: "", password: "", label: "" };
+        }, "Kontoen er tilføjet – kvitteringerne hentes nu."),
+      "rl-remove": () => {
+        if (!confirm("Fjern denne konto og dens kvitteringer fra Økonomi?")) return;
+        this._run(
+          () => this._ws("middagsro/receipt_login/remove", { login_id: arg }),
+          "Kontoen og dens kvitteringer er fjernet."
+        );
       },
       "hist-sub": () => {
         this._histSub = arg;
@@ -2127,6 +2144,10 @@ class Rema1000Panel extends HTMLElement {
     if (ds.bind === "itemfilter") {
       this._itemFilter = el.value;
       this._soon("itemfilter", () => this._render());
+      return;
+    }
+    if (ds.bind === "rl") {
+      this._rl[ds.field] = el.value;
       return;
     }
     if (ds.bind === "rrquery") {
@@ -5619,6 +5640,35 @@ class Rema1000Panel extends HTMLElement {
       ${this._spendOverview()}`;
   }
 
+  _receiptLoginsSettings() {
+    const r = this._state.receipts || {};
+    const logins = r.logins || [];
+    const max = r.max_logins || 4;
+    const d = this._rl;
+    const full = logins.length >= max;
+    const rows = logins
+      .map(
+        (l) => `<div class="row between wrap rowitem">
+          <div><b>${esc(l.label || l.email)}</b><span class="muted small"> · ${esc(l.email)}${l.count ? ` · ${l.count} kvitteringer` : ""}</span></div>
+          <button class="btn small danger" data-action="rl-remove" data-arg="${esc(l.id)}" ${this._busy ? "disabled" : ""}>Fjern</button>
+        </div>`
+      )
+      .join("");
+    return `<h3>Flere REMA-konti til kvitteringer</h3>
+      <p class="muted small">Tilføj husstandens andre REMA 1000-logins (op til ${max} ekstra). Deres kvitteringer hentes også og konteres i Økonomi, så alle jeres REMA-køb tæller med. Bruges kun til kvitteringer – ikke indkøbslister, favoritter eller madplaner.</p>
+      ${rows ? `<div class="rl-list">${rows}</div>` : ""}
+      ${
+        full
+          ? `<p class="muted small">Grænsen på ${max} ekstra konti er nået.</p>`
+          : `<div class="row wrap rl-form">
+          <input class="grow" type="email" autocomplete="off" data-bind="rl" data-field="email" value="${esc(d.email)}" placeholder="E-mail">
+          <input class="grow" type="password" autocomplete="new-password" data-bind="rl" data-field="password" value="${esc(d.password)}" placeholder="Adgangskode">
+          <input class="grow" type="text" data-bind="rl" data-field="label" value="${esc(d.label)}" placeholder="Navn (fx Katrine)">
+          <button class="btn primary" data-action="rl-add" ${this._busy ? "disabled" : ""}>${this._busy ? '<span class="spinner small"></span>' : "Tilføj konto"}</button>
+        </div>`
+      }`;
+  }
+
   _spendLabel(span, key) {
     if (span === "week") return `u.${Number(key.slice(6))}`;
     if (span === "year") return key;
@@ -6261,6 +6311,7 @@ class Rema1000Panel extends HTMLElement {
         <h3>Kontér automatisk</h3>
         ${this._isRema() ? `<label class="check"><input type="checkbox" data-path="book_receipts" ${f.book_receipts ? "checked" : ""}> Kontér mine REMA 1000-kvitteringer automatisk</label>
         <p class="muted small">Hver digital kvittering fra REMA 1000 bogføres som et køb i Økonomi – også hele din hidtidige historik – så du kan droppe Apple Pay-genvejen (den er der stadig til køb uden for REMA). ${f.book_receipts && f.book_receipts_since ? `Konterer fra ${esc(longDate(f.book_receipts_since))}.` : "Dækker hele historikken."}${f.monthly_budget ? "" : " <b>Sæt et madbudget ovenfor først.</b>"}</p>` : ""}
+        ${this._isRema() ? this._receiptLoginsSettings() : ""}
         <p class="muted small">Handlingen <b>middagsro.register_purchase</b> konterer et køb (beløb og butik) og svarer med, hvad der er tilbage af ugen. Betaler I med Apple Pay, kan en automatisering i Genveje-appen (Personlig › Transaktion › Wallet, butikker: REMA 1000, Netto …) kalde den med <i>Beløb</i> og <i>Forhandler</i> via Home Assistant-appens "Udfør handling" – så konteres købet af sig selv, når I betaler. Med Siri kan en genvej spørge om beløbet og kalde den samme handling.</p>`),
       messages: () => {
         f.messages ||= {};
@@ -6965,6 +7016,9 @@ const STYLE = `
   .spend-chart .axis { fill: var(--secondary-text-color); font-size: 9px; }
   @keyframes spendGrow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
   @media (max-width: 560px) { .spend-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .rl-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+  .rl-list .rowitem { padding: 8px 0; border-bottom: 1px solid var(--divider-color); }
+  .rl-form { margin-top: 6px; }
   /* Varer – the bought-items list */
   .item-row .item-stats { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
   .item-row .count { font-weight: 700; }
