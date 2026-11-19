@@ -60,6 +60,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "weekly_budget": 0,
     "budget_notify": False,  # tell when 80 % of the week is used (to watch_notify's target)
     "budget_since": None,  # the day the monthly budget was first set (kept by the store)
+    # Book the account's digital receipts into the food budget automatically, so
+    # the family can drop a manual "register purchase" shortcut. Only receipts from
+    # book_receipts_since onward are booked, so turning it on leaves older history be.
+    "book_receipts": False,
+    "book_receipts_since": None,
     "organic": "prefer",
     "organic_max_extra_pct": 20,
     "avoid": [],
@@ -228,6 +233,15 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
         )
     except ValueError:
         settings["budget_since"] = None
+    settings["book_receipts"] = bool(settings["book_receipts"])
+    try:
+        settings["book_receipts_since"] = (
+            date.fromisoformat(str(settings["book_receipts_since"])[:10]).isoformat()
+            if settings["book_receipts_since"]
+            else None
+        )
+    except ValueError:
+        settings["book_receipts_since"] = None
     settings["organic_max_extra_pct"] = _clamp(settings["organic_max_extra_pct"], 0, 500, 20)
     settings["min_vegetarian"] = _clamp(settings["min_vegetarian"], 0, 14, 0)
     settings["max_vegetarian"] = _clamp(settings["max_vegetarian"], 0, 14, 1)
@@ -596,6 +610,8 @@ class RemaPlanStore:
         """
         before = self.settings.get("monthly_budget")
         since = self.settings.get("budget_since")
+        booked_before = self.settings.get("book_receipts")
+        book_since = self.settings.get("book_receipts_since")
         old = {key: self.settings.get(key) for key in PLAN_SETTINGS}
         self.settings = clean_settings(raw)
         self._adopt_dislikes()
@@ -604,6 +620,13 @@ class RemaPlanStore:
         if self.settings["monthly_budget"] and not before:
             since = dt_util.now().date().isoformat()
         self.settings["budget_since"] = since if self.settings["monthly_budget"] else None
+        # Remember the day receipt booking was turned on, so only receipts from
+        # then on are booked (the family's older history is left as it is).
+        if self.settings["book_receipts"] and not booked_before:
+            book_since = dt_util.now().date().isoformat()
+        self.settings["book_receipts_since"] = (
+            book_since if self.settings["book_receipts"] else None
+        )
         await self.async_save()
         return self.settings
 

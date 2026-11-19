@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -34,6 +34,7 @@ from .const import (
     RECEIPTS_SCAN_INTERVAL,
     STORAGE_VERSION,
 )
+from .receipts import aggregate_items
 from .store_client import BilkaStoreClient
 
 if TYPE_CHECKING:
@@ -299,13 +300,17 @@ class RemaReceiptsCoordinator(DataUpdateCoordinator[list[Receipt]]):
     Only for REMA 1000 accounts. Receipts come from the Scan Selv backend, a
     different host than the webshop API; if it refuses the token or is down the
     coordinator fails soft so the rest of the integration keeps working.
+
+    The whole history is kept (persisted to disk) so the item statistics and
+    the budget booking have every purchase, not just the newest. Each poll only
+    asks for receipts since the newest one it already has, with a little
+    overlap, so the fetch stays small.
     """
 
     config_entry: RemaConfigEntry
 
-    # The newest receipts are enough for a sensor and the action; the whole
-    # history is not pulled on every poll.
-    KEEP = 50
+    # The history is bounded so a very old account cannot grow without limit.
+    MAX_KEEP = 2000
 
     def __init__(self, hass: HomeAssistant, entry: RemaConfigEntry, client: RemaClient) -> None:
         """Initialize the coordinator."""
@@ -317,11 +322,55 @@ class RemaReceiptsCoordinator(DataUpdateCoordinator[list[Receipt]]):
             update_interval=RECEIPTS_SCAN_INTERVAL,
         )
         self.client = client
+        self._store: Store[dict[str, Any]] = Store(
+            hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.receipts"
+        )
+        self._loaded = False
+        self._cache: list[Receipt] = []
+        # Per-item statistics across the whole history (the "Varer" tab).
+        self.items: list[dict[str, Any]] = []
+
+    async def _load_stored(self) -> list[Receipt]:
+        """Read the persisted receipts, if any."""
+        try:
+            raw = await self._store.async_load() or {}
+        except HomeAssistantError as err:  # a damaged file: start over
+            _LOGGER.warning("Could not read the stored receipts: %s", err)
+            raw = {}
+        out: list[Receipt] = []
+        for stored in raw.get("receipts") or []:
+            try:
+                out.append(Receipt.from_dict(stored))
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    @staticmethod
+    def _merge(old: list[Receipt], fresh: list[Receipt]) -> list[Receipt]:
+        """Combine known and newly fetched receipts, newest first (fresh wins)."""
+        by_id: dict[str, Receipt] = {r.id: r for r in old}
+        for receipt in fresh:
+            by_id[receipt.id] = receipt
+        return sorted(
+            by_id.values(),
+            key=lambda r: r.date or datetime.min.replace(tzinfo=UTC),
+            reverse=True,
+        )
+
+    def _recompute(self, receipts: list[Receipt]) -> None:
+        """Refresh the per-item statistics."""
+        self.items = aggregate_items(receipts)
 
     async def _async_update_data(self) -> list[Receipt]:
-        """Fetch the newest receipts."""
+        """Fetch receipts since the newest known one, merge, persist."""
+        if not self._loaded:
+            self._cache = await self._load_stored()
+            self._loaded = True
+        stored = self._cache
+        newest = max((r.date for r in stored if r.date), default=None)
+        since = newest - timedelta(days=2) if newest else None
         try:
-            return await self.client.async_get_receipts(limit=self.KEEP)
+            fresh = await self.client.async_get_receipts(since=since)
         except RemaAuthError as err:
             raise ConfigEntryAuthFailed(
                 translation_domain=DOMAIN,
@@ -329,8 +378,22 @@ class RemaReceiptsCoordinator(DataUpdateCoordinator[list[Receipt]]):
                 translation_placeholders={"email": self.config_entry.data[CONF_EMAIL]},
             ) from err
         except RemaError as err:
+            if stored:
+                # The backend is down, but keep showing the known history.
+                _LOGGER.debug("Keeping stored receipts after a fetch error: %s", err)
+                self._recompute(stored)
+                return stored
             raise UpdateFailed(
                 translation_domain=DOMAIN,
                 translation_key="update_failed",
                 translation_placeholders={"error": str(err)},
             ) from err
+        merged = self._merge(stored, fresh)[: self.MAX_KEEP]
+        if merged != stored:
+            self._cache = merged
+            try:
+                await self._store.async_save({"receipts": [r.as_dict() for r in merged]})
+            except HomeAssistantError as err:
+                _LOGGER.warning("Could not save the receipts: %s", err)
+        self._recompute(merged)
+        return merged
