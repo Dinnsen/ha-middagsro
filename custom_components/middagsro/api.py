@@ -58,6 +58,7 @@ AUTHORIZE_URL = "https://api.digital.rema1000.dk/api/oauth2/authorize"
 TOKEN_NEW_URL = "https://apim-rema-scan-prod.azure-api.net/v1/token/new"
 TOKEN_RENEW_URL = "https://apim-rema-scan-prod.azure-api.net/v1/token/renew"
 RECEIPTS_URL = "https://apim-rema-scan-prod.azure-api.net/v1/user/receipts"
+RECEIPTS_SINCE_DEFAULT = datetime(2000, 1, 1, tzinfo=UTC)  # "all receipts"
 
 TJEK_DEFAULT_BASE = "https://squid-api.tjek.com"
 TJEK_DEALER_ID = "11deC"  # REMA 1000 Danmark on Tjek / eTilbudsavis
@@ -1208,19 +1209,20 @@ class RemaClient:
         self, since: datetime | None, limit: int | None, *, retry: bool
     ) -> list[Receipt]:
         """GET the receipts with the Scan Selv token; renew once on a 401."""
-        params: dict[str, Any] = {}
-        if since is not None:
-            params["since"] = since.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        # The backend requires the ``since`` filter (ISO-8601 with ms, as the
+        # app sends it); default to far back for "all receipts".
+        start = since or RECEIPTS_SINCE_DEFAULT
+        params = {"since": start.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")}
         headers = {
-            **BASE_HEADERS,
-            "Authorization": f"Bearer {self._scan_token}",
             "Accept": "application/json",
+            "Authorization": f"Bearer {self._scan_token}",
             "X-App-Platform": "android",
             "X-App-Version": "1.8.15",
+            "X-App-Language": "da",
         }
         try:
             async with self._session.get(
-                RECEIPTS_URL, params=params or None, headers=headers, timeout=REQUEST_TIMEOUT
+                RECEIPTS_URL, params=params, headers=headers, timeout=REQUEST_TIMEOUT
             ) as resp:
                 text = await resp.text()
                 if resp.status == 401 and retry:
