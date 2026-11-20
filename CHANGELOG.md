@@ -2,6 +2,17 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [3.1.0b1] - 2026-11-20
+
+### Added
+- **Hurtig-knappen (+)** nederst til højre på alle sider, som i Hverdagsro. Den folder to handlinger ud:
+  - **Kontér beløb:** viser, hvad der er tilbage i ugen, åbner med tastaturet klar, har +50/+100/+250/+500 og konterer med Enter eller ét tryk.
+  - **Tilføj vare:** søger i REMA's varer, mens du skriver, og har jeres ofte købte varer som genveje. Arket bliver åbent med feltet klar, så flere varer kan tilføjes i træk, og "Tilføjet nu" viser, hvad der er sat på listen.
+- Mens arket er åbent, vises bekræftelsen øverst, så den ikke dækker det, du trykker på.
+
+### Notes
+- Beta.
+
 ## [3.0.0] - 2026-11-19
 
 Middagsro 3 – et helt nyt panel. Denne udgave samler betaerne 2.20.0b1–3.0.0b4; detaljerne står under hver beta nedenfor.
