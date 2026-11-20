@@ -4064,7 +4064,6 @@ class Rema1000Panel extends HTMLElement {
     const node = this.shadowRoot.querySelector("#modal");
     if (!node) return;
     queueMicrotask(() => this._v3FabRender());
-    this.toggleAttribute("qa-open", this._modal?.kind === "v3-qa");
     if (this._modal?.kind === "navigation") { node.innerHTML = this._navigationModal(); return; }
     if (this._modal?.kind === "inventory-consume") {
       const m = this._modal;
@@ -4097,11 +4096,6 @@ class Rema1000Panel extends HTMLElement {
     }
     if (this._modal?.kind === "v3-bon") {
       node.innerHTML = this._v3BonModal(this._modal);
-      return;
-    }
-    if (this._modal?.kind === "v3-qa") {
-      node.innerHTML = this._v3QaModal(this._modal);
-      this._v3Pics(node);
       return;
     }
     if (this._modal?.kind === "v3-xfer") {
@@ -8556,6 +8550,7 @@ Object.assign(V3_METHODS, {
     this._v3BindDial();
     this._v3BindDrag();
     this._v3FabRender();
+    if (!this._v3QkKeys) { this._v3QkKeys = (ev) => this._v3QkHotkey(ev); window.addEventListener("keydown", this._v3QkKeys); }
     root.querySelectorAll("#content [data-count]").forEach((el) => {
       if (el.closest(".still")) return;
       const to = Number(el.dataset.count);
@@ -8566,11 +8561,9 @@ Object.assign(V3_METHODS, {
     if (!this._v3Keys) {
       this._v3Keys = true;
       root.addEventListener("keydown", (ev) => {
-        if (ev.key === "Escape" && this._v3FabOpen) { this._v3FabOpen = false; this._v3FabRender(); return; }
         if (ev.key !== "Enter") return;
         const el = ev.target;
-        if (el?.dataset?.v3book === "qa") { ev.preventDefault(); this._v3QaBook(); }
-        else if (el?.dataset?.v3book) { ev.preventDefault(); this._v3Book(el.dataset.v3book); }
+        if (el?.dataset?.v3book) { ev.preventDefault(); this._v3Book(el.dataset.v3book); }
         else if (el?.dataset?.bind === "v3q") { ev.preventDefault(); this._v3QuickAdd(el); }
       });
     }
@@ -8592,7 +8585,6 @@ Object.assign(V3_METHODS, {
     this._v3Fly(from, V3.clean(p.name).split(" ")[0]);
     s.q = ""; s.hits = []; s.hitsQ = "";
     this._addToRemaList(p.id, p.name);
-    this._v3QaAdded(p.name);
   },
 
   _v3QuickText(from) {
@@ -8602,7 +8594,6 @@ Object.assign(V3_METHODS, {
     this._v3Fly(from, name.split(" ")[0]);
     s.q = ""; s.hits = []; s.hitsQ = "";
     this._editPlan(() => this._ws("middagsro/plan/add", { plan_id: this._plan.id, name, part: "main" }), `${name} er tilføjet til indkøbslisten.`);
-    this._v3QaAdded(name);
   },
 
   /* ------------------------------------------------------------------ events */
@@ -8624,17 +8615,16 @@ Object.assign(V3_METHODS, {
       },
       "v3-hw": () => { s.hw = Number(arg) || 0; this._render(); },
       "v3-book": () => this._v3Book(arg),
-      "v3-fab": () => { this._v3FabOpen = !this._v3FabOpen; this._v3FabRender(); },
-      "v3-fab-close": () => { this._v3FabOpen = false; this._v3FabRender(); },
-      "v3-qa": () => this._v3QaOpen(arg),
-      "modal-close": () => {
-        if (this._modal?.kind === "v3-qa") { s.q = ""; s.hits = []; s.hitsQ = ""; requestAnimationFrame(() => { const i = this.shadowRoot.querySelector('#content [data-bind="v3q"]'); if (i) i.value = ""; this._v3RenderQuick(); }); }
-        return false;
-      },
-      "v3-qa-book": () => this._v3QaBook(),
+      "v3-fab": () => this._v3QkOpen(),
+      "v3-fab-close": () => this._v3QkClose(),
+      "v3-qk-go": () => this._v3QkGo(),
+      "v3-qk-pick": () => this._v3QkPick(Number(arg)),
+      "v3-qk-text": () => this._v3QkText(),
+      "v3-qk-often": () => this._v3QkOften(Number(arg), el),
+      "v3-qk-fill": () => this._v3QkFill(arg),
       "v3-add": () => {
         s.amt = V3.fmt(this._v3Amount(s.amt) + Number(arg), 0).replace(/\./g, "");
-        const input = el.closest(".glass, .kbook, .qa-sheet")?.querySelector("[data-v3book]");
+        const input = el.closest(".glass, .kbook")?.querySelector("[data-v3book]");
         if (input) { input.value = s.amt; input.focus(); }
       },
       "v3-week": () => { s.week = Number(arg); s.day = null; this._render(); },
@@ -8648,7 +8638,7 @@ Object.assign(V3_METHODS, {
       "v3-qtext": () => this._v3QuickText(el),
       "v3-qfill": () => {
         s.q = arg;
-        const input = this.shadowRoot.querySelector('#modal [data-bind="v3q"]') || this.shadowRoot.querySelector('[data-bind="v3q"]');
+        const input = this.shadowRoot.querySelector('[data-bind="v3q"]');
         if (input) { input.value = arg; input.focus(); }
         this._v3Search();
       },
@@ -8664,6 +8654,7 @@ Object.assign(V3_METHODS, {
   _v3Input(el, ev) {
     const ds = el.dataset;
     const s = this._v3s();
+    if (ds.bind === "v3qk") { if (ev.type === "input") this._v3QkInput(el); return true; }
     if (ds.bind === "v3amt") { s.amt = el.value; return true; }
     if (ds.bind === "v3q") {
       if (ev.type !== "input") return true;
@@ -9090,108 +9081,297 @@ Object.assign(V3_METHODS, {
   },
 });
 
-/* Hurtig: the + button, as in Hverdagsro. Two actions – book an amount and add to the REMA list – each a sheet
-   with the keyboard already up. */
+/* Hurtig: one tap on + turns the button into a search bar with the keyboard up. One field does both:
+   a number books an amount on the week's budget, anything else finds the item and puts it on the REMA list.
+   The things you buy most are one tap away. */
 Object.assign(V3.ICON, {
   wallet: '<path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18v3"/><path d="M4 7.5v10A2.5 2.5 0 0 0 6.5 20H20V8H6.5A2.5 2.5 0 0 1 4 5.5"/><circle cx="16" cy="14" r="1.3" fill="currentColor" stroke="none"/>',
-  cartplus: '<path d="M6 7h14l-1.6 8.2a2 2 0 0 1-2 1.6H9.4a2 2 0 0 1-2-1.6L5.5 4H3"/><path d="M13 9.5v4M11 11.5h4"/><circle cx="10" cy="20" r="1.2"/><circle cx="17" cy="20" r="1.2"/>',
+  bolt: '<path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/>',
+  enter: '<path d="M20 5v6a3 3 0 0 1-3 3H6"/><path d="m10 10-4 4 4 4"/>',
 });
+const V3_QK_AMOUNT = /^\s*(\d{1,6}(?:[.,]\d{1,2})?)\s*(?:kr\.?|,-)?\s*$/i;
+
 Object.assign(V3_METHODS, {
-  _v3QaInfo() {
-    const b = this._state?.budget;
-    let book = "Skriv et køb ind i madbudgettet";
-    if (b) {
-      const m = this._v3WeekModel(this._v3WeekIndex(true));
-      const left = m.budget - m.spent;
-      book = left >= 0 ? `${V3.krd(left)} tilbage i uge ${m.wk}` : `${V3.krd(-left)} over i uge ${m.wk}`;
-    }
-    const onList = (this._state?.rema_list?.items || []).filter((i) => !i.bought).length;
-    return { book, add: `${this._listName()} · ${onList} ${onList === 1 ? "vare" : "varer"}` };
+  _v3Qk() {
+    const s = this._v3s();
+    if (!s.qk) s.qk = { open: false, q: "", hits: [], hitsQ: "", searching: false, sel: 0, added: [], often: null, flash: 0 };
+    return s.qk;
   },
 
+  // What the field means right now: an amount, an item (with an optional count: "2 mælk", "mælk x2") or nothing.
+  _v3QkParse(raw) {
+    const q = String(raw || "").trim();
+    if (!q) return { kind: "none" };
+    const m = q.match(V3_QK_AMOUNT);
+    if (m && this._state?.budget) return { kind: "amount", amount: this._v3Amount(m[1]) };
+    let qty = 1, name = q;
+    const a = q.match(/^(\d{1,2})\s*(?:x|×|stk\.?)?\s+(.+)$/i) || null;
+    const b = !a && q.match(/^(.+?)\s+(?:x|×)?\s*(\d{1,2})(?:\s*stk\.?)?$/i);
+    if (a) { qty = Number(a[1]); name = a[2]; } else if (b) { qty = Number(b[2]); name = b[1]; }
+    return { kind: "item", qty: Math.max(1, Math.min(qty, 20)), name: name.trim() };
+  },
+
+  // The closed state: just the + button (hidden where it would be in the way).
   _v3FabRender() {
     const el = this.shadowRoot.querySelector("#v3-fab");
     if (!el) return;
-    const hide = !this._state || this.hasAttribute("embed") || this._moreOpen || !!this._modal;
-    if (hide) this._v3FabOpen = false;
+    const k = this._v3Qk();
+    const hide = !this._state || this.hasAttribute("embed") || (!!this._modal && !k.open);
     el.hidden = hide;
-    if (hide) return;
-    const info = this._v3QaInfo();
-    const items = [
-      ["add", "Tilføj vare", info.add, "cartplus", "var(--rema-accent, #1664FF)"],
-      ["book", "Kontér beløb", info.book, "wallet", "#0E9F6E"],
-    ];
-    const sig = JSON.stringify([items, !!this._v3FabOpen]);
-    if (sig === el.dataset.sig) return;
-    el.dataset.sig = sig;
-    el.classList.toggle("open", !!this._v3FabOpen);
-    el.innerHTML = `<div class="fab-scrim" data-action="v3-fab-close"></div>
-      <div class="fab-list" role="menu" aria-hidden="${!this._v3FabOpen}">${items.map(([k, t, sub, icon, c], i) => `<button class="fi" role="menuitem" data-action="v3-qa" data-arg="${k}" style="--qc:${c};--d:${(items.length - 1 - i) * 45}ms" tabindex="${this._v3FabOpen ? 0 : -1}"><span class="fl"><b>${esc(t)}</b><small>${esc(sub)}</small></span><span class="qa-ic">${V3.ic(icon, 25)}</span></button>`).join("")}</div>
-      <button class="fab-btn" data-action="v3-fab" aria-expanded="${!!this._v3FabOpen}" aria-label="Hurtig: kontér et beløb eller tilføj en vare">${V3.ic("plus", 30)}</button>`;
+    if (hide || k.open) return;
+    if (el.dataset.built === "fab") return;
+    el.dataset.built = "fab";
+    el.classList.remove("open");
+    el.innerHTML = `<button class="fab-btn" data-action="v3-fab" aria-label="Hurtig: tilføj en vare eller kontér et beløb (/)">${V3.ic("plus", 30)}</button>`;
   },
 
-  _v3QaOpen(mode) {
-    this._v3FabOpen = false;
-    this._modal = { kind: "v3-qa", mode: mode === "book" ? "book" : "add", added: [] };
-    const s = this._v3s();
-    s.q = ""; s.hits = []; s.hitsQ = "";
-    this._renderModal();
-    this._v3FabRender();
-    this._v3QaFocus();
+  _v3QkOpen() {
+    const el = this.shadowRoot.querySelector("#v3-fab");
+    if (!el) return;
+    const k = this._v3Qk();
+    Object.assign(k, { open: true, q: "", hits: [], hitsQ: "", sel: 0, added: [] });
+    el.dataset.built = "bar";
+    el.classList.add("open");
+    el.innerHTML = `<div class="qk-scrim" data-action="v3-fab-close"></div>
+      <div class="qk" role="dialog" aria-modal="true" aria-label="Hurtig">
+        <div class="qk-card" aria-live="polite"></div>
+        <div class="qk-bar"><span class="qk-lead">${V3.ic("bolt", 22)}</span>
+          <input data-bind="v3qk" placeholder="Vare eller beløb …" aria-label="Skriv en vare eller et beløb" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go">
+          <span class="qk-count" hidden></span>
+          <button class="qk-go" data-action="v3-qk-go" aria-label="Udfør">${V3.ic("enter", 20)}</button>
+          <button class="qk-x" data-action="v3-fab-close" aria-label="Luk">×</button></div>
+      </div>`;
+    const input = el.querySelector("input");
+    // Synchronously, inside the tap, so the phone opens the keyboard.
+    input.focus({ preventScroll: true });
+    input.addEventListener("keydown", (ev) => this._v3QkKey(ev));
+    this._v3QkViewport(true);
+    this._v3QkDraw();
+    this._v3QkLoadOften();
   },
 
-  _v3QaFocus() {
-    requestAnimationFrame(() => {
-      const input = this.shadowRoot.querySelector('#modal .qa-sheet input');
-      if (input) { input.focus(); input.select?.(); }
-    });
+  _v3QkClose() {
+    const k = this._v3Qk();
+    if (!k.open) return;
+    k.open = false;
+    this._v3QkViewport(false);
+    const el = this.shadowRoot.querySelector("#v3-fab");
+    if (!el) return;
+    el.classList.add("closing");
+    el.querySelector("input")?.blur();
+    setTimeout(() => { el.classList.remove("closing"); el.dataset.built = ""; this._v3FabRender(); }, 180);
   },
 
-  _v3QaModal(m) {
-    const s = this._v3s();
-    const info = this._v3QaInfo();
-    const seg = `<div class="qa-seg" role="tablist">${[["add", "Tilføj vare", "cartplus"], ["book", "Kontér beløb", "wallet"]].map(([k, t, icon]) => `<button role="tab" aria-selected="${m.mode === k}" class="${m.mode === k ? "on" : ""}" data-action="v3-qa" data-arg="${k}">${V3.ic(icon, 18)}${t}</button>`).join("")}</div>`;
-    let body;
-    if (m.mode === "book") {
-      body = `<div class="qa-head"><span class="qa-ic" style="--qc:#0E9F6E">${V3.ic("wallet", 24)}</span><div><b>Kontér et beløb</b><small>${esc(info.book)}</small></div></div>
-        <label class="qa-amt"><input data-bind="v3amt" data-v3book="qa" inputmode="decimal" enterkeyhint="done" value="${esc(s.amt)}" placeholder="0" aria-label="Beløb i kroner" autocomplete="off"><span>kr.</span></label>
-        <div class="qa-chips">${[50, 100, 250, 500].map((v) => `<button data-action="v3-add" data-arg="${v}">+${v}</button>`).join("")}</div>
-        <button class="qa-go" data-action="v3-qa-book">${V3.ic("check", 20)}Kontér på uge ${esc(this._state?.budget?.week?.week || "")}</button>`;
+  // Keep the bar right above the phone's keyboard.
+  _v3QkViewport(on) {
+    const vv = window.visualViewport;
+    const el = this.shadowRoot.querySelector("#v3-fab");
+    if (!vv || !el) return;
+    if (!this._v3QkVV) this._v3QkVV = () => {
+      const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      el.style.setProperty("--kb", `${Math.round(kb)}px`);
+      el.style.setProperty("--vvh", `${Math.round(vv.height)}px`);
+    };
+    for (const t of ["resize", "scroll"]) vv[on ? "addEventListener" : "removeEventListener"](t, this._v3QkVV);
+    if (on) this._v3QkVV(); else { el.style.removeProperty("--kb"); el.style.removeProperty("--vvh"); }
+  },
+
+  _v3QkKey(ev) {
+    const k = this._v3Qk();
+    if (ev.key === "Escape") { ev.preventDefault(); return this._v3QkClose(); }
+    if (ev.key === "Enter") { ev.preventDefault(); return this._v3QkGo(); }
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      const n = this.shadowRoot.querySelectorAll("#v3-fab .qk-row").length;
+      if (!n) return;
+      ev.preventDefault();
+      k.sel = (k.sel + (ev.key === "ArrowDown" ? 1 : n - 1)) % n;
+      this.shadowRoot.querySelectorAll("#v3-fab .qk-row").forEach((r, i) => r.classList.toggle("sel", i === k.sel));
+    }
+  },
+
+  _v3QkInput(el) {
+    const k = this._v3Qk();
+    k.q = el.value;
+    k.sel = 0;
+    const p = this._v3QkParse(k.q);
+    if (p.kind === "item" && p.name.length >= 2) {
+      if (k.hitsQ !== p.name) k.searching = true;
+      this._soon("v3qk", () => this._v3QkSearch(p.name), 180);
+    } else { k.searching = false; }
+    this._v3QkDraw();
+  },
+
+  _v3QkSearch(name) {
+    const k = this._v3Qk();
+    if (k.hitsQ === name) { k.searching = false; return this._v3QkDraw(); }
+    this._ws("middagsro/search", { query: name })
+      .then((found) => { if (this._v3QkParse(k.q).name !== name) return; k.hits = found || []; k.hitsQ = name; })
+      .catch(() => { if (this._v3QkParse(k.q).name === name) { k.hits = []; k.hitsQ = name; } })
+      .finally(() => { if (this._v3QkParse(k.q).name === name) { k.searching = false; this._v3QkDraw(); } });
+  },
+
+  // The things you buy most, as REMA products, so one tap puts them on the list.
+  _v3QkLoadOften() {
+    const k = this._v3Qk();
+    const items = ((this._state?.receipts?.items) || []).filter((i) => i.frequent).slice(0, 12);
+    if (k.often || !items.length || !this._isRema()) return;
+    k.often = items.map((i) => ({ name: i.name, label: V3.clean(i.name).split(",")[0], product: undefined }));
+    this._ws("middagsro/items/images", { names: items.map((i) => i.name), products: true })
+      .then((found) => { for (const o of k.often) o.product = found?.[o.name] || null; })
+      .catch(() => { for (const o of k.often) o.product = null; })
+      .finally(() => { if (k.open && !k.q.trim()) this._v3QkDraw(); });
+  },
+
+  _v3QkStatus() {
+    const b = this._state?.budget;
+    const bits = [];
+    if (b) {
+      const m = this._v3WeekModel(this._v3WeekIndex(true));
+      const left = m.budget - m.spent;
+      bits.push(`<span>${V3.ic("wallet", 15)}${left >= 0 ? `${V3.krd(left)} tilbage i uge ${m.wk}` : `${V3.krd(-left)} over i uge ${m.wk}`}</span>`);
+    }
+    const onList = (this._state?.rema_list?.items || []).filter((i) => !i.bought).length;
+    bits.push(`<span>${V3.ic("bag", 15)}${onList} på ${esc(this._listName())}</span>`);
+    return `<div class="qk-status">${bits.join("")}</div>`;
+  },
+
+  _v3QkDraw() {
+    const root = this.shadowRoot.querySelector("#v3-fab .qk");
+    if (!root) return;
+    const k = this._v3Qk();
+    const p = this._v3QkParse(k.q);
+    root.dataset.mode = p.kind;
+    root.querySelector(".qk-lead").innerHTML = V3.ic(p.kind === "amount" ? "wallet" : p.kind === "item" ? "search" : "bolt", 22);
+    const count = root.querySelector(".qk-count");
+    count.hidden = !k.added.length;
+    count.innerHTML = k.added.length ? `${V3.ic("check", 14)}${k.added.length}` : "";
+    let html = "";
+    if (p.kind === "amount") {
+      const m = this._v3WeekModel(this._v3WeekIndex(true));
+      const after = m.budget - m.spent - p.amount;
+      html = `<button class="qk-row qk-amount sel" data-action="v3-qk-go"><span class="qk-ic" style="--qc:#0E9F6E">${V3.ic("wallet", 22)}</span>
+        <span class="qk-t"><b>Kontér ${V3.krd(p.amount, p.amount % 1 ? 2 : 0)}</b><small>på uge ${m.wk} · ${after >= 0 ? `${V3.krd(after)} tilbage bagefter` : `${V3.krd(-after)} over budget bagefter`}</small></span><kbd>${V3.ic("enter", 16)}</kbd></button>`;
+    } else if (p.kind === "item") {
+      const hits = k.hitsQ === p.name ? k.hits.slice(0, 6) : [];
+      const qty = p.qty > 1 ? `<em class="qk-qty">${p.qty}×</em>` : "";
+      if (k.searching && !hits.length) html = [0, 1, 2].map(() => '<div class="qk-skel"><i></i><span></span></div>').join("");
+      html += hits.map((h, i) => `<button class="qk-row${i === k.sel ? " sel" : ""}" data-action="v3-qk-pick" data-arg="${i}" style="--i:${i}"><span class="qimg">${V3.pic(h.image, V3.groupOf(h.name))}</span>
+        <span class="qk-t"><b>${esc(V3.clean(h.name))}</b><small>${esc(h.underline || "")}${h.price ? ` · ${V3.fmt(h.price, 2)} kr.` : ""}</small></span>${i === k.sel ? `${qty}<kbd>${V3.ic("enter", 16)}</kbd>` : `<span class="qk-plus">${V3.ic("plus", 16)}</span>`}</button>`).join("");
+      if (this._plan && !k.searching) html += `<button class="qk-row qk-free${hits.length ? "" : " sel"}" data-action="v3-qk-text" style="--i:${hits.length}"><span class="qk-ic" style="--qc:var(--secondary-text-color)">${V3.ic("pen", 18)}</span><span class="qk-t"><b>“${esc(p.name)}”</b><small>som fri tekst på madplanens liste</small></span></button>`;
+      if (!html) html = '<p class="qk-empty">Skriv lidt mere …</p>';
     } else {
-      const often = ((this._state?.receipts?.items) || []).filter((i) => i.frequent).slice(0, 8);
-      body = `<div class="qa-head"><span class="qa-ic" style="--qc:var(--rema-accent, #1664FF)">${V3.ic("cartplus", 24)}</span><div><b>Tilføj til ${esc(this._listName())}</b><small>${esc(info.add)}</small></div></div>
-        <div class="qbar${s.q ? " typing" : ""}">${V3.ic("search", 22)}<input data-bind="v3q" value="${esc(s.q)}" placeholder="Søg vare – fx mælk, bananer" autocomplete="off" enterkeyhint="done" aria-label="Tilføj vare">
-          <button class="qgo" data-action="v3-qadd" aria-label="Tilføj">${V3.ic("plus", 22)}</button></div>
-        <div class="qhits" data-qhits>${this._v3QuickHits()}</div>
-        ${often.length ? `<div class="qchips qa-often"><span class="sub">Ofte købt</span>${often.map((i) => `<button data-action="v3-qfill" data-arg="${esc(V3.clean(i.name).split(/[ ,]/)[0])}">${esc(V3.clean(i.name).split(",")[0])}</button>`).join("")}</div>` : ""}
-        ${m.added.length ? `<div class="qa-added"><span class="kicker">Tilføjet nu · ${m.added.length}</span><div class="ol-chips">${m.added.map((n) => `<span class="olc">${V3.ic("check", 14)} ${esc(n)}</span>`).join("")}</div></div>` : ""}`;
+      const often = k.often || [];
+      html = this._v3QkStatus();
+      if (often.length) html += `<div class="qk-h">Ofte købt <small>– ét tryk sætter den på listen</small></div>
+        <div class="qk-often">${often.map((o, i) => {
+          const n = k.added.filter((a) => a === o.label).length;
+          return `<button class="qk-tile${n ? " done" : ""}" data-action="v3-qk-often" data-arg="${i}" style="--i:${i}"><span class="qk-pic">${o.product === undefined ? '<i class="qk-shim"></i>' : V3.pic(o.product?.image, V3.groupOf(o.name))}${n ? `<em>${n}</em>` : ""}</span><small>${esc(o.label)}</small></button>`;
+        }).join("")}</div>`;
+      if (this._state?.budget) html += `<div class="qk-h">Kontér</div><div class="qk-chips">${[100, 250, 500].map((v) => `<button data-action="v3-qk-fill" data-arg="${v}">${v} kr.</button>`).join("")}</div>`;
+      html += `<p class="qk-tip">Skriv et tal for at kontere – eller en vare. “2 mælk” sætter to på.</p>`;
     }
-    return `<div class="scrim" data-action="modal-close"></div><div class="v3 v3-sheet"><div class="qa-sheet card" role="dialog" aria-modal="true" aria-label="Hurtig">
-      <div class="qa-grab"></div><div class="qa-top">${seg}<button class="x" data-action="modal-close" aria-label="Luk">×</button></div>${body}</div></div>`;
+    const card = root.querySelector(".qk-card");
+    card.innerHTML = html;
+    this._v3Pics(card);
   },
 
-  _v3QaBook() {
+  _v3QkFill(v) {
+    const input = this.shadowRoot.querySelector('#v3-fab input');
+    if (!input) return;
+    input.value = String(v);
+    input.focus({ preventScroll: true });
+    this._v3QkInput(input);
+  },
+
+  _v3QkGo() {
+    const k = this._v3Qk();
+    const p = this._v3QkParse(k.q);
+    if (p.kind === "amount") return this._v3QkBook(p.amount);
+    if (p.kind !== "item") return;
+    const hits = k.hitsQ === p.name ? k.hits : [];
+    if (hits[k.sel]) return this._v3QkPick(k.sel);
+    if (k.searching) return;
+    this._v3QkText();
+  },
+
+  _v3QkBook(amount) {
+    if (!amount) return;
     const s = this._v3s();
-    if (!this._v3Amount(s.amt)) {
-      this.shadowRoot.querySelector('#modal [data-v3book="qa"]')?.focus();
-      return this._say("Skriv beløbet, der skal konteres.");
-    }
-    this._modal = null;
-    this._renderModal();
-    this._v3Book("qa");
-    this._v3FabRender();
+    s.amt = String(amount);
+    this._v3QkDone("wallet");
+    setTimeout(() => this._v3QkClose(), 380);
+    this._v3Book("qk");
   },
 
-  // After an add from the sheet: keep it open, clear the field and stay ready for the next one.
-  _v3QaAdded(name) {
-    const m = this._modal;
-    if (m?.kind !== "v3-qa") return;
-    m.added.unshift(V3.clean(name).split(",")[0]);
-    this._renderModal();
-    this._v3Pics(this.shadowRoot.querySelector("#modal"));
-    this._v3QaFocus();
+  _v3QkAdd(product, qty, label) {
+    const todo = this._quickTodo();
+    const k = this._v3Qk();
+    for (let i = 0; i < qty; i++) k.added.push(label);
+    this._v3QkDone("check");
+    if (todo) return this._run(() => this._hass.callService("todo", "add_item", { item: qty > 1 ? `${qty}× ${product.name}` : product.name }, { entity_id: todo.id }), "");
+    return this._run(() => this._ws("middagsro/list/add", { product_id: Number(product.id), amount: qty }), "");
+  },
+
+  _v3QkPick(i) {
+    const k = this._v3Qk();
+    const p = this._v3QkParse(k.q);
+    const h = (k.hitsQ === p.name ? k.hits : [])[i];
+    if (!h) return;
+    this._v3QkAdd(h, p.qty || 1, V3.clean(h.name).split(",")[0]);
+    this._v3QkReset();
+  },
+
+  _v3QkText() {
+    const k = this._v3Qk();
+    const p = this._v3QkParse(k.q);
+    if (p.kind !== "item" || !this._plan) return;
+    const name = p.qty > 1 ? `${p.qty} ${p.name}` : p.name;
+    k.added.push(p.name);
+    this._v3QkDone("check");
+    this._editPlan(() => this._ws("middagsro/plan/add", { plan_id: this._plan.id, name, part: "main" }), "");
+    this._v3QkReset();
+  },
+
+  _v3QkOften(i, el) {
+    const k = this._v3Qk();
+    const o = (k.often || [])[i];
+    if (!o) return;
+    if (!o.product) return this._v3QkFill(o.label);
+    el?.classList.add("pop");
+    this._v3QkAdd(o.product, 1, o.label);
+    this._v3QkDraw();
+  },
+
+  // Clear the field, keep the keyboard: ready for the next one.
+  _v3QkReset() {
+    const k = this._v3Qk();
+    const input = this.shadowRoot.querySelector('#v3-fab input');
+    k.q = ""; k.sel = 0; k.searching = false;
+    if (input) { input.value = ""; input.focus({ preventScroll: true }); }
+    this._v3QkDraw();
+  },
+
+  // A small, quick confirmation in the bar itself.
+  _v3QkDone(icon) {
+    const lead = this.shadowRoot.querySelector("#v3-fab .qk-lead");
+    const bar = this.shadowRoot.querySelector("#v3-fab .qk-bar");
+    if (!lead || !bar) return;
+    lead.innerHTML = V3.ic(icon === "wallet" ? "check" : icon, 22);
+    bar.classList.remove("ok"); void bar.offsetWidth; bar.classList.add("ok");
+    clearTimeout(this._v3QkFlash);
+    this._v3QkFlash = setTimeout(() => { bar.classList.remove("ok"); if (this._v3Qk().open) this._v3QkDraw(); }, 900);
   },
 });
+
+// "/" opens Hurtig from anywhere in the panel (not while typing).
+V3_METHODS._v3QkHotkey = function (ev) {
+  if (ev.key !== "/" || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  const t = ev.composedPath?.()[0];
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  if (this._v3Qk().open || this._modal || !this.isConnected || this.hasAttribute("embed")) return;
+  ev.preventDefault();
+  this._v3QkOpen();
+};
 
 Object.assign(Rema1000Panel.prototype, V3_METHODS);
 for (const key of Object.keys(V3_ICONS)) TAB_ICONS[key] = V3_TAB_ICON(key);
@@ -10172,73 +10352,106 @@ const V3_STYLE = `
   .prof-host { position: static; }
   .prof-host .prof-menu { position: fixed; top: 64px; right: 12px; z-index: 60; color: var(--primary-text-color); text-shadow: none; }
   .v3 .lookcard .sw i { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary-text-color) 18%, transparent); }
-  /* ---- Hurtig: the + button (as in Hverdagsro) */
-  #v3-fab { position: fixed; right: max(20px, env(safe-area-inset-right, 0px)); bottom: calc(24px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); z-index: 19;
-    display: flex; flex-direction: column; align-items: flex-end; gap: 12px; pointer-events: none; }
+  /* ---- Hurtig: the + button, which becomes a search bar */
+  #v3-fab { position: fixed; right: max(20px, env(safe-area-inset-right, 0px)); bottom: calc(24px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); z-index: 19; }
   #v3-fab[hidden], .more-scrim:not([hidden]) ~ #v3-fab { display: none; }
-  #v3-fab > * { pointer-events: auto; }
-  #v3-fab .fab-scrim { position: fixed; inset: 0; z-index: -1; background: rgba(11,18,32,.38); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); opacity: 0; pointer-events: none; transition: opacity .25s; }
-  #v3-fab.open .fab-scrim { opacity: 1; pointer-events: auto; }
-  #v3-fab .fab-list { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; pointer-events: none; }
-  #v3-fab.open .fab-list { pointer-events: auto; }
-  #v3-fab .fi { display: flex; align-items: center; gap: 12px; border: 0; background: none; padding: 0; color: inherit; font: inherit; cursor: pointer; opacity: 0; transform: translateY(18px) scale(.6); transform-origin: right center;
-    transition: opacity .22s, transform .32s cubic-bezier(.2,.9,.3,1.3); }
-  #v3-fab.open .fi { opacity: 1; transform: none; transition-delay: var(--d); }
-  #v3-fab .fl { display: flex; flex-direction: column; align-items: flex-end; background: var(--card-background-color); padding: 7px 13px; border-radius: 14px; line-height: 1.2;
-    box-shadow: var(--ha-card-box-shadow, 0 8px 24px -10px rgba(0,0,0,.35)); }
-  #v3-fab .fl b { font-size: 14.5px; color: var(--primary-text-color); }
-  #v3-fab .fl small { font-size: 12px; color: var(--secondary-text-color); font-weight: 600; }
-  .v3 .qa-ic { width: 50px; height: 50px; border-radius: 17px; display: grid; place-items: center; flex: none; color: #fff;
-    background: linear-gradient(145deg, color-mix(in srgb, var(--qc) 78%, #fff), var(--qc)); box-shadow: 0 6px 16px color-mix(in srgb, var(--qc) 40%, transparent); }
-  .v3 .qa-ic svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  #v3-fab .fab-btn { width: 62px; height: 62px; border-radius: 22px; border: 0; color: #fff; cursor: pointer; display: grid; place-items: center;
-    background: linear-gradient(145deg, color-mix(in srgb, var(--rema-accent, #1664FF) 65%, #19B6A5), var(--rema-accent, #1664FF));
-    box-shadow: 0 10px 28px color-mix(in srgb, var(--rema-accent, #1664FF) 45%, transparent), 0 2px 6px rgba(0,0,0,.18);
-    transition: transform .35s cubic-bezier(.2,.9,.3,1.4), border-radius .35s; }
-  #v3-fab .fab-btn svg { fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; transition: transform .35s cubic-bezier(.2,.9,.3,1.4); }
-  #v3-fab.open .fab-btn { border-radius: 50%; transform: scale(.94); }
-  #v3-fab.open .fab-btn svg { transform: rotate(135deg); }
+  #v3-fab.open { inset: 0; right: 0; bottom: 0; z-index: 40; }
+  #v3-fab svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  #v3-fab .fab-btn { width: 60px; height: 60px; border-radius: 22px; border: 0; color: #fff; cursor: pointer; display: grid; place-items: center;
+    background: linear-gradient(145deg, color-mix(in srgb, var(--rema-accent, #1664FF) 62%, #19B6A5), var(--rema-accent, #1664FF));
+    box-shadow: 0 12px 30px -6px color-mix(in srgb, var(--rema-accent, #1664FF) 60%, transparent), 0 2px 6px rgba(0,0,0,.16);
+    transition: transform .3s cubic-bezier(.2,.9,.3,1.4); animation: qk-fab-in .35s cubic-bezier(.2,.9,.3,1.3) both; }
+  #v3-fab .fab-btn svg { stroke-width: 2.6; }
+  #v3-fab .fab-btn:hover { transform: translateY(-2px) scale(1.03); }
   #v3-fab .fab-btn:active { transform: scale(.9); }
+  #v3-fab .fab-btn:focus-visible { outline: 3px solid color-mix(in srgb, var(--rema-accent, #1664FF) 50%, #fff); outline-offset: 3px; }
+  @keyframes qk-fab-in { from { transform: scale(.4) rotate(-90deg); opacity: 0; } }
+  .qk-scrim { position: fixed; inset: 0; background: rgba(9,14,28,.42); backdrop-filter: blur(6px) saturate(1.1); -webkit-backdrop-filter: blur(6px) saturate(1.1); animation: qk-fade .2s ease both; }
+  #v3-fab.closing .qk-scrim { animation: qk-fade .18s ease reverse both; }
+  @keyframes qk-fade { from { opacity: 0; } }
+  .qk { position: fixed; left: 50%; bottom: calc(24px + var(--kb, 0px) + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); width: min(580px, calc(100vw - 24px)); transform: translateX(-50%);
+    display: flex; flex-direction: column; gap: 10px; }
+  #v3-fab.closing .qk { animation: qk-out .18s ease both; }
+  @keyframes qk-out { to { opacity: 0; transform: translateX(-50%) translateY(14px) scale(.98); } }
+  .qk-bar { position: relative; display: flex; align-items: center; gap: 8px; height: 62px; padding: 0 8px 0 9px; border-radius: 22px; background: var(--card-background-color);
+    border: 2px solid color-mix(in srgb, var(--rema-accent, #1664FF) 70%, transparent);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--rema-accent, #1664FF) 16%, transparent), 0 24px 50px -18px rgba(0,0,0,.55);
+    transform-origin: 100% 50%; animation: qk-grow .34s cubic-bezier(.2,.9,.25,1.12) both; transition: border-color .2s, box-shadow .2s; }
+  @keyframes qk-grow { from { transform: scaleX(.12); border-radius: 22px; opacity: .2; } 60% { opacity: 1; } }
+  .qk[data-mode="amount"] .qk-bar { border-color: #0E9F6E; box-shadow: 0 0 0 6px color-mix(in srgb, #0E9F6E 18%, transparent), 0 24px 50px -18px rgba(0,0,0,.55); }
+  .qk-bar.ok { animation: qk-ok .6s ease; border-color: var(--success-color, #0E9F6E); }
+  @keyframes qk-ok { 30% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--success-color, #0E9F6E) 28%, transparent), 0 24px 50px -18px rgba(0,0,0,.55); transform: scale(1.015); } }
+  .qk-lead { width: 42px; height: 42px; flex: none; border-radius: 15px; display: grid; place-items: center; color: var(--rema-accent, #1664FF); background: var(--rema-tint, color-mix(in srgb, var(--rema-accent, #1664FF) 12%, transparent)); transition: background .2s, color .2s; }
+  .qk[data-mode="amount"] .qk-lead { color: #fff; background: #0E9F6E; }
+  .qk-bar.ok .qk-lead { color: #fff; background: var(--success-color, #0E9F6E); animation: qk-pop .4s cubic-bezier(.2,.9,.3,1.6); }
+  @keyframes qk-pop { from { transform: scale(.5); } }
+  .qk-bar input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: none; color: var(--primary-text-color); font: inherit; font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
+  .qk-bar input::placeholder { color: var(--secondary-text-color); font-weight: 500; opacity: .8; }
+  .qk[data-mode="amount"] .qk-bar input { font-family: var(--display); font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .qk-count { display: inline-flex; align-items: center; gap: 3px; padding: 5px 9px; border-radius: 999px; background: color-mix(in srgb, var(--success-color, #0E9F6E) 14%, transparent); color: var(--success-color, #0E9F6E); font-weight: 800; font-size: 13px; flex: none; animation: qk-pop .3s cubic-bezier(.2,.9,.3,1.6); }
+  .qk-count svg { stroke-width: 3; }
+  .qk-go, .qk-x { flex: none; border: 0; cursor: pointer; display: grid; place-items: center; }
+  .qk-go { width: 44px; height: 44px; border-radius: 15px; color: #fff; background: var(--rema-accent, #1664FF); }
+  .qk[data-mode="amount"] .qk-go { background: #0E9F6E; }
+  .qk-x { width: 36px; height: 36px; border-radius: 50%; background: var(--rema-subtle); color: var(--secondary-text-color); font-size: 20px; }
+  .qk[data-mode="none"] .qk-go, .qk:not([data-mode="none"]) .qk-x { display: none; }
+  .qk-card { max-height: min(56vh, calc(var(--vvh, 100dvh) - 130px)); overflow: auto; overscroll-behavior: contain; padding: 10px; border-radius: 24px;
+    background: color-mix(in srgb, var(--card-background-color) 94%, transparent); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 24px 60px -24px rgba(0,0,0,.5), 0 0 0 1px color-mix(in srgb, var(--primary-text-color) 7%, transparent);
+    animation: qk-up .32s .05s cubic-bezier(.2,.9,.25,1.1) both; }
+  .qk-card:empty { display: none; }
+  @keyframes qk-up { from { opacity: 0; transform: translateY(16px) scale(.98); } }
+  .qk-status { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 8px; }
+  .qk-status span { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: var(--rema-subtle); color: var(--secondary-text-color); font-size: 12.5px; font-weight: 650; }
+  .qk-h { padding: 8px 6px 6px; font-size: 11.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--secondary-text-color); }
+  .qk-h small { text-transform: none; letter-spacing: 0; font-weight: 600; opacity: .8; }
+  .qk-often { display: grid; grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); gap: 4px; }
+  .qk-tile { display: grid; justify-items: center; gap: 5px; padding: 8px 4px; border: 0; border-radius: 16px; background: none; color: var(--primary-text-color); font: inherit; cursor: pointer;
+    animation: qk-up .3s calc(var(--i) * 22ms + 60ms) cubic-bezier(.2,.9,.25,1.1) both; transition: background .15s; }
+  .qk-tile:hover { background: var(--rema-subtle); }
+  .qk-tile:active { transform: scale(.92); }
+  .qk-pic { position: relative; width: 54px; height: 54px; border-radius: 17px; background: #fff; display: grid; place-items: center; box-shadow: 0 0 0 1px var(--divider-color); transition: box-shadow .2s; }
+  .qk-pic img, .qk-pic svg { width: 84%; height: 84%; object-fit: contain; }
+  .qk-pic em { position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: var(--success-color, #0E9F6E); color: #fff; font-style: normal; font-size: 11.5px; font-weight: 800; display: grid; place-items: center; border: 2px solid var(--card-background-color); animation: qk-pop .3s cubic-bezier(.2,.9,.3,1.6); }
+  .qk-tile.done .qk-pic { box-shadow: 0 0 0 2px var(--success-color, #0E9F6E); }
+  .qk-tile.pop .qk-pic { animation: qk-pop .35s cubic-bezier(.2,.9,.3,1.6); }
+  .qk-tile small { max-width: 100%; font-size: 12px; font-weight: 600; line-height: 1.2; text-align: center; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .qk-shim, .qk-skel i, .qk-skel span { background: linear-gradient(90deg, var(--rema-subtle) 0%, color-mix(in srgb, var(--rema-subtle) 40%, var(--card-background-color)) 50%, var(--rema-subtle) 100%); background-size: 200% 100%; animation: qk-shim 1.1s linear infinite; }
+  .qk-shim { width: 100%; height: 100%; border-radius: 17px; }
+  @keyframes qk-shim { to { background-position: -200% 0; } }
+  .qk-skel { display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: center; padding: 8px; }
+  .qk-skel i { height: 44px; border-radius: 12px; }
+  .qk-skel span { height: 14px; width: 60%; border-radius: 999px; }
+  .qk-chips { display: flex; gap: 8px; padding: 0 4px 4px; }
+  .qk-chips button { flex: 1; padding: 10px 0; border-radius: 14px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font: inherit; font-weight: 750; font-size: 14.5px; cursor: pointer; }
+  .qk-chips button:active { transform: scale(.95); }
+  .qk-tip { margin: 8px 6px 2px; font-size: 12.5px; color: var(--secondary-text-color); }
+  .qk-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; padding: 8px; border: 0; border-radius: 16px; background: none; color: var(--primary-text-color); font: inherit; text-align: left; cursor: pointer;
+    animation: qk-up .26s calc(var(--i, 0) * 30ms) cubic-bezier(.2,.9,.25,1.1) both; transition: background .12s; }
+  .qk-row:hover { background: var(--rema-subtle); }
+  .qk-row.sel { background: var(--rema-tint, color-mix(in srgb, var(--rema-accent, #1664FF) 12%, transparent)); }
+  .qk-row .qimg { width: 44px; height: 44px; border-radius: 12px; box-shadow: 0 0 0 1px var(--divider-color); }
+  .qk-t { min-width: 0; }
+  .qk-t b { display: block; font-size: 15px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qk-t small { display: block; font-size: 12.5px; color: var(--secondary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qk-row kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; height: 28px; padding: 0 6px; border-radius: 9px; background: var(--rema-accent, #1664FF); color: #fff; font: inherit; }
+  .qk-row .qk-plus { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; color: var(--rema-accent, #1664FF); background: var(--rema-subtle); }
+  .qk-qty { font-style: normal; font-weight: 800; color: var(--rema-accent, #1664FF); margin-right: 6px; }
+  .qk-row:has(.qk-qty) { grid-template-columns: 44px minmax(0, 1fr) auto auto; }
+  .qk-ic { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; color: #fff; background: linear-gradient(145deg, color-mix(in srgb, var(--qc) 78%, #fff), var(--qc)); }
+  .qk-amount { padding: 12px 10px; }
+  .qk-amount b { font-family: var(--display); font-size: 20px; font-weight: 800; }
+  .qk-amount kbd { background: #0E9F6E; }
+  .qk-free .qk-ic { background: var(--rema-subtle); color: var(--secondary-text-color); }
+  .qk-empty { margin: 6px; color: var(--secondary-text-color); font-size: 13.5px; }
   @media (max-width: 700px) {
     #v3-fab { right: max(14px, env(safe-area-inset-right, 0px)); bottom: calc(92px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); }
     #v3-fab .fab-btn { width: 56px; height: 56px; border-radius: 20px; }
+    .qk { width: calc(100vw - 16px); bottom: calc(8px + var(--kb, 0px) + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); }
+    .qk-card { max-height: min(60vh, calc(var(--vvh, 100dvh) - 110px)); }
   }
-  @media (prefers-reduced-motion: reduce) { #v3-fab .fi, #v3-fab .fab-btn, #v3-fab .fab-btn svg { transition: none; } }
-  /* the sheet */
-  .v3 .qa-sheet { width: min(480px, 100%); max-height: min(86dvh, 720px); overflow: auto; margin: 0; padding: 14px 18px 20px; display: grid; gap: 14px; animation: sheetup .3s cubic-bezier(.2,.8,.2,1) both; }
-  .v3 .qa-grab { display: none; }
-  .v3 .qa-top { display: flex; align-items: center; gap: 10px; }
-  .v3 .qa-top .x { margin-left: auto; width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--rema-subtle); color: var(--primary-text-color); font-size: 19px; cursor: pointer; flex: none; }
-  .v3 .qa-seg { display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: var(--rema-subtle); }
-  .v3 .qa-seg button { display: flex; align-items: center; gap: 6px; border: 0; background: none; padding: 8px 13px; border-radius: 999px; font: inherit; font-size: 13.5px; font-weight: 650; color: var(--secondary-text-color); cursor: pointer; }
-  .v3 .qa-seg button svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .v3 .qa-seg button.on { background: var(--card-background-color); color: var(--primary-text-color); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
-  .v3 .qa-head { display: flex; align-items: center; gap: 12px; }
-  .v3 .qa-head b { display: block; font-family: var(--display); font-size: 19px; letter-spacing: -.01em; }
-  .v3 .qa-head small { display: block; color: var(--secondary-text-color); font-size: 13px; font-weight: 600; }
-  .v3 .qa-amt { display: flex; align-items: baseline; justify-content: center; gap: 8px; padding: 14px 16px; border-radius: 20px; background: var(--rema-subtle); border: 2px solid transparent; cursor: text; }
-  .v3 .qa-amt:focus-within { border-color: var(--rema-accent); background: var(--card-background-color); }
-  .v3 .qa-amt input { width: 100%; min-width: 0; border: 0; outline: 0; background: none; color: var(--primary-text-color); font: inherit; font-family: var(--display); font-size: 44px; font-weight: 800; letter-spacing: -.03em; text-align: right; font-variant-numeric: tabular-nums; }
-  .v3 .qa-amt span { font-size: 22px; font-weight: 700; color: var(--secondary-text-color); flex: none; }
-  .v3 .qa-chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-  .v3 .qa-chips button { padding: 11px 0; border-radius: 14px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; }
-  .v3 .qa-chips button:active { transform: scale(.95); }
-  .v3 .qa-go { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 15px; border: 0; border-radius: 16px; background: var(--rema-accent); color: var(--rema-on-accent, #fff); font: inherit; font-weight: 750; font-size: 16px; cursor: pointer; }
-  .v3 .qa-go svg { fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-  .v3 .qa-sheet .qhits { display: grid; gap: 6px; }
-  .v3 .qa-sheet .qhits:empty { display: none; }
-  .v3 .qa-often .sub { margin: 0 6px 0 0; }
-  .v3 .qa-added .kicker { display: block; margin-bottom: 6px; }
-  .v3 .qa-added .olc { display: inline-flex; align-items: center; gap: 4px; }
-  .v3 .qa-added .olc svg { color: var(--success-color, #0E9F6E); fill: none; stroke: currentColor; stroke-width: 2.4; }
-  @media (max-width: 700px) {
-    .v3 .qa-sheet { width: 100%; border-radius: 26px 26px 0 0; border-bottom: 0; padding-bottom: calc(20px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); }
-    .v3 .qa-grab { display: block; width: 40px; height: 5px; border-radius: 999px; background: color-mix(in srgb, var(--primary-text-color) 20%, transparent); margin: -4px auto 0; }
-  }
-  /* While the Hurtig sheet is open, the confirmation shows at the top so it never covers what you tap next. */
-  :host([qa-open]) .toast { top: calc(14px + var(--rema-safe-top, env(safe-area-inset-top, 0px))); bottom: auto; z-index: 70; }
-  #v3-fab .fi:focus { outline: none; }
-  #v3-fab .fi:focus-visible .qa-ic, #v3-fab .fab-btn:focus-visible { outline: 3px solid color-mix(in srgb, var(--rema-accent, #1664FF) 55%, #fff); outline-offset: 3px; }
+  @media (prefers-reduced-motion: reduce) { #v3-fab *, .qk-scrim { animation: none !important; transition: none !important; } }
+  .qk-count[hidden] { display: none; }
 
 `;
 const STYLE = STYLE_BASE + V3_STYLE;

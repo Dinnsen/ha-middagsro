@@ -2200,7 +2200,7 @@ async def ws_baskets_transfer(
     )
 
 
-_IMAGES = f"{DOMAIN}_item_images"
+_IMAGES = f"{DOMAIN}_item_products"
 
 
 @websocket_api.websocket_command(
@@ -2208,6 +2208,7 @@ _IMAGES = f"{DOMAIN}_item_images"
         vol.Required("type"): "middagsro/items/images",
         ENTRY: str,
         vol.Required("names"): vol.All([str], vol.Length(max=40)),
+        vol.Optional("products", default=False): bool,
     }
 )
 @websocket_api.async_response
@@ -2215,9 +2216,13 @@ _IMAGES = f"{DOMAIN}_item_images"
 async def ws_item_images(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """A picture for receipt lines (by name, from REMA's search; kept while HA runs)."""
+    """A picture for receipt lines (by name, from REMA's search; kept while HA runs).
+
+    With ``products`` the answer is the matched product itself (id, name, image,
+    price), so the panel can put a receipt line straight on the list.
+    """
     client = _entry(hass, msg).runtime_data.client
-    cache: dict[str, str | None] = hass.data.setdefault(_IMAGES, {})
+    cache: dict[str, dict[str, Any] | None] = hass.data.setdefault(_IMAGES, {})
     gate = asyncio.Semaphore(4)
 
     async def one(name: str) -> None:
@@ -2228,11 +2233,22 @@ async def ws_item_images(
                 products = await client.async_search_products(name, 1)
             except (RemaError, HomeAssistantError, TimeoutError, OSError):
                 return
-        cache[name] = next((p.image for p in products if p.image), None)
+        hit = products[0] if products else None
+        cache[name] = (
+            {"id": hit.id, "name": hit.name, "image": hit.image, "price": hit.price}
+            if hit
+            else None
+        )
 
     names = list(dict.fromkeys(n.strip() for n in msg["names"] if n.strip()))
     await asyncio.gather(*(one(name) for name in names))
-    connection.send_result(msg["id"], {name: cache.get(name) for name in names})
+    found = {name: cache.get(name) for name in names}
+    if msg["products"]:
+        connection.send_result(msg["id"], found)
+        return
+    connection.send_result(
+        msg["id"], {name: (hit or {}).get("image") for name, hit in found.items()}
+    )
 
 
 def async_register_websocket(hass: HomeAssistant) -> None:

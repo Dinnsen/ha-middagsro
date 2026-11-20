@@ -2,6 +2,20 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [3.1.0b2] - 2026-11-20
+
+### Changed
+- **Hurtig er gjort hurtigere.** Et tryk på + folder knappen ud til en søgelinje med tastaturet klar – ingen menu imellem. Ét felt gør begge dele:
+  - Skriv et **tal** (fx 249,50), så står der "Kontér 249,50 kr. på uge 47 · 751 kr. tilbage bagefter" – Enter, og det er konteret (med Fortryd).
+  - Skriv en **vare**, så kommer REMA's varer, mens du skriver. Enter sætter den øverste på listen, piletasterne vælger en anden, og "2 mælk" eller "mælk x2" sætter to på.
+  - **Ofte købt** ligger klar som billeder: ét tryk, og varen er på listen. Et tal på billedet viser, hvor mange du har sat på.
+  - Feltet tømmes og bliver klar efter hver vare, og et grønt flueben med antallet viser, hvad der er tilføjet. Linjen ligger lige over telefonens tastatur.
+- På computeren åbner **/** Hurtig, og Escape lukker den.
+- `middagsro/items/images` kan med `products: true` svare med selve varen (id, navn, billede, pris), så en kvitteringslinje kan sættes direkte på listen.
+
+### Notes
+- Beta.
+
 ## [3.1.0b1] - 2026-11-20
 
 ### Added
