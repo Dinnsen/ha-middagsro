@@ -3983,6 +3983,7 @@ class Rema1000Panel extends HTMLElement {
         </header></div>
         <div class="more-scrim" data-action="more" hidden></div>
         <div class="more-sheet" hidden></div>
+        <div class="v3 fab" id="v3-fab" hidden></div>
         <main id="content"></main>
         <div id="modal"></div>
         <div class="v3 prof-host prof-wrap"><span class="prof-menu" role="menu" hidden>
@@ -4062,6 +4063,8 @@ class Rema1000Panel extends HTMLElement {
   _renderModal() {
     const node = this.shadowRoot.querySelector("#modal");
     if (!node) return;
+    queueMicrotask(() => this._v3FabRender());
+    this.toggleAttribute("qa-open", this._modal?.kind === "v3-qa");
     if (this._modal?.kind === "navigation") { node.innerHTML = this._navigationModal(); return; }
     if (this._modal?.kind === "inventory-consume") {
       const m = this._modal;
@@ -4094,6 +4097,11 @@ class Rema1000Panel extends HTMLElement {
     }
     if (this._modal?.kind === "v3-bon") {
       node.innerHTML = this._v3BonModal(this._modal);
+      return;
+    }
+    if (this._modal?.kind === "v3-qa") {
+      node.innerHTML = this._v3QaModal(this._modal);
+      this._v3Pics(node);
       return;
     }
     if (this._modal?.kind === "v3-xfer") {
@@ -7730,7 +7738,7 @@ const V3_METHODS = {
         <button class="cart" data-action="tab" data-arg="shopping" aria-label="Indkøbslisten">${V3.ic("bag", 22)}<span class="cart-n">${onList.length}</span></button></div>
       <div class="qbar${s.q ? " typing" : ""}">${V3.ic("search", 22)}<input data-bind="v3q" value="${esc(s.q)}" placeholder="Tilføj vare – fx mælk, bananer" autocomplete="off" enterkeyhint="done" aria-label="Tilføj vare">
         <button class="qgo" data-action="v3-qadd" aria-label="Tilføj">${V3.ic("plus", 22)}</button></div>
-      <div class="qhits" id="v3-qhits">${this._v3QuickHits()}</div>
+      <div class="qhits" id="v3-qhits" data-qhits>${this._v3QuickHits()}</div>
       ${!s.q && often.length ? `<div class="qchips"><span class="sub" style="margin:0 6px 0 0">Ofte købt</span>${often.map((i) => `<button data-action="v3-qfill" data-arg="${esc(V3.clean(i.name).split(/[ ,]/)[0])}">${esc(V3.clean(i.name).split(",")[0])}</button>`).join("")}</div>` : ""}
       <div class="onlist"><span class="kicker">På ${esc(list?.name || this._listName())} · ${onList.length}</span><div class="ol-chips">${onList.slice(0, 40).map((i) => `<span class="olc">${i.amount > 1 ? `<b>${i.amount}×</b> ` : ""}${esc(i.name)}</span>`).join("") || '<span class="sub">Listen er tom.</span>'}</div></div>
     </div>`;
@@ -7747,9 +7755,8 @@ const V3_METHODS = {
   },
 
   _v3RenderQuick() {
-    const node = this.shadowRoot.querySelector("#v3-qhits");
-    if (node) { node.innerHTML = this._v3QuickHits(); this._v3Pics(node); }
-    this.shadowRoot.querySelector(".qbar")?.classList.toggle("typing", !!this._v3s().q);
+    for (const node of this.shadowRoot.querySelectorAll("[data-qhits]")) { node.innerHTML = this._v3QuickHits(); this._v3Pics(node); }
+    for (const bar of this.shadowRoot.querySelectorAll(".qbar")) if (bar.querySelector('[data-bind="v3q"]')) bar.classList.toggle("typing", !!this._v3s().q);
   },
 
   _v3Search() {
@@ -8548,6 +8555,7 @@ Object.assign(V3_METHODS, {
     this._v3Pics(root);
     this._v3BindDial();
     this._v3BindDrag();
+    this._v3FabRender();
     root.querySelectorAll("#content [data-count]").forEach((el) => {
       if (el.closest(".still")) return;
       const to = Number(el.dataset.count);
@@ -8558,9 +8566,11 @@ Object.assign(V3_METHODS, {
     if (!this._v3Keys) {
       this._v3Keys = true;
       root.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape" && this._v3FabOpen) { this._v3FabOpen = false; this._v3FabRender(); return; }
         if (ev.key !== "Enter") return;
         const el = ev.target;
-        if (el?.dataset?.v3book) { ev.preventDefault(); this._v3Book(el.dataset.v3book); }
+        if (el?.dataset?.v3book === "qa") { ev.preventDefault(); this._v3QaBook(); }
+        else if (el?.dataset?.v3book) { ev.preventDefault(); this._v3Book(el.dataset.v3book); }
         else if (el?.dataset?.bind === "v3q") { ev.preventDefault(); this._v3QuickAdd(el); }
       });
     }
@@ -8582,6 +8592,7 @@ Object.assign(V3_METHODS, {
     this._v3Fly(from, V3.clean(p.name).split(" ")[0]);
     s.q = ""; s.hits = []; s.hitsQ = "";
     this._addToRemaList(p.id, p.name);
+    this._v3QaAdded(p.name);
   },
 
   _v3QuickText(from) {
@@ -8591,6 +8602,7 @@ Object.assign(V3_METHODS, {
     this._v3Fly(from, name.split(" ")[0]);
     s.q = ""; s.hits = []; s.hitsQ = "";
     this._editPlan(() => this._ws("middagsro/plan/add", { plan_id: this._plan.id, name, part: "main" }), `${name} er tilføjet til indkøbslisten.`);
+    this._v3QaAdded(name);
   },
 
   /* ------------------------------------------------------------------ events */
@@ -8612,9 +8624,17 @@ Object.assign(V3_METHODS, {
       },
       "v3-hw": () => { s.hw = Number(arg) || 0; this._render(); },
       "v3-book": () => this._v3Book(arg),
+      "v3-fab": () => { this._v3FabOpen = !this._v3FabOpen; this._v3FabRender(); },
+      "v3-fab-close": () => { this._v3FabOpen = false; this._v3FabRender(); },
+      "v3-qa": () => this._v3QaOpen(arg),
+      "modal-close": () => {
+        if (this._modal?.kind === "v3-qa") { s.q = ""; s.hits = []; s.hitsQ = ""; requestAnimationFrame(() => { const i = this.shadowRoot.querySelector('#content [data-bind="v3q"]'); if (i) i.value = ""; this._v3RenderQuick(); }); }
+        return false;
+      },
+      "v3-qa-book": () => this._v3QaBook(),
       "v3-add": () => {
         s.amt = V3.fmt(this._v3Amount(s.amt) + Number(arg), 0).replace(/\./g, "");
-        const input = el.closest(".glass, .kbook")?.querySelector("[data-v3book]");
+        const input = el.closest(".glass, .kbook, .qa-sheet")?.querySelector("[data-v3book]");
         if (input) { input.value = s.amt; input.focus(); }
       },
       "v3-week": () => { s.week = Number(arg); s.day = null; this._render(); },
@@ -8628,7 +8648,7 @@ Object.assign(V3_METHODS, {
       "v3-qtext": () => this._v3QuickText(el),
       "v3-qfill": () => {
         s.q = arg;
-        const input = this.shadowRoot.querySelector('[data-bind="v3q"]');
+        const input = this.shadowRoot.querySelector('#modal [data-bind="v3q"]') || this.shadowRoot.querySelector('[data-bind="v3q"]');
         if (input) { input.value = arg; input.focus(); }
         this._v3Search();
       },
@@ -9067,6 +9087,109 @@ Object.assign(V3_METHODS, {
       <p class="sub">Gemmes for dig på denne konto. Mørk eller lys følger Home Assistant.</p>
       <div class="looks-big">${this._looks().map((k) => `<button class="lookcard${this._look() === k ? " on" : ""}" data-action="look" data-arg="${k}" aria-pressed="${this._look() === k}">
         <span class="sw">${sw[k].map((c) => `<i style="background:${esc(c)}"></i>`).join("")}</span><b>${esc(LOOK_NAMES[k])}</b><small>${esc(V3_LOOKS[k])}</small></button>`).join("")}</div></div>`;
+  },
+});
+
+/* Hurtig: the + button, as in Hverdagsro. Two actions – book an amount and add to the REMA list – each a sheet
+   with the keyboard already up. */
+Object.assign(V3.ICON, {
+  wallet: '<path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18v3"/><path d="M4 7.5v10A2.5 2.5 0 0 0 6.5 20H20V8H6.5A2.5 2.5 0 0 1 4 5.5"/><circle cx="16" cy="14" r="1.3" fill="currentColor" stroke="none"/>',
+  cartplus: '<path d="M6 7h14l-1.6 8.2a2 2 0 0 1-2 1.6H9.4a2 2 0 0 1-2-1.6L5.5 4H3"/><path d="M13 9.5v4M11 11.5h4"/><circle cx="10" cy="20" r="1.2"/><circle cx="17" cy="20" r="1.2"/>',
+});
+Object.assign(V3_METHODS, {
+  _v3QaInfo() {
+    const b = this._state?.budget;
+    let book = "Skriv et køb ind i madbudgettet";
+    if (b) {
+      const m = this._v3WeekModel(this._v3WeekIndex(true));
+      const left = m.budget - m.spent;
+      book = left >= 0 ? `${V3.krd(left)} tilbage i uge ${m.wk}` : `${V3.krd(-left)} over i uge ${m.wk}`;
+    }
+    const onList = (this._state?.rema_list?.items || []).filter((i) => !i.bought).length;
+    return { book, add: `${this._listName()} · ${onList} ${onList === 1 ? "vare" : "varer"}` };
+  },
+
+  _v3FabRender() {
+    const el = this.shadowRoot.querySelector("#v3-fab");
+    if (!el) return;
+    const hide = !this._state || this.hasAttribute("embed") || this._moreOpen || !!this._modal;
+    if (hide) this._v3FabOpen = false;
+    el.hidden = hide;
+    if (hide) return;
+    const info = this._v3QaInfo();
+    const items = [
+      ["add", "Tilføj vare", info.add, "cartplus", "var(--rema-accent, #1664FF)"],
+      ["book", "Kontér beløb", info.book, "wallet", "#0E9F6E"],
+    ];
+    const sig = JSON.stringify([items, !!this._v3FabOpen]);
+    if (sig === el.dataset.sig) return;
+    el.dataset.sig = sig;
+    el.classList.toggle("open", !!this._v3FabOpen);
+    el.innerHTML = `<div class="fab-scrim" data-action="v3-fab-close"></div>
+      <div class="fab-list" role="menu" aria-hidden="${!this._v3FabOpen}">${items.map(([k, t, sub, icon, c], i) => `<button class="fi" role="menuitem" data-action="v3-qa" data-arg="${k}" style="--qc:${c};--d:${(items.length - 1 - i) * 45}ms" tabindex="${this._v3FabOpen ? 0 : -1}"><span class="fl"><b>${esc(t)}</b><small>${esc(sub)}</small></span><span class="qa-ic">${V3.ic(icon, 25)}</span></button>`).join("")}</div>
+      <button class="fab-btn" data-action="v3-fab" aria-expanded="${!!this._v3FabOpen}" aria-label="Hurtig: kontér et beløb eller tilføj en vare">${V3.ic("plus", 30)}</button>`;
+  },
+
+  _v3QaOpen(mode) {
+    this._v3FabOpen = false;
+    this._modal = { kind: "v3-qa", mode: mode === "book" ? "book" : "add", added: [] };
+    const s = this._v3s();
+    s.q = ""; s.hits = []; s.hitsQ = "";
+    this._renderModal();
+    this._v3FabRender();
+    this._v3QaFocus();
+  },
+
+  _v3QaFocus() {
+    requestAnimationFrame(() => {
+      const input = this.shadowRoot.querySelector('#modal .qa-sheet input');
+      if (input) { input.focus(); input.select?.(); }
+    });
+  },
+
+  _v3QaModal(m) {
+    const s = this._v3s();
+    const info = this._v3QaInfo();
+    const seg = `<div class="qa-seg" role="tablist">${[["add", "Tilføj vare", "cartplus"], ["book", "Kontér beløb", "wallet"]].map(([k, t, icon]) => `<button role="tab" aria-selected="${m.mode === k}" class="${m.mode === k ? "on" : ""}" data-action="v3-qa" data-arg="${k}">${V3.ic(icon, 18)}${t}</button>`).join("")}</div>`;
+    let body;
+    if (m.mode === "book") {
+      body = `<div class="qa-head"><span class="qa-ic" style="--qc:#0E9F6E">${V3.ic("wallet", 24)}</span><div><b>Kontér et beløb</b><small>${esc(info.book)}</small></div></div>
+        <label class="qa-amt"><input data-bind="v3amt" data-v3book="qa" inputmode="decimal" enterkeyhint="done" value="${esc(s.amt)}" placeholder="0" aria-label="Beløb i kroner" autocomplete="off"><span>kr.</span></label>
+        <div class="qa-chips">${[50, 100, 250, 500].map((v) => `<button data-action="v3-add" data-arg="${v}">+${v}</button>`).join("")}</div>
+        <button class="qa-go" data-action="v3-qa-book">${V3.ic("check", 20)}Kontér på uge ${esc(this._state?.budget?.week?.week || "")}</button>`;
+    } else {
+      const often = ((this._state?.receipts?.items) || []).filter((i) => i.frequent).slice(0, 8);
+      body = `<div class="qa-head"><span class="qa-ic" style="--qc:var(--rema-accent, #1664FF)">${V3.ic("cartplus", 24)}</span><div><b>Tilføj til ${esc(this._listName())}</b><small>${esc(info.add)}</small></div></div>
+        <div class="qbar${s.q ? " typing" : ""}">${V3.ic("search", 22)}<input data-bind="v3q" value="${esc(s.q)}" placeholder="Søg vare – fx mælk, bananer" autocomplete="off" enterkeyhint="done" aria-label="Tilføj vare">
+          <button class="qgo" data-action="v3-qadd" aria-label="Tilføj">${V3.ic("plus", 22)}</button></div>
+        <div class="qhits" data-qhits>${this._v3QuickHits()}</div>
+        ${often.length ? `<div class="qchips qa-often"><span class="sub">Ofte købt</span>${often.map((i) => `<button data-action="v3-qfill" data-arg="${esc(V3.clean(i.name).split(/[ ,]/)[0])}">${esc(V3.clean(i.name).split(",")[0])}</button>`).join("")}</div>` : ""}
+        ${m.added.length ? `<div class="qa-added"><span class="kicker">Tilføjet nu · ${m.added.length}</span><div class="ol-chips">${m.added.map((n) => `<span class="olc">${V3.ic("check", 14)} ${esc(n)}</span>`).join("")}</div></div>` : ""}`;
+    }
+    return `<div class="scrim" data-action="modal-close"></div><div class="v3 v3-sheet"><div class="qa-sheet card" role="dialog" aria-modal="true" aria-label="Hurtig">
+      <div class="qa-grab"></div><div class="qa-top">${seg}<button class="x" data-action="modal-close" aria-label="Luk">×</button></div>${body}</div></div>`;
+  },
+
+  _v3QaBook() {
+    const s = this._v3s();
+    if (!this._v3Amount(s.amt)) {
+      this.shadowRoot.querySelector('#modal [data-v3book="qa"]')?.focus();
+      return this._say("Skriv beløbet, der skal konteres.");
+    }
+    this._modal = null;
+    this._renderModal();
+    this._v3Book("qa");
+    this._v3FabRender();
+  },
+
+  // After an add from the sheet: keep it open, clear the field and stay ready for the next one.
+  _v3QaAdded(name) {
+    const m = this._modal;
+    if (m?.kind !== "v3-qa") return;
+    m.added.unshift(V3.clean(name).split(",")[0]);
+    this._renderModal();
+    this._v3Pics(this.shadowRoot.querySelector("#modal"));
+    this._v3QaFocus();
   },
 });
 
@@ -10049,6 +10172,73 @@ const V3_STYLE = `
   .prof-host { position: static; }
   .prof-host .prof-menu { position: fixed; top: 64px; right: 12px; z-index: 60; color: var(--primary-text-color); text-shadow: none; }
   .v3 .lookcard .sw i { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary-text-color) 18%, transparent); }
+  /* ---- Hurtig: the + button (as in Hverdagsro) */
+  #v3-fab { position: fixed; right: max(20px, env(safe-area-inset-right, 0px)); bottom: calc(24px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); z-index: 19;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 12px; pointer-events: none; }
+  #v3-fab[hidden], .more-scrim:not([hidden]) ~ #v3-fab { display: none; }
+  #v3-fab > * { pointer-events: auto; }
+  #v3-fab .fab-scrim { position: fixed; inset: 0; z-index: -1; background: rgba(11,18,32,.38); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); opacity: 0; pointer-events: none; transition: opacity .25s; }
+  #v3-fab.open .fab-scrim { opacity: 1; pointer-events: auto; }
+  #v3-fab .fab-list { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; pointer-events: none; }
+  #v3-fab.open .fab-list { pointer-events: auto; }
+  #v3-fab .fi { display: flex; align-items: center; gap: 12px; border: 0; background: none; padding: 0; color: inherit; font: inherit; cursor: pointer; opacity: 0; transform: translateY(18px) scale(.6); transform-origin: right center;
+    transition: opacity .22s, transform .32s cubic-bezier(.2,.9,.3,1.3); }
+  #v3-fab.open .fi { opacity: 1; transform: none; transition-delay: var(--d); }
+  #v3-fab .fl { display: flex; flex-direction: column; align-items: flex-end; background: var(--card-background-color); padding: 7px 13px; border-radius: 14px; line-height: 1.2;
+    box-shadow: var(--ha-card-box-shadow, 0 8px 24px -10px rgba(0,0,0,.35)); }
+  #v3-fab .fl b { font-size: 14.5px; color: var(--primary-text-color); }
+  #v3-fab .fl small { font-size: 12px; color: var(--secondary-text-color); font-weight: 600; }
+  .v3 .qa-ic { width: 50px; height: 50px; border-radius: 17px; display: grid; place-items: center; flex: none; color: #fff;
+    background: linear-gradient(145deg, color-mix(in srgb, var(--qc) 78%, #fff), var(--qc)); box-shadow: 0 6px 16px color-mix(in srgb, var(--qc) 40%, transparent); }
+  .v3 .qa-ic svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  #v3-fab .fab-btn { width: 62px; height: 62px; border-radius: 22px; border: 0; color: #fff; cursor: pointer; display: grid; place-items: center;
+    background: linear-gradient(145deg, color-mix(in srgb, var(--rema-accent, #1664FF) 65%, #19B6A5), var(--rema-accent, #1664FF));
+    box-shadow: 0 10px 28px color-mix(in srgb, var(--rema-accent, #1664FF) 45%, transparent), 0 2px 6px rgba(0,0,0,.18);
+    transition: transform .35s cubic-bezier(.2,.9,.3,1.4), border-radius .35s; }
+  #v3-fab .fab-btn svg { fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; transition: transform .35s cubic-bezier(.2,.9,.3,1.4); }
+  #v3-fab.open .fab-btn { border-radius: 50%; transform: scale(.94); }
+  #v3-fab.open .fab-btn svg { transform: rotate(135deg); }
+  #v3-fab .fab-btn:active { transform: scale(.9); }
+  @media (max-width: 700px) {
+    #v3-fab { right: max(14px, env(safe-area-inset-right, 0px)); bottom: calc(92px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); }
+    #v3-fab .fab-btn { width: 56px; height: 56px; border-radius: 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) { #v3-fab .fi, #v3-fab .fab-btn, #v3-fab .fab-btn svg { transition: none; } }
+  /* the sheet */
+  .v3 .qa-sheet { width: min(480px, 100%); max-height: min(86dvh, 720px); overflow: auto; margin: 0; padding: 14px 18px 20px; display: grid; gap: 14px; animation: sheetup .3s cubic-bezier(.2,.8,.2,1) both; }
+  .v3 .qa-grab { display: none; }
+  .v3 .qa-top { display: flex; align-items: center; gap: 10px; }
+  .v3 .qa-top .x { margin-left: auto; width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--rema-subtle); color: var(--primary-text-color); font-size: 19px; cursor: pointer; flex: none; }
+  .v3 .qa-seg { display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: var(--rema-subtle); }
+  .v3 .qa-seg button { display: flex; align-items: center; gap: 6px; border: 0; background: none; padding: 8px 13px; border-radius: 999px; font: inherit; font-size: 13.5px; font-weight: 650; color: var(--secondary-text-color); cursor: pointer; }
+  .v3 .qa-seg button svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .v3 .qa-seg button.on { background: var(--card-background-color); color: var(--primary-text-color); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .v3 .qa-head { display: flex; align-items: center; gap: 12px; }
+  .v3 .qa-head b { display: block; font-family: var(--display); font-size: 19px; letter-spacing: -.01em; }
+  .v3 .qa-head small { display: block; color: var(--secondary-text-color); font-size: 13px; font-weight: 600; }
+  .v3 .qa-amt { display: flex; align-items: baseline; justify-content: center; gap: 8px; padding: 14px 16px; border-radius: 20px; background: var(--rema-subtle); border: 2px solid transparent; cursor: text; }
+  .v3 .qa-amt:focus-within { border-color: var(--rema-accent); background: var(--card-background-color); }
+  .v3 .qa-amt input { width: 100%; min-width: 0; border: 0; outline: 0; background: none; color: var(--primary-text-color); font: inherit; font-family: var(--display); font-size: 44px; font-weight: 800; letter-spacing: -.03em; text-align: right; font-variant-numeric: tabular-nums; }
+  .v3 .qa-amt span { font-size: 22px; font-weight: 700; color: var(--secondary-text-color); flex: none; }
+  .v3 .qa-chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .v3 .qa-chips button { padding: 11px 0; border-radius: 14px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; }
+  .v3 .qa-chips button:active { transform: scale(.95); }
+  .v3 .qa-go { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 15px; border: 0; border-radius: 16px; background: var(--rema-accent); color: var(--rema-on-accent, #fff); font: inherit; font-weight: 750; font-size: 16px; cursor: pointer; }
+  .v3 .qa-go svg { fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+  .v3 .qa-sheet .qhits { display: grid; gap: 6px; }
+  .v3 .qa-sheet .qhits:empty { display: none; }
+  .v3 .qa-often .sub { margin: 0 6px 0 0; }
+  .v3 .qa-added .kicker { display: block; margin-bottom: 6px; }
+  .v3 .qa-added .olc { display: inline-flex; align-items: center; gap: 4px; }
+  .v3 .qa-added .olc svg { color: var(--success-color, #0E9F6E); fill: none; stroke: currentColor; stroke-width: 2.4; }
+  @media (max-width: 700px) {
+    .v3 .qa-sheet { width: 100%; border-radius: 26px 26px 0 0; border-bottom: 0; padding-bottom: calc(20px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); }
+    .v3 .qa-grab { display: block; width: 40px; height: 5px; border-radius: 999px; background: color-mix(in srgb, var(--primary-text-color) 20%, transparent); margin: -4px auto 0; }
+  }
+  /* While the Hurtig sheet is open, the confirmation shows at the top so it never covers what you tap next. */
+  :host([qa-open]) .toast { top: calc(14px + var(--rema-safe-top, env(safe-area-inset-top, 0px))); bottom: auto; z-index: 70; }
+  #v3-fab .fi:focus { outline: none; }
+  #v3-fab .fi:focus-visible .qa-ic, #v3-fab .fab-btn:focus-visible { outline: 3px solid color-mix(in srgb, var(--rema-accent, #1664FF) 55%, #fff); outline-offset: 3px; }
 
 `;
 const STYLE = STYLE_BASE + V3_STYLE;
