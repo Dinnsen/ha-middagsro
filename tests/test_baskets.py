@@ -239,3 +239,11 @@ async def test_websocket_compare_transfer_and_images(
     mock_client.async_search_products.side_effect = [[_product(3, "FEJL", 1.0, "f.png")]]
     msg = await _ws(client, 5, type="middagsro/items/images", names=["BROCCOLI", "FEJL"])
     assert msg["result"] == {"BROCCOLI": "b.png", "FEJL": "f.png"}
+    # With products: the matched product, so a receipt line can go straight on the list.
+    msg = await _ws(
+        client, 6, type="middagsro/items/images", names=["BROCCOLI", "INGEN"], products=True
+    )
+    assert msg["result"] == {
+        "BROCCOLI": {"id": 1, "name": "BROCCOLI", "image": "b.png", "price": 10.0},
+        "INGEN": {"id": 2, "name": "Uden billede", "image": None, "price": 5.0},
+    }
