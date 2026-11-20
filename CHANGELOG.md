@@ -2,6 +2,15 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## [3.1.0b3] - 2026-11-20
+
+### Fixed
+- Hurtig › Ofte købt: høje varebilleder (agurk, mælkekarton) stak ud af rammen og over navnene. Billederne holdes nu inde i deres felt – også i søgeresultaterne.
+- Hurtig-linjen ligger tættere på telefonens tastatur (intet ekstra mellemrum til hjemmelinjen, når tastaturet er oppe).
+
+### Notes
+- Beta.
+
 ## [3.1.0b2] - 2026-11-20
 
 ### Changed

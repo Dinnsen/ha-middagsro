@@ -9170,10 +9170,12 @@ Object.assign(V3_METHODS, {
     if (!this._v3QkVV) this._v3QkVV = () => {
       const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       el.style.setProperty("--kb", `${Math.round(kb)}px`);
+      // The keyboard covers the home-indicator area, so no safe-area gap is needed above it.
+      if (kb > 40) el.style.setProperty("--qk-safe", "0px"); else el.style.removeProperty("--qk-safe");
       el.style.setProperty("--vvh", `${Math.round(vv.height)}px`);
     };
     for (const t of ["resize", "scroll"]) vv[on ? "addEventListener" : "removeEventListener"](t, this._v3QkVV);
-    if (on) this._v3QkVV(); else { el.style.removeProperty("--kb"); el.style.removeProperty("--vvh"); }
+    if (on) this._v3QkVV(); else { el.style.removeProperty("--kb"); el.style.removeProperty("--vvh"); el.style.removeProperty("--qk-safe"); }
   },
 
   _v3QkKey(ev) {
@@ -10369,7 +10371,7 @@ const V3_STYLE = `
   .qk-scrim { position: fixed; inset: 0; background: rgba(9,14,28,.42); backdrop-filter: blur(6px) saturate(1.1); -webkit-backdrop-filter: blur(6px) saturate(1.1); animation: qk-fade .2s ease both; }
   #v3-fab.closing .qk-scrim { animation: qk-fade .18s ease reverse both; }
   @keyframes qk-fade { from { opacity: 0; } }
-  .qk { position: fixed; left: 50%; bottom: calc(24px + var(--kb, 0px) + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); width: min(580px, calc(100vw - 24px)); transform: translateX(-50%);
+  .qk { position: fixed; left: 50%; bottom: calc(24px + var(--kb, 0px) + var(--qk-safe, var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px)))); width: min(580px, calc(100vw - 24px)); transform: translateX(-50%);
     display: flex; flex-direction: column; gap: 10px; }
   #v3-fab.closing .qk { animation: qk-out .18s ease both; }
   @keyframes qk-out { to { opacity: 0; transform: translateX(-50%) translateY(14px) scale(.98); } }
@@ -10411,7 +10413,10 @@ const V3_STYLE = `
   .qk-tile:hover { background: var(--rema-subtle); }
   .qk-tile:active { transform: scale(.92); }
   .qk-pic { position: relative; width: 54px; height: 54px; border-radius: 17px; background: #fff; display: grid; place-items: center; box-shadow: 0 0 0 1px var(--divider-color); transition: box-shadow .2s; }
-  .qk-pic img, .qk-pic svg { width: 84%; height: 84%; object-fit: contain; }
+  .qk-pic { overflow: hidden; }
+  #v3-fab .qk-pic img, #v3-fab .qk-pic svg { display: block; width: 46px; height: 46px; max-width: 46px; max-height: 46px; object-fit: contain; }
+  #v3-fab .qk-row .qimg { overflow: hidden; }
+  #v3-fab .qk-row .qimg img, #v3-fab .qk-row .qimg svg { display: block; width: 38px; height: 38px; max-width: 38px; max-height: 38px; object-fit: contain; }
   .qk-pic em { position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: var(--success-color, #0E9F6E); color: #fff; font-style: normal; font-size: 11.5px; font-weight: 800; display: grid; place-items: center; border: 2px solid var(--card-background-color); animation: qk-pop .3s cubic-bezier(.2,.9,.3,1.6); }
   .qk-tile.done .qk-pic { box-shadow: 0 0 0 2px var(--success-color, #0E9F6E); }
   .qk-tile.pop .qk-pic { animation: qk-pop .35s cubic-bezier(.2,.9,.3,1.6); }
@@ -10447,7 +10452,7 @@ const V3_STYLE = `
   @media (max-width: 700px) {
     #v3-fab { right: max(14px, env(safe-area-inset-right, 0px)); bottom: calc(92px + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); }
     #v3-fab .fab-btn { width: 56px; height: 56px; border-radius: 20px; }
-    .qk { width: calc(100vw - 16px); bottom: calc(8px + var(--kb, 0px) + var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px))); }
+    .qk { width: calc(100vw - 16px); bottom: calc(8px + var(--kb, 0px) + var(--qk-safe, var(--rema-safe-bottom, env(safe-area-inset-bottom, 0px)))); }
     .qk-card { max-height: min(60vh, calc(var(--vvh, 100dvh) - 110px)); }
   }
   @media (prefers-reduced-motion: reduce) { #v3-fab *, .qk-scrim { animation: none !important; transition: none !important; } }
