@@ -2,6 +2,11 @@
 
 All notable changes to Middagsro. Versions follow `custom_components/middagsro/manifest.json`.
 
+## Unreleased
+
+### Added
+- Choose a separate shopping weekday for weekly meal plans (#76), for example shopping Sunday before dinners begin Monday. The panel shows the buying date, and offers, prices, later product changes, price refreshes and automatic transfers use that date. Existing plans retain their original shopping date, and the default remains the first dinner day.
+
 ## [3.1.0b3] - 2026-11-20
 
 ### Fixed

@@ -46,6 +46,7 @@ from .mealplan import (
     rule_lines,
     to_base,
 )
+from .planning_dates import plan_shopping_day
 from .recipes import (
     async_save_recipe,
     disliked_names,
@@ -285,7 +286,7 @@ async def async_sync_shopping(planner: MealPlanner, plan: dict[str, Any]) -> lis
         plan["shopping"] = [line for line in plan["shopping"] if line not in removed]
     if new_lines:
         offers = await _async_offers(planner, plan)
-        first = date.fromisoformat(plan["start_date"])
+        first = plan_shopping_day(plan)
         await planner._async_price_lines(
             new_lines, offers, planner.price_time(first), late_offers(offers, first)
         )
@@ -552,7 +553,7 @@ async def async_swap_options(
         raise _invalid("no_ai_task")
     offers = await _async_offers(planner, plan)
     when = date.fromisoformat(day["date"])
-    late = late_offers(offers, date.fromisoformat(plan["start_date"]))
+    late = late_offers(offers, plan_shopping_day(plan))
     mealie = await _async_mealie_list(planner)
     earlier = planner.store.recent_dishes(
         date.fromisoformat(plan["start_date"]), planner.store.settings["no_repeat_weeks"]
@@ -632,7 +633,7 @@ async def async_swap_dish(
         raise _invalid("no_ai_task")
     settings = _with_dislikes(planner)
     offers = await _async_offers(planner, plan)
-    first = date.fromisoformat(plan["start_date"])
+    first = plan_shopping_day(plan)
     late = late_offers(offers, first)
     cooked = [
         d for d in plan["days"] if not d.get("uses_leftovers_from") and d.get("type") != "rester"
@@ -836,7 +837,7 @@ async def async_add_pantry_item(planner: MealPlanner, plan_id: str, item: str) -
     line = _new_line(item.capitalize(), search, PANTRY_CATEGORY, pantry=item.lower())
     if need["amount"] and need["unit"] in ("g", "ml"):
         line.update(amount=need["amount"], unit=need["unit"])
-    await planner._async_match(line, planner.price_time(date.fromisoformat(plan["start_date"])))
+    await planner._async_match(line, planner.price_time(plan_shopping_day(plan)))
     plan["shopping"].append(line)
     update_total(plan)
     await planner.store.async_save()
@@ -860,7 +861,7 @@ async def async_add_product(
         if not later:
             raise _invalid("no_late_list")
         buy_from = later[0]
-    first = date.fromisoformat(buy_from or plan["start_date"])
+    first = date.fromisoformat(buy_from) if buy_from else plan_shopping_day(plan)
     at: datetime | None = noon(first) if buy_from else planner.price_time(first)
     try:
         products = await planner.client.async_get_products([product_id], at)
@@ -1340,11 +1341,7 @@ async def async_edit_line(
         await planner.async_unlist([line])
     elif product_id is not None:
         day = line.get("buy_from")
-        at = (
-            noon(date.fromisoformat(day))
-            if day
-            else planner.price_time(date.fromisoformat(plan["start_date"]))
-        )
+        at = noon(date.fromisoformat(day)) if day else planner.price_time(plan_shopping_day(plan))
         try:
             products = await planner.client.async_get_products([product_id], at)
         except RemaError as err:

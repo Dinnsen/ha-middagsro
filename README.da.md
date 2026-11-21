@@ -360,7 +360,8 @@ Indstillingerne gælder hver gang, en madplan laves, og gemmes pr. REMA 1000-kon
 | Indstilling | Hvad den gør | Standard |
 |---|---|---|
 | **AI til madplanen** | Hvilken AI-opgave der laver planen – eller en samtaleagent til en AI uden AI-opgaver (LiteLLM); den bliver bedt om at svare i JSON. *Home Assistants standard* bruger den AI-opgave, der er valgt under AI-indstillingerne. | Standard |
-| **Madplanen starter / der handles ind** | Ugedagen, planen starter på. Tilbudsavisen gælder fra søndag. | Søndag |
+| **Madplanens første dag** | Ugedagen, aftensmadsplanen starter på. | Søndag |
+| **Indkøbsdag** | En selvstændig ugedag på eller før planstart, fx søndagsindkøb til en plan fra mandag. Priser, tilbud og automatisk overførsel følger indkøbsdatoen. Gælder nye planer; eksisterende planer beholder deres gemte dato. | Samme dag som planstart |
 | **Antal dage** | 1–14 dage. | 7 |
 | **Budget** | Hele indkøbslisten i kr. Over budget prøver AI'en én gang mere. | 500 |
 | **Økologi** | *Udelukkende økologi*, *Foretræk økologi* (hvis højst x % dyrere end den billigste) eller *Ligeglad*. | Foretræk, 20 % |
@@ -479,7 +480,7 @@ Entitets-id'erne afhænger af kontoens navn; find dem under **Indstillinger → 
 
 - **Indkøbslisten** hentes fra REMA 1000 hvert **2. minut**, så ændringer i appen hurtigt ses i Home Assistant. Ændringer fra Home Assistant sendes med det samme.
 - **Tilbudsaviserne** (aktuel og næste uge) hentes hvert **3. time** fra Tjek, som REMA 1000 bruger til sin avis.
-- Madplanens priser er dem, der gælder på planens første dag, så en plan for næste uge bruger næste uges priser og tilbud. REMA's priser for en uge slutter før avisen gør; indtil ugen skifter søndag, gælder ugens priser stadig.
+- Madplanens priser følger indkøbsdatoen, som kan ligge før den første aftensmad. Tilbudsavisen vælges ud fra denne dato. REMA's priser for en uge slutter før avisen gør; indtil ugen skifter søndag, gælder ugens priser stadig.
 - **Madplanen** laves kun, når du beder om det (eller automatisk, når næste uges avis udkommer, hvis det er slået til). Den tager typisk 1–2 minutter: AI'en lægger planen, integrationen finder og prissætter varerne efter jeres regler, og til sidst skrives opskrifterne.
 - Planer, indstillinger og favoritretter gemmes i Home Assistant og er med i backuppen.
 - Mister integrationen forbindelsen til REMA 1000, bliver entiteterne utilgængelige og kommer igen af sig selv. Er login ugyldigt, beder Home Assistant dig om at logge ind igen.

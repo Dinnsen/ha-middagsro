@@ -54,6 +54,7 @@ from .matching import (
     prices_from,
     search_queries,
 )
+from .planning_dates import plan_shopping_day
 from .shops import OtherShop, async_search, next_shops
 from .storage import RemaPlanStore
 from .store_client import genitive, store_name
@@ -914,7 +915,7 @@ class ProductMatcher:
             gone = {id(line) for line in todo} - {id(line) for line in kept}
             plan["shopping"] = [line for line in plan["shopping"] if id(line) not in gone]
             offers = await self._async_plan_offers(plan, kept)
-            at = self.price_time(date.fromisoformat(plan["start_date"]))
+            at = self.price_time(plan_shopping_day(plan))
             semaphore = asyncio.Semaphore(SEARCH_CONCURRENCY)
 
             async def match(line: dict[str, Any]) -> None:
