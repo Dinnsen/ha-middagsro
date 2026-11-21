@@ -45,6 +45,7 @@ ALLERGY_OPTIONS = (
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "ai_task_entity": None,
+    "shopping_weekday": None,  # None: shop on the first dinner day, as before
     "start_weekday": 6,  # 0 = monday ... 6 = sunday (the avis starts on sunday)
     "days": 7,
     "budget": 500,
@@ -215,6 +216,11 @@ def clean_settings(raw: dict[str, Any]) -> dict[str, Any]:
         if key in raw:
             settings[key] = raw[key]
     settings["start_weekday"] = _clamp(settings["start_weekday"], 0, 6, 6)
+    settings["shopping_weekday"] = (
+        None
+        if settings["shopping_weekday"] in (None, "")
+        else _clamp(settings["shopping_weekday"], 0, 6, settings["start_weekday"])
+    )
     settings["days"] = _clamp(settings["days"], 1, 14, 7)
     settings["budget"] = _clamp(settings["budget"], 0, 100000, 500)
     settings["monthly_budget"] = _clamp(settings["monthly_budget"], 0, 1000000, 0)

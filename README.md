@@ -364,7 +364,8 @@ The settings apply every time a meal plan is made and are stored per REMA 1000 a
 | Setting | What it does | Default |
 |---|---|---|
 | **AI for the meal plan** (*AI til madplanen*) | Which AI Task makes the plan – or a conversation agent, for an AI without AI Tasks (LiteLLM); it is asked to answer in JSON. *Home Assistants standard* uses the AI Task chosen in the AI settings. | Default |
-| **Plan starts / shopping day** (*Madplanen starter / der handles ind*) | The weekday the plan starts. The offers run from Sunday. | Sunday |
+| **Plan starts** (*Madplanens første dag*) | The weekday the dinner plan starts. | Sunday |
+| **Shopping day** (*Indkøbsdag*) | A separate weekday on or before plan start, e.g. Sunday shopping for a Monday plan. Prices, offers and automatic transfer follow this date. Applies to new plans; existing plans retain their saved date. | Same day as plan start |
 | **Number of days** (*Antal dage*) | 1–14 days. | 7 |
 | **Budget** | The whole shopping list in DKK. Over budget, the AI tries once more. | 500 |
 | **Organic** (*Økologi*) | *Only organic*, *Prefer organic* (if at most x % dearer than the cheapest) or *Don't mind*. | Prefer, 20 % |
@@ -484,7 +485,7 @@ The entity IDs depend on the account's name and your language; find them under *
 
 - The **shopping list** is fetched from REMA 1000 every **2 minutes**, so changes in the app show up quickly in Home Assistant. Changes from Home Assistant are sent at once.
 - The **offer catalogues** (current and next week) are fetched every **3 hours** from Tjek, which REMA 1000 uses for its offers.
-- Prices for the meal plan are those of the plan's first day, so a plan for next week uses next week's prices and offers. REMA's prices for a week end before the avis does; until the week turns on Sunday, the week's prices still count.
+- Prices for the meal plan follow its shopping date, which may precede the first dinner. The applicable offers are chosen for that date. REMA's prices for a week end before the avis does; until the week turns on Sunday, the week's prices still count.
 - The **meal plan** is only made when you ask for it (or automatically when next week's offers are out, if turned on). It usually takes 1–2 minutes: the AI plans, the plan is checked against your rules (and the AI corrects it, up to two more times), the integration finds and prices the products by your rules, the recipes are written, and the AI is asked once about the products it is unsure of.
 - Plans, settings and favourite dishes are stored in Home Assistant and included in backups.
 - If the integration loses its connection to REMA 1000, the entities become unavailable and come back by themselves. If the login is no longer valid, Home Assistant asks you to log in again.

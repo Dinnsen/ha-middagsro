@@ -67,6 +67,7 @@ from .matching import (
 )
 from .mealie import MealieError, MealieLink
 from .messages import async_danish
+from .planning_dates import plan_shopping_day, shopping_day
 from .recipes import (
     async_extract,
     async_save_recipe,
@@ -401,6 +402,10 @@ def build_prompt(
         "",
         "KRAV – SKAL OVERHOLDES:",
     ]
+    if s.get("_shopping_date"):
+        out.append(
+            f"- Indkøbsdag: {s['_shopping_date']}. Tilbud og indkøb følger denne dag; aftensmad følger datoerne ovenfor."
+        )
     out.append(prompt_items(s.get("_freezer_inventory") or []))
     if s.get("rules"):
         out.append(
@@ -1446,7 +1451,7 @@ class MealPlanner(ProductMatcher):
         today = dt_util.now().date()
         start = next_start(today, self.store.settings["start_weekday"])
         try:
-            self.avis_end(start)
+            self.avis_end(shopping_day(start, self.store.settings))
         except ServiceValidationError:
             return today
         return start
@@ -1499,7 +1504,7 @@ class MealPlanner(ProductMatcher):
         if self.generating:
             raise _invalid("already_generating")
         start = start or self.default_start()
-        self.avis_end(start)
+        self.avis_end(shopping_day(start, self.store.settings))
         if skip and not plan_dates(start, self.store.settings["days"], skip):
             raise _invalid("all_days_skipped")
         if not self.ai_available():
@@ -1658,7 +1663,7 @@ class MealPlanner(ProductMatcher):
                 candidate
                 and candidate.valid_from
                 and candidate.valid_to
-                and candidate.valid_from.date() <= start <= candidate.valid_to.date()
+                and _local_day(candidate.valid_from) <= start <= _local_day(candidate.valid_to)
             ):
                 catalog = candidate
                 break
@@ -2083,6 +2088,8 @@ class MealPlanner(ProductMatcher):
         """
         base = self.store.get_plan(base_id) if base_id else None
         settings = self.store.settings
+        shopping = plan_shopping_day(base) if base else shopping_day(start, settings)
+        settings = {**settings, "_shopping_date": shopping.isoformat()}
         # What each day is: the fixed days, or what the family chose for this week.
         window = [start + timedelta(days=i) for i in range(settings["days"])]
         if day_kinds is None and base is not None:
@@ -2108,7 +2115,7 @@ class MealPlanner(ProductMatcher):
         # The avis must cover the shopping day (this refuses a start no avis covers yet),
         # not every day a dinner is eaten: the whole period is planned and priced with
         # the offers known on the shopping day (#72).
-        self.avis_end(start)
+        self.avis_end(shopping)
         if not dates:
             raise _invalid("all_days_skipped")
         skipped = sorted(
@@ -2136,9 +2143,13 @@ class MealPlanner(ProductMatcher):
         if (left := plan_budget(self.store, dates[0])) is not None:
             settings["budget"] = left
         self._set_status("generating", "Henter ugens tilbud …")
-        catalog, offers = await self._async_offers(start)
-        late = late_offers(offers, dates[0])
-        chain_offers = await self._async_chain_offers(dates) if settings["plan_all_chains"] else []
+        catalog, offers = await self._async_offers(shopping)
+        late = late_offers(offers, shopping)
+        chain_offers = (
+            await self._async_chain_offers(sorted({shopping, *dates}))
+            if settings["plan_all_chains"]
+            else []
+        )
         recent = self.store.recent_dishes(start, settings["no_repeat_weeks"])
         due, optional = self.store.favorites_due(start, recent)
         # An update keeps the wishes the plan was made with.
@@ -2225,6 +2236,7 @@ class MealPlanner(ProductMatcher):
         best["checklist"] += [{"requirement": p, "ok": False} for p in problems]
         if problems:
             _LOGGER.info("The plan still breaks %d rule(s): %s", len(problems), "; ".join(problems))
+        best["shopping_date"] = shopping.isoformat()
         best["budget"] = settings["budget"]
         best["skipped"] = [d.isoformat() for d in skipped if d not in rye]
         best["day_kinds"] = {iso: k for iso, k in kinds.items() if k["kind"] != "ai"}
@@ -2252,10 +2264,10 @@ class MealPlanner(ProductMatcher):
             best["skipped_days"] = {k: v for k, v in aside.items() if k in best["skipped"]}
         best["note"] = note
         best["surprise"] = surprise
-        await self._async_align_recipes(best, offers, self.price_time(start), late)
+        await self._async_align_recipes(best, offers, self.price_time(shopping), late)
         best["over_budget"] = bool(settings["budget"]) and best["total"] > settings["budget"]
         await self._async_add_recipes(best)
-        await self._async_recipe_extras(best, offers, self.price_time(start), late)
+        await self._async_recipe_extras(best, offers, self.price_time(shopping), late)
         fit_amounts(best)
         await self._async_ai_choices(best)
         await self._async_next_shops(best)
@@ -2281,7 +2293,7 @@ class MealPlanner(ProductMatcher):
                 partial = [line for line in candidate["shopping"] if line.get("freezer_taken")]
                 for line in partial:
                     line.pop("buy_at", None)
-                await self._async_price_lines(partial, offers, self.price_time(start), late)
+                await self._async_price_lines(partial, offers, self.price_time(shopping), late)
                 candidate["total"] = plan_total(candidate["shopping"])
                 candidate["over_budget"] = (
                     bool(candidate["budget"]) and candidate["total"] > candidate["budget"]
@@ -2305,7 +2317,14 @@ class MealPlanner(ProductMatcher):
         from .candidates import async_candidates  # noqa: PLC0415
 
         try:
-            found = await async_candidates(self, start, avis=avis)
+            found = await async_candidates(
+                self,
+                start,
+                avis=avis,
+                shopping=date.fromisoformat(
+                    settings.get("_shopping_date") or shopping_day(start, settings).isoformat()
+                ),
+            )
         except (HomeAssistantError, RemaError) as err:
             _LOGGER.warning("Could not price the week's recipes: %s", err)
             return None
@@ -2406,6 +2425,7 @@ class MealPlanner(ProductMatcher):
         more rules than the best so far costs no searches; and if the AI fails
         on a later round, the best so far stands.
         """
+        shopping = date.fromisoformat(settings.get("_shopping_date") or start.isoformat())
         best: dict[str, Any] | None = None
         for attempt in range(MAX_AI_ROUNDS):
             self._set_status(
@@ -2450,7 +2470,14 @@ class MealPlanner(ProductMatcher):
                 )
                 break
             plan = await self._async_build_plan(
-                raw, dates, catalog, offers, self.price_time(start), late, chain_offers, price=False
+                raw,
+                dates,
+                catalog,
+                offers,
+                self.price_time(shopping),
+                late,
+                chain_offers,
+                price=False,
             )
             known = {r["slug"] for r in mealie}
             ours = (
@@ -2491,7 +2518,7 @@ class MealPlanner(ProductMatcher):
                     else "Laver indkøbslisten med ugens tilbud …",
                 )
                 await self._async_price_plan(
-                    plan, offers, self.price_time(start), late, chain_offers
+                    plan, offers, self.price_time(shopping), late, chain_offers
                 )
                 # Without prices (another shop than REMA) the total is only the offers.
                 budget = settings["budget"] if self.prices else 0
@@ -3262,7 +3289,10 @@ class MealPlanner(ProductMatcher):
             and not line.get("added")
             and not line.get("product_id")
             and not line.get("buy_at")
-            and prices_from(date.fromisoformat(line.get("buy_from") or plan["start_date"])) <= now
+            and prices_from(
+                date.fromisoformat(line.get("buy_from") or plan_shopping_day(plan).isoformat())
+            )
+            <= now
         ]
         catalog_id = (plan.get("catalog") or {}).get("id")
         if not due or not catalog_id:
@@ -3292,7 +3322,7 @@ class MealPlanner(ProductMatcher):
     def _schedule_refreshes(self, plan: dict[str, Any]) -> None:
         """Look at the plan's offers again at 02:00 on the shopping day (and thursday)."""
         now = dt_util.utcnow()
-        main_at = prices_from(date.fromisoformat(plan["start_date"]))
+        main_at = prices_from(plan_shopping_day(plan))
         if main_at > now:
             plan["refresh_at"] = main_at.isoformat()
             self._schedule_send(plan, "refresh_at")
@@ -3324,7 +3354,7 @@ class MealPlanner(ProductMatcher):
             _LOGGER.info("Not sent: new dishes wait for approval (%s)", ", ".join(waiting))
             return
         now = dt_util.utcnow()
-        main_at = prices_from(date.fromisoformat(plan["start_date"]))
+        main_at = prices_from(plan_shopping_day(plan))
         if main_at <= now:
             await self.async_send(plan["id"], "main", strict=False)
         else:
@@ -3401,7 +3431,10 @@ class MealPlanner(ProductMatcher):
         if not (
             upcoming.valid_from
             and upcoming.valid_to
-            and upcoming.valid_from.date() <= start <= upcoming.valid_to.date()
+            and any(
+                _local_day(upcoming.valid_from) <= day <= _local_day(upcoming.valid_to)
+                for day in (start, shopping_day(start, settings))
+            )
         ):
             return
         key = start.isoformat()

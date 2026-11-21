@@ -26,6 +26,7 @@ from .amounts import package_size, parse_amount, to_base
 from .api import Catalog, Offer, Product, RemaError
 from .dishes import food_conflicts, matches_any
 from .linking import is_bought, kind_of, links
+from .planning_dates import shopping_day
 from .recipes import disliked_names
 from .rema_recipes import current_price
 from .words import pantry_words
@@ -214,14 +215,17 @@ async def async_candidates(
     start: date,
     sort: str = "cheapest",
     avis: tuple[Catalog | None, list[Offer]] | None = None,
+    *,
+    shopping: date | None = None,
 ) -> dict[str, Any]:
     """The week's dinners from the avis, ranked; and how many the rules left out.
     ``avis``: the catalogue and its offers, when the caller has them already."""
     store = planner.store
     settings = store.settings
     pantry = pantry_words(str(settings.get("pantry") or ""))
-    at: datetime | None = planner.price_time(start)
-    catalog, offers = avis if avis is not None else await planner._async_offers(start)
+    shopping = shopping or shopping_day(start, settings)
+    at: datetime | None = planner.price_time(shopping)
+    catalog, offers = avis if avis is not None else await planner._async_offers(shopping)
     by_kind = offer_kinds(offers)
     recent = store.recent_dishes(start, settings["no_repeat_weeks"])
     disliked = disliked_names(store)

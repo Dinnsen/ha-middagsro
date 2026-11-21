@@ -61,6 +61,7 @@ async def async_get_config_entry_diagnostics(
             for key in (
                 "ai_task_entity",
                 "start_weekday",
+                "shopping_weekday",
                 "days",
                 "budget",
                 "organic",

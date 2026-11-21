@@ -186,7 +186,7 @@ const SETTINGS_SECTIONS = (panel) => {
     { key: "shop", title: "Butik", form: !shop.rema,
       summary: shop.rema ? "REMA 1000 · priser på alle varer og REMA-appens liste" : shop.bilka_cart ? (shop.cart_name === "Nemlig.com" ? "Nemlig.com · priser på alle varer og kurven på nemlig.com" : `BilkaToGo · ${shop.pickup_name} · kurv i appen`) : `${shop.name} · tilbudsavis og liste i Home Assistant` },
     { key: "plan", title: "Ugens madplan", form: true,
-      summary: `${f.days} dage fra ${WEEKDAYS[f.start_weekday].toLowerCase()} · ${f.monthly_budget ? "budget efter madbudgettet" : `budget ${f.budget} kr.`}${f.auto_generate ? " · laves automatisk" : ""}` },
+      summary: `${f.days} dage fra ${WEEKDAYS[f.start_weekday].toLowerCase()}${f.shopping_weekday != null ? ` · indkøb ${WEEKDAYS[f.shopping_weekday].toLowerCase()}` : ""} · ${f.monthly_budget ? "budget efter madbudgettet" : `budget ${f.budget} kr.`}${f.auto_generate ? " · laves automatisk" : ""}` },
     { key: "ai", title: "AI til madplanen", form: true,
       summary: state.ai_entities?.find(x => x.entity_id === f.ai_task_entity)?.name || "Home Assistants standard" },
     { key: "budget", title: "Madbudget", form: true,
@@ -4473,6 +4473,24 @@ class Rema1000Panel extends HTMLElement {
     });
   }
 
+  _shoppingDate(start) {
+    if (!start) return "";
+    const weekday = this._state?.settings?.shopping_weekday;
+    if (weekday == null || weekday === "") return start;
+    const d = new Date(`${start}T12:00:00`);
+    const current = (d.getDay() + 6) % 7;
+    d.setDate(d.getDate() - (current - Number(weekday) + 7) % 7);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  _lastPlanStart() {
+    const last = this._lastAvisDay();
+    if (!last || this._state?.settings?.shopping_weekday == null) return last;
+    const d = new Date(`${this._shoppingDate(last)}T12:00:00`);
+    d.setDate(d.getDate() + 6);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
   // The last day available for the first shopping day; dinners may go beyond it.
   _lastAvisDay() {
     const cat = this._state?.catalogs || {};
@@ -4517,12 +4535,14 @@ class Rema1000Panel extends HTMLElement {
       .join("");
     const note = this._state?.note;
     const cat = this._state?.catalogs || {};
-    const last = this._lastAvisDay();
+    const last = this._lastPlanStart();
+    const shopping = this._shoppingDate(this._startDate || this._state?.default_start);
     return `<div class="row wrap">
       <label class="field inline">Første dag
         <input type="date" data-bind="start" value="${esc(this._startDate || "")}" ${last ? `max="${esc(last)}"` : ""}>
       </label>
     </div>
+    ${shopping ? `<p class="muted small">Indkøbsdag: <b>${esc(dateLabel(shopping))}</b>. Priser og automatisk overførsel følger denne dag.</p>` : ""}
     ${cat.current && !cat.upcoming && last
       ? `<p class="muted small">Næste uges avis er ikke ude endnu. Hele den valgte periode planlægges med kendte priser og tilbud på indkøbsdagen.</p>`
       : ""}
@@ -4694,7 +4714,7 @@ class Rema1000Panel extends HTMLElement {
     let period = `${dateLabel(plan.start_date)} – ${dateLabel(plan.end_date)}`;
     let skipped = (plan.skipped || []).map((date) => ({ planId: plan.id, date }));
     let avis = plan.catalog ? ` · ${plan.catalog.label || ""}` : "";
-    let shopFrom = "";
+    let shopFrom = plan.shopping_date && plan.shopping_date !== plan.start_date ? `indkøb ${dateLabel(plan.shopping_date)}` : "";
     let days;
     if (timeline) {
       const weeks = [...new Set(timeline.map((e) => e.week))];
@@ -4704,7 +4724,7 @@ class Rema1000Panel extends HTMLElement {
       skipped = timeline.filter((e) => e.skipped && e.date >= today).map((e) => ({ planId: e.plan.id, date: e.date }));
       avis = "";
       // Days from older plans: the price and the list are the newest plan's.
-      if (timeline.some((e) => e.plan.id !== plan.id)) shopFrom = `indkøb fra ${dateLabel(plan.start_date)}`;
+      if (timeline.some((e) => e.plan.id !== plan.id)) shopFrom = `indkøb fra ${dateLabel(plan.shopping_date || plan.start_date)}`;
       let week = null;
       days = shown
         .map((e) => {
@@ -6200,11 +6220,16 @@ class Rema1000Panel extends HTMLElement {
         `),
       plan: () => card(`        <h2 class="flush">Uge og budget</h2>
         <div class="grid">
-          <label class="field">Første dag og indkøbsdag ${weekdaySelect("start_weekday", f.start_weekday)}</label>
+          <label class="field">Madplanens første dag ${weekdaySelect("start_weekday", f.start_weekday)}</label>
+          <label class="field">Indkøbsdag <select data-path="shopping_weekday" data-type="nullable">
+            <option value="" ${f.shopping_weekday == null ? "selected" : ""}>Samme dag som planstart</option>
+            ${WEEKDAYS.map((day, i) => `<option value="${i}" ${f.shopping_weekday != null && Number(f.shopping_weekday) === i ? "selected" : ""}>${day}</option>`).join("")}
+          </select></label>
           <label class="field">Antal dage ${num("days", f.days, 1, 14)}</label>
           <label class="field">Budget pr. madplan (kr.) ${num("budget", f.budget, 0, 100000)}</label>
           ${f.monthly_budget ? '<p class="muted small">I har et madbudget: en ny plan må koste det, der er tilbage af ugen, og dette tal bruges ikke.</p>' : ""}
         </div>
+        <p class="muted small">Indkøbsdagen er den valgte ugedag på eller før madplanens første dag. Fx søndag før en plan fra mandag. Gælder nye madplaner; eksisterende planer beholder deres indkøbsdato.</p>
         <label class="check"><input type="checkbox" data-path="recipe_planner" ${f.recipe_planner ? "checked" : ""}> Byg madplanen på opskrifter</label>
         <p class="muted small">AI'en vælger ugens retter blandt de klare opskrifter (jeres og REMA's), der bruger avisens tilbud, og indkøbslisten regnes ud fra opskrifternes varer. Højst to nye retter om ugen – de skal godkendes, før listen sendes. Slået fra: AI'en finder på retterne og listen som før.</p>
         <label class="check"><input type="checkbox" data-path="shop_late_week" ${f.shop_late_week ? "checked" : ""}> Vi handler også sidst på ugen</label>
